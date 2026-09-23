@@ -1,0 +1,216 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Georgia&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --radius: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-sm: 0.5rem;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06);
+  --shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 16px 40px rgba(0,0,0,0.10);
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'Inter', system-ui, sans-serif;
+  /* Motion tokens — the only 3 durations used for animation anywhere in the app. */
+  --motion-fast: 120ms;
+  --motion-standard: 200ms;
+  --motion-page: 280ms;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: clip;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  overflow-x: clip;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* Utility classes bound to CSS variables */
+@layer utilities {
+  .bg-app { background-color: var(--bg); }
+  .bg-subtle { background-color: var(--bg-subtle); }
+  .bg-card { background-color: var(--bg-card); }
+  .text-main { color: var(--text); }
+  .text-sec { color: var(--text-secondary); }
+  .text-muted { color: var(--text-muted); }
+  .border-app { border-color: var(--border); }
+  .border-strong { border-color: var(--border-strong); }
+  .bg-accent { background-color: var(--accent); }
+  .bg-accent-soft { background-color: var(--accent-soft); }
+  .text-accent { color: var(--accent); }
+  .text-accent-text { color: var(--accent-text); }
+  .border-accent { border-color: var(--accent); }
+  .bg-success { background-color: var(--success); }
+  .bg-success-soft { background-color: var(--success-soft); }
+  .text-success { color: var(--success); }
+  .bg-warning { background-color: var(--warning); }
+  .bg-warning-soft { background-color: var(--warning-soft); }
+  .text-warning { color: var(--warning); }
+  .bg-error { background-color: var(--error); }
+  .bg-error-soft { background-color: var(--error-soft); }
+  .text-error { color: var(--error); }
+  .text-star { color: var(--star); }
+  .shadow-card { box-shadow: var(--shadow-card); }
+  .shadow-hover { box-shadow: var(--shadow-hover); }
+  .font-display { font-family: var(--font-display); }
+  .rounded-card { border-radius: var(--radius); }
+  .rounded-card-lg { border-radius: var(--radius-lg); }
+  .rounded-card-xl { border-radius: var(--radius-xl); }
+  .rounded-card-sm { border-radius: var(--radius-sm); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pageFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes bookingConfirmedBeat {
+  0% { opacity: 0; transform: scale(0.9); }
+  60% { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-up { animation: fadeInUp 0.4s ease-out both; }
+.animate-fade-in { animation: fadeIn 0.3s ease-out both; }
+.animate-scale-in { animation: scaleIn 0.2s ease-out both; }
+.animate-slide-right { animation: slideInRight 0.3s ease-out both; }
+.animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+
+/* Motion-token-driven animations (see --motion-* vars above) */
+.animate-cross-fade { animation: fadeIn ease-out both; animation-duration: var(--motion-standard); }
+.animate-modal { animation: modalIn ease-in-out both; animation-duration: var(--motion-page); }
+.animate-page-fade { animation: pageFade ease-in-out both; animation-duration: var(--motion-page); }
+.animate-booking-confirmed { animation: bookingConfirmedBeat ease-out both; animation-duration: 400ms; }
+
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; }
+.stagger > *:nth-child(5) { animation-delay: 160ms; }
+.stagger > *:nth-child(6) { animation-delay: 200ms; }
+.stagger > *:nth-child(7) { animation-delay: 240ms; }
+.stagger > *:nth-child(8) { animation-delay: 280ms; }
+
+/* Hide scrollbar for horizontal scroll */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Leaflet map price markers (search page) */
+.ybuy-price-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 96%, white 4%), var(--bg-card));
+  color: var(--text);
+  border: 2px solid color-mix(in srgb, var(--accent) 28%, var(--border-strong) 72%);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.14), 0 1px 0 rgba(255,255,255,0.35) inset;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.ybuy-price-pin:hover {
+  transform: scale(1.08);
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.ybuy-pin-marker {
+  background: transparent;
+  border: 0;
+}
+
+.leaflet-container {
+  font-family: var(--font-sans);
+}
+
+.leaflet-control-zoom a {
+  background: color-mix(in srgb, var(--bg-card) 94%, white 6%) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--bg-card) 85%, transparent) !important;
+  color: var(--text-secondary) !important;
+  border-top-left-radius: var(--radius-sm);
+}
+
+/* Card hover transition */
+.card-hover {
+  transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+}
+.card-hover:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+}
+
+/* Skeleton shimmer — subtle, not eye-catching */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-subtle) 25%, var(--border) 50%, var(--bg-subtle) 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
