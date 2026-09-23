@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YBuy — Theme Pack Palettes</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.5rem;
+    background: #f4f5f7;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: #1b1f23;
+  }
+  h1 {
+    text-align: center;
+    margin: 0 0 0.5rem;
+    font-size: 1.75rem;
+  }
+  p.sub {
+    text-align: center;
+    margin: 0 0 2.5rem;
+    color: #666;
+  }
+  .grid {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.5rem;
+  }
+  .card {
+    border-radius: 1rem;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08);
+  }
+  .card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+  }
+  .card-head h2 { margin: 0; font-size: 1.1rem; }
+  .badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    opacity: 0.7;
+  }
+  .tagline { font-size: 0.85rem; opacity: 0.75; margin: 0 0 1rem; }
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    gap: 0.5rem;
+  }
+  .swatch {
+    border-radius: 0.5rem;
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,0.08);
+  }
+  .swatch-color { height: 44px; }
+  .swatch-label {
+    font-size: 0.62rem;
+    padding: 0.25rem 0.35rem;
+    background: rgba(255,255,255,0.85);
+    color: #111;
+    line-height: 1.25;
+  }
+  .swatch-label .name { display: block; opacity: 0.6; }
+  .swatch-label .hex { display: block; font-family: 'Consolas', monospace; }
+</style>
+</head>
+<body>
+  <h1>YBuy — Theme Pack Palettes</h1>
+  <p class="sub">All 10 theme packs from <code>src/themes.ts</code></p>
+  <div class="grid" id="grid"></div>
+
+<script>
+  const themes = [
+    { id: 'coral', name: 'Coral Market', tagline: 'Warm white + coral, Airbnb-inspired', dark: false, colors: {
+      bg: '#FAFAF8', 'bg-subtle': '#F4F2EE', 'bg-card': '#FFFFFF', text: '#171717', 'text-secondary': '#6B6B6B',
+      'text-muted': '#9A9A96', border: '#E7E5E2', accent: '#E0533D', 'accent-hover': '#C8442F', 'accent-soft': '#FCEDEA',
+      success: '#3F8F5C', warning: '#C9831E', error: '#D14430', star: '#E8A53A',
+    }},
+    { id: 'forest', name: 'Forest', tagline: 'Cream + deep green, earthy marketplace', dark: false, colors: {
+      bg: '#F6F5F0', 'bg-subtle': '#EDEAE2', 'bg-card': '#FFFFFF', text: '#1A1F1B', 'text-secondary': '#5C6B5F',
+      'text-muted': '#8E9C92', border: '#E0DCD3', accent: '#2D6A4F', 'accent-hover': '#245540', 'accent-soft': '#E2EFE7',
+      success: '#3F8F5C', warning: '#C9831E', error: '#B14A3A', star: '#D9A441',
+    }},
+    { id: 'ocean', name: 'Ocean Green', tagline: 'Cool white + ocean green, clean and crisp', dark: false, colors: {
+      bg: '#F7FAF9', 'bg-subtle': '#EBF4F1', 'bg-card': '#FFFFFF', text: '#0F2A28', 'text-secondary': '#4E7A70',
+      'text-muted': '#8AB3A6', border: '#DFEDE8', accent: '#0E7C66', 'accent-hover': '#0A6553', 'accent-soft': '#DDF3EC',
+      success: '#2E8B57', warning: '#C9831E', error: '#C8453A', star: '#E0A538',
+    }},
+    { id: 'slate', name: 'Slate', tagline: 'Gray + indigo accent, dense utility', dark: false, colors: {
+      bg: '#F4F5F7', 'bg-subtle': '#E9EBEE', 'bg-card': '#FFFFFF', text: '#1B1F23', 'text-secondary': '#596069',
+      'text-muted': '#8A929C', border: '#DFE2E6', accent: '#3D5AFE', 'accent-hover': '#2E49D6', 'accent-soft': '#E8EDFE',
+      success: '#2E8B57', warning: '#C9831E', error: '#D14430', star: '#E8A53A',
+    }},
+    { id: 'sunset', name: 'Sunset', tagline: 'Peach + amber, warm and friendly', dark: false, colors: {
+      bg: '#FDF8F4', 'bg-subtle': '#F7EDE3', 'bg-card': '#FFFFFF', text: '#2A1E16', 'text-secondary': '#6E5A4E',
+      'text-muted': '#A18D80', border: '#EDE0D4', accent: '#E07A2C', 'accent-hover': '#C26820', 'accent-soft': '#FBE6D4',
+      success: '#3F8F5C', warning: '#C9831E', error: '#C8453A', star: '#E8A53A',
+    }},
+    { id: 'mono', name: 'Mono', tagline: 'Pure white + black, Apple-minimal', dark: false, colors: {
+      bg: '#FFFFFF', 'bg-subtle': '#F5F5F5', 'bg-card': '#FFFFFF', text: '#111111', 'text-secondary': '#555555',
+      'text-muted': '#999999', border: '#EAEAEA', accent: '#111111', 'accent-hover': '#333333', 'accent-soft': '#F0F0F0',
+      success: '#2E8B57', warning: '#C9831E', error: '#D14430', star: '#E8A53A',
+    }},
+    { id: 'sand', name: 'Sand', tagline: 'Beige + terracotta, desert calm', dark: false, colors: {
+      bg: '#F5F0E8', 'bg-subtle': '#ECE4D6', 'bg-card': '#FBF8F2', text: '#2B211A', 'text-secondary': '#6B5D4F',
+      'text-muted': '#9C8E7E', border: '#E0D5C5', accent: '#A8542A', 'accent-hover': '#8E4622', 'accent-soft': '#F0E0D2',
+      success: '#3F8F5C', warning: '#C9831E', error: '#B14A3A', star: '#D9A441',
+    }},
+    { id: 'berry', name: 'Berry', tagline: 'Soft white + raspberry, playful', dark: false, colors: {
+      bg: '#FBF7F8', 'bg-subtle': '#F3E9EC', 'bg-card': '#FFFFFF', text: '#231419', 'text-secondary': '#6B5560',
+      'text-muted': '#9C8790', border: '#EBDEE2', accent: '#C2185B', 'accent-hover': '#A0124A', 'accent-soft': '#F8E0EA',
+      success: '#3F8F5C', warning: '#C9831E', error: '#C8453A', star: '#E8A53A',
+    }},
+    { id: 'midnight', name: 'Midnight', tagline: 'Charcoal + electric cyan, dark premium', dark: true, colors: {
+      bg: '#0E1116', 'bg-subtle': '#161A21', 'bg-card': '#1A1F28', text: '#F2F4F8', 'text-secondary': '#9CA4B0',
+      'text-muted': '#6B7280', border: '#262C36', accent: '#22D3EE', 'accent-hover': '#06B6D4', 'accent-soft': '#133140',
+      success: '#34D399', warning: '#FBBF24', error: '#F87171', star: '#FBBF24',
+    }},
+    { id: 'aurora', name: 'Aurora', tagline: 'Ice white + violet-mint, futuristic 2027', dark: false, colors: {
+      bg: '#F5F7FB', 'bg-subtle': '#EBEEF6', 'bg-card': '#FFFFFF', text: '#0E1525', 'text-secondary': '#4A5B78',
+      'text-muted': '#7E8DA8', border: '#DDE3F0', accent: '#6D4EFF', 'accent-hover': '#5A3DD6', 'accent-soft': '#EDE8FF',
+      success: '#0EA5A5', warning: '#E8930C', error: '#E0405A', star: '#FBBF24',
+    }},
+  ];
+
+  const grid = document.getElementById('grid');
+  for (const theme of themes) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.background = theme.colors['bg-card'];
+    card.style.color = theme.colors.text;
+    card.style.border = `1px solid ${theme.colors.border}`;
+
+    const swatchesHtml = Object.entries(theme.colors).map(([name, hex]) => `
+      <div class="swatch">
+        <div class="swatch-color" style="background:${hex}"></div>
+        <div class="swatch-label"><span class="name">${name}</span><span class="hex">${hex}</span></div>
+      </div>
+    `).join('');
+
+    card.innerHTML = `
+      <div class="card-head">
+        <h2>${theme.name}</h2>
+        <span class="badge">${theme.dark ? 'dark' : 'light'}</span>
+      </div>
+      <p class="tagline">${theme.tagline}</p>
+      <div class="swatches">${swatchesHtml}</div>
+    `;
+    grid.appendChild(card);
+  }
+</script>
+</body>
+</html>
