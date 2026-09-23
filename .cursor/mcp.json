@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "flowstep": {
+      "url": "https://api.flowstep.ai/mcp"
+    }
+  }
+}
