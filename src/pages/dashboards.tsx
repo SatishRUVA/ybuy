@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import { claims, type Listing } from '@/data';
@@ -9,20 +9,21 @@ import {
 import { createCheckoutSession } from '@/lib/payments';
 import { getOrCreateConversation } from '@/lib/messages';
 import { createReview, fetchReviewedBookingIds, fetchReviewsForUser } from '@/lib/reviews';
-import { fetchListingsByOwner, toUiListing } from '@/lib/listings';
+import { deleteOwnerListing, fetchListingsByOwner, toUiListing } from '@/lib/listings';
 import { fetchPayoutsByOwner, markBookingPaidOut, type DbPayoutRow } from '@/lib/payouts';
 import { fetchUnavailableDates, setDateAvailability } from '@/lib/availability';
 import { AvailabilityCalendar } from '@/components/availability-calendar';
-import { BookingListSkeleton, BookingRowSkeleton } from '@/components/skeleton';
+import { BookingListSkeleton, BookingRowSkeleton, Skeleton } from '@/components/skeleton';
+import { Button, Badge, Alert, EmptyState, Surface, SectionHeader, Overlay } from '@/components/ui';
+import { textareaClass } from '@/components/form-classes';
 import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
 import { Rating } from '@/components/trust';
 import {
-  Calendar, Clock, ChevronRight, Plus, Package,
-  CheckCircle2, AlertCircle, ArrowRight, Inbox, Shield, Star, X, CalendarCog, DollarSign,
+  Calendar, ChevronRight, Package, CheckCircle2, AlertCircle,
+  Inbox, Star, X, CalendarCog, Wallet, MessageSquare, CreditCard, Search, Bell, Trash2,
 } from 'lucide-react';
 
 const PAID_OUT_ELIGIBLE_STATUSES: UiBooking['status'][] = ['confirmed', 'active', 'return_pending', 'completed'];
-
 const REQUESTED_STATUSES: UiBooking['status'][] = ['requested', 'pending_payment', 'confirmed'];
 const PAST_STATUSES: UiBooking['status'][] = ['completed', 'cancelled', 'rejected'];
 
@@ -37,16 +38,158 @@ const STATUS_LABEL: Record<UiBooking['status'], string> = {
   rejected: 'Declined',
 };
 
-export function RenterDashboard() {
+const STATUS_TONE: Record<UiBooking['status'], 'neutral' | 'accent' | 'success' | 'warning' | 'error'> = {
+  requested: 'neutral',
+  pending_payment: 'warning',
+  confirmed: 'accent',
+  active: 'success',
+  return_pending: 'warning',
+  completed: 'success',
+  cancelled: 'error',
+  rejected: 'error',
+};
+
+function formatRange(start: string, end: string): string {
+  const fmt = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
+/** Compact numeric summary. Value first, because that's what the eye is scanning for. */
+function StatCard({ icon: Icon, label, value, highlight, onClick }: {
+  icon: typeof Calendar; label: string; value: string | number; highlight?: boolean; onClick?: () => void;
+}) {
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag
+      onClick={onClick}
+      className={`p-4 rounded-card-lg border text-left w-full transition-colors duration-fast ${
+        highlight ? 'bg-accent-soft border-accent' : 'bg-card border-app'
+      } ${onClick ? 'hover:border-strong' : ''}`}
+    >
+      <div className="flex items-center justify-between">
+        <Icon size={18} className={highlight ? 'text-accent' : 'text-sec'} />
+        {onClick && <ChevronRight size={15} className="text-muted" />}
+      </div>
+      <p className="text-2xl font-bold text-main font-display mt-2.5 tnum">{value}</p>
+      <p className="text-xs text-sec mt-0.5">{label}</p>
+    </Tag>
+  );
+}
+
+/** The one row layout every booking uses, on both dashboards. */
+function BookingRow({
+  booking, onOpen, onMessage, children,
+}: {
+  booking: UiBooking;
+  onOpen?: () => void;
+  onMessage?: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <Surface className="p-3.5">
+      <div className="flex gap-3.5">
+        <button
+          onClick={onOpen}
+          className="w-20 h-20 rounded-card overflow-hidden shrink-0 bg-subtle"
+          aria-label={`Open ${booking.listingTitle}`}
+        >
+          <img src={booking.listingImage} alt="" className="w-full h-full object-cover" />
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3">
+            <button onClick={onOpen} className="text-left min-w-0">
+              <h3 className="font-semibold text-main font-display leading-snug line-clamp-1 hover:text-accent transition-colors duration-fast">
+                {booking.listingTitle}
+              </h3>
+            </button>
+            <p className="font-bold text-main shrink-0 tnum">${booking.total}</p>
+          </div>
+          <p className="flex items-center gap-1.5 text-xs text-sec mt-1.5">
+            <Calendar size={13} /> {formatRange(booking.startDate, booking.endDate)}
+            <span className="text-muted">·</span>
+            <span className="tnum">{booking.days} {booking.days === 1 ? 'day' : 'days'}</span>
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <Badge tone={STATUS_TONE[booking.status]}>{STATUS_LABEL[booking.status]}</Badge>
+            <span className="text-xs text-sec truncate">{booking.counterpartName}</span>
+          </div>
+        </div>
+      </div>
+      {(children || onMessage) && (
+        <div className="flex flex-wrap items-center gap-2 mt-3.5 pt-3.5 border-t border-app">
+          {children}
+          {onMessage && (
+            <Button size="sm" variant="ghost" icon={<MessageSquare size={15} />} onClick={onMessage}>Message</Button>
+          )}
+        </div>
+      )}
+    </Surface>
+  );
+}
+
+export function BookingsPage({ initialTab = 'renting' }: { initialTab?: 'renting' | 'lending' }) {
+  const { route, navigate } = useRouter();
+  const [rentingAttention, setRentingAttention] = useState(0);
+  const [lendingRequests, setLendingRequests] = useState(0);
+  const tab = route.name === 'owner-dashboard' ? 'lending'
+    : route.name === 'renter-dashboard' ? 'renting'
+      : route.name === 'dashboard' ? route.tab ?? initialTab : initialTab;
+
+  function selectTab(nextTab: 'renting' | 'lending') {
+    navigate({ name: 'dashboard', tab: nextTab });
+  }
+
+  return (
+    <div className="pb-20 md:pb-10">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-9">
+        <SectionHeader as="h1" title="Bookings" subtitle="Your rentals and the items you lend, in one place." className="mb-5" />
+        <div className="grid grid-cols-2 gap-1 p-1 rounded-card-lg bg-subtle" role="tablist" aria-label="Booking activity">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'renting'}
+            onClick={() => selectTab('renting')}
+            className={`h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${tab === 'renting' ? 'bg-card text-main shadow-xs' : 'text-sec hover:text-main'}`}
+          >
+            Renting
+            {rentingAttention > 0 && <span className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-warning-soft px-1.5 py-0.5 text-xs font-bold text-warning tnum">{rentingAttention}</span>}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'lending'}
+            onClick={() => selectTab('lending')}
+            className={`h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${tab === 'lending' ? 'bg-card text-main shadow-xs' : 'text-sec hover:text-main'}`}
+          >
+            Lending
+            {lendingRequests > 0 && <span className="ml-2 text-xs font-semibold text-accent tnum">· {lendingRequests} {lendingRequests === 1 ? 'request' : 'requests'}</span>}
+          </button>
+        </div>
+      </div>
+      <div role="tabpanel" aria-label="Renting" hidden={tab !== 'renting'}>
+        <RenterDashboard onAttentionCount={setRentingAttention} />
+      </div>
+      <div role="tabpanel" aria-label="Lending" hidden={tab !== 'lending'}>
+        <OwnerDashboard onRequestCount={setLendingRequests} />
+      </div>
+    </div>
+  );
+}
+
+export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (count: number) => void } = {}) {
   const { navigate } = useRouter();
-  const { user, roleState, setActiveRole } = useAuth();
+  const { user } = useAuth();
   const [bookings, setBookings] = useState<UiBooking[] | null>(null);
-  const [tab, setTab] = useState<'upcoming' | 'active' | 'past' | 'claims'>('upcoming');
+  const [tab, setTab] = useState<'requests' | 'upcoming' | 'active' | 'past' | 'claims'>('requests');
   const [actionError, setActionError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reviewedBookingIds, setReviewedBookingIds] = useState<Set<string>>(new Set());
   const [reviewTarget, setReviewTarget] = useState<UiBooking | null>(null);
   const [trustScore, setTrustScore] = useState<{ rating: number; count: number } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   function reload() {
     if (!user) return;
@@ -61,62 +204,45 @@ export function RenterDashboard() {
 
   useEffect(reload, [user]);
 
-  const upcoming = (bookings ?? []).filter((b) => REQUESTED_STATUSES.includes(b.status));
-  const active = (bookings ?? []).filter((b) => b.status === 'active' || b.status === 'return_pending');
-  const past = (bookings ?? []).filter((b) => PAST_STATUSES.includes(b.status));
-  const myClaims = claims;
+  const all = useMemo(() => bookings ?? [], [bookings]);
+  const requests = all.filter((b) => b.status === 'requested' || b.status === 'pending_payment');
+  const upcoming = all.filter((b) => b.status === 'confirmed');
+  const active = all.filter((b) => b.status === 'active' || b.status === 'return_pending');
+  const past = all.filter((b) => PAST_STATUSES.includes(b.status));
+  const tabData = { requests, upcoming, active, past, claims: [] as UiBooking[] }[tab];
+  const sectionCounts = { requests: requests.length, upcoming: upcoming.length, active: active.length, past: past.length };
 
-  const tabData = { upcoming, active, past, claims: [] }[tab];
+  // Everything that is waiting on the renter, surfaced before the tab lists.
+  const needsAttention = useMemo(() => [
+    ...all.filter((b) => b.status === 'pending_payment').map((b) => ({ booking: b, kind: 'pay' as const })),
+    ...all.filter((b) => b.status === 'confirmed').map((b) => ({ booking: b, kind: 'checkin' as const })),
+    ...all.filter((b) => b.status === 'active').map((b) => ({ booking: b, kind: 'return' as const })),
+    ...all.filter((b) => b.status === 'completed' && !reviewedBookingIds.has(b.id)).map((b) => ({ booking: b, kind: 'review' as const })),
+  ], [all, reviewedBookingIds]);
 
-  async function handleCancel(bookingId: string) {
+  useEffect(() => { onAttentionCount?.(needsAttention.length); }, [onAttentionCount, needsAttention.length]);
+
+  async function run(bookingId: string, fn: () => Promise<void>, fallback: string) {
     setActionError(null);
-    try {
-      await cancelBooking(bookingId);
-      reload();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not cancel this booking.');
-    }
+    setBusyId(bookingId);
+    try { await fn(); } catch (err) { setActionError(err instanceof Error ? err.message : fallback); }
+    finally { setBusyId(null); }
   }
 
-  async function handleStartCheckIn(bookingId: string, listingId: string) {
-    setActionError(null);
-    try {
-      await markBookingActive(bookingId);
-      navigate({ name: 'check-in', id: listingId });
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not start check-in.');
-    }
-  }
-
-  async function handleStartReturn(bookingId: string) {
-    setActionError(null);
-    try {
-      await startBookingReturn(bookingId);
-      navigate({ name: 'check-out', id: bookingId });
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not start the return.');
-    }
-  }
-
-  async function handlePayNow(bookingId: string) {
-    setActionError(null);
-    try {
-      const url = await createCheckoutSession(bookingId);
-      window.location.href = url;
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not start checkout.');
-    }
-  }
+  const handleCancel = (id: string) => run(id, async () => { await cancelBooking(id); reload(); }, 'Could not cancel this booking.');
+  const handleStartCheckIn = (id: string, listingId: string) =>
+    run(id, async () => { await markBookingActive(id); navigate({ name: 'check-in', id: listingId }); }, 'Could not start check-in.');
+  const handleStartReturn = (id: string) =>
+    run(id, async () => { await startBookingReturn(id); navigate({ name: 'check-out', id }); }, 'Could not start the return.');
+  const handlePayNow = (id: string) =>
+    run(id, async () => { window.location.href = await createCheckoutSession(id); }, 'Could not start checkout.');
 
   async function handleMessage(counterpartId: string, listingId: string, bookingId: string) {
     if (!user) return;
-    setActionError(null);
-    try {
+    await run(bookingId, async () => {
       const conversationId = await getOrCreateConversation({ currentUserId: user.id, otherUserId: counterpartId, listingId, bookingId });
       navigate({ name: 'conversation', id: conversationId });
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not open the conversation.');
-    }
+    }, 'Could not open the conversation.');
   }
 
   async function handleSubmitReview(rating: number, body: string) {
@@ -127,203 +253,212 @@ export function RenterDashboard() {
   }
 
   return (
-    <div className="animate-fade-in pb-20 md:pb-8">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-main font-display">My rentals</h1>
-            <p className="text-sec text-sm mt-1">Manage your bookings and returns</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {roleState?.isMultiRole && (
-              <button
-                onClick={() => { setActiveRole('owner'); navigate({ name: 'dashboard' }); }}
-                className="px-3 py-2 rounded-card-lg border border-app text-sm font-medium text-sec hover:bg-subtle"
-              >
-                Owner view
-              </button>
-            )}
-            <button
-              onClick={() => navigate({ name: 'search' })}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-card-lg bg-accent text-accent-text text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
-              Find something <ArrowRight size={16} />
-            </button>
-          </div>
-        </div>
+    <div className="animate-fade-in pb-20 md:pb-10">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+        {actionError && <Alert tone="error" className="mb-4">{actionError}</Alert>}
+        {loadError && <Alert tone="warning" className="mb-4">{loadError}</Alert>}
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        {/* Attention first - the dashboard's real job */}
+        {bookings === null ? (
+          <div className="grid gap-2 mb-6"><Skeleton className="h-16 w-full" rounded="rounded-card-lg" /></div>
+        ) : needsAttention.length > 0 && (
+          <section className="mb-7">
+            <h2 className="flex items-center gap-2 text-sm font-bold text-main mb-2.5">
+              <Bell size={15} className="text-accent" />
+              Needs your attention
+              <span className="tnum text-sec font-semibold">({needsAttention.length})</span>
+            </h2>
+            <div className="space-y-2">
+              {needsAttention.map(({ booking, kind }) => (
+                <AttentionRow
+                  key={`${kind}-${booking.id}`}
+                  image={booking.listingImage}
+                  title={booking.listingTitle}
+                  detail={
+                    kind === 'pay' ? 'Approved - pay to confirm your dates'
+                      : kind === 'checkin' ? `Pick up ${formatRange(booking.startDate, booking.endDate)}`
+                      : kind === 'return' ? `Due back ${formatRange(booking.startDate, booking.endDate)}`
+                      : `Rented from ${booking.counterpartName}`
+                  }
+                  action={
+                    kind === 'pay' ? (
+                      <Button size="sm" icon={<CreditCard size={15} />} loading={busyId === booking.id} onClick={() => void handlePayNow(booking.id)}>
+                        Pay ${booking.total}
+                      </Button>
+                    ) : kind === 'checkin' ? (
+                      <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id, booking.listingId)}>
+                        Start check-in
+                      </Button>
+                    ) : kind === 'return' ? (
+                      <Button size="sm" variant="secondary" loading={busyId === booking.id} onClick={() => void handleStartReturn(booking.id)}>
+                        Start return
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="secondary" icon={<Star size={15} />} onClick={() => setReviewTarget(booking)}>
+                        Review
+                      </Button>
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-7">
           <StatCard icon={Calendar} label="Upcoming" value={upcoming.length} />
-          <StatCard icon={Clock} label="Active" value={active.length} />
+          <StatCard icon={Package} label="Active now" value={active.length} />
           <StatCard icon={CheckCircle2} label="Completed" value={past.filter((b) => b.status === 'completed').length} />
-          <StatCard icon={Shield} label="Trust score" value={trustScore === null ? '…' : trustScore.count > 0 ? `${trustScore.rating.toFixed(1)}★` : 'New'} />
+          <StatCard
+            icon={Star}
+            label="Your rating"
+            value={trustScore === null ? '…' : trustScore.count > 0 ? `${trustScore.rating.toFixed(1)}★` : 'New'}
+          />
         </div>
 
-        {/* Tabs */}
-        <div className="flex items-center gap-1 mb-4 overflow-x-auto no-scrollbar">
-          {(['upcoming', 'active', 'past', ...(SHOW_OUT_OF_SCOPE_PAGES ? ['claims' as const] : [])] as const).map((t) => (
+        <div className="flex items-center gap-1 mb-4 p-1 rounded-card-lg bg-subtle w-fit max-w-full overflow-x-auto no-scrollbar">
+          {(['requests', 'upcoming', 'active', 'past', ...(SHOW_OUT_OF_SCOPE_PAGES ? ['claims' as const] : [])] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-card-lg text-sm font-medium capitalize transition-colors whitespace-nowrap ${
-                tab === t ? 'bg-accent text-accent-text' : 'text-sec hover:bg-subtle'
+              aria-pressed={tab === t}
+              className={`h-9 px-4 rounded-full text-sm font-semibold capitalize whitespace-nowrap transition-colors duration-fast ${
+                tab === t ? 'bg-card text-main shadow-xs' : 'text-sec hover:text-main'
               }`}
             >
-              {t} {t === 'claims' && myClaims.length > 0 && `(${myClaims.length})`}
+              <span className="capitalize">{t}</span>
+              {t !== 'claims' && sectionCounts[t] > 0 && <span className="ml-1.5 text-xs tnum">{sectionCounts[t]}</span>}
+              {t === 'claims' && claims.length > 0 && ` (${claims.length})`}
             </button>
           ))}
         </div>
 
-        {actionError && (
-          <div className="p-3 rounded-card-lg bg-warning-soft border border-app text-sm text-warning mb-4">{actionError}</div>
-        )}
-        {loadError && (
-          <div className="p-3 rounded-card-lg bg-warning-soft border border-app text-sm text-warning mb-4">{loadError}</div>
-        )}
-
-        {/* Content */}
         {bookings === null ? (
           <BookingListSkeleton count={3} />
         ) : tab === 'claims' ? (
-          <div className="space-y-3">
-            {myClaims.map((claim) => (
-              <button
-                key={claim.id}
-                onClick={() => navigate({ name: 'claim-detail', id: claim.id })}
-                className="w-full flex items-center gap-4 p-4 rounded-card-xl bg-card border border-app hover:shadow-card card-hover text-left"
-              >
-                <div className={`w-12 h-12 rounded-card-lg flex items-center justify-center shrink-0 ${
-                  claim.status === 'under-review' ? 'bg-warning-soft' : 'bg-success-soft'
-                }`}>
-                  <AlertCircle size={22} className={claim.status === 'under-review' ? 'text-warning' : 'text-success'} />
-                </div>
+          <div className="space-y-2.5">
+            {claims.map((claim) => (
+              <Surface key={claim.id} interactive className="p-4 flex items-center gap-4" onClick={() => navigate({ name: 'claim-detail', id: claim.id })}>
+                <span className={`grid place-items-center w-11 h-11 rounded-card shrink-0 ${claim.status === 'under-review' ? 'bg-warning-soft' : 'bg-success-soft'}`}>
+                  <AlertCircle size={20} className={claim.status === 'under-review' ? 'text-warning' : 'text-success'} />
+                </span>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm text-main">Claim #{claim.id}</p>
-                  <p className="text-xs text-sec truncate">{claim.listingTitle} — {claim.issue}</p>
-                  <p className="text-xs text-muted mt-0.5">{claim.date}</p>
+                  <p className="text-xs text-sec truncate">{claim.listingTitle} - {claim.issue}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold text-main">${claim.amount}</p>
-                  <p className={`text-xs ${claim.status === 'under-review' ? 'text-warning' : 'text-success'}`}>
+                  <p className="text-sm font-semibold text-main tnum">${claim.amount}</p>
+                  <Badge tone={claim.status === 'under-review' ? 'warning' : 'success'}>
                     {claim.status === 'under-review' ? 'Under review' : 'Resolved'}
-                  </p>
+                  </Badge>
                 </div>
-                <ChevronRight size={18} className="text-muted shrink-0" />
-              </button>
+              </Surface>
             ))}
           </div>
+        ) : tabData.length === 0 ? (
+          <EmptyState
+            icon={tab === 'past' ? <CheckCircle2 size={20} /> : <Search size={20} />}
+            title={
+              tab === 'requests' ? 'No rental requests'
+                : tab === 'upcoming' ? 'No upcoming rentals'
+                : tab === 'active' ? 'Nothing out on rental right now'
+                : 'No past rentals yet'
+            }
+            description={
+              tab === 'requests' ? 'Requests you send and payments waiting on you will appear here.'
+                : tab === 'upcoming' ? 'Confirmed pickups will appear here.'
+                : tab === 'active' ? 'Rentals move here once you have checked the item in.'
+                : 'Completed and cancelled rentals are kept here for your records.'
+            }
+            actionLabel={tab === 'past' ? undefined : 'Browse rentals'}
+            onAction={tab === 'past' ? undefined : () => navigate({ name: 'search' })}
+          />
         ) : (
-          <div className="space-y-3 animate-cross-fade">
-            {tabData.length === 0 ? (
-              <div className="text-center py-16">
-                <p className="text-sec">No {tab} rentals yet.</p>
-              </div>
-            ) : (
-              tabData.map((booking) => (
-                <div key={booking.id} className="p-4 rounded-card-xl bg-card border border-app">
-                  <div className="flex gap-4">
-                    <img src={booking.listingImage} alt="" className="w-20 h-20 rounded-card-lg object-cover shrink-0 cursor-pointer" onClick={() => navigate({ name: 'listing', id: booking.listingId })} />
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-main cursor-pointer hover:text-accent" onClick={() => navigate({ name: 'listing', id: booking.listingId })}>
-                        {booking.listingTitle}
-                      </h3>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-sec">
-                        <Calendar size={13} /> {booking.startDate} → {booking.endDate}
-                      </div>
-                      <p className="text-xs text-sec mt-1">{STATUS_LABEL[booking.status]}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="font-bold text-main">${booking.total}</p>
-                      <button
-                        onClick={() => navigate({ name: 'confirmation', id: booking.id })}
-                        className="mt-2 text-xs font-medium text-accent hover:underline"
-                      >
-                        View rental →
-                      </button>
-                      <button
-                        onClick={() => handleMessage(booking.counterpartId, booking.listingId, booking.id)}
-                        className="mt-1 block text-xs font-medium text-sec hover:text-main hover:underline"
-                      >
-                        Message
-                      </button>
-                    </div>
-                  </div>
-                  {tab === 'upcoming' && (
-                    <div className="mt-3 pt-3 border-t border-app flex items-center gap-2">
-                      {booking.status === 'pending_payment' && (
-                        <button
-                          onClick={() => handlePayNow(booking.id)}
-                          className="flex-1 py-2 rounded-card-lg bg-accent text-accent-text text-xs font-semibold"
-                        >
-                          Pay now
-                        </button>
-                      )}
-                      {booking.status === 'confirmed' && (
-                        <button
-                          onClick={() => handleStartCheckIn(booking.id, booking.listingId)}
-                          className="flex-1 py-2 rounded-card-lg bg-accent text-accent-text text-xs font-semibold"
-                        >
-                          Start check-in
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleCancel(booking.id)}
-                        className="px-4 py-2 rounded-card-lg border border-app text-xs font-medium text-sec hover:bg-subtle transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-                  {tab === 'active' && booking.status === 'active' && (
-                    <div className="mt-3 pt-3 border-t border-app">
-                      <button
-                        onClick={() => handleStartReturn(booking.id)}
-                        className="w-full py-2 rounded-card-lg bg-accent text-accent-text text-xs font-semibold"
-                      >
-                        Start return
-                      </button>
-                    </div>
-                  )}
-                  {tab === 'past' && booking.status === 'completed' && !reviewedBookingIds.has(booking.id) && (
-                    <div className="mt-3 pt-3 border-t border-app">
-                      <button
-                        onClick={() => setReviewTarget(booking)}
-                        className="flex items-center gap-1.5 py-2 px-3 rounded-card-lg border border-app text-xs font-semibold text-main hover:bg-subtle transition-colors"
-                      >
-                        <Star size={14} /> Leave a review
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
+          <div className="space-y-2.5 animate-cross-fade">
+            {tabData.map((booking) => (
+              <BookingRow
+                key={booking.id}
+                booking={booking}
+                onOpen={() => navigate({ name: 'listing', id: booking.listingId })}
+                onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}
+              >
+                <Button size="sm" variant="ghost" onClick={() => navigate({ name: 'confirmation', id: booking.id })}>
+                  View rental
+                </Button>
+                {booking.status === 'pending_payment' && (
+                  <Button size="sm" icon={<CreditCard size={15} />} loading={busyId === booking.id} onClick={() => void handlePayNow(booking.id)}>
+                    Pay now
+                  </Button>
+                )}
+                {booking.status === 'confirmed' && (
+                  <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id, booking.listingId)}>
+                    Start check-in
+                  </Button>
+                )}
+                {booking.status === 'active' && (
+                  <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartReturn(booking.id)}>
+                    Start return
+                  </Button>
+                )}
+                {REQUESTED_STATUSES.includes(booking.status) && (
+                  <Button size="sm" variant="danger" loading={busyId === booking.id} onClick={() => void handleCancel(booking.id)}>
+                    Cancel
+                  </Button>
+                )}
+                {booking.status === 'completed' && !reviewedBookingIds.has(booking.id) && (
+                  <Button size="sm" variant="secondary" icon={<Star size={15} />} onClick={() => setReviewTarget(booking)}>
+                    Leave a review
+                  </Button>
+                )}
+              </BookingRow>
+            ))}
           </div>
         )}
       </div>
+
       {reviewTarget && (
-        <ReviewModal
-          title={reviewTarget.listingTitle}
-          onSubmit={handleSubmitReview}
-          onClose={() => setReviewTarget(null)}
-        />
+        <ReviewModal title={reviewTarget.listingTitle} onSubmit={handleSubmitReview} onClose={() => setReviewTarget(null)} />
       )}
     </div>
   );
 }
 
-export function OwnerDashboard() {
+function AttentionRow({ image, title, detail, action }: {
+  image?: string; title: string; detail: string; action: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-card-lg bg-card border border-accent/35">
+      {image && <img src={image} alt="" className="w-11 h-11 rounded-card object-cover shrink-0 bg-subtle" />}
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-sm text-main truncate">{title}</p>
+        <p className="text-xs text-sec truncate">{detail}</p>
+      </div>
+      <div className="shrink-0">{action}</div>
+    </div>
+  );
+}
+
+export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: number) => void } = {}) {
   const { navigate } = useRouter();
-  const { user, roleState, setActiveRole } = useAuth();
+  const { user } = useAuth();
   const [bookings, setBookings] = useState<UiBooking[] | null>(null);
-  const [myListings, setMyListings] = useState<Listing[]>([]);
+  const [myListings, setMyListings] = useState<Listing[] | null>(null);
   const [payouts, setPayouts] = useState<Map<string, DbPayoutRow>>(new Map());
   const [actionError, setActionError] = useState<string | null>(null);
+  const [listingNotice, setListingNotice] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reviewedBookingIds, setReviewedBookingIds] = useState<Set<string>>(new Set());
   const [reviewTarget, setReviewTarget] = useState<UiBooking | null>(null);
   const [availabilityTarget, setAvailabilityTarget] = useState<Listing | null>(null);
+  const [availabilityListingId, setAvailabilityListingId] = useState('');
   const [availabilityDates, setAvailabilityDates] = useState<{ blocked: Set<string>; booked: Set<string> }>({ blocked: new Set(), booked: new Set() });
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [deletingListingId, setDeletingListingId] = useState<string | null>(null);
+  const [selectingListings, setSelectingListings] = useState(false);
+  const [selectedListingIds, setSelectedListingIds] = useState<Set<string>>(new Set());
+  const [removalTarget, setRemovalTarget] = useState<Listing[] | null>(null);
+  const [removingListings, setRemovingListings] = useState(false);
+  const [removalError, setRemovalError] = useState<string | null>(null);
 
   function reload() {
     if (!user) return;
@@ -333,35 +468,105 @@ export function OwnerDashboard() {
       const completedIds = rows.filter((b) => b.status === 'completed').map((b) => b.id);
       fetchReviewedBookingIds(user.id, completedIds).then(setReviewedBookingIds).catch(() => {});
     }).catch((err: unknown) => { setBookings([]); setLoadError(err instanceof Error ? err.message : 'Could not load your bookings.'); });
-    fetchListingsByOwner(user.id).then((rows) => setMyListings(rows.map(toUiListing))).catch(() => {});
+    fetchListingsByOwner(user.id).then((rows) => {
+      const listings = rows.map(toUiListing);
+      setMyListings(listings);
+      setAvailabilityListingId((current) => current || listings[0]?.id || '');
+    }).catch(() => setMyListings([]));
     fetchPayoutsByOwner(user.id).then(setPayouts).catch(() => {});
   }
 
   useEffect(reload, [user]);
 
-  const pending = (bookings ?? []).filter((b) => b.status === 'requested');
-  const upcomingOrActive = (bookings ?? []).filter((b) => ['pending_payment', 'confirmed', 'active', 'return_pending'].includes(b.status));
-  const completed = (bookings ?? []).filter((b) => b.status === 'completed');
+  const all = useMemo(() => bookings ?? [], [bookings]);
+  const pending = all.filter((b) => b.status === 'requested');
+  const upcomingRentals = all.filter((b) => b.status === 'pending_payment' || b.status === 'confirmed');
+  const activeRentals = all.filter((b) => b.status === 'active' || b.status === 'return_pending');
+  const pastRentals = all.filter((b) => PAST_STATUSES.includes(b.status));
 
-  async function handleRespond(bookingId: string, approve: boolean) {
+  useEffect(() => { onRequestCount?.(pending.length); }, [onRequestCount, pending.length]);
+
+  // Earnings are the owner's share (subtotal), never the renter-facing total.
+  const earned = useMemo(
+    () => all.filter((b) => PAID_OUT_ELIGIBLE_STATUSES.includes(b.status)).reduce((sum, b) => sum + b.subtotal, 0),
+    [all],
+  );
+  const paidOut = useMemo(
+    () => [...payouts.values()].filter((p) => p.status === 'paid').reduce((sum, p) => sum + Number(p.amount), 0),
+    [payouts],
+  );
+
+  async function run(id: string, fn: () => Promise<void>, fallback: string) {
     setActionError(null);
-    try {
-      await respondToBookingRequest(bookingId, approve);
-      reload();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not respond to this request.');
+    setBusyId(id);
+    try { await fn(); } catch (err) { setActionError(err instanceof Error ? err.message : fallback); }
+    finally { setBusyId(null); }
+  }
+
+  const handleRespond = (id: string, approve: boolean) =>
+    run(id, async () => { await respondToBookingRequest(id, approve); reload(); }, 'Could not respond to this request.');
+  const handleMarkReturned = (id: string) =>
+    run(id, async () => { await completeBookingReturn(id); reload(); }, 'Could not complete this return.');
+
+  function toggleListingSelection(id: string) {
+    setSelectedListingIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function closeRemoval() {
+    if (removingListings) return;
+    setRemovalTarget(null);
+    setRemovalError(null);
+  }
+
+  async function handleDeleteListings() {
+    if (!user || !removalTarget || removingListings) return;
+    setActionError(null);
+    setListingNotice(null);
+    setRemovalError(null);
+    setRemovingListings(true);
+    const failed: Listing[] = [];
+    const failureReasons: string[] = [];
+    const succeededIds: string[] = [];
+    let archived = 0;
+    let removed = 0;
+    for (const listing of removalTarget) {
+      setDeletingListingId(listing.id);
+      try {
+        const result = await deleteOwnerListing(user.id, listing.id);
+        if (result === 'archived') archived += 1; else removed += 1;
+        succeededIds.push(listing.id);
+        setMyListings((current) => current?.filter((item) => item.id !== listing.id) ?? []);
+        setSelectedListingIds((current) => {
+          const next = new Set(current);
+          next.delete(listing.id);
+          return next;
+        });
+      } catch (err) {
+        failed.push(listing);
+        failureReasons.push(err instanceof Error ? err.message : 'Could not remove this listing.');
+      }
     }
+    setDeletingListingId(null);
+    setRemovingListings(false);
+    setAvailabilityListingId((current) => succeededIds.includes(current)
+      ? myListings?.find((item) => !succeededIds.includes(item.id))?.id ?? ''
+      : current);
+    if (removed || archived) setListingNotice(`${removed} removed${archived ? `, ${archived} archived` : ''}.`);
+    if (failed.length) setRemovalError(`${failed.length} ${failed.length === 1 ? 'listing' : 'listings'} could not be removed. ${failureReasons[0]}`);
+    setRemovalTarget(failed.length ? failed : null);
+    if (!failed.length) setSelectingListings(false);
   }
 
   async function handleMessage(counterpartId: string, listingId: string, bookingId: string) {
     if (!user) return;
-    setActionError(null);
-    try {
+    await run(bookingId, async () => {
       const conversationId = await getOrCreateConversation({ currentUserId: user.id, otherUserId: counterpartId, listingId, bookingId });
       navigate({ name: 'conversation', id: conversationId });
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not open the conversation.');
-    }
+    }, 'Could not open the conversation.');
   }
 
   async function handleSubmitReview(rating: number, body: string) {
@@ -373,29 +578,20 @@ export function OwnerDashboard() {
 
   async function handleMarkPaidOut(booking: UiBooking) {
     if (!user) return;
-    setActionError(null);
-    try {
+    await run(booking.id, async () => {
       await markBookingPaidOut(booking.id, user.id, booking.subtotal);
-      const rows = await fetchPayoutsByOwner(user.id);
-      setPayouts(rows);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not record this payout.');
-    }
-  }
-
-  async function handleMarkReturned(bookingId: string) {
-    setActionError(null);
-    try {
-      await completeBookingReturn(bookingId);
-      reload();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not complete this return.');
-    }
+      setPayouts(await fetchPayoutsByOwner(user.id));
+    }, 'Could not record this payout.');
   }
 
   function handleOpenAvailability(listing: Listing) {
     setAvailabilityTarget(listing);
     fetchUnavailableDates(listing.id).then(setAvailabilityDates).catch(() => {});
+  }
+
+  function handleOpenSelectedAvailability() {
+    const listing = myListings?.find((item) => item.id === availabilityListingId);
+    if (listing) handleOpenAvailability(listing);
   }
 
   async function handleToggleAvailabilityDate(date: string) {
@@ -418,264 +614,320 @@ export function OwnerDashboard() {
     }
   }
 
-
   return (
-    <div className="animate-fade-in pb-20 md:pb-8">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-main font-display">Owner dashboard</h1>
-            <p className="text-sec text-sm mt-1">Manage your items, rentals, and earnings</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {roleState?.isMultiRole && (
-              <button
-                onClick={() => { setActiveRole('renter'); navigate({ name: 'dashboard' }); }}
-                className="px-3 py-2 rounded-card-lg border border-app text-sm font-medium text-sec hover:bg-subtle"
-              >
-                Renter view
-              </button>
-            )}
-            <button
-              onClick={() => navigate({ name: 'create-listing' })}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-card-lg bg-accent text-accent-text text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
-              <Plus size={16} /> List an item
-            </button>
-          </div>
-        </div>
+    <div className="animate-fade-in pb-20 md:pb-10">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+        {actionError && <Alert tone="error" className="mb-4">{actionError}</Alert>}
+        {listingNotice && <Alert tone="success" className="mb-4">{listingNotice}</Alert>}
+        {loadError && <Alert tone="warning" className="mb-4">{loadError}</Alert>}
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <StatCard icon={Package} label="Your items" value={myListings.length} />
-          <StatCard icon={Calendar} label="Upcoming" value={upcomingOrActive.length} />
-          <StatCard icon={Inbox} label="Pending requests" value={pending.length} highlight={pending.length > 0} />
-          <StatCard icon={AlertCircle} label="Open claims" value={0} />
-        </div>
-
-        {actionError && (
-          <div className="p-3 rounded-card-lg bg-warning-soft border border-app text-sm text-warning mb-4">{actionError}</div>
-        )}
-        {loadError && (
-          <div className="p-3 rounded-card-lg bg-warning-soft border border-app text-sm text-warning mb-4">{loadError}</div>
-        )}
-
-        {/* Pending requests */}
-        <div className="mb-6">
-          <h2 className="text-lg font-bold text-main font-display mb-3">Pending requests</h2>
-          <div className="space-y-3 animate-cross-fade">
-            {bookings === null ? (
-              <BookingRowSkeleton />
-            ) : pending.length === 0 ? (
-              <p className="text-sec text-sm">No pending requests.</p>
-            ) : (
-              pending.map((booking) => (
-                <div key={booking.id} className="p-4 rounded-card-xl bg-card border border-app">
+        {/* Requests waiting on the owner */}
+        <section className="mb-7">
+          <h2 className="flex items-center gap-2 text-sm font-bold text-main mb-2.5">
+            <Inbox size={15} className="text-accent" />
+            Incoming requests
+            {pending.length > 0 && <span className="tnum text-sec font-semibold">({pending.length})</span>}
+          </h2>
+          {bookings === null ? (
+            <BookingRowSkeleton />
+          ) : pending.length === 0 ? (
+            <p className="text-sm text-sec">Nothing needs a decision right now.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {pending.map((booking) => (
+                <Surface key={booking.id} className="p-4">
                   <div className="flex items-start gap-3">
                     {booking.counterpartAvatar && (
-                      <img src={booking.counterpartAvatar} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
+                      <img src={booking.counterpartAvatar} alt="" className="w-11 h-11 rounded-full object-cover shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm">
-                          <span className="font-semibold text-main">{booking.counterpartName}</span>
-                          <span className="text-sec"> wants to rent your </span>
-                          <span className="font-semibold text-main">{booking.listingTitle}</span>
-                        </p>
-                        <span className="font-bold text-main shrink-0">${booking.total}</span>
-                      </div>
-                      <p className="text-xs text-sec mt-1">{booking.startDate} → {booking.endDate}</p>
+                      <p className="text-sm text-sec">
+                        <span className="font-semibold text-main">{booking.counterpartName}</span> wants to rent your{' '}
+                        <span className="font-semibold text-main">{booking.listingTitle}</span>
+                      </p>
+                      <p className="flex items-center gap-1.5 text-xs text-sec mt-1.5">
+                        <Calendar size={13} /> {formatRange(booking.startDate, booking.endDate)}
+                        <span className="text-muted">·</span>
+                        <span className="tnum">You earn ${booking.subtotal}</span>
+                      </p>
                     </div>
+                    <p className="font-bold text-main shrink-0 tnum">${booking.total}</p>
                   </div>
-                  <div className="flex gap-2 mt-3 pt-3 border-t border-app">
-                    <button
-                      onClick={() => handleRespond(booking.id, true)}
-                      className="flex-1 py-2 rounded-card-lg bg-success text-white text-xs font-semibold hover:opacity-90 transition-opacity"
-                    >
-                      Accept
-                    </button>
-                    <button
-                      onClick={() => handleRespond(booking.id, false)}
-                      className="flex-1 py-2 rounded-card-lg border border-app text-xs font-medium text-sec hover:bg-subtle transition-colors"
-                    >
+                  <div className="flex flex-wrap gap-2 mt-3.5 pt-3.5 border-t border-app">
+                    <Button size="sm" variant="success" loading={busyId === booking.id} onClick={() => void handleRespond(booking.id, true)}>
+                      Accept request
+                    </Button>
+                    <Button size="sm" variant="secondary" loading={busyId === booking.id} onClick={() => void handleRespond(booking.id, false)}>
                       Decline
-                    </button>
-                    <button
-                      onClick={() => handleMessage(booking.counterpartId, booking.listingId, booking.id)}
-                      className="px-4 py-2 rounded-card-lg border border-app text-xs font-medium text-sec hover:bg-subtle transition-colors"
-                    >
+                    </Button>
+                    <Button size="sm" variant="ghost" icon={<MessageSquare size={15} />} onClick={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
                       Message
-                    </button>
+                    </Button>
                   </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Your items */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold text-main font-display">Your items</h2>
-            <button onClick={() => navigate({ name: 'create-listing' })} className="text-sm text-accent font-medium flex items-center gap-1">
-              <Plus size={15} /> Add item
-            </button>
-          </div>
-          {myListings.length === 0 ? (
-            <p className="text-sec text-sm">You haven't listed anything yet.</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {myListings.map((listing) => (
-                <div key={listing.id} className="flex gap-3 p-3 rounded-card-xl bg-card border border-app card-hover">
-                  <img src={listing.images[0]} alt="" className="w-20 h-20 rounded-card-lg object-cover shrink-0 cursor-pointer" onClick={() => navigate({ name: 'listing', id: listing.id })} />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm text-main line-clamp-1 cursor-pointer" onClick={() => navigate({ name: 'listing', id: listing.id })}>{listing.title}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Rating value={listing.rating} size="sm" />
-                      <span className="text-xs text-sec">{listing.rentalCount} rentals</span>
-                    </div>
-                    <div className="flex items-center justify-between mt-2">
-                      <span className="font-bold text-main text-sm">${listing.pricePerDay}<span className="text-xs text-sec font-normal">/day</span></span>
-                      <span className={`text-xs font-medium ${listing.available ? 'text-success' : 'text-muted'}`}>
-                        {listing.available ? 'Available' : 'Booked'}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => handleOpenAvailability(listing)}
-                      className="mt-2 flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
-                    >
-                      <CalendarCog size={13} /> Manage availability
-                    </button>
-                  </div>
-                </div>
+                </Surface>
               ))}
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Upcoming rentals */}
-        <div>
-          <h2 className="text-lg font-bold text-main font-display mb-3">Upcoming rentals</h2>
-          <div className="space-y-2">
-            {upcomingOrActive.length === 0 ? (
-              <p className="text-sec text-sm">No upcoming rentals yet.</p>
-            ) : (
-              upcomingOrActive.map((booking) => (
-                <div key={booking.id} className="flex items-center gap-3 p-3 rounded-card-lg bg-card border border-app">
-                  <img src={booking.listingImage} alt="" className="w-12 h-12 rounded-card object-cover shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-main line-clamp-1">{booking.listingTitle}</p>
-                    <p className="text-xs text-sec">{booking.startDate} → {booking.endDate}</p>
-                  </div>
-                  <span className="text-sm font-semibold text-main shrink-0">${booking.total}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
-                    booking.status === 'active' ? 'bg-success-soft text-success' : 'bg-accent-soft text-accent'
-                  }`}>
-                    {STATUS_LABEL[booking.status]}
-                  </span>
-                  {booking.status === 'return_pending' && (
-                    <button
-                      onClick={() => void handleMarkReturned(booking.id)}
-                      className="px-3 py-1.5 rounded-card-lg bg-accent text-accent-text text-xs font-semibold hover:opacity-90 transition-opacity shrink-0"
-                    >
-                      Mark returned
-                    </button>
-                  )}
+        {(upcomingRentals.length > 0 || myListings === null || (myListings?.length ?? 0) > 0) && <section className="mb-8">
+          <SectionHeader as="h3" title="Upcoming rentals" className="mb-3" />
+          {upcomingRentals.length === 0 ? <p className="text-sm text-sec">No upcoming rentals.</p> : (
+            <div className="space-y-2.5">
+              {upcomingRentals.map((booking) => (
+                <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
                   <PayoutControl booking={booking} payout={payouts.get(booking.id)} onMarkPaidOut={handleMarkPaidOut} />
-                  <button
-                    onClick={() => handleMessage(booking.counterpartId, booking.listingId, booking.id)}
-                    className="text-xs font-medium text-sec hover:text-main hover:underline shrink-0"
-                  >
-                    Message
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Completed rentals */}
-        {completed.length > 0 && (
-          <div>
-            <h2 className="text-lg font-bold text-main font-display mb-3">Completed rentals</h2>
-            <div className="space-y-2">
-              {completed.map((booking) => (
-                <div key={booking.id} className="flex items-center gap-3 p-3 rounded-card-lg bg-card border border-app">
-                  <img src={booking.listingImage} alt="" className="w-12 h-12 rounded-card object-cover shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-main line-clamp-1">{booking.listingTitle}</p>
-                    <p className="text-xs text-sec">{booking.startDate} → {booking.endDate} · {booking.counterpartName}</p>
-                  </div>
-                  <PayoutControl booking={booking} payout={payouts.get(booking.id)} onMarkPaidOut={handleMarkPaidOut} />
-                  {!reviewedBookingIds.has(booking.id) && (
-                    <button
-                      onClick={() => setReviewTarget(booking)}
-                      className="flex items-center gap-1.5 py-1.5 px-3 rounded-card-lg border border-app text-xs font-semibold text-main hover:bg-subtle transition-colors shrink-0"
-                    >
-                      <Star size={13} /> Review
-                    </button>
-                  )}
-                </div>
+                </BookingRow>
               ))}
             </div>
-          </div>
-        )}
-      </div>
-      {reviewTarget && (
-        <ReviewModal
-          title={reviewTarget.counterpartName}
-          onSubmit={handleSubmitReview}
-          onClose={() => setReviewTarget(null)}
-        />
-      )}
-      {availabilityTarget && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setAvailabilityTarget(null)}>
-          <div className="bg-app w-full sm:max-w-md rounded-t-card-xl sm:rounded-card-xl p-5 max-h-[90vh] overflow-y-auto animate-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold text-main">Availability — {availabilityTarget.title}</h3>
-              <button onClick={() => setAvailabilityTarget(null)} className="p-1.5 rounded-full hover:bg-subtle text-sec"><X size={18} /></button>
+          )}
+        </section>}
+
+        {(activeRentals.length > 0 || myListings === null || (myListings?.length ?? 0) > 0) && <section className="mb-8">
+          <SectionHeader as="h3" title="Active rentals" className="mb-3" />
+          {activeRentals.length === 0 ? <p className="text-sm text-sec">No active rentals.</p> : (
+            <div className="space-y-2.5">
+              {activeRentals.map((booking) => (
+                <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
+                  {booking.status === 'return_pending' && <Button size="sm" loading={busyId === booking.id} onClick={() => void handleMarkReturned(booking.id)}>Mark returned</Button>}
+                  <PayoutControl booking={booking} payout={payouts.get(booking.id)} onMarkPaidOut={handleMarkPaidOut} />
+                </BookingRow>
+              ))}
             </div>
-            <AvailabilityCalendar
-              bookedDates={availabilityDates.booked}
-              blockedDates={availabilityDates.blocked}
-              editable
-              onToggleDate={handleToggleAvailabilityDate}
+          )}
+        </section>}
+
+        {(pastRentals.length > 0 || myListings === null || (myListings?.length ?? 0) > 0) && <section className="mb-8">
+          <SectionHeader as="h3" title="Past rentals" className="mb-3" />
+          {pastRentals.length === 0 ? <p className="text-sm text-sec">Past rentals will appear here.</p> : (
+            <div className="space-y-2.5">
+              {pastRentals.map((booking) => (
+                <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
+                  <PayoutControl booking={booking} payout={payouts.get(booking.id)} onMarkPaidOut={handleMarkPaidOut} />
+                  {booking.status === 'completed' && !reviewedBookingIds.has(booking.id) && (
+                    <Button size="sm" variant="secondary" icon={<Star size={15} />} onClick={() => setReviewTarget(booking)}>Review {booking.counterpartName.split(' ')[0]}</Button>
+                  )}
+                </BookingRow>
+              ))}
+            </div>
+          )}
+        </section>}
+
+        <section className="mb-8">
+          <SectionHeader
+            as="h3"
+            title="My listings"
+            className="mb-3"
+          />
+          {!!myListings?.length && (
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <Button size="sm" variant="secondary" onClick={() => {
+                setSelectingListings((current) => !current);
+                setSelectedListingIds(new Set());
+              }}>
+                {selectingListings ? 'Cancel selection' : 'Select listings'}
+              </Button>
+              {selectingListings && (
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedListingIds(new Set(myListings.map((item) => item.id)))}>
+                    Select all
+                  </Button>
+                  <Button size="sm" variant="danger" icon={<Trash2 size={14} />} disabled={selectedListingIds.size === 0} onClick={() => setRemovalTarget(myListings.filter((item) => selectedListingIds.has(item.id)))}>
+                    Remove selected ({selectedListingIds.size})
+                  </Button>
+                </>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => navigate({ name: 'create-listing' })} className="sm:ml-auto">
+                Add another item
+              </Button>
+            </div>
+          )}
+          {myListings === null ? (
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Skeleton className="h-28" rounded="rounded-card-lg" />
+              <Skeleton className="h-28" rounded="rounded-card-lg" />
+            </div>
+          ) : myListings.length === 0 ? (
+            <EmptyState
+              icon={<Package size={20} />}
+              title="Turn something you own into income."
+              description="List it, set the dates it is available, and approve each rental request."
+              actionLabel="List an item"
+              onAction={() => navigate({ name: 'create-listing' })}
             />
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-3">
+              {myListings.map((listing) => (
+                <Surface key={listing.id} className="p-3 flex gap-3.5">
+                  {selectingListings ? (
+                    <label className="relative w-20 h-20 rounded-card overflow-hidden shrink-0 bg-subtle cursor-pointer">
+                      <img src={listing.images[0]} alt="" className="w-full h-full object-cover" />
+                      <span className="absolute top-1 left-1 grid place-items-center w-8 h-8 rounded-card bg-card shadow-xs">
+                        <input type="checkbox" checked={selectedListingIds.has(listing.id)} onChange={() => toggleListingSelection(listing.id)} aria-label={`Select ${listing.title}`} className="w-5 h-5 accent-[var(--accent)] cursor-pointer" />
+                      </span>
+                    </label>
+                  ) : (
+                    <button onClick={() => navigate({ name: 'listing', id: listing.id })} className="w-20 h-20 rounded-card overflow-hidden shrink-0 bg-subtle" aria-label={`Open ${listing.title}`}>
+                      <img src={listing.images[0]} alt="" className="w-full h-full object-cover" />
+                    </button>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <button onClick={() => selectingListings ? toggleListingSelection(listing.id) : navigate({ name: 'listing', id: listing.id })} aria-pressed={selectingListings ? selectedListingIds.has(listing.id) : undefined} className="text-left w-full">
+                      <h4 className="font-semibold text-sm text-main font-display line-clamp-1 hover:text-accent transition-colors duration-fast">{listing.title}</h4>
+                    </button>
+                    <div className="flex items-center gap-2 mt-1"><Rating value={listing.rating} count={listing.reviewCount} size="sm" /></div>
+                    <div className="flex items-center justify-between gap-2 mt-2">
+                      <p className="font-bold text-main text-sm tnum">${listing.pricePerDay}<span className="text-xs text-sec font-medium">/day</span></p>
+                      <Badge tone={listing.available ? 'success' : 'neutral'}>{listing.available ? 'Published' : 'Draft'}</Badge>
+                    </div>
+                    {!selectingListings && (
+                      <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} className="mt-1.5 -ml-3.5 text-error hover:bg-error-soft" onClick={() => setRemovalTarget([listing])}>
+                        Remove listing
+                      </Button>
+                    )}
+                  </div>
+                </Surface>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {(myListings?.length ?? 0) > 0 && <section className="mb-8">
+          <SectionHeader as="h3" title="Availability" className="mb-3" />
+          {myListings === null ? (
+            <Skeleton className="h-11 w-full max-w-xl" />
+          ) : myListings.length > 0 ? (
+            <div className="flex flex-col sm:flex-row gap-2 max-w-xl">
+              <label className="sr-only" htmlFor="availability-listing">Choose a listing</label>
+              <select id="availability-listing" value={availabilityListingId} onChange={(e) => setAvailabilityListingId(e.target.value)} className="h-11 flex-1 px-3 rounded-card border border-app bg-card text-sm text-main">
+                {myListings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title}</option>)}
+              </select>
+              <Button icon={<CalendarCog size={15} />} onClick={handleOpenSelectedAvailability}>Manage dates</Button>
+            </div>
+          ) : (
+            <p className="text-sm text-sec">Create a listing to set its available dates.</p>
+          )}
+        </section>}
+
+        {(myListings?.length ?? 0) > 0 && <section className="mb-8">
+          <SectionHeader as="h3" title="Earnings" className="mb-3" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <StatCard icon={Wallet} label="Earned to date" value={`$${earned.toLocaleString()}`} />
+            <StatCard icon={CheckCircle2} label="Marked paid out" value={`$${paidOut.toLocaleString()}`} />
+            <StatCard icon={Calendar} label="Upcoming & active" value={upcomingRentals.length + activeRentals.length} />
           </div>
-        </div>
+          {paidOut > 0 && (
+            <Alert tone="success" className="mt-3">
+              <span className="tnum">${paidOut.toLocaleString()}</span> of <span className="tnum">${earned.toLocaleString()}</span> marked as paid out.
+            </Alert>
+          )}
+        </section>}
+      </div>
+
+      {reviewTarget && (
+        <ReviewModal title={reviewTarget.counterpartName} onSubmit={handleSubmitReview} onClose={() => setReviewTarget(null)} />
+      )}
+
+      {removalTarget && (
+        <Sheet title={removalTarget.length === 1 ? 'Remove listing' : `Remove ${removalTarget.length} listings`} onClose={closeRemoval} locked={removingListings}>
+          <p className="text-sm text-sec leading-relaxed break-words">
+            {removalTarget.length === 1 ? `Remove "${removalTarget[0].title}"?` : 'Remove the selected listings?'} Listings without rental history are permanently deleted. Listings with past rentals are archived. Current requests or rentals prevent removal.
+          </p>
+          {removalTarget.length > 1 && (
+            <ul className="mt-3 max-h-40 overflow-y-auto rounded-card border border-app divide-y divide-[var(--border)] text-sm text-main">
+              {removalTarget.map((listing) => <li key={listing.id} className="px-3 py-2 truncate">{listing.title}</li>)}
+            </ul>
+          )}
+          {removalError && <Alert tone="error" className="mt-4">{removalError}</Alert>}
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-5">
+            <Button variant="secondary" onClick={closeRemoval} disabled={removingListings}>Cancel</Button>
+            <Button variant="danger" icon={<Trash2 size={16} />} loading={removingListings} loadingLabel={deletingListingId ? 'Removing…' : undefined} onClick={() => void handleDeleteListings()}>
+              {removalTarget.length === 1 ? 'Remove listing' : `Remove ${removalTarget.length} listings`}
+            </Button>
+          </div>
+        </Sheet>
+      )}
+
+      {availabilityTarget && (
+        <Sheet title={`Availability - ${availabilityTarget.title}`} onClose={() => setAvailabilityTarget(null)}>
+          <p className="text-sm text-sec mb-3">Tap a date to block it. Booked dates are managed for you.</p>
+          <AvailabilityCalendar
+            bookedDates={availabilityDates.booked}
+            blockedDates={availabilityDates.blocked}
+            editable
+            onToggleDate={handleToggleAvailabilityDate}
+          />
+        </Sheet>
       )}
     </div>
   );
 }
 
-function PayoutControl({ booking, payout, onMarkPaidOut }: { booking: UiBooking; payout?: DbPayoutRow; onMarkPaidOut: (booking: UiBooking) => Promise<void>; }) {
+function PayoutControl({ booking, payout, onMarkPaidOut }: {
+  booking: UiBooking; payout?: DbPayoutRow; onMarkPaidOut: (booking: UiBooking) => Promise<void>;
+}) {
   const [submitting, setSubmitting] = useState(false);
   if (!PAID_OUT_ELIGIBLE_STATUSES.includes(booking.status)) return null;
   if (payout?.status === 'paid') {
     return (
-      <span className="flex items-center gap-1 text-xs font-medium text-success shrink-0">
-        <CheckCircle2 size={13} /> Paid out ${payout.amount}
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-success">
+        <CheckCircle2 size={14} /> Paid out ${payout.amount}
       </span>
     );
   }
   return (
-    <button
+    <Button
+      size="sm"
+      variant="ghost"
+      icon={<Wallet size={15} />}
+      loading={submitting}
+      loadingLabel="Recording…"
       onClick={async () => { setSubmitting(true); await onMarkPaidOut(booking); setSubmitting(false); }}
-      disabled={submitting}
-      className="flex items-center gap-1 text-xs font-medium text-accent hover:underline shrink-0 disabled:opacity-50"
     >
-      <DollarSign size={13} /> {submitting ? 'Marking…' : `Mark $${booking.subtotal} paid out`}
-    </button>
+      Mark ${booking.subtotal} paid out
+    </Button>
   );
 }
 
-function StatCard({ icon: Icon, label, value, highlight }: { icon: typeof Calendar; label: string; value: string | number; highlight?: boolean }) {
+/** Bottom sheet on mobile, centered dialog from `sm`. One implementation for both dashboards. */
+function Sheet({ title, onClose, children, locked = false }: { title: string; onClose: () => void; children: React.ReactNode; locked?: boolean }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => { if (previous?.isConnected) previous.focus(); };
+  }, []);
+
   return (
-    <div className={`p-4 rounded-card-xl border ${highlight ? 'bg-accent-soft border-accent' : 'bg-card border-app'}`}>
-      <Icon size={20} className={highlight ? 'text-accent' : 'text-sec'} />
-      <p className="text-2xl font-bold text-main mt-2">{value}</p>
-      <p className="text-xs text-sec">{label}</p>
-    </div>
+    <Overlay className="flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/45 animate-fade-in" onClick={locked ? undefined : onClose} aria-hidden="true" />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') { event.stopPropagation(); if (!locked) onClose(); return; }
+          if (event.key !== 'Tab') return;
+          const controls = dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]');
+          if (!controls?.length) return;
+          const first = controls[0];
+          const last = controls[controls.length - 1];
+          if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        }}
+        className="relative w-full sm:max-w-md bg-card rounded-t-card-xl sm:rounded-card-xl border border-app shadow-pop max-h-[88vh] overflow-y-auto animate-sheet sm:animate-modal"
+      >
+        <div className="sticky top-0 bg-card flex items-center justify-between gap-3 px-5 py-3.5 border-b border-app">
+          <h2 className="font-bold text-main font-display truncate">{title}</h2>
+          <button onClick={onClose} disabled={locked} aria-label="Close" className="grid place-items-center w-9 h-9 rounded-full hover:bg-subtle disabled:opacity-50 shrink-0">
+            <X size={18} className="text-sec" />
+          </button>
+        </div>
+        <div className="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">{children}</div>
+      </div>
+    </Overlay>
   );
 }
 
@@ -687,7 +939,7 @@ function ReviewModal({ title, onSubmit, onClose }: { title: string; onSubmit: (r
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit() {
-    if (rating === 0) { setError('Please select a rating.'); return; }
+    if (rating === 0) { setError('Choose a star rating first.'); return; }
     setSubmitting(true);
     setError(null);
     try {
@@ -699,41 +951,25 @@ function ReviewModal({ title, onSubmit, onClose }: { title: string; onSubmit: (r
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div
-        className="w-full sm:max-w-sm bg-card rounded-card-xl border border-app shadow-hover p-5 animate-modal"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-main">Review {title}</h3>
-          <button onClick={onClose} className="p-1 rounded-card hover:bg-subtle transition-colors">
-            <X size={18} className="text-sec" />
+    <Sheet title={`Review ${title}`} onClose={onClose}>
+      <div className="flex items-center justify-center gap-1.5 mb-5">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button key={n} onClick={() => { setRating(n); setError(null); }} aria-label={`${n} star${n === 1 ? '' : 's'}`} className="p-1">
+            <Star size={30} className={n <= rating ? 'fill-[var(--star)] text-[var(--star)]' : 'text-[var(--border-strong)]'} />
           </button>
-        </div>
-        <div className="flex items-center justify-center gap-1.5 mb-4">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button key={n} onClick={() => setRating(n)} className="p-0.5">
-              <Star size={28} className={n <= rating ? 'fill-[var(--star)] text-[var(--star)]' : 'text-border-strong'} />
-            </button>
-          ))}
-        </div>
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Optional comments…"
-          rows={3}
-          className="w-full p-3 rounded-card-lg border border-app bg-app text-sm text-main resize-none mb-3"
-        />
-        {error && <p className="text-xs text-error mb-3">{error}</p>}
-        <button
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="w-full py-2.5 rounded-card-lg bg-accent text-accent-text text-sm font-semibold disabled:opacity-60"
-        >
-          {submitting ? 'Submitting…' : 'Submit review'}
-        </button>
+        ))}
       </div>
-    </div>
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder="What went well? Anything the next person should know?"
+        rows={4}
+        className={textareaClass()}
+      />
+      {error && <p className="text-xs text-error mt-2">{error}</p>}
+      <Button fullWidth className="mt-4" loading={submitting} loadingLabel="Sending…" onClick={handleSubmit}>
+        Submit review
+      </Button>
+    </Sheet>
   );
 }
-

@@ -1,19 +1,24 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Georgia&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --radius: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.25rem;
-  --radius-sm: 0.5rem;
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06);
-  --shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 16px 40px rgba(0,0,0,0.10);
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-display: 'Inter', system-ui, sans-serif;
-  /* Motion tokens — the only 3 durations used for animation anywhere in the app. */
+  /* Radius scale - 4 steps, nothing in between. Controls, cards, panels, sheets. */
+  --radius-sm: 0.5rem;   /* chips, small controls */
+  --radius: 0.625rem;    /* buttons, inputs */
+  --radius-lg: 0.875rem; /* cards */
+  --radius-xl: 1.25rem;  /* panels, sheets, hero surfaces */
+  /* Elevation scale - 4 steps. Borders carry structure; shadows only carry depth. */
+  --shadow-xs: 0 1px 2px rgba(16,24,40,0.05);
+  --shadow-card: 0 1px 2px rgba(16,24,40,0.04), 0 2px 6px -2px rgba(16,24,40,0.06);
+  --shadow-hover: 0 2px 4px -2px rgba(16,24,40,0.06), 0 12px 28px -8px rgba(16,24,40,0.14);
+  --shadow-pop: 0 4px 8px -4px rgba(16,24,40,0.08), 0 24px 56px -16px rgba(16,24,40,0.24);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  --favorite: #C83E4D;
+  /* Motion tokens - the only 3 durations used for animation anywhere in the app. */
   --motion-fast: 120ms;
   --motion-standard: 200ms;
   --motion-page: 280ms;
@@ -38,9 +43,34 @@ body {
   overflow-x: clip;
 }
 
+/* Display face carries all headings; body face carries everything else. */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
 ::selection {
   background: var(--accent);
   color: var(--accent-text);
+}
+
+/* Consistent keyboard focus across every interactive element. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.search-input:focus-visible {
+  outline: none;
+}
+
+.search-input-shell:focus-within {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.search-control:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), var(--shadow-hover);
 }
 
 /* Utility classes bound to CSS variables */
@@ -54,6 +84,7 @@ body {
   .border-app { border-color: var(--border); }
   .border-strong { border-color: var(--border-strong); }
   .bg-accent { background-color: var(--accent); }
+  .bg-accent-hover { background-color: var(--accent-hover); }
   .bg-accent-soft { background-color: var(--accent-soft); }
   .text-accent { color: var(--accent); }
   .text-accent-text { color: var(--accent-text); }
@@ -68,13 +99,27 @@ body {
   .bg-error-soft { background-color: var(--error-soft); }
   .text-error { color: var(--error); }
   .text-star { color: var(--star); }
+  .text-favorite { color: var(--favorite); }
+  .fill-favorite { fill: var(--favorite); }
+  .shadow-xs { box-shadow: var(--shadow-xs); }
   .shadow-card { box-shadow: var(--shadow-card); }
   .shadow-hover { box-shadow: var(--shadow-hover); }
+  .shadow-pop { box-shadow: var(--shadow-pop); }
   .font-display { font-family: var(--font-display); }
+  /* Tailwind can't derive an alpha variant of a hand-written utility (`bg-card/90` is a no-op),
+     so translucent surfaces get their own tokens. Used by sticky bars and app chrome. */
+  .bg-card-blur { background-color: color-mix(in srgb, var(--bg-card) 88%, transparent); }
+  .bg-app-blur { background-color: color-mix(in srgb, var(--bg) 88%, transparent); }
+  .glass-surface,
+  .glass-nav { background-color: var(--bg-card); }
+  .glass-nav-top,
+  .glass-nav-bottom { box-shadow: var(--shadow-xs); }
   .rounded-card { border-radius: var(--radius); }
   .rounded-card-lg { border-radius: var(--radius-lg); }
   .rounded-card-xl { border-radius: var(--radius-xl); }
   .rounded-card-sm { border-radius: var(--radius-sm); }
+  /* Prices/counters must not jitter as digits change (duration picker, earnings). */
+  .tnum { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
 }
 
 /* Scrollbar */
@@ -171,8 +216,8 @@ body {
   cursor: pointer;
   transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
-.ybuy-price-pin:hover {
-  transform: scale(1.08);
+.ybuy-price-pin:hover,
+.ybuy-price-pin.is-selected {
   background: var(--accent);
   color: var(--accent-text);
   border-color: var(--accent);
@@ -201,16 +246,48 @@ body {
 
 /* Card hover transition */
 .card-hover {
-  transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+  transition: box-shadow var(--motion-standard) ease-out, border-color var(--motion-standard) ease-out;
 }
 .card-hover:hover {
-  box-shadow: var(--shadow-hover);
-  transform: translateY(-2px);
+  box-shadow: var(--shadow-card);
+  border-color: var(--border-strong);
 }
 
-/* Skeleton shimmer — subtle, not eye-catching */
+/* Media inside a `group` card: slow, subtle push-in on hover. Paired with card-hover. */
+.zoom-media {
+  transition: transform var(--motion-standard) ease-out;
+}
+.group:hover .zoom-media { transform: scale(1.02); }
+
+/* Favorite toggle: one short beat on activate only, never on hover. */
+@keyframes heartPop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+.animate-heart-pop { animation: heartPop 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* Mobile bottom sheet (filters, availability, review). */
+@keyframes sheetUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-sheet { animation: sheetUp ease-out both; animation-duration: var(--motion-page); }
+
+/* Skeleton shimmer - subtle, not eye-catching */
 .skeleton {
   background: linear-gradient(90deg, var(--bg-subtle) 25%, var(--border) 50%, var(--bg-subtle) 75%);
   background-size: 1000px 100%;
   animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .card-hover:hover { transform: none; }
+  .group:hover .zoom-media { transform: none; }
 }

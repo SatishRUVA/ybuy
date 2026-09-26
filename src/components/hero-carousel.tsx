@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-// Curated bright, well-lit stock photos (Pexels) — verified visually to avoid dark/moody shots.
+// Curated bright, well-lit stock photos from Pexels.
 const HERO_IMAGES = [
   'https://images.pexels.com/photos/10513799/pexels-photo-10513799.jpeg?auto=compress&cs=tinysrgb&w=1600&h=900&fit=crop', // camping tents, daylight
   'https://images.pexels.com/photos/30413424/pexels-photo-30413424.jpeg?auto=compress&cs=tinysrgb&w=1600&h=900&fit=crop', // tools
@@ -11,13 +11,14 @@ const HERO_IMAGES = [
   'https://images.pexels.com/photos/35486274/pexels-photo-35486274.jpeg?auto=compress&cs=tinysrgb&w=1600&h=900&fit=crop', // music & other gear
 ];
 
-const ROTATE_MS = 4000;
+const ROTATE_MS = 7200;
 
-/** Auto-rotating background carousel — no prev/next controls by design. */
+/** A slow, decorative crossfade keeps the marketplace imagery present without competing with search. */
 export function HeroCarousel() {
   const [active, setActive] = useState(0);
 
   useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const id = setInterval(() => setActive((a) => (a + 1) % HERO_IMAGES.length), ROTATE_MS);
     return () => clearInterval(id);
   }, []);
@@ -29,8 +30,9 @@ export function HeroCarousel() {
           key={src}
           src={src}
           alt=""
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${
-            i === active ? 'opacity-100' : 'opacity-0'
+          loading={i === 0 ? 'eager' : 'lazy'}
+          className={`absolute inset-0 w-full h-full object-cover transition-[opacity,transform] duration-[1400ms] ease-in-out ${
+            i === active ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.025]'
           }`}
         />
       ))}

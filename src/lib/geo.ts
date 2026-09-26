@@ -1,13 +1,89 @@
-// Real Dallas-area city centers (the only metro this deployment currently serves) used to power
-// the search bar's location picker without needing a geocoding API for Part 1.
-export const CITY_CENTERS: Record<string, { lat: number; lng: number }> = {
-  'Irving, TX': { lat: 32.814, lng: -96.949 },
-  'Dallas, TX': { lat: 32.7767, lng: -96.797 },
-  'Las Colinas, TX': { lat: 32.885, lng: -96.95 },
-  'Coppell, TX': { lat: 32.9546, lng: -96.9903 },
-  'Plano, TX': { lat: 33.0198, lng: -96.6989 },
-  'Grapevine, TX': { lat: 32.9343, lng: -97.0781 },
-};
+export type LocationSource = 'USER_SELECTED' | 'BROWSER' | 'IP' | 'NONE';
+
+export interface MarketplaceLocation {
+  city: string;
+  state: string;
+  country: string;
+  source: LocationSource;
+  latitude?: number;
+  longitude?: number;
+}
+
+export const NO_LOCATION: MarketplaceLocation = { city: '', state: '', country: '', source: 'NONE' };
+
+export function locationLabel(location: MarketplaceLocation): string {
+  return location.city ? [location.city, location.state].filter(Boolean).join(', ') : 'Set your location';
+}
+
+export function listingIsInCity(pickup: string, city: string): boolean {
+  return pickup.split(',')[0].trim().toLowerCase() === city.trim().toLowerCase();
+}
+
+interface MapTilerFeature {
+  text: string;
+  center: [number, number];
+  place_type: string[];
+  context?: { id: string; text: string }[];
+}
+
+async function geocode(query: string, types: string, signal?: AbortSignal): Promise<MapTilerFeature[]> {
+  const key = import.meta.env.VITE_MAP_API_KEY;
+  if (!key) throw new Error('City search is unavailable right now.');
+  const url = new URL(`https://api.maptiler.com/geocoding/${encodeURIComponent(query)}.json`);
+  url.searchParams.set('key', key);
+  url.searchParams.set('types', types);
+  url.searchParams.set('limit', '5');
+  if (/^\d{5}$/.test(query.trim())) url.searchParams.set('country', 'us');
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error('Could not look up that location.');
+  const data: { features?: MapTilerFeature[] } = await response.json();
+  return data.features ?? [];
+}
+
+function cityFromFeature(feature: MapTilerFeature): MarketplaceLocation | null {
+  const context = feature.context ?? [];
+  const city = feature.place_type.includes('postal_code')
+    ? context.find((item) => item.id.startsWith('municipality.'))?.text
+    : feature.text;
+  if (!city || !Array.isArray(feature.center) || !Number.isFinite(feature.center[0]) || !Number.isFinite(feature.center[1])) return null;
+  return {
+    city,
+    state: context.find((item) => item.id.startsWith('region.'))?.text ?? '',
+    country: context.find((item) => item.id.startsWith('country.'))?.text ?? '',
+    longitude: feature.center[0],
+    latitude: feature.center[1],
+    source: 'USER_SELECTED',
+  };
+}
+
+export async function findCities(query: string, signal?: AbortSignal): Promise<MarketplaceLocation[]> {
+  if (query.trim().length < 2) return [];
+  const results = await geocode(query.trim(), 'municipality,postal_code', signal);
+  const unique = new Map<string, MarketplaceLocation>();
+  for (const feature of results) {
+    const city = cityFromFeature(feature);
+    if (city) unique.set(`${city.city}|${city.state}|${city.country}`, city);
+  }
+  return [...unique.values()];
+}
+
+export async function cityForCoordinates(latitude: number, longitude: number): Promise<MarketplaceLocation | null> {
+  const results = await geocode(`${longitude},${latitude}`, 'municipality');
+  const city = results.map(cityFromFeature).find((result) => result !== null);
+  return city ? { ...city, latitude, longitude, source: 'BROWSER' } : null;
+}
+
+export async function estimateCityFromIp(signal?: AbortSignal): Promise<MarketplaceLocation | null> {
+  const key = import.meta.env.VITE_MAP_API_KEY;
+  if (!key) return null;
+  const url = new URL('https://api.maptiler.com/geolocation/ip.json');
+  url.searchParams.set('key', key);
+  const response = await fetch(url, { signal });
+  if (!response.ok) return null;
+  const data: { city?: string; region?: string; country?: string } = await response.json();
+  if (!data.city || !data.country) return null;
+  return { city: data.city, state: data.region ?? '', country: data.country, source: 'IP' };
+}
 
 /** Great-circle distance between two coordinates, in miles. */
 export function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {

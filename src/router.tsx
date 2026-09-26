@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 
 export type Route =
   | { name: 'home' }
-  | { name: 'dashboard' }
+  | { name: 'dashboard'; tab?: 'renting' | 'lending' }
   | { name: 'search'; category?: string; q?: string; lat?: number; lng?: number; locationLabel?: string; start?: string; end?: string }
   | { name: 'listing'; id: string }
   | { name: 'checkout'; id: string; startDate?: string; endDate?: string; quantity?: number }
@@ -39,7 +39,7 @@ const RouterContext = createContext<RouterContextValue | null>(null);
 function routeToPath(route: Route): string {
   switch (route.name) {
     case 'home': return '/';
-    case 'dashboard': return '/dashboard';
+    case 'dashboard': return route.tab ? `/dashboard?tab=${route.tab}` : '/dashboard';
     case 'search': {
       const params = new URLSearchParams();
       if (route.category) params.set('category', route.category);
@@ -49,8 +49,8 @@ function routeToPath(route: Route): string {
         params.set('lng', String(route.lng));
       }
       if (route.locationLabel) params.set('loc', route.locationLabel);
-      if (route.start) params.set('start', route.start);
-      if (route.end) params.set('end', route.end);
+      if (route.start !== undefined) params.set('start', route.start);
+      if (route.end !== undefined) params.set('end', route.end);
       const qs = params.toString();
       return qs ? `/search?${qs}` : '/search';
     }
@@ -64,8 +64,8 @@ function routeToPath(route: Route): string {
       return `/checkout/${route.id}${qs ? `?${qs}` : ''}`;
     }
     case 'confirmation': return `/confirmation/${route.id}`;
-    case 'renter-dashboard': return '/dashboard/renter';
-    case 'owner-dashboard': return '/dashboard/owner';
+    case 'renter-dashboard': return '/dashboard?tab=renting';
+    case 'owner-dashboard': return '/dashboard?tab=lending';
     case 'create-listing': return '/create-listing';
     case 'check-in': return `/check-in/${route.id}`;
     case 'check-out': return `/check-out/${route.id}`;
@@ -120,10 +120,12 @@ function pathToRoute(pathname: string, search: string): Route {
       };
     }
     case 'confirmation': return second ? { name: 'confirmation', id: second } : { name: 'home' };
-    case 'dashboard':
-      if (second === 'owner') return { name: 'owner-dashboard' };
-      if (second === 'renter') return { name: 'renter-dashboard' };
-      return { name: 'dashboard' };
+    case 'dashboard': {
+      const params = new URLSearchParams(search);
+      if (second === 'owner') return { name: 'dashboard', tab: 'lending' };
+      if (second === 'renter') return { name: 'dashboard', tab: 'renting' };
+      return { name: 'dashboard', tab: params.get('tab') === 'lending' ? 'lending' : 'renting' };
+    }
     case 'create-listing': return { name: 'create-listing' };
     case 'check-in': return second ? { name: 'check-in', id: second } : { name: 'home' };
     case 'check-out': return second ? { name: 'check-out', id: second } : { name: 'home' };
@@ -143,20 +145,34 @@ function pathToRoute(pathname: string, search: string): Route {
   }
 }
 
+function replaceLegacyDashboardPath(nextRoute: Route) {
+  if (nextRoute.name === 'dashboard' && /^\/dashboard\/(owner|renter)\/?$/.test(window.location.pathname)) {
+    window.history.replaceState(null, '', routeToPath(nextRoute));
+  }
+}
+
 export function RouterProvider({ children }: { children: ReactNode }) {
   const [route, setRoute] = useState<Route>(() => pathToRoute(window.location.pathname, window.location.search));
 
   const navigate = (r: Route) => {
-    setRoute(r);
-    window.history.pushState(null, '', routeToPath(r));
+    const next: Route = r.name === 'owner-dashboard'
+      ? { name: 'dashboard', tab: 'lending' }
+      : r.name === 'renter-dashboard'
+        ? { name: 'dashboard', tab: 'renting' }
+        : r;
+    setRoute(next);
+    window.history.pushState(null, '', routeToPath(next));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const back = () => window.history.back();
 
   useEffect(() => {
+    replaceLegacyDashboardPath(pathToRoute(window.location.pathname, window.location.search));
     function onPopState() {
-      setRoute(pathToRoute(window.location.pathname, window.location.search));
+      const nextRoute = pathToRoute(window.location.pathname, window.location.search);
+      setRoute(nextRoute);
+      replaceLegacyDashboardPath(nextRoute);
     }
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);

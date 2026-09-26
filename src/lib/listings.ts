@@ -77,6 +77,28 @@ export async function fetchPublishedListings(): Promise<DbListingRow[]> {
   return (data ?? []) as unknown as DbListingRow[];
 }
 
+/**
+ * One representative photo per category, for the home category rail.
+ * ponytail: a single bounded scan of the newest listings covers every category in practice and
+ * costs one request. Swap for a `category_cover_url` column if a category ever renders coverless.
+ */
+export async function fetchCategoryCovers(limit = 240): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from('listings')
+    .select('category_id, listing_images(url, sort_order)')
+    .eq('status', 'published')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  const covers = new Map<string, string>();
+  for (const row of (data ?? []) as unknown as { category_id: string; listing_images: { url: string; sort_order: number }[] }[]) {
+    if (covers.has(row.category_id)) continue;
+    const first = [...(row.listing_images ?? [])].sort((a, b) => a.sort_order - b.sort_order)[0];
+    if (first) covers.set(row.category_id, first.url);
+  }
+  return covers;
+}
+
 export async function fetchListingById(id: string): Promise<DbListingRow | null> {
   const { data, error } = await supabase
     .from('listings')
@@ -92,9 +114,74 @@ export async function fetchListingsByOwner(ownerId: string): Promise<DbListingRo
     .from('listings')
     .select(LISTING_SELECT)
     .eq('owner_id', ownerId)
+    .neq('status', 'archived')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as unknown as DbListingRow[];
+}
+
+export async function deleteOwnerListing(ownerId: string, listingId: string): Promise<'deleted' | 'archived'> {
+  const currentStatuses = ['requested', 'pending_payment', 'confirmed', 'active', 'return_pending'];
+  const { data: currentBooking, error: currentBookingError } = await supabase
+    .from('bookings')
+    .select('id')
+    .eq('listing_id', listingId)
+    .in('status', currentStatuses)
+    .limit(1)
+    .maybeSingle();
+  if (currentBookingError) throw currentBookingError;
+  if (currentBooking) {
+    throw new Error('This listing has a current or upcoming rental. It cannot be removed until all requests and rentals are finished.');
+  }
+
+  const { data: pastBooking, error: pastBookingError } = await supabase
+    .from('bookings')
+    .select('id')
+    .eq('listing_id', listingId)
+    .limit(1)
+    .maybeSingle();
+  if (pastBookingError) throw pastBookingError;
+
+  if (pastBooking) {
+    const { data, error } = await supabase
+      .from('listings')
+      .update({ status: 'archived' })
+      .eq('id', listingId)
+      .eq('owner_id', ownerId)
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('Listing not found or not owned.');
+    return 'archived';
+  }
+
+  const { data: images, error: imagesError } = await supabase
+    .from('listing_images')
+    .select('url')
+    .eq('listing_id', listingId);
+  if (imagesError) throw imagesError;
+
+  const objectPaths = (images ?? []).flatMap(({ url }) => {
+    const marker = '/storage/v1/object/public/listing-images/';
+    const markerIndex = url.indexOf(marker);
+    if (markerIndex < 0) return [];
+    return [decodeURIComponent(url.slice(markerIndex + marker.length))];
+  });
+  if (objectPaths.length > 0) {
+    const { error } = await supabase.storage.from('listing-images').remove(objectPaths);
+    if (error) throw error;
+  }
+
+  const { data: deleted, error: deleteError } = await supabase
+    .from('listings')
+    .delete()
+    .eq('id', listingId)
+    .eq('owner_id', ownerId)
+    .select('id')
+    .maybeSingle();
+  if (deleteError) throw deleteError;
+  if (!deleted) throw new Error('Listing not found or not owned.');
+  return 'deleted';
 }
 
 export type SearchSortBy = 'recommended' | 'newest' | 'price-low' | 'price-high';
@@ -202,15 +289,16 @@ export function toUiCategory(row: DbCategory, listingCountByCategoryId: Map<stri
 /**
  * Maps a real DB listing row to the UI's decorative `Listing` shape. Fields not yet backed by
  * real data (rating, reviews, verification, protection/passport §4 items) default to honest
- * empty/zero values rather than fabricated content — they fill in as later build-order steps
+ * empty/zero values rather than fabricated content - they fill in as later build-order steps
  * (reviews, protection) land.
  */
 export function toUiListing(row: DbListingRow): Listing {
   const images = [...row.listing_images].sort((a, b) => a.sort_order - b.sort_order).map((i) => i.url);
+  const cleanText = (value: string | null | undefined) => value?.split('\u2014').join('-') ?? '';
   return {
     id: row.id,
-    title: row.title,
-    category: row.categories?.name ?? '',
+    title: cleanText(row.title),
+    category: cleanText(row.categories?.name),
     images: images.length > 0 ? images : [FALLBACK_IMAGE],
     pricePerDay: Number(row.price_per_day),
     distance: 0,
@@ -237,7 +325,7 @@ export function toUiListing(row: DbListingRow): Listing {
     protectionEligible: row.protection_eligible,
     deliveryAvailable: row.delivery_available,
     condition: '',
-    description: row.description ?? '',
+    description: cleanText(row.description),
     whatsIncluded: [],
     components: [],
     declaredValue: 0,
@@ -246,7 +334,7 @@ export function toUiListing(row: DbListingRow): Listing {
     ownershipVerified: false,
     rentalHistory: 0,
     damageHistory: '',
-    pickup: row.location_label ?? '',
+    pickup: cleanText(row.location_label),
     delivery: '',
     cancellation: '',
     reviews: [],
@@ -334,13 +422,11 @@ export async function updateListingDetails(listingId: string, details: ListingDe
 
   // Backward compatibility while DB migrations are rolling out.
   if (error && /owner_verified|instant_booking|protection_eligible|delivery_available/i.test(error.message)) {
-    const {
-      instant_booking: _instant,
-      protection_eligible: _protection,
-      delivery_available: _delivery,
-      owner_verified: _verified,
-      ...legacyDetails
-    } = details;
+    const legacyDetails = { ...details };
+    delete legacyDetails.instant_booking;
+    delete legacyDetails.protection_eligible;
+    delete legacyDetails.delivery_available;
+    delete legacyDetails.owner_verified;
     ({ error } = await supabase.from('listings').update(legacyDetails).eq('id', listingId));
   }
 

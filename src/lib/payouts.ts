@@ -21,7 +21,7 @@ export async function fetchPayoutsByOwner(ownerId: string): Promise<Map<string, 
 
 /**
  * Records a booking as manually paid out (spec §6: owner payouts are manual for Part 1).
- * Amount is the owner's earnings — the rental subtotal, excluding the platform service fee and
+ * Amount is the owner's earnings - the rental subtotal, excluding the platform service fee and
  * the security deposit (which isn't the owner's money to keep absent a damage claim).
  */
 export async function markBookingPaidOut(bookingId: string, ownerId: string, amount: number): Promise<void> {

@@ -25,7 +25,7 @@ export function ClaimsPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm text-main">Claim #{claim.id}</p>
-                <p className="text-xs text-sec truncate">{claim.listingTitle} — {claim.issue}</p>
+                <p className="text-xs text-sec truncate">{claim.listingTitle} - {claim.issue}</p>
                 <p className="text-xs text-muted mt-0.5">{claim.date}</p>
               </div>
               <div className="text-right shrink-0">
@@ -107,7 +107,7 @@ export function ClaimDetailPage({ id }: { id: string }) {
                   }`}>
                     {step.done ? <CheckCircle2 size={16} /> : step.current ? <Clock size={16} className="animate-pulse-soft" /> : <span className="text-xs">{i + 1}</span>}
                   </div>
-                  {i < claim.timeline.length - 1 && <div className={`w-0.5 h-8 ${step.done ? 'bg-success' : 'bg-border-strong'}`} />}
+                  {i < claim.timeline.length - 1 && <div className={`w-0.5 h-8 ${step.done ? 'bg-success' : 'bg-[var(--border-strong)]'}`} />}
                 </div>
                 <div className="pt-1.5 pb-3">
                   <p className={`text-sm font-medium ${step.done ? 'text-main' : step.current ? 'text-warning' : 'text-muted'}`}>

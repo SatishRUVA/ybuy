@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { fetchBookingsAsRenter, type UiBooking } from '@/lib/bookings';
 import { fetchReviewsForUser } from '@/lib/reviews';
 import { Rating } from '@/components/trust';
-import { CheckCircle2, Clock, Shield, TrendingUp, Package, ArrowRight, Settings, Bell, LogOut } from 'lucide-react';
+import { Button, Surface, SectionHeader, Badge } from '@/components/ui';
+import { CheckCircle2, Clock, Shield, TrendingUp, Package, ArrowRight, LogOut, Heart } from 'lucide-react';
 
 export function TrustProfilePage() {
   const { navigate } = useRouter();
@@ -46,98 +47,82 @@ export function TrustProfilePage() {
   const joinedYear = new Date(profile.created_at).getFullYear();
 
   return (
-    <div className="animate-fade-in pb-20 md:pb-8">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold text-main font-display">My profile</h1>
-          <div className="flex items-center gap-2">
-            <button className="p-2 rounded-card-lg border border-app hover:bg-subtle transition-colors">
-              <Bell size={18} className="text-sec" />
-            </button>
-            <button className="p-2 rounded-card-lg border border-app hover:bg-subtle transition-colors">
-              <Settings size={18} className="text-sec" />
-            </button>
-            <button
-              onClick={() => void signOut()}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-card-lg border border-app text-sm text-sec hover:bg-subtle transition-colors"
-            >
-              <LogOut size={16} /> Sign out
-            </button>
-          </div>
+    <div className="animate-fade-in pb-20 md:pb-10">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+        <div className="flex items-end justify-between gap-3 mb-6">
+          <SectionHeader as="h1" title="Your profile" subtitle={`Signed in as ${profile.email}`} />
+          <Button variant="secondary" size="sm" icon={<LogOut size={15} />} onClick={() => void signOut()}>
+            Sign out
+          </Button>
         </div>
 
-        <p className="text-xs text-sec -mt-4 mb-4">Signed in as {profile.email}</p>
-
         {/* Profile card */}
-        <div className="p-6 rounded-card-xl bg-card border border-app mb-4">
-          <div className="flex items-start gap-4">
+        <Surface className="p-6 mb-4">
+          <div className="flex items-center gap-5">
             <img
               src={profile.avatar_url ?? undefined}
               alt=""
               className="w-20 h-20 rounded-full object-cover shrink-0 bg-subtle"
             />
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-main">{profile.full_name}</h2>
-              </div>
-              <div className="flex items-center gap-2 mt-1">
-                {reviewCount > 0 ? <Rating value={rating} size="md" /> : <span className="text-sm text-sec">No reviews yet</span>}
-                <span className="text-sm text-sec">· Member since {joinedYear}</span>
+            <div className="min-w-0">
+              <h2 className="text-xl font-bold text-main font-display">{profile.full_name}</h2>
+              <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                <Rating value={rating} count={reviewCount} size="sm" />
+                <Badge tone="neutral">Member since {joinedYear}</Badge>
               </div>
             </div>
           </div>
-        </div>
+        </Surface>
 
         {/* Trust stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <StatCard icon={Package} label="Completed rentals" value={loading ? '—' : completedRentals.length} />
-          <StatCard icon={Clock} label="Listings owned" value={loading ? '—' : listingCount} />
-          <StatCard icon={Shield} label="Reviews received" value={loading ? '—' : reviewCount} />
-          <StatCard icon={TrendingUp} label="Average rating" value={loading || reviewCount === 0 ? '—' : rating.toFixed(1)} />
+          <StatCard icon={Package} label="Completed rentals" value={loading ? '-' : completedRentals.length} />
+          <StatCard icon={Clock} label="Listings owned" value={loading ? '-' : listingCount} />
+          <StatCard icon={Shield} label="Reviews received" value={loading ? '-' : reviewCount} />
+          <StatCard icon={TrendingUp} label="Average rating" value={loading || reviewCount === 0 ? '-' : rating.toFixed(1)} />
         </div>
 
         {/* Trust details */}
-        <div className="p-5 rounded-card-xl bg-card border border-app mb-4">
-          <h3 className="font-semibold text-main mb-4">Trust & verification</h3>
-          <div className="space-y-3">
+        <Surface className="p-5 mb-4">
+          <h3 className="font-semibold text-main font-display mb-4">Trust and verification</h3>
+          <div className="space-y-2.5">
             <TrustRow label="Signed in with Google" verified />
             <TrustRow label="Email verified" verified />
           </div>
-        </div>
+        </Surface>
 
         {/* Rental history */}
         {completedRentals.length > 0 && (
-          <div className="p-5 rounded-card-xl bg-card border border-app mb-4">
-            <h3 className="font-semibold text-main mb-4">Rental history</h3>
-            <div className="space-y-3">
+          <Surface className="p-5 mb-6">
+            <h3 className="font-semibold text-main font-display mb-4">Recent rentals</h3>
+            <div className="space-y-1">
               {completedRentals.slice(0, 3).map((booking) => (
-                <div
+                <button
                   key={booking.id}
                   onClick={() => navigate({ name: 'listing', id: booking.listingId })}
-                  className="flex items-center gap-3 pb-3 border-b border-app last:border-0 last:pb-0 cursor-pointer hover:bg-subtle -mx-2 px-2 rounded-card transition-colors"
+                  className="w-full flex items-center gap-3 -mx-2 px-2 py-2 rounded-card text-left hover:bg-subtle transition-colors duration-fast"
                 >
-                  <img src={booking.listingImage} alt="" className="w-12 h-12 rounded-card object-cover shrink-0" />
+                  <img src={booking.listingImage} alt="" className="w-11 h-11 rounded-card object-cover shrink-0 bg-subtle" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-main truncate">{booking.listingTitle}</p>
+                    <p className="text-sm font-semibold text-main truncate">{booking.listingTitle}</p>
                     <p className="text-xs text-sec">
-                      {new Date(booking.endDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} · Completed
+                      Completed {new Date(booking.endDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                     </p>
                   </div>
-                </div>
+                  <ArrowRight size={15} className="text-muted shrink-0" />
+                </button>
               ))}
             </div>
-          </div>
+          </Surface>
         )}
 
-        {/* Actions */}
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => navigate({ name: 'renter-dashboard' })} className="flex items-center justify-center gap-2 py-3 rounded-card-lg bg-accent text-accent-text font-semibold text-sm">
-            My rentals <ArrowRight size={16} />
-          </button>
-          <button onClick={() => navigate({ name: 'owner-dashboard' })} className="flex items-center justify-center gap-2 py-3 rounded-card-lg border border-app text-main font-semibold text-sm hover:bg-subtle transition-colors">
-            Owner dashboard <ArrowRight size={16} />
-          </button>
+        <div className="grid sm:grid-cols-2 gap-2">
+          <Button fullWidth variant="secondary" icon={<Heart size={16} />} trailingIcon={<ArrowRight size={16} />} onClick={() => navigate({ name: 'favorites' })}>
+            Saved items
+          </Button>
+          <Button fullWidth trailingIcon={<ArrowRight size={16} />} onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>
+            Bookings
+          </Button>
         </div>
       </div>
     </div>
@@ -146,22 +131,21 @@ export function TrustProfilePage() {
 
 function StatCard({ icon: Icon, label, value }: { icon: typeof Package; label: string; value: string | number }) {
   return (
-    <div className="p-4 rounded-card-xl bg-card border border-app">
+    <div className="p-4 rounded-card-lg bg-card border border-app">
       <Icon size={18} className="text-sec" />
-      <p className="text-xl font-bold mt-2 text-main">{value}</p>
-      <p className="text-xs text-sec">{label}</p>
+      <p className="text-2xl font-bold text-main font-display mt-2.5 tnum">{value}</p>
+      <p className="text-xs text-sec mt-0.5">{label}</p>
     </div>
   );
 }
 
-
 function TrustRow({ label, verified }: { label: string; verified: boolean }) {
   return (
-    <div className="flex items-center justify-between p-3 rounded-card-lg bg-subtle border border-app">
+    <div className="flex items-center justify-between gap-3 px-3 h-11 rounded-card bg-subtle">
       <span className="text-sm text-main">{label}</span>
       {verified ? (
-        <span className="flex items-center gap-1 text-sm text-success font-medium">
-          <CheckCircle2 size={16} /> Verified
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-success">
+          <CheckCircle2 size={15} /> Verified
         </span>
       ) : (
         <span className="text-sm text-muted">Pending</span>

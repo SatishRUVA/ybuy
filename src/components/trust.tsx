@@ -3,13 +3,17 @@ import type { ReactNode } from 'react';
 
 export function Rating({ value, count, size = 'sm' }: { value: number; count?: number; size?: 'sm' | 'md' | 'lg' }) {
   const starSize = size === 'lg' ? 18 : size === 'md' ? 16 : 14;
-  const textSize = size === 'lg' ? 'text-lg' : size === 'md' ? 'text-sm' : 'text-xs';
+  const textSize = size === 'lg' ? 'text-base' : size === 'md' ? 'text-sm' : 'text-xs';
+  // No reviews yet is stated plainly rather than shown as a 0.0 score.
+  if (count === 0 || (count === undefined && value === 0)) {
+    return <span className={`text-sec ${textSize}`}>No reviews yet</span>;
+  }
   return (
     <div className="flex items-center gap-1.5">
       <Star size={starSize} className="fill-[var(--star)] text-[var(--star)]" />
-      <span className={`font-semibold text-main ${textSize}`}>{value.toFixed(1)}</span>
+      <span className={`font-semibold text-main tnum ${textSize}`}>{value.toFixed(1)}</span>
       {count !== undefined && (
-        <span className={`text-sec ${textSize}`}>({count})</span>
+        <span className={`text-sec tnum ${textSize}`}>({count})</span>
       )}
     </div>
   );
@@ -54,10 +58,10 @@ export function ProtectionBadge({ size = 'sm' }: { size?: 'sm' | 'md' }) {
 
 export function SecurityHoldNote({ amount }: { amount: number }) {
   return (
-    <div className="flex items-start gap-3 p-3.5 rounded-card border border-warning-soft bg-warning-soft">
-      <Lock size={18} className="text-warning shrink-0 mt-0.5" />
+    <div className="flex items-start gap-3 p-3.5 rounded-card-lg bg-warning-soft">
+      <Lock size={16} className="text-warning shrink-0 mt-0.5" />
       <div className="text-sm">
-        <p className="font-semibold text-main">${amount} refundable security hold</p>
+        <p className="font-semibold text-main tnum">${amount} refundable security hold</p>
         <p className="text-sec mt-0.5 text-xs leading-relaxed">
           Not a rental fee. Released according to rental terms after successful return and inspection.
         </p>
@@ -81,11 +85,11 @@ export function TrustChecklist({ items }: { items: { icon: ReactNode; label: str
 
 export function ShieldStamp() {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-card bg-accent-soft border border-app">
-      <ShieldCheck size={20} className="text-accent shrink-0" />
+    <div className="flex items-center gap-2.5 px-3 py-2 rounded-card bg-accent-soft">
+      <ShieldCheck size={18} className="text-accent shrink-0" />
       <div className="text-xs">
-        <p className="font-semibold text-accent">Identity verified owner</p>
-        <p className="text-sec">Secure payment · Rental protection</p>
+        <p className="font-semibold text-accent">Secure payment</p>
+        <p className="text-sec">Your card is charged only after the owner approves</p>
       </div>
     </div>
   );

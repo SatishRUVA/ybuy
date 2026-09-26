@@ -61,7 +61,7 @@ export function BiddingPage() {
                       </span>
                     )}
                   </div>
-                  <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-card/80 backdrop-blur-sm text-[10px] text-sec font-medium">
+                  <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/85 backdrop-blur-sm text-[10px] text-gray-700 font-medium">
                     <Eye size={11} /> {auction.watchers}
                   </div>
                 </div>

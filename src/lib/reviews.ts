@@ -33,13 +33,13 @@ export async function fetchReviewsForUser(userId: string): Promise<OwnerReviewsR
     avatar: r.reviewer?.avatar_url ?? '',
     rating: r.rating,
     date: new Date(r.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
-    text: r.body ?? '',
+    text: r.body?.split('\u2014').join('-') ?? '',
   }));
   const rating = reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
   return { reviews, rating, reviewCount: reviews.length };
 }
 
-/** Booking ids (among the given set) that the current user has already reviewed — used to hide the "leave a review" button. */
+/** Booking ids (among the given set) that the current user has already reviewed - used to hide the "leave a review" button. */
 export async function fetchReviewedBookingIds(reviewerId: string, bookingIds: string[]): Promise<Set<string>> {
   if (bookingIds.length === 0) return new Set();
   const { data, error } = await supabase
@@ -59,7 +59,7 @@ export interface OwnerRatingStats {
 /**
  * Aggregates each owner's rating + review count from the public `reviews` table (reviewee = owner).
  * Owner-level because `bookings` is participant-only under RLS, so per-listing rental counts can't
- * be read by a non-participant — the owner's completed-rental reviews are the readable signal.
+ * be read by a non-participant - the owner's completed-rental reviews are the readable signal.
  */
 export async function fetchOwnerRatings(ownerIds: string[]): Promise<Map<string, OwnerRatingStats>> {
   const result = new Map<string, OwnerRatingStats>();

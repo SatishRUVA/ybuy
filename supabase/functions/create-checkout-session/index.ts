@@ -1,5 +1,5 @@
 // Creates a Stripe Checkout Session for a booking that's awaiting payment (§11). Runs with the
-// service role so it can read/write across users, but every check below is still explicit —
+// service role so it can read/write across users, but every check below is still explicit -
 // never trust the caller's claimed booking ownership.
 import Stripe from 'npm:stripe@17';
 import { createClient } from 'npm:@supabase/supabase-js@2';

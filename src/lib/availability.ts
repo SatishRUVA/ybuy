@@ -14,7 +14,7 @@ function toIsoLocal(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-/** Every ISO date string in [startIso, endIso) — half-open, matching how booking ranges are stored. */
+/** Every ISO date string in [startIso, endIso) - half-open, matching how booking ranges are stored. */
 function datesInRange(startIso: string, endIso: string): string[] {
   const dates: string[] = [];
   for (let d = parseIsoLocal(startIso); toIsoLocal(d) < endIso; d.setDate(d.getDate() + 1)) {
@@ -51,11 +51,11 @@ export async function setDateAvailability(listingId: string, date: string, isAva
 /**
  * Among the given listing ids, which are unavailable at any point in [startIso, endIso)? Used to
  * filter search results by the picked date range without scanning the whole catalog.
- * ponytail: scoped to the currently-loaded page of listing ids, not the full table — fine for
+ * ponytail: scoped to the currently-loaded page of listing ids, not the full table - fine for
  * Part 1's small catalog/page size; a large catalog would push this into the search RPC instead.
  */
 export async function fetchUnavailableListingIds(listingIds: string[], startIso: string, endIso: string): Promise<Set<string>> {
-  if (listingIds.length === 0) return new Set();
+  if (listingIds.length === 0 || !startIso || !endIso || endIso <= startIso) return new Set();
   const [availabilityResult, bookingsResult] = await Promise.all([
     supabase.from('listing_availability').select('listing_id').in('listing_id', listingIds).eq('is_available', false).gte('date', startIso).lt('date', endIso),
     supabase.from('bookings').select('listing_id').in('listing_id', listingIds).in('status', ACTIVE_BOOKING_STATUSES).lt('start_date', endIso).gt('end_date', startIso),

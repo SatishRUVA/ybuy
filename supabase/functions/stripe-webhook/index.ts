@@ -1,5 +1,5 @@
 // Verifies Stripe webhook signatures and is the ONLY writer of payment/booking-confirmation
-// status (§11) — a frontend "success" redirect is never trusted on its own.
+// status (§11) - a frontend "success" redirect is never trusted on its own.
 import Stripe from 'npm:stripe@17';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
     });
 
     if (error) {
-      // Already-confirmed/duplicate deliveries land here too (Stripe retries webhooks) — log and
+      // Already-confirmed/duplicate deliveries land here too (Stripe retries webhooks) - log and
       // still return 200 so Stripe doesn't keep retrying a booking that's already settled.
       console.error('confirm_booking_payment failed', bookingId, error.message);
     }

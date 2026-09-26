@@ -291,7 +291,7 @@ function buildGeneratedListing(index, ownerIds, usedTitles) {
   const variant = VARIANTS[variantIdx];
   const city = CITIES[(index * 5 + itemIdx) % CITIES.length];
 
-  let title = variant ? `${source.name} — ${variant}` : source.name;
+  let title = variant ? `${source.name} - ${variant}` : source.name;
   if (usedTitles.has(title)) title = `${title} (${city.label.split(',')[0]})`;
   for (let n = 2; usedTitles.has(title); n++) title = `${title} #${n}`;
 
@@ -605,7 +605,7 @@ async function main() {
       if (plan.review) {
         await db.from('reviews').insert([
           { booking_id: booking.id, reviewer_id: real.id, reviewee_id: target.owner_id, rating: 5, body: REVIEW_TEXTS[i % REVIEW_TEXTS.length] },
-          { booking_id: booking.id, reviewer_id: target.owner_id, reviewee_id: real.id, rating: 5, body: 'Great renter — returned everything on time and in great shape.' },
+          { booking_id: booking.id, reviewer_id: target.owner_id, reviewee_id: real.id, rating: 5, body: 'Great renter - returned everything on time and in great shape.' },
         ]);
       }
       if (renterConversationSeeds.length < MESSAGE_THREADS.length) {

@@ -1,12 +1,12 @@
 // Combined listing-content moderation: deterministic contact-info/profanity checks (always run,
-// no AI) plus a contextual vision+text check for prohibited items (Part 1 scope —
+// no AI) plus a contextual vision+text check for prohibited items (Part 1 scope -
 // convenience/soft-warn only; the ONE exception is auto-masking contact info, which is a
 // deterministic pattern match, not a judgment call, so it's allowed to auto-edit content).
 // OPENROUTER_API_KEY is a server-only secret and never reaches the client.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Filter from 'npm:bad-words@3';
 
-// Mirrors the prohibited-items list on the public guidelines page (src/pages/guidelines.tsx) —
+// Mirrors the prohibited-items list on the public guidelines page (src/pages/guidelines.tsx) -
 // keep both in sync if YBuy's real Community Guidelines content changes.
 const PROHIBITED_ITEMS = [
   'weapons or ammunition (including replicas and BB/airsoft guns)',
@@ -16,7 +16,7 @@ const PROHIBITED_ITEMS = [
   'hazardous materials (flammable, toxic, explosive, or radioactive substances)',
 ];
 
-const CONTACT_PLACEHOLDER = '[contact info removed — message the owner in YBuy]';
+const CONTACT_PLACEHOLDER = '[contact info removed - message the owner in YBuy]';
 // Matches common US-style phone formats incl. spaced/dashed/dotted obfuscation, e.g.
 // "555-123-4567", "555.123.4567", "(555) 123 4567", "5551234567".
 const PHONE_REGEX = /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g;
@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
     if (listingError || !listing) return json({ ok: false, error: 'Listing not found' }, 404);
     if (listing.owner_id !== userData.user.id) return json({ ok: false, error: 'Not your listing' }, 403);
 
-    // Task 1 — deterministic, always runs, no AI call.
+    // Task 1 - deterministic, always runs, no AI call.
     const { maskedTitle, maskedDescription, flags: deterministicFlags } = runDeterministicChecks(rawTitle, rawDescription);
 
     const { data: categoryRows, error: categoryError } = await supabase
@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
     }
     const categoryNames = categoryRows.map((c: { name: string }) => c.name);
 
-    // Task 2 — contextual AI check (photo + post-mask text together), one OpenRouter call.
+    // Task 2 - contextual AI check (photo + post-mask text together), one OpenRouter call.
     let aiResult: ValidAIResult | null = null;
     const openRouterKey = Deno.env.get('OPENROUTER_API_KEY');
     if (openRouterKey && (photoUrl || maskedTitle || maskedDescription)) {
@@ -177,7 +177,7 @@ Deno.serve(async (req) => {
     const allFlags: Flag[] = [...deterministicFlags, ...(aiResult?.flags ?? [])];
 
     // Every flag is logged unconditionally at analysis time, before the client ever sees the
-    // response — a client dismissing the notice (or never showing it) can't suppress this.
+    // response - a client dismissing the notice (or never showing it) can't suppress this.
     if (allFlags.length > 0) {
       const serviceClient = createClient(
         Deno.env.get('SUPABASE_URL')!,
@@ -221,7 +221,7 @@ async function runAiCheck(
   const systemPrompt = [
     'You help renters write a listing for a peer-to-peer rental marketplace, and screen it for problems.',
     'You are given the current title/description text (already screened for clearly-formatted phone ' +
-      'numbers and emails — do not re-flag those) and, if provided, a photo of the item.',
+      'numbers and emails - do not re-flag those) and, if provided, a photo of the item.',
     'Respond with ONLY a single JSON object, no other text, matching exactly this shape:',
     '{"suggested_title": string, "suggested_description": string, "suggested_category": string, ' +
       '"flags": [{"type": "prohibited_item" | "drug_related" | "other_guideline", "reason": string, ' +
@@ -231,11 +231,11 @@ async function runAiCheck(
       `Guidelines: ${PROHIBITED_ITEMS.join('; ')}. Use "drug_related" for drugs/paraphernalia, ` +
       '"prohibited_item" for weapons/live animals/counterfeit goods/hazardous materials.',
     'Also use "other_guideline" if the text tries to share contact information in an obfuscated or ' +
-      'disguised way to avoid detection — e.g. spelled-out digits ("five five five..."), phone numbers ' +
-      'split with unusual wording, or requests to "text/call/email me at..." — since YBuy requires all ' +
+      'disguised way to avoid detection - e.g. spelled-out digits ("five five five..."), phone numbers ' +
+      'split with unusual wording, or requests to "text/call/email me at..." - since YBuy requires all ' +
       'contact to stay in-platform. Do NOT flag plain, clearly-formatted phone numbers or emails (already handled). ' +
       `If you see the exact text "${CONTACT_PLACEHOLDER}" already in the description, that attempt was already ` +
-      'handled — do not flag it again.',
+      'handled - do not flag it again.',
     'Do NOT flag profanity. If nothing is concerning, return an empty flags array.',
   ].join('\n');
 
@@ -247,7 +247,7 @@ async function runAiCheck(
   if (photoUrl) content.push({ type: 'image_url', image_url: { url: photoUrl } });
 
   try {
-    // OpenRouter's OpenAI-compatible endpoint, called directly with our own OpenRouter key —
+    // OpenRouter's OpenAI-compatible endpoint, called directly with our own OpenRouter key -
     // sidesteps the Gemini-key-specific auth issue found in isolated testing (that key was
     // rejected from Supabase's Edge Runtime egress even though it worked from a local machine).
     const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {

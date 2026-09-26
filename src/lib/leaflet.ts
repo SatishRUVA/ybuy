@@ -14,6 +14,7 @@ export interface LeafletMap {
 export interface LeafletMarker {
   addTo(map: LeafletMap): LeafletMarker;
   on(event: 'click' | 'mouseover' | 'mouseout', handler: () => void): LeafletMarker;
+  getElement(): HTMLElement | undefined;
 }
 export interface LeafletDivIcon {
   _brand?: 'divicon';
