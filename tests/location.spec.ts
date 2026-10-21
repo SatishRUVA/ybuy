@@ -1,8 +1,19 @@
 import { expect, test } from '@playwright/test';
+import { mockSupabaseModule } from './mock-supabase';
 
-const appUrl = 'http://127.0.0.1:5175/';
+const appUrl = 'http://127.0.0.1:5174/';
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/src/lib/supabase.ts*', mockSupabaseModule);
+  await page.route('https://fonts.googleapis.com/**',route=>route.fulfill({contentType:'text/css',body:''}));
+  await page.route('**/rest/v1/**',route=>route.fulfill({
+    contentType:'application/json',
+    body:JSON.stringify(route.request().url().includes('/search_available_listings')?{rows:[],total:0}:[]),
+  }));
+  await page.route('**/src/lib/geo.ts*', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: (await response.text()).replace(/const key = [^\n]+;/g, 'const key = "test-map-key";') });
+  });
   await page.route('**/api.maptiler.com/geolocation/ip.json?**', (route) => route.fulfill({
     contentType: 'application/json',
     body: JSON.stringify({ city: 'Irving', region: 'Texas', country: 'United States', latitude: 32.8, longitude: -96.9 }),
@@ -31,39 +42,43 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('IP is approximate and never requests GPS on Home or Browse', async ({ page }) => {
+test('without a selected area Home and Browse never request IP location or GPS', async ({ page }) => {
+  const ipRequests:string[]=[];
+  page.on('request',request=>{if(request.url().includes('/geolocation/ip.json'))ipRequests.push(request.url());});
   await page.goto(appUrl);
-  await expect(page.getByRole('button', { name: 'Near Irving, Texas' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Set your location' }).first()).toBeVisible();
   await page.goto(`${appUrl}search`);
-  await expect(page.getByText(/Showing items near Irving, Texas \(approximate\)/)).toBeVisible();
+  await expect(page.getByText('Choose a city or allow location access to filter by distance.')).toBeVisible();
   expect(await page.evaluate(() => (window as Window & { geoCalls: number }).geoCalls)).toBe(0);
+  expect(ipRequests).toHaveLength(0);
   expect(await page.getByText(/\d+(\.\d+)? mi away/).count()).toBe(0);
 });
 
 test('a selected city persists and is not replaced by IP or GPS', async ({ page }) => {
   await page.goto(appUrl);
-  await page.getByRole('button', { name: 'Near Irving, Texas' }).first().click();
+  await page.getByRole('button', { name: 'Set your location' }).first().click();
   await page.locator('input[aria-label="Search city or ZIP"]:visible').fill('Dallas');
   await page.locator('[role="dialog"]:visible').getByRole('button', { name: /Dallas, Texas/ }).click();
   await expect(page.getByRole('button', { name: 'Dallas, Texas' }).first()).toBeVisible();
   await page.reload();
   await expect(page.getByRole('button', { name: 'Dallas, Texas' }).first()).toBeVisible();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('ybuy-marketplace-location') || '{}').source)).toBe('USER_SELECTED');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('ybuy-marketplace-location') || '{}').latitude)).toBe(32.8);
   expect(await page.evaluate(() => (window as Window & { geoCalls: number }).geoCalls)).toBe(0);
 });
 
 test('GPS only runs after Use my location is clicked', async ({ page }) => {
   await page.goto(appUrl);
   expect(await page.evaluate(() => (window as Window & { geoCalls: number }).geoCalls)).toBe(0);
-  await page.getByRole('button', { name: 'Near Irving, Texas' }).first().click();
-  await page.locator('[role="dialog"]:visible').getByRole('button', { name: 'Use my location' }).click();
+  await page.getByRole('button', { name: 'Set your location' }).first().click();
+  await page.locator('[role="dialog"]:visible').getByRole('button', { name: 'Use my current location' }).click();
   expect(await page.evaluate(() => (window as Window & { geoCalls: number }).geoCalls)).toBe(1);
   await expect(page.getByRole('button', { name: 'Dallas, Texas' }).first()).toBeVisible();
 });
 
-test('a denied GPS request keeps the IP estimate and does not retry automatically', async ({ page }) => {
+test('a denied GPS request keeps location unset and does not retry automatically', async ({ page }) => {
   await page.goto(appUrl);
-  await expect(page.getByRole('button', { name: 'Near Irving, Texas' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Set your location' }).first()).toBeVisible();
   await page.evaluate(() => {
     Object.defineProperty(navigator, 'geolocation', {
       configurable: true,
@@ -73,19 +88,19 @@ test('a denied GPS request keeps the IP estimate and does not retry automaticall
       } },
     });
   });
-  await page.getByRole('button', { name: 'Near Irving, Texas' }).first().click();
-  await page.locator('[role="dialog"]:visible').getByRole('button', { name: 'Use my location' }).click();
+  await page.getByRole('button', { name: 'Set your location' }).first().click();
+  await page.locator('[role="dialog"]:visible').getByRole('button', { name: 'Use my current location' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Enter a city instead' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Near Irving, Texas' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Set your location' }).first()).toBeVisible();
   expect(await page.evaluate(() => (window as Window & { geoCalls: number }).geoCalls)).toBe(1);
   await page.goto(`${appUrl}search`);
   expect(await page.evaluate(() => (window as Window & { geoCalls: number }).geoCalls)).toBe(0);
-  await expect(page.getByText(/Showing items near Irving, Texas \(approximate\)/)).toBeVisible();
+  await expect(page.getByText('Choose a city or allow location access to filter by distance.')).toBeVisible();
 });
 
 test('a new city replaces the earlier selected city', async ({ page }) => {
   await page.goto(appUrl);
-  await page.getByRole('button', { name: 'Near Irving, Texas' }).first().click();
+  await page.getByRole('button', { name: 'Set your location' }).first().click();
   await page.locator('input[aria-label="Search city or ZIP"]:visible').fill('Dallas');
   await page.locator('[role="dialog"]:visible').getByRole('button', { name: /Dallas, Texas/ }).click();
   await page.getByRole('button', { name: 'Dallas, Texas' }).first().click();

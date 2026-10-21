@@ -1,5 +1,8 @@
 import { supabase } from '@/lib/supabase';
+import { assertPlainText, InputValidationError } from '@/lib/text-safety';
 import type { Review } from '@/data';
+
+export const REVIEW_MAX_LENGTH = 2000;
 
 interface DbReviewRow {
   id: string;
@@ -92,6 +95,8 @@ export async function createReview(params: {
   rating: number;
   body: string;
 }): Promise<void> {
+  if (!Number.isInteger(params.rating) || params.rating < 1 || params.rating > 5) throw new InputValidationError('Choose a star rating from 1 to 5.');
+  assertPlainText('Review', params.body.trim(), REVIEW_MAX_LENGTH);
   const { error } = await supabase.from('reviews').insert({
     booking_id: params.bookingId,
     reviewer_id: params.reviewerId,

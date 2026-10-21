@@ -1,16 +1,31 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, MapPin, ChevronDown, Check, LocateFixed } from 'lucide-react';
+import { Search, MapPin, ChevronDown, Check, LocateFixed, Map } from 'lucide-react';
 import { useTheme } from '@/theme-context';
 import { Palette, Moon, Check as CheckIcon } from 'lucide-react';
-import { findCities, locationLabel, todayIso, addDaysIso, type MarketplaceLocation } from '@/lib/geo';
+import { findCities, haversineMiles, locationLabel, type MarketplaceLocation } from '@/lib/geo';
 import { useMarketplaceLocation } from '@/location-context';
 import { DateRangePicker } from '@/components/date-range-picker';
+import { SEARCH_RADII, parseSearchRadius, savedSearchState, saveSearchState, type SearchRadius } from '@/lib/search-state';
 
 export interface SearchParams {
   keyword: string;
   location: MarketplaceLocation;
   startDate: string;
   endDate: string;
+  radius: SearchRadius;
+}
+
+export function SearchRadiusSelect({ value, onChange, label = 'Search radius' }: {
+  value: SearchRadius; onChange: (value: SearchRadius) => void; label?: string;
+}) {
+  return (
+    <select aria-label={label} value={value === null ? 'any' : value}
+      onChange={(event) => onChange(parseSearchRadius(event.target.value))}
+      className="h-11 w-full min-w-0 rounded-card border border-app bg-card px-3 text-sm font-medium text-main focus-visible:outline-accent">
+      {SEARCH_RADII.map((miles) => <option key={miles} value={miles}>Within {miles} miles</option>)}
+      <option value="any">Any distance</option>
+    </select>
+  );
 }
 
 const PLACEHOLDER_EXAMPLES = [
@@ -21,7 +36,12 @@ const PLACEHOLDER_EXAMPLES = [
   'VR headset, stand mixer...',
 ];
 
-export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaultValue = '', initialStartDate, initialEndDate }: { onSearch?: (params: SearchParams) => void; onLocationChange?: (location: MarketplaceLocation) => void; variant?: 'hero' | 'compact'; defaultValue?: string; initialStartDate?: string; initialEndDate?: string }) {
+export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaultValue = '', initialStartDate, initialEndDate, initialRadius = 5, radius: controlledRadius, onRadiusChange }: {
+  onSearch?: (params: SearchParams) => void;
+  onLocationChange?: (location: MarketplaceLocation) => void;
+  variant?: 'hero' | 'compact'; defaultValue?: string; initialStartDate?: string; initialEndDate?: string;
+  initialRadius?: SearchRadius; radius?: SearchRadius; onRadiusChange?: (radius: SearchRadius) => void;
+}) {
   const { location, selectCity, requestBrowserLocation, clearLocation } = useMarketplaceLocation();
   const [what, setWhat] = useState(defaultValue);
   const [cityQuery, setCityQuery] = useState('');
@@ -29,16 +49,34 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
   const [locationError, setLocationError] = useState<string | null>(null);
   const [searchingCities, setSearchingCities] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [locationPermission, setLocationPermission] = useState<PermissionState | 'unavailable'>('prompt');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
-  const today = todayIso();
-  const [startDate, setStartDate] = useState(initialStartDate ?? today);
-  const [endDate, setEndDate] = useState(initialEndDate ?? addDaysIso(today, 1));
+  const [startDate, setStartDate] = useState(initialStartDate ?? '');
+  const [endDate, setEndDate] = useState(initialEndDate ?? '');
+  const [selectedRadius, setSelectedRadius] = useState(initialRadius);
+  const radius = controlledRadius === undefined ? selectedRadius : controlledRadius;
   const [showLocMenu, setShowLocMenu] = useState(false);
   // On small screens the compact variant starts as a one-line summary and expands on tap,
   // so the search page keeps its results above the fold.
   const [mobileExpanded, setMobileExpanded] = useState(variant === 'hero');
   const desktopLocRef = useRef<HTMLDivElement>(null);
   const mobileLocRef = useRef<HTMLDivElement>(null);
+  const locationTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => { setWhat(defaultValue); }, [defaultValue]);
+  useEffect(() => { setStartDate(initialStartDate ?? ''); setEndDate(initialEndDate ?? ''); }, [initialStartDate, initialEndDate]);
+  useEffect(() => {
+    if (variant === 'hero') saveSearchState({ ...savedSearchState(), q: what, start: startDate, end: endDate, radius });
+  }, [variant, what, startDate, endDate, radius]);
+
+  useEffect(() => {
+    if (showLocMenu) {
+      const container = window.matchMedia('(min-width: 640px)').matches ? desktopLocRef.current : mobileLocRef.current;
+      container?.querySelector('input')?.focus();
+    } else {
+      locationTriggerRef.current?.focus();
+    }
+  }, [showLocMenu]);
 
   useEffect(() => {
     if (what) return; // don't distract the user once they've started typing
@@ -58,21 +96,68 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
   }, []);
 
   useEffect(() => {
-    if (!showLocMenu || cityQuery.trim().length < 2) { setCities([]); setSearchingCities(false); return; }
+    if (!showLocMenu) return;
     const controller = new AbortController();
+    const query = cityQuery.trim();
+    if (query.length < 2 && location.source !== 'BROWSER') {
+      setCities([]);
+      setSearchingCities(false);
+      return () => controller.abort();
+    }
     setSearchingCities(true);
+    setCities([]);
+    const nearbyLookup = !query && location.source === 'BROWSER'
+      && location.latitude !== undefined && location.longitude !== undefined;
     const timer = setTimeout(() => {
       setLocationError(null);
-      void findCities(cityQuery, controller.signal)
-        .then(setCities)
+      void findCities(
+        query || location.city,
+        controller.signal,
+        nearbyLookup ? { latitude: location.latitude!, longitude: location.longitude! } : undefined,
+      )
+        .then((results) => {
+          if (!nearbyLookup) {
+            setCities(results);
+            return;
+          }
+          const nearby = results
+            .filter((result) => result.latitude !== undefined && result.longitude !== undefined)
+            .map((result) => ({
+              result,
+              distance: haversineMiles(location.latitude!, location.longitude!, result.latitude!, result.longitude!),
+            }))
+            .filter(({ distance }) => distance <= 100)
+            .sort((first, second) => first.distance - second.distance)
+            .map(({ result }) => result);
+          setCities(nearby);
+        })
         .catch(() => { if (!controller.signal.aborted) setLocationError('City search is unavailable. Try again.'); })
         .finally(() => { if (!controller.signal.aborted) setSearchingCities(false); });
     }, 300);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [cityQuery, showLocMenu]);
+  }, [cityQuery, location.city, location.latitude, location.longitude, location.source, showLocMenu]);
+
+  useEffect(() => {
+    if (!showLocMenu || !navigator.permissions) {
+      setLocationPermission('unavailable');
+      return;
+    }
+    let active = true;
+    let status: PermissionStatus | undefined;
+    void navigator.permissions.query({ name: 'geolocation' }).then((permission) => {
+      if (!active) return;
+      status = permission;
+      setLocationPermission(permission.state);
+      permission.onchange = () => setLocationPermission(permission.state);
+    }).catch(() => setLocationPermission('unavailable'));
+    return () => {
+      active = false;
+      if (status) status.onchange = null;
+    };
+  }, [showLocMenu]);
 
   function runSearch() {
-    onSearch?.({ keyword: what, location, startDate, endDate });
+    onSearch?.({ keyword: what, location, startDate, endDate, radius });
     if (variant === 'compact') setMobileExpanded(false);
   }
 
@@ -80,8 +165,8 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
     setLocating(true);
     setLocationError(null);
     try {
-      await requestBrowserLocation();
-      onLocationChange?.({ city: '', state: '', country: '', source: 'BROWSER' });
+      const nextLocation = await requestBrowserLocation();
+      if (nextLocation) onLocationChange?.(nextLocation);
       setShowLocMenu(false);
     } catch (error) {
       setLocationError(error instanceof Error ? error.message : 'Could not use your location.');
@@ -99,37 +184,88 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
 
   const displayLocation = location.source === 'IP' ? `Near ${locationLabel(location)}` : locationLabel(location);
 
+  const isSelectedCity = (city: MarketplaceLocation) =>
+    location.source === 'USER_SELECTED' && city.city === location.city && city.state === location.state && city.postalCode === location.postalCode;
+  const suggestions = cities;
+  function changeRadius(next: SearchRadius) {
+    setSelectedRadius(next);
+    onRadiusChange?.(next);
+  }
+
+  function toggleLocation(event: React.MouseEvent<HTMLButtonElement>) {
+    locationTriggerRef.current = event.currentTarget;
+    setShowLocMenu(!showLocMenu);
+  }
+
+  // z-[210] clears the shared dim Overlay (z-200) so the menu never renders under its own backdrop.
   const locationMenu = (
-    <div role="dialog" aria-label="Choose location" className="absolute top-full mt-2 left-0 z-[100] w-[min(20rem,calc(100vw-2rem))] max-h-[min(22rem,calc(100dvh-10rem))] overflow-y-auto overscroll-contain bg-card border border-app rounded-card-lg shadow-pop p-2 animate-modal">
-      <p className="px-2 pb-2 text-sm font-semibold text-main">Location</p>
+    <div role="dialog" aria-modal="true" aria-label="Choose location" onKeyDown={(event) => {
+      if (event.key === 'Escape') { event.stopPropagation(); setShowLocMenu(false); }
+      if (event.key === 'Tab') {
+        const controls = event.currentTarget.querySelectorAll<HTMLElement>('input, button:not(:disabled)');
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    }} className="absolute top-full mt-2 left-0 z-[210] w-[min(19rem,calc(100vw-2rem))] max-h-[min(22rem,calc(100dvh-10rem))] overflow-y-auto overscroll-contain bg-card border border-app rounded-card-lg shadow-pop p-2 animate-modal">
       <input aria-label="Search city or ZIP" autoComplete="off" value={cityQuery} onChange={(event) => setCityQuery(event.target.value)} onKeyDown={(event) => {
-        if (event.key === 'Enter' && cities[0]) chooseCity(cities[0]);
-      }} placeholder="Search city or ZIP" className="w-full h-10 px-3 rounded-card border border-app bg-card text-sm text-main outline-none focus:border-accent" />
-      <button type="button" onClick={() => void chooseBrowserLocation()} disabled={locating} className="w-full flex items-center gap-2 h-11 px-3 mt-2 rounded-card text-left text-sm font-medium text-main hover:bg-subtle disabled:opacity-60">
-        <LocateFixed size={16} className="text-accent" />{locating ? 'Finding your city…' : 'Use my location'}
-      </button>
-      {searchingCities && <p className="px-3 py-2 text-xs text-sec">Searching cities…</p>}
-      {cities.map((city) => (
-        <button type="button" key={`${city.city}|${city.state}|${city.country}`} onClick={() => chooseCity(city)} className="w-full flex items-center justify-between gap-2 min-h-11 px-3 rounded-card text-left text-sm text-main hover:bg-subtle">
-          <span>{locationLabel(city)}{city.country && <span className="block text-xs text-sec">{city.country}</span>}</span>
-          {city.city === location.city && city.state === location.state && location.source === 'USER_SELECTED' && <Check size={14} className="text-accent" />}
+        if (event.key === 'Enter' && !searchingCities && suggestions[0]) chooseCity(suggestions[0]);
+      }} placeholder="City or ZIP/postal code" className="w-full min-w-0 h-11 px-3 rounded-card border border-strong bg-card text-base sm:text-sm text-main focus:border-accent" />
+      <div className="mt-1">
+        {searchingCities && <p role="status" className="px-2 py-2 text-xs text-sec">Searching cities…</p>}
+        {suggestions.map((city) => {
+          const selected = isSelectedCity(city);
+          return (
+            <button
+              type="button"
+              key={`${city.city}|${city.state}|${city.country}|${city.postalCode ?? ''}`}
+              onClick={() => chooseCity(city)}
+              className={`w-full flex items-center justify-between gap-2 min-h-10 px-2 rounded-card text-left text-sm transition-colors duration-fast ${
+                selected ? 'bg-accent-soft text-accent font-semibold' : 'text-main hover:bg-subtle'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <MapPin size={14} className={selected ? 'text-accent' : 'text-muted'} />
+                {locationLabel(city)}
+              </span>
+              {selected && <Check size={15} className="text-accent shrink-0" />}
+            </button>
+          );
+        })}
+        {!searchingCities && cities.length === 0 && !locationError && <p role="status" className="px-2 py-2 text-xs text-sec">{cityQuery.trim().length >= 2 ? 'No matching location. Try another city or postal code.' : 'Enter a city or ZIP/postal code to search.'}</p>}
+        {locationError && <p role="status" className="px-2 py-2 text-xs text-error">{locationError}</p>}
+      </div>
+      <div className="mt-1 pt-2 border-t border-app">
+        {locationPermission === 'denied' && <p className="px-2 pb-2 text-xs text-sec">Location access is blocked. Allow it in browser settings, or enter a city or ZIP code above.</p>}
+        <button type="button" onClick={() => void chooseBrowserLocation()} disabled={locating || locationPermission === 'denied'} className="w-full flex items-center gap-2.5 min-h-10 px-2 rounded-card text-left text-sm font-medium text-main hover:bg-subtle disabled:opacity-60">
+          <LocateFixed size={16} className="text-accent shrink-0" />
+          {locating ? 'Finding your city…' : locationPermission === 'denied' ? 'Location blocked' : 'Use my current location'}
         </button>
-      ))}
-      {cityQuery.trim().length >= 2 && !searchingCities && cities.length === 0 && !locationError && <p className="px-3 py-2 text-xs text-sec">No matching city. Try a city or ZIP.</p>}
-      {locationError && <p role="status" className="px-3 py-2 text-xs text-error">{locationError}</p>}
-      {location.source !== 'NONE' && <button type="button" onClick={() => { clearLocation(); onLocationChange?.({ city: '', state: '', country: '', source: 'NONE' }); setShowLocMenu(false); }} className="w-full h-10 px-3 text-left text-xs font-medium text-sec hover:text-main">Browse without a location</button>}
+        {location.source !== 'NONE' && (
+          <button type="button" onClick={() => { clearLocation(); onLocationChange?.({ city: '', state: '', country: '', source: 'NONE' }); setShowLocMenu(false); }} className="w-full flex items-center gap-2.5 min-h-10 px-2 rounded-card text-left text-xs font-medium text-sec hover:bg-subtle hover:text-main">
+            <Map size={14} className="text-muted shrink-0" />Browse without a location
+          </button>
+        )}
+      </div>
     </div>
   );
 
   return (
-    <div className="relative z-[80] w-full min-w-0">
+    // No z-index here: it would cap the location/date popovers below the shared dim Overlay (z-200).
+    <div className="relative w-full min-w-0">
+      {/* Not portaled: a portaled backdrop lives in a different stacking context than this menu,
+          so its z-index can't be trusted to lose against the menu's z-[210]. Staying in the same
+          local tree keeps the two comparable and the menu reliably clickable. */}
+      {showLocMenu && (
+        <button type="button" className="fixed inset-0 z-[200] bg-black/45 animate-fade-in" onClick={() => setShowLocMenu(false)} aria-label="Close location picker" />
+      )}
       {/* Desktop: one pill, three segments, one action. Segments light up on hover/focus. */}
       <div
-        className={`search-control hidden sm:flex items-center w-full min-w-0 glass-surface border border-app rounded-card-lg shadow-xs
+        className={`search-control hidden sm:flex flex-wrap gap-y-2 items-center w-full min-w-0 glass-surface border border-app rounded-card-lg shadow-xs
           transition-shadow duration-standard ease-out focus-within:shadow-hover hover:shadow-hover
           ${variant === 'hero' ? 'p-1.5' : 'p-1'}`}
       >
-        <div className="search-input-shell flex-1 min-w-0 flex items-center gap-2.5 pl-4 pr-3 h-11 rounded-card transition-colors duration-fast hover:bg-subtle focus-within:bg-subtle">
+        <div className="search-input-shell flex-1 min-w-[10rem] flex items-center gap-2.5 pl-4 pr-3 h-11 rounded-card transition-colors duration-fast hover:bg-subtle focus-within:bg-subtle">
           <Search size={18} className="text-sec shrink-0" />
           <div className="flex-1 min-w-0">
             <label htmlFor="search-what" className="sr-only">Search for items to rent</label>
@@ -150,8 +286,8 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
 
         <div ref={desktopLocRef} className="relative min-w-0 shrink-0">
           <button
-            onClick={() => setShowLocMenu(!showLocMenu)}
-            aria-haspopup="listbox"
+            onClick={toggleLocation}
+            aria-haspopup="dialog"
             aria-expanded={showLocMenu}
             className="flex items-center gap-2 px-4 h-11 rounded-card text-sm font-medium text-main whitespace-nowrap transition-colors duration-fast hover:bg-subtle"
           >
@@ -162,8 +298,10 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
           {showLocMenu && locationMenu}
         </div>
 
-        <span className="hidden lg:block w-px h-6 bg-[var(--border)] shrink-0" aria-hidden="true" />
-        <div className="hidden lg:block shrink-0">
+        <div className="w-36 shrink-0">
+          <SearchRadiusSelect value={radius} onChange={changeRadius} />
+        </div>
+        <div className="min-w-0 shrink-0 ml-auto">
           <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
         </div>
 
@@ -187,7 +325,10 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
             <span className="flex-1 min-w-0 truncate text-sm font-semibold text-main">
               {what || 'Search rentals'}
             </span>
-            <span className="text-xs text-sec shrink-0 max-w-28 truncate">{displayLocation}</span>
+            <span className="text-xs text-sec min-w-0 max-w-40 text-right">
+              <span className="block truncate">{displayLocation}</span>
+              <span className="block">{radius === null ? 'Any distance' : `Within ${radius} miles`}</span>
+            </span>
           </button>
         ) : (
           <div className="rounded-card-xl glass-surface border border-app shadow-card p-3.5 space-y-3 animate-modal">
@@ -205,17 +346,21 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
 
             <div ref={mobileLocRef} className="relative">
               <button
-                onClick={() => setShowLocMenu(!showLocMenu)}
+                onClick={toggleLocation}
+                aria-haspopup="dialog"
+                aria-expanded={showLocMenu}
                 className="w-full flex items-center justify-between h-11 px-3 rounded-card bg-subtle text-sm font-medium text-main"
               >
-                <span className="flex items-center gap-2">
+                <span className="flex min-w-0 items-center gap-2">
                   <MapPin size={15} className="text-accent" />
-                  {displayLocation}
+                  <span className="truncate">{displayLocation}</span>
                 </span>
                 <ChevronDown size={14} className={`text-muted transition-transform duration-fast ${showLocMenu ? 'rotate-180' : ''}`} />
               </button>
               {showLocMenu && locationMenu}
             </div>
+
+            <SearchRadiusSelect value={radius} onChange={changeRadius} />
 
             <div className="px-1">
               <DateRangePicker
@@ -225,7 +370,6 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
                 mode="range"
               />
             </div>
-
             <button
               onClick={runSearch}
               className="w-full h-12 rounded-card bg-accent text-accent-text font-semibold text-sm active:scale-[0.99] transition-transform duration-fast flex items-center justify-center gap-2"
@@ -236,6 +380,9 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
           </div>
         )}
       </div>
+      <p className={`mt-2 text-xs ${variant === 'compact' && !mobileExpanded ? 'hidden sm:block' : ''} ${variant === 'hero' ? 'text-white/90' : 'text-sec'}`}>
+        Dates are optional.{location.source === 'NONE' ? ' Choose a location to apply your radius, or search all locations.' : ' Distances are approximate; exact pickup addresses stay private.'}
+      </p>
     </div>
   );
 }

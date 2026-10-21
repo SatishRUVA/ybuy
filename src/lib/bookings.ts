@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { signListingImages } from '@/lib/listings';
 
 export type BookingStatus =
   | 'requested'
@@ -101,8 +102,11 @@ export function toUiBooking(row: DbBookingRow, currentUserId: string): UiBooking
 
 export async function fetchBookingById(id: string, currentUserId: string): Promise<UiBooking | null> {
   const { data, error } = await supabase.from('bookings').select(BOOKING_SELECT).eq('id', id).maybeSingle();
-  if (error) throw error;
-  return data ? toUiBooking(data as unknown as DbBookingRow, currentUserId) : null;
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const row = data as unknown as DbBookingRow;
+  row.listing.listing_images = await signListingImages(row.listing.listing_images);
+  return toUiBooking(row, currentUserId);
 }
 
 export async function fetchBookingsAsRenter(currentUserId: string): Promise<UiBooking[]> {
@@ -112,7 +116,11 @@ export async function fetchBookingsAsRenter(currentUserId: string): Promise<UiBo
     .eq('renter_id', currentUserId)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((row) => toUiBooking(row as unknown as DbBookingRow, currentUserId));
+  return Promise.all((data ?? []).map(async (value) => {
+    const row = value as unknown as DbBookingRow;
+    row.listing.listing_images = await signListingImages(row.listing.listing_images);
+    return toUiBooking(row, currentUserId);
+  }));
 }
 
 export async function fetchBookingsAsOwner(currentUserId: string): Promise<UiBooking[]> {
@@ -122,7 +130,11 @@ export async function fetchBookingsAsOwner(currentUserId: string): Promise<UiBoo
     .eq('owner_id', currentUserId)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((row) => toUiBooking(row as unknown as DbBookingRow, currentUserId));
+  return Promise.all((data ?? []).map(async (value) => {
+    const row = value as unknown as DbBookingRow;
+    row.listing.listing_images = await signListingImages(row.listing.listing_images);
+    return toUiBooking(row, currentUserId);
+  }));
 }
 
 async function callBookingRpc(fn: string, args: Record<string, unknown>): Promise<DbBookingRow> {

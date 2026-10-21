@@ -1,5 +1,8 @@
 import { supabase } from '@/lib/supabase';
+import { assertPlainText, assertUuid, InputValidationError } from '@/lib/text-safety';
+import { signListingImages } from '@/lib/listings';
 
+export const MESSAGE_MAX_LENGTH = 2000;
 interface DbProfileLite {
   id: string;
   full_name: string;
@@ -80,12 +83,18 @@ function toUiMessage(row: { id: string; conversation_id: string; sender_id: stri
 
 /** Lists a user's conversations with the latest message preview, newest activity first. */
 export async function fetchConversations(currentUserId: string): Promise<UiConversation[]> {
+  // The id is spliced into a PostgREST `.or()` filter string, so it must be a real UUID.
+  assertUuid(currentUserId, 'user id');
   const { data, error } = await supabase
     .from('conversations')
     .select(CONVERSATION_SELECT)
     .or(`participant_one.eq.${currentUserId},participant_two.eq.${currentUserId}`);
   if (error) throw error;
-  const conversations = (data ?? []).map((row) => toUiConversation(row as unknown as DbConversationRow, currentUserId));
+  const conversations = await Promise.all((data ?? []).map(async (value) => {
+    const row = value as unknown as DbConversationRow;
+    if (row.listing) row.listing.listing_images = await signListingImages(row.listing.listing_images);
+    return toUiConversation(row, currentUserId);
+  }));
   if (conversations.length === 0) return [];
 
   const { data: recentMessages, error: msgError } = await supabase
@@ -121,9 +130,12 @@ export async function fetchMessages(conversationId: string): Promise<UiMessage[]
 }
 
 export async function sendMessage(conversationId: string, senderId: string, body: string): Promise<UiMessage> {
+  const text = body.trim();
+  if (!text) throw new InputValidationError('Write a message first.');
+  assertPlainText('Message', text, MESSAGE_MAX_LENGTH);
   const { data, error } = await supabase
     .from('messages')
-    .insert({ conversation_id: conversationId, sender_id: senderId, body })
+    .insert({ conversation_id: conversationId, sender_id: senderId, body: text })
     .select('*')
     .single();
   if (error) throw error;
@@ -138,6 +150,9 @@ export async function getOrCreateConversation(params: {
   bookingId?: string;
 }): Promise<string> {
   const { currentUserId, otherUserId, listingId, bookingId } = params;
+  // These ids are spliced into a PostgREST `.or()` filter string, so they must be real UUIDs.
+  assertUuid(currentUserId, 'user id');
+  assertUuid(otherUserId, 'user id');
   let query = supabase
     .from('conversations')
     .select('id')

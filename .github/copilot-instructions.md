@@ -19,8 +19,6 @@ Follow the Ponytail principle:
 - Prefer the smallest correct implementation.
 - Fix root causes rather than symptoms.
 
-Do not implement Part 2 functionality.
-
 Never compromise:
 - security
 - authentication

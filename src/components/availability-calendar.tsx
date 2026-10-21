@@ -32,32 +32,32 @@ export function AvailabilityCalendar({
   }
 
   return (
-    <div className="p-4 rounded-card-xl bg-card border border-app">
-      <div className="flex items-center justify-between mb-3">
+    <div className="w-full max-w-[280px] p-2.5 rounded-card-lg bg-card border border-app">
+      <div className="flex items-center justify-between mb-2">
         <button
           type="button"
           onClick={() => setMonthOffset((o) => Math.max(0, o - 1))}
           disabled={monthOffset === 0}
-          className="p-1.5 rounded-card text-sec hover:bg-subtle disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          className="p-1 rounded-card text-sec hover:bg-subtle disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           aria-label="Previous month"
         >
-          <ChevronLeft size={16} />
+          <ChevronLeft size={15} />
         </button>
-        <span className="text-sm font-semibold text-main">{monthLabel}</span>
+        <span className="text-xs font-semibold text-main">{monthLabel}</span>
         <button
           type="button"
           onClick={() => setMonthOffset((o) => Math.min(monthsAhead - 1, o + 1))}
           disabled={monthOffset >= monthsAhead - 1}
-          className="p-1.5 rounded-card text-sec hover:bg-subtle disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          className="p-1 rounded-card text-sec hover:bg-subtle disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           aria-label="Next month"
         >
-          <ChevronRight size={16} />
+          <ChevronRight size={15} />
         </button>
       </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-muted mb-1">
+      <div className="grid grid-cols-7 gap-0.5 text-center text-[9px] font-semibold text-muted mb-0.5">
         {WEEKDAY_LABELS.map((w, i) => <div key={i}>{w}</div>)}
       </div>
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-0">
         {cells.map((date, i) => {
           if (!date) return <div key={i} />;
           const isPast = date < todayStr;
@@ -76,16 +76,16 @@ export function AvailabilityCalendar({
               disabled={!canClick}
               onClick={() => canClick && onToggleDate?.(date)}
               title={isBooked ? 'Booked' : isBlocked ? 'Blocked by owner' : undefined}
-              className={`aspect-square rounded-card text-xs transition-colors ${tone} ${canClick ? 'cursor-pointer' : ''}`}
+              className={`aspect-square rounded-card text-[10px] transition-colors ${tone} ${canClick ? 'cursor-pointer' : ''}`}
             >
               {dayNum}
             </button>
           );
         })}
       </div>
-      <div className="flex items-center gap-4 mt-3 pt-3 border-t border-app text-[11px] text-sec">
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-accent-soft border border-accent" /> Booked</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-warning-soft border border-warning" /> Blocked</span>
+      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-app text-[10px] text-sec">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-accent-soft border border-accent" /> Booked</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-warning-soft border border-warning" /> Blocked</span>
         {editable && <span className="ml-auto">Click a date to block/unblock it</span>}
       </div>
     </div>

@@ -1,0 +1,42 @@
+.modern-minimal {
+  --canvas: #f1f3ee;
+  --paper: #fff;
+  --ink: #1a2722;
+  --muted: #53625a;
+  --line: #d5ddd5;
+  --accent: #315b49;
+  --accent-strong: #234434;
+  --accent-contrast: #fff;
+  --surface-soft: #e4eae0;
+  --focus: #145c9e;
+  --body-font: "Manrope", sans-serif;
+  --display-font: "Manrope", sans-serif;
+}
+.modern-minimal .site-header { border-bottom: 0; }
+.modern-minimal .header-list-link { border-radius: 999px; }
+.minimal-hero { grid-template-columns: minmax(0, 1.07fr) minmax(19rem, 0.93fr); gap: clamp(2rem, 5vw, 5rem); padding: 2.5rem 0 3rem; }
+.modern-minimal .hero h1 { max-width: 9ch; font-size: clamp(3.6rem, 6.5vw, 6rem); font-weight: 700; letter-spacing: -0.035em; line-height: 0.98; }
+.modern-minimal .hero-lede { max-width: 38ch; }
+.modern-minimal .hero-media { min-height: 24rem; border-radius: 0.8rem 5.5rem 0.8rem 0.8rem; }
+.modern-minimal .hero-media img { min-height: 24rem; }
+.modern-minimal .hero-caption { right: 1rem; bottom: 1rem; left: 1rem; }
+.modern-minimal .search-form { padding: 0.35rem; border-radius: 0.6rem; box-shadow: 0 10px 24px rgb(26 39 34 / 6%); }
+.modern-minimal .search-button, .modern-minimal .owner-link { border-radius: 0.45rem; }
+.minimal-section-heading { align-items: center; }
+.modern-minimal .content-note { margin: 0.45rem 0 0; color: var(--muted); font-size: 0.82rem; }
+.modern-minimal .filter-button { border-radius: 999px; }
+.modern-minimal .listing-grid { gap: 0.9rem; }
+.modern-minimal .listing-card { border: 0; border-radius: 0.9rem; box-shadow: 0 8px 25px rgb(26 39 34 / 7%); }
+.modern-minimal .listing-image { aspect-ratio: 1.4; }
+.modern-minimal .listing-content { padding: 0.9rem; }
+.modern-minimal .sample-tag { color: #315b49; background: #e4eae0; border-radius: 999px; }
+.modern-minimal .save-button { border-radius: 999px; }
+.modern-minimal .how-section { padding-top: 3rem; padding-bottom: 3rem; }
+.modern-minimal .steps li { border-color: #78927f; }
+.modern-minimal .owner-section { background: #e4eae0; border-radius: 0.9rem; }
+
+@media (max-width: 760px) {
+  .minimal-hero { grid-template-columns: 1fr; gap: 1.4rem; padding-top: 2.2rem; }
+  .modern-minimal .hero-media, .modern-minimal .hero-media img { min-height: 17rem; }
+  .minimal-section-heading { align-items: flex-start; }
+}

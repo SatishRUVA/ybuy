@@ -1,30 +1,14 @@
 import { useEffect, useState } from 'react';
-import { MessageSquare, User, Menu, X, Home, Search, Plus, PackagePlus, Calendar, LogOut } from 'lucide-react';
+import { MessageSquare, User, Menu, X, Home, Search, Plus, PackagePlus, Calendar, Heart, LogOut, ShieldCheck, Bell } from 'lucide-react';
 import { useRouter, type Route } from '@/router';
 import { useAuth } from '@/auth-context';
+import { useAdminAccess } from '@/lib/admin';
 import { ThemeSwitcher } from '@/components/search';
-import { Button } from '@/components/ui';
+import { Alert, Button } from '@/components/ui';
 import { SHOW_DEMO_THEMES } from '@/lib/feature-flags';
+import { subscribeToNotifications, unreadNotificationCount } from '@/lib/notifications';
+import { supabase } from '@/lib/supabase';
 import logo from '@/assets/logo.png';
-
-const PROTECTED_ROUTES = new Set<Route['name']>([
-  'dashboard',
-  'renter-dashboard',
-  'owner-dashboard',
-  'create-listing',
-  'check-in',
-  'check-out',
-  'item-passport',
-  'claims',
-  'claim-detail',
-  'trust-profile',
-  'messaging',
-  'conversation',
-  'requests',
-  'favorites',
-  'need-something',
-  'notifications',
-]);
 
 function Wordmark({ onClick }: { onClick: () => void }) {
   return (
@@ -34,31 +18,54 @@ function Wordmark({ onClick }: { onClick: () => void }) {
     </button>
   );
 }
-
 export function Header() {
   const { route, navigate } = useRouter();
-  const { user, profile, signInWithGoogle, signOut } = useAuth();
+  const { user, profile, loading, error, signInOpen, authBusy, openSignIn, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState<number | null>(null);
+  const adminAccess = useAdminAccess();
 
   // A route change while the sheet is open would otherwise leave it covering the new page.
-  useEffect(() => { setMenuOpen(false); }, [route]);
+  useEffect(() => { setMenuOpen(false); }, [route, user?.id]);
 
-  function go(next: Route) {
-    if (!user && PROTECTED_ROUTES.has(next.name)) {
-      void signInWithGoogle();
+  useEffect(() => {
+    if (!user?.id) {
+      setUnreadCount(0);
       return;
     }
+    let active = true;
+    const refresh = async () => {
+      try {
+        const count = await unreadNotificationCount(user.id);
+        if (active) setUnreadCount(count);
+      } catch {
+        if (active) setUnreadCount(null);
+      }
+    };
+    void refresh();
+    const channel = subscribeToNotifications(user.id, () => { void refresh(); });
+    const fallback = window.setInterval(() => { void refresh(); }, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(fallback);
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  function go(next: Route) {
     navigate(next);
   }
 
   const navItems: { label: string; route: Route; icon: typeof Home }[] = [
     { label: 'Home', route: { name: 'home' }, icon: Home },
     { label: 'Browse', route: { name: 'search' }, icon: Search },
+    { label: 'Requests & offers', route: { name: 'requests' }, icon: PackagePlus },
     { label: 'Bookings', route: { name: 'dashboard' }, icon: Calendar },
     { label: 'Messages', route: { name: 'messaging' }, icon: MessageSquare },
   ];
 
   const isActive = (r: Route) => {
+    if (r.name === 'requests') return route.name === 'requests' || route.name === 'bidding' || route.name === 'auction';
     if (r.name === 'dashboard') return route.name === 'dashboard' || route.name === 'renter-dashboard' || route.name === 'owner-dashboard';
     return route.name === r.name;
   };
@@ -98,19 +105,52 @@ export function Header() {
             {SHOW_DEMO_THEMES && <ThemeSwitcher />}
 
             {user ? (
-              <button
-                onClick={() => go({ name: 'trust-profile' })}
-                aria-label="Account"
-                aria-current={route.name === 'trust-profile' ? 'page' : undefined}
-                className="hidden sm:inline-flex h-10 items-center gap-2 rounded-card border border-app bg-card px-1.5 pr-3 text-sm font-semibold text-main hover:border-strong transition-colors duration-fast"
-              >
-                {profile?.avatar_url
-                  ? <img src={profile.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
-                  : <span className="grid place-items-center w-7 h-7 rounded-full bg-subtle"><User size={16} className="text-sec" /></span>}
-                <span>Account</span>
-              </button>
+              <>
+                <button
+                  onClick={() => go({ name: 'notifications' })}
+                  aria-label={unreadCount === null ? 'Notifications, unread count unavailable' : `Notifications, ${unreadCount} unread`}
+                  aria-current={route.name === 'notifications' ? 'page' : undefined}
+                  className="relative grid h-11 w-11 place-items-center rounded-card border border-app bg-card text-sec transition-colors duration-fast hover:border-strong hover:text-accent"
+                >
+                  <Bell size={18} aria-hidden="true" />
+                  {unreadCount !== null && unreadCount > 0 && <span aria-hidden="true" className="absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-[10px] font-bold text-accent-text">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>}
+                  <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                    {unreadCount === null ? 'Unread notification count unavailable' : `${unreadCount} unread notifications`}
+                  </span>
+                </button>
+                {adminAccess.access && (
+                  <button
+                    onClick={() => go({ name: 'admin' })}
+                    aria-label="Admin console"
+                    className="hidden sm:grid place-items-center w-10 h-10 rounded-card border border-app bg-card text-sec hover:text-accent hover:border-strong transition-colors duration-fast"
+                  >
+                    <ShieldCheck size={18} />
+                  </button>
+                )}
+                <button
+                  onClick={() => go({ name: 'favorites' })}
+                  aria-label="Saved items"
+                  aria-current={route.name === 'favorites' ? 'page' : undefined}
+                  className="grid place-items-center w-10 h-10 rounded-card border border-app bg-card text-sec hover:text-favorite hover:border-strong transition-colors duration-fast"
+                >
+                  <Heart size={18} />
+                </button>
+                <button
+                  onClick={() => go({ name: 'trust-profile' })}
+                  aria-label="Account"
+                  aria-current={route.name === 'trust-profile' ? 'page' : undefined}
+                  className="hidden sm:inline-flex h-10 items-center gap-2 rounded-card border border-app bg-card px-1.5 pr-3 text-sm font-semibold text-main hover:border-strong transition-colors duration-fast"
+                >
+                  {profile?.avatar_url
+                    ? <img src={profile.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
+                    : <span className="grid place-items-center w-7 h-7 rounded-full bg-subtle"><User size={16} className="text-sec" /></span>}
+                  <span>Account</span>
+                </button>
+              </>
             ) : (
-              <Button size="sm" variant="secondary" onClick={() => void signInWithGoogle()}>Sign in</Button>
+              <Button size="sm" variant="secondary" disabled={loading} onClick={openSignIn}>Sign in / Join</Button>
             )}
 
             <button
@@ -124,6 +164,8 @@ export function Header() {
           </div>
         </div>
       </div>
+
+      {error && !signInOpen && <div role="alert" className="max-w-[1400px] mx-auto px-4 sm:px-6 pb-3"><Alert tone="error">{error}</Alert></div>}
 
       {menuOpen && (
         <div className="md:hidden border-t border-app glass-nav animate-modal">
@@ -148,10 +190,19 @@ export function Header() {
             </Button>
             {user && (
               <>
+                {adminAccess.access && (
+                  <Button fullWidth size="sm" variant="ghost" icon={<ShieldCheck size={16} />} onClick={() => go({ name: 'admin' })} className="mt-1">
+                    Admin console
+                  </Button>
+                )}
                 <Button fullWidth size="sm" variant="ghost" icon={<User size={16} />} onClick={() => go({ name: 'trust-profile' })} className="mt-1">
                   Account
                 </Button>
-                <Button fullWidth size="sm" variant="ghost" icon={<LogOut size={16} />} onClick={() => void signOut()}>
+                <Button fullWidth size="sm" variant="ghost" icon={<Bell size={16} />} onClick={() => go({ name: 'notifications' })} className="mt-1">
+                  Notifications{unreadCount !== null && unreadCount > 0 ? ` (${unreadCount > 99 ? '99+' : unreadCount} unread)` : ''}
+                </Button>
+                <Button fullWidth size="sm" variant="ghost" onClick={openSignIn}>Switch account</Button>
+                <Button fullWidth size="sm" variant="ghost" loading={authBusy === 'sign-out'} icon={<LogOut size={16} />} onClick={() => void signOut()}>
                   Sign out
                 </Button>
               </>
@@ -163,18 +214,12 @@ export function Header() {
   );
 }
 
-/** Routes that render their own sticky bottom action bar - the FAB would sit on top of it. */
-const ROUTES_WITH_STICKY_CTA = new Set<Route['name']>(['listing', 'checkout', 'create-listing']);
+/** Keep the listing shortcut clear of page actions and preference controls. */
+const ROUTES_WITHOUT_FAB = new Set<Route['name']>(['listing', 'checkout', 'create-listing', 'conversation', 'notifications']);
 
 export function BottomNav() {
   const { route, navigate } = useRouter();
-  const { user, signInWithGoogle } = useAuth();
-
   function go(next: Route) {
-    if (!user && PROTECTED_ROUTES.has(next.name)) {
-      void signInWithGoogle();
-      return;
-    }
     navigate(next);
   }
 
@@ -215,8 +260,8 @@ export function BottomNav() {
       <button
         onClick={() => go({ name: 'create-listing' })}
         aria-label="List an item"
-        className={`fixed bottom-[4.75rem] right-4 z-40 w-14 h-14 rounded-full bg-accent text-accent-text shadow-hover grid place-items-center active:scale-95 transition-transform duration-fast ${
-          ROUTES_WITH_STICKY_CTA.has(route.name) ? 'hidden' : 'md:hidden'
+        className={`fixed bottom-[calc(4.75rem_+_env(safe-area-inset-bottom))] right-4 z-40 w-14 h-14 rounded-full bg-accent text-accent-text shadow-hover grid place-items-center active:scale-95 transition-transform duration-fast ${
+          ROUTES_WITHOUT_FAB.has(route.name) ? 'hidden' : 'md:hidden'
         }`}
       >
         <Plus size={22} />

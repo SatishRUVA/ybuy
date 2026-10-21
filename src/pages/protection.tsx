@@ -24,9 +24,9 @@ export function ProtectionPage() {
         <div className="grid sm:grid-cols-3 gap-4 mb-8">
           <div className="p-5 rounded-card-xl bg-card border border-app">
             <Lock size={24} className="text-warning mb-3" />
-            <h3 className="font-semibold text-main text-sm mb-1">Security Hold</h3>
+            <h3 className="font-semibold text-main text-sm mb-1">Security Deposit</h3>
             <p className="text-xs text-sec leading-relaxed">
-              A refundable authorization on your card. Not a fee. Released after return and inspection.
+              A refundable charge at checkout, not a rental fee. Refunded after owner-confirmed return when no unresolved dispute exists.
             </p>
           </div>
           <div className="p-5 rounded-card-xl bg-card border border-app">
@@ -52,15 +52,15 @@ export function ProtectionPage() {
               <Lock size={20} className="text-warning" />
             </div>
             <div>
-              <h3 className="font-semibold text-main">$500 Refundable Security Hold</h3>
+              <h3 className="font-semibold text-main">Refundable Security Deposit</h3>
               <p className="text-sm text-sec mt-1 leading-relaxed">
-                This is separate from protection. It is a temporary authorization on your card, not a charge.
-                Released according to the rental agreement after return and inspection.
+                This is separate from protection. The amount shown on the listing is charged at checkout.
+                It is eligible for refund after the owner confirms return when no unresolved dispute exists.
               </p>
               <div className="mt-3 p-3 rounded-card-lg bg-warning-soft border border-app">
                 <p className="text-xs text-sec">
-                  <strong className="text-warning">Important:</strong> The security hold is never charged as rental revenue.
-                  It exists solely to protect the owner's item and is refunded automatically upon successful return.
+                  <strong className="text-warning">Important:</strong> The security deposit is not owner rental revenue.
+                  Check your rental for the verified refund status; unresolved disputes require review.
                 </p>
               </div>
             </div>

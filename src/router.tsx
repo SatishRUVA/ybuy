@@ -1,20 +1,24 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { readSearchState, searchStateParams, type SearchState } from '@/lib/search-state';
 
 export type Route =
   | { name: 'home' }
   | { name: 'dashboard'; tab?: 'renting' | 'lending' }
-  | { name: 'search'; category?: string; q?: string; lat?: number; lng?: number; locationLabel?: string; start?: string; end?: string }
+  | ({ name: 'search'; lat?: number; lng?: number; locationLabel?: string } & Partial<SearchState>)
   | { name: 'listing'; id: string }
   | { name: 'checkout'; id: string; startDate?: string; endDate?: string; quantity?: number }
   | { name: 'confirmation'; id: string }
   | { name: 'renter-dashboard' }
   | { name: 'owner-dashboard' }
   | { name: 'create-listing' }
+  | { name: 'edit-listing'; id: string }
   | { name: 'check-in'; id: string }
   | { name: 'check-out'; id: string }
   | { name: 'item-passport'; id: string }
   | { name: 'claims' }
   | { name: 'claim-detail'; id: string }
+  | { name: 'support'; id?: string }
+  | { name: 'wallet' }
   | { name: 'trust-profile' }
   | { name: 'messaging' }
   | { name: 'conversation'; id: string }
@@ -25,7 +29,9 @@ export type Route =
   | { name: 'notifications' }
   | { name: 'bidding' }
   | { name: 'auction'; id: string }
-  | { name: 'guidelines' };
+  | { name: 'guidelines' }
+  | { name: 'admin'; section?: string }
+  | { name: 'access' };
 
 interface RouterContextValue {
   route: Route;
@@ -41,16 +47,12 @@ function routeToPath(route: Route): string {
     case 'home': return '/';
     case 'dashboard': return route.tab ? `/dashboard?tab=${route.tab}` : '/dashboard';
     case 'search': {
-      const params = new URLSearchParams();
-      if (route.category) params.set('category', route.category);
-      if (route.q) params.set('q', route.q);
+      const params = searchStateParams(route);
       if (route.lat != null && route.lng != null) {
         params.set('lat', String(route.lat));
         params.set('lng', String(route.lng));
       }
       if (route.locationLabel) params.set('loc', route.locationLabel);
-      if (route.start !== undefined) params.set('start', route.start);
-      if (route.end !== undefined) params.set('end', route.end);
       const qs = params.toString();
       return qs ? `/search?${qs}` : '/search';
     }
@@ -67,11 +69,14 @@ function routeToPath(route: Route): string {
     case 'renter-dashboard': return '/dashboard?tab=renting';
     case 'owner-dashboard': return '/dashboard?tab=lending';
     case 'create-listing': return '/create-listing';
+    case 'edit-listing': return `/edit-listing/${route.id}`;
     case 'check-in': return `/check-in/${route.id}`;
     case 'check-out': return `/check-out/${route.id}`;
     case 'item-passport': return `/item-passport/${route.id}`;
     case 'claims': return '/claims';
     case 'claim-detail': return `/claims/${route.id}`;
+    case 'support': return route.id ? `/support/${route.id}` : '/support';
+    case 'wallet': return '/wallet';
     case 'trust-profile': return '/profile';
     case 'messaging': return '/messages';
     case 'conversation': return `/messages/${route.id}`;
@@ -83,6 +88,8 @@ function routeToPath(route: Route): string {
     case 'bidding': return '/bidding';
     case 'auction': return `/auction/${route.id}`;
     case 'guidelines': return '/guidelines';
+    case 'admin': return route.section ? `/admin/${route.section}` : '/admin';
+    case 'access': return '/access';
   }
 }
 
@@ -90,6 +97,7 @@ function pathToRoute(pathname: string, search: string): Route {
   const parts = pathname.split('/').filter(Boolean);
   const [first, second] = parts;
   switch (first) {
+    case 'edit-listing': return second ? { name: 'edit-listing',id: second } : { name: 'owner-dashboard' };
     case undefined: return { name: 'home' };
     case 'search': {
       const qp = new URLSearchParams(search);
@@ -97,13 +105,10 @@ function pathToRoute(pathname: string, search: string): Route {
       const lng = Number(qp.get('lng'));
       return {
         name: 'search',
-        category: qp.get('category') ?? undefined,
-        q: qp.get('q') ?? undefined,
+        ...readSearchState(qp),
         lat: Number.isFinite(lat) && qp.has('lat') ? lat : undefined,
         lng: Number.isFinite(lng) && qp.has('lng') ? lng : undefined,
         locationLabel: qp.get('loc') ?? undefined,
-        start: qp.get('start') ?? undefined,
-        end: qp.get('end') ?? undefined,
       };
     }
     case 'listing': return second ? { name: 'listing', id: second } : { name: 'home' };
@@ -131,6 +136,8 @@ function pathToRoute(pathname: string, search: string): Route {
     case 'check-out': return second ? { name: 'check-out', id: second } : { name: 'home' };
     case 'item-passport': return second ? { name: 'item-passport', id: second } : { name: 'home' };
     case 'claims': return second ? { name: 'claim-detail', id: second } : { name: 'claims' };
+    case 'support': return { name: 'support', id: second };
+    case 'wallet': return { name: 'wallet' };
     case 'profile': return { name: 'trust-profile' };
     case 'messages': return second ? { name: 'conversation', id: second } : { name: 'messaging' };
     case 'requests': return { name: 'requests' };
@@ -141,6 +148,8 @@ function pathToRoute(pathname: string, search: string): Route {
     case 'bidding': return { name: 'bidding' };
     case 'auction': return second ? { name: 'auction', id: second } : { name: 'home' };
     case 'guidelines': return { name: 'guidelines' };
+    case 'admin': return { name: 'admin', section: second };
+    case 'access': return { name: 'access' };
     default: return { name: 'home' };
   }
 }

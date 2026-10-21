@@ -7,12 +7,13 @@ export interface MarketplaceLocation {
   source: LocationSource;
   latitude?: number;
   longitude?: number;
+  postalCode?: string;
 }
 
 export const NO_LOCATION: MarketplaceLocation = { city: '', state: '', country: '', source: 'NONE' };
 
 export function locationLabel(location: MarketplaceLocation): string {
-  return location.city ? [location.city, location.state].filter(Boolean).join(', ') : 'Set your location';
+  return location.city ? [location.city, [location.state, location.postalCode].filter(Boolean).join(' ')].filter(Boolean).join(', ') : 'Set your location';
 }
 
 export function listingIsInCity(pickup: string, city: string): boolean {
@@ -26,13 +27,14 @@ interface MapTilerFeature {
   context?: { id: string; text: string }[];
 }
 
-async function geocode(query: string, types: string, signal?: AbortSignal): Promise<MapTilerFeature[]> {
+async function geocode(query: string, types: string, signal?: AbortSignal, proximity?: { latitude: number; longitude: number }): Promise<MapTilerFeature[]> {
   const key = import.meta.env.VITE_MAP_API_KEY;
   if (!key) throw new Error('City search is unavailable right now.');
   const url = new URL(`https://api.maptiler.com/geocoding/${encodeURIComponent(query)}.json`);
   url.searchParams.set('key', key);
   url.searchParams.set('types', types);
   url.searchParams.set('limit', '5');
+  if (proximity) url.searchParams.set('proximity', `${proximity.longitude},${proximity.latitude}`);
   if (/^\d{5}$/.test(query.trim())) url.searchParams.set('country', 'us');
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error('Could not look up that location.');
@@ -53,16 +55,17 @@ function cityFromFeature(feature: MapTilerFeature): MarketplaceLocation | null {
     longitude: feature.center[0],
     latitude: feature.center[1],
     source: 'USER_SELECTED',
+    ...(feature.place_type.includes('postal_code') ? { postalCode: feature.text } : {}),
   };
 }
 
-export async function findCities(query: string, signal?: AbortSignal): Promise<MarketplaceLocation[]> {
+export async function findCities(query: string, signal?: AbortSignal, proximity?: { latitude: number; longitude: number }): Promise<MarketplaceLocation[]> {
   if (query.trim().length < 2) return [];
-  const results = await geocode(query.trim(), 'municipality,postal_code', signal);
+  const results = await geocode(query.trim(), 'municipality,postal_code', signal, proximity);
   const unique = new Map<string, MarketplaceLocation>();
   for (const feature of results) {
     const city = cityFromFeature(feature);
-    if (city) unique.set(`${city.city}|${city.state}|${city.country}`, city);
+    if (city) unique.set(`${city.city}|${city.state}|${city.country}|${city.postalCode ?? ''}`, city);
   }
   return [...unique.values()];
 }

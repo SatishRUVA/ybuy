@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "skills": {
+    "21st-ai": {
+      "source": "21st-dev/skill",
+      "sourceType": "github",
+      "skillPath": "skills/21st-ai/SKILL.md",
+      "computedHash": "4e3780f912107670a5fd109af7e21acc8f25580b3e2335fd93d50d31af74a34c"
+    },
+    "21st-cli-use": {
+      "source": "21st-dev/skill",
+      "sourceType": "github",
+      "skillPath": "skills/21st-cli-use/SKILL.md",
+      "computedHash": "ef2e2f0516771e0a0d2b68a0bc67d553a82f8a1bcfb422c264b1f91ce7852767"
+    },
+    "21st-design-sync": {
+      "source": "21st-dev/skill",
+      "sourceType": "github",
+      "skillPath": "skills/21st-design-sync/SKILL.md",
+      "computedHash": "7ac3769f89e67ad048cbbd50cf35c00bd871259257a472c73321fc9d450caca9"
+    },
+    "21st-registry": {
+      "source": "21st-dev/skill",
+      "sourceType": "github",
+      "skillPath": "skills/21st-registry/SKILL.md",
+      "computedHash": "47cd10719b117ef90e17dd3c03506d450eca442df76d6e1de7b034d7a64413d6"
+    },
+    "21st-ui-build": {
+      "source": "21st-dev/skill",
+      "sourceType": "github",
+      "skillPath": "skills/21st-ui-build/SKILL.md",
+      "computedHash": "7a038c5e51623312640b591688dad2c578d90a8a344137c1a05e599b1491bf90"
+    },
+    "21st-ui-explore": {
+      "source": "21st-dev/skill",
+      "sourceType": "github",
+      "skillPath": "skills/21st-ui-explore/SKILL.md",
+      "computedHash": "abd634b3cf3fc9b0b96bdb37357da4d16ae3b509589f75be5a70290927b61c1c"
+    },
+    "21st-ui-review": {
+      "source": "21st-dev/skill",
+      "sourceType": "github",
+      "skillPath": "skills/21st-ui-review/SKILL.md",
+      "computedHash": "ce7470a4777379716282b5a410a8a3211ac51a763786f6b81c3abcd282c220ab"
+    },
+    "awwwards": {
+      "source": "juliobsz/skills",
+      "sourceType": "github",
+      "skillPath": "awwwards/SKILL.md",
+      "computedHash": "042065c3dcfb5c099774b1cfdf1032518123b8de66f2e9ad83de1eb874b19a9a"
+    },
+    "banner-design": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/banner-design/SKILL.md",
+      "computedHash": "0645bfc33632c7b332e649e35738ea807e1571436289cdaf86bebe6660c693ec"
+    },
+    "brand": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/brand/SKILL.md",
+      "computedHash": "105287ad08d5baa5948522df45ba6d291b5ccfacc4b5a8ae3282b1e92b412496"
+    },
+    "design": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/design/SKILL.md",
+      "computedHash": "d1cbc4bc8f0bd4273fae84014c6576615b13508743cd9c5240d721dc5143dc83"
+    },
+    "design-system": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/design-system/SKILL.md",
+      "computedHash": "a8d1f1cd0f55979a872a2ce9717d3c33df23b0c378738b8d6adb574bfb266c77"
+    },
+    "design-taste-frontend-v2-experimental": {
+      "source": "Leonxlnx/taste-skill",
+      "sourceType": "github",
+      "skillPath": "skills/taste-skill-v2-experimental/SKILL.md",
+      "computedHash": "624a1a1d20273874858817bfb750c11e602fbbc42d09ddd95a8dbfc36c695a6c"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "106acf230014cbb43ca34e6410371321b56ca742f9ee0442e8ec05bf02eb0384"
+    },
+    "impeccable": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/impeccable/SKILL.md",
+      "computedHash": "aa4a5eef1405395b5a3282ee9a9be8695911c7f79dfe23330fb39b8e7ba83039"
+    },
+    "jury": {
+      "source": "juliobsz/skills",
+      "sourceType": "github",
+      "skillPath": "jury/SKILL.md",
+      "computedHash": "97dd89bea10ba81118317591bf2591294b3c07b769f6a8c651601fce251c405b"
+    },
+    "playwright-best-practices": {
+      "source": "currents-dev/playwright-best-practices-skill",
+      "sourceType": "github",
+      "skillPath": "playwright-best-practices/SKILL.md",
+      "computedHash": "88623575c97314e115f0e361a7d942e31d3b7a4e8925832257e1ad33f52096e4"
+    },
+    "ponytail": {
+      "source": "DietrichGebert/ponytail",
+      "sourceType": "github",
+      "skillPath": "skills/ponytail/SKILL.md",
+      "computedHash": "9feedbe220d039ba30720217b3fce16214817063fb54a48843d89368c86554e9"
+    },
+    "ponytail-audit": {
+      "source": "DietrichGebert/ponytail",
+      "sourceType": "github",
+      "skillPath": "skills/ponytail-audit/SKILL.md",
+      "computedHash": "9375d07b902acf9072a6716d81ab129d274f3a3eab1c47b8a42c38a7a9bb84e7"
+    },
+    "ponytail-debt": {
+      "source": "DietrichGebert/ponytail",
+      "sourceType": "github",
+      "skillPath": "skills/ponytail-debt/SKILL.md",
+      "computedHash": "049731dcd887d8784c829b75fed0a0a5d10ac8974ceb6e51ab2578473d57524a"
+    },
+    "ponytail-gain": {
+      "source": "DietrichGebert/ponytail",
+      "sourceType": "github",
+      "skillPath": "skills/ponytail-gain/SKILL.md",
+      "computedHash": "e551bd30f9b52b155d726f98e57c68fa4aad1ce93003e57a88ba85c5e84dcb7b"
+    },
+    "ponytail-help": {
+      "source": "DietrichGebert/ponytail",
+      "sourceType": "github",
+      "skillPath": "skills/ponytail-help/SKILL.md",
+      "computedHash": "6aa9cc8011b88aa011ba3dc306b249d776c8e920c7c388ac64c4c7dd9a9bdf76"
+    },
+    "ponytail-review": {
+      "source": "DietrichGebert/ponytail",
+      "sourceType": "github",
+      "skillPath": "skills/ponytail-review/SKILL.md",
+      "computedHash": "e090103216f0452e05672991a81078e27316a6b8d468b19e7107934606cfc122"
+    },
+    "slides": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/slides/SKILL.md",
+      "computedHash": "c27a4e6f6101cb45f9a717888784aba649c1c516cd1a1e9871f630ab15ad1800"
+    },
+    "ui-styling": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/ui-styling/SKILL.md",
+      "computedHash": "fa6d85097b0c131fb8708a6e7e08aff2af12fd2966cfe0a73bd258dcac99ea5b"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/ui-ux-pro-max/SKILL.md",
+      "computedHash": "7ac62d931e52dbc7c309ed8ee067101969db2454709339b02daa583e80e98d5f"
+    },
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-design-guidelines/SKILL.md",
+      "computedHash": "d8e7d3afe37dcc8a97b99ffb5afdb4d0919ae0092ea8b68f44eb201f035e33ac"
+    },
+    "web-design-reviewer": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/web-design-reviewer/SKILL.md",
+      "computedHash": "4a05e32553a1dc916ee4f68f709d478c17de6b8ce184932f56f2b8646f3d4986"
+    },
+    "webapp-testing": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/webapp-testing/SKILL.md",
+      "computedHash": "3f14af7f5690695209c22fbf8c8d133769a86d64892602c09bb13f135e14e857"
+    }
+  }
+}

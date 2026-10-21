@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, MapPin, Heart, Star, Zap } from 'lucide-react';
+import type { MouseEvent } from 'react';
+import { ChevronLeft, ChevronRight, MapPin, Heart, Star, Zap, ImageOff } from 'lucide-react';
 import type { Listing } from '@/data';
 import { Badge } from '@/components/ui';
 import { ProtectionBadge } from '@/components/trust';
@@ -29,7 +30,7 @@ function FavoriteButton({
 /** Category and location read as the item's provenance line - kept to one row, never wrapped. */
 function MetaLine({ listing }: { listing: Listing }) {
   const place = listing.distance > 0 && Number.isFinite(listing.distance)
-    ? `${listing.distance} ${listing.distanceUnit} away`
+    ? `About ${listing.distance} ${listing.distanceUnit} away`
     : listing.pickup;
   return (
     <p className="h-4 flex items-center gap-1 text-xs text-sec truncate">
@@ -73,38 +74,50 @@ function PriceBlock({ value, size = 'md' }: { value: number; size?: 'md' | 'lg' 
   );
 }
 
+function handleListingLinkClick(e: MouseEvent<HTMLAnchorElement>, onClick?: () => void) {
+  if (!onClick || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  onClick();
+}
+
 export function ListingCard({ listing, onClick, favorited, onToggleFavorite }: { listing: Listing; onClick?: () => void; favorited?: boolean; onToggleFavorite?: () => void }) {
   const [likedLocal, setLikedLocal] = useState(false);
   const liked = favorited ?? likedLocal;
   const toggleLiked = onToggleFavorite ?? (() => setLikedLocal(!likedLocal));
   return (
     <article
-      onClick={onClick}
-      className="group flex h-full flex-col bg-card rounded-card-lg overflow-hidden border border-app shadow-xs card-hover cursor-pointer"
+      className="group relative flex h-full flex-col bg-card rounded-card-lg overflow-hidden border border-app shadow-xs card-hover"
     >
-      <div className="relative aspect-[4/3] overflow-hidden bg-subtle">
-        <img
-          src={listing.images[0]}
-          alt={listing.title}
-          loading="lazy"
-          className="w-full h-full object-cover zoom-media"
-        />
-        <div className="absolute top-2.5 left-2.5 flex gap-1.5">
-          {listing.instantBooking && <Badge tone="inverse" icon={<Zap size={11} />}>Instant</Badge>}
-          {!listing.available && <Badge tone="neutral" className="bg-card">Booked</Badge>}
+      <a
+        href={`/listing/${encodeURIComponent(listing.id)}`}
+        aria-label={`View listing: ${listing.title}`}
+        onClick={(e) => handleListingLinkClick(e, onClick)}
+        className="flex h-full flex-col rounded-[inherit] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-accent"
+      >
+        <div className="relative aspect-[4/3] overflow-hidden bg-subtle">
+          <img
+            src={listing.images[0]}
+            alt=""
+            loading="lazy"
+            className="w-full h-full object-cover zoom-media"
+          />
+          <div className="absolute top-2.5 left-2.5 flex gap-1.5">
+            {listing.instantBooking && <Badge tone="inverse" icon={<Zap size={11} />}>Instant</Badge>}
+            {!listing.available && <Badge tone="neutral" className="bg-card">Booked</Badge>}
+          </div>
         </div>
-        <FavoriteButton liked={liked} onToggle={toggleLiked} className="absolute top-2 right-2" />
-      </div>
 
-      <div className="flex flex-1 flex-col gap-1.5 p-3.5 min-h-[152px]">
-        <MetaLine listing={listing} />
-        <h3 className="min-h-10 font-semibold text-main leading-5 line-clamp-2 text-[15px] font-display">{listing.title}</h3>
-        <RatingLine listing={listing} />
-        <div className="flex items-center justify-between gap-2 mt-auto pt-2">
-          <PriceBlock value={listing.pricePerDay} />
-          {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
+        <div className="flex flex-1 flex-col gap-1.5 p-3.5 min-h-[152px]">
+          <MetaLine listing={listing} />
+          <h3 className="min-h-10 font-semibold text-main leading-5 line-clamp-2 text-[15px] font-display">{listing.title}</h3>
+          <RatingLine listing={listing} />
+          <div className="flex items-center justify-between gap-2 mt-auto pt-2">
+            <PriceBlock value={listing.pricePerDay} />
+            {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
+          </div>
         </div>
-      </div>
+      </a>
+      <FavoriteButton liked={liked} onToggle={toggleLiked} className="absolute top-2 right-2 z-10" />
     </article>
   );
 }
@@ -115,26 +128,30 @@ export function ListingCardWide({ listing, onClick, favorited, onToggleFavorite 
   const toggleLiked = onToggleFavorite ?? (() => setLikedLocal(!likedLocal));
   return (
     <article
-      onClick={onClick}
-      className="group flex h-full min-h-[152px] gap-3.5 bg-card rounded-card-lg overflow-hidden border border-app shadow-xs card-hover cursor-pointer p-3"
+      className="group relative flex h-full min-h-[152px] gap-3.5 bg-card rounded-card-lg overflow-hidden border border-app shadow-xs card-hover p-3"
     >
-      <div className="relative w-28 sm:w-36 shrink-0 overflow-hidden rounded-card aspect-[4/3] bg-subtle self-start">
-        <img src={listing.images[0]} alt={listing.title} loading="lazy" className="w-full h-full object-cover zoom-media" />
-      </div>
-      <div className="flex min-h-[126px] flex-1 min-w-0 flex-col gap-1">
-        <div className="flex items-start justify-between gap-2">
+      <a
+        href={`/listing/${encodeURIComponent(listing.id)}`}
+        aria-label={`View listing: ${listing.title}`}
+        onClick={(e) => handleListingLinkClick(e, onClick)}
+        className="flex min-w-0 flex-1 gap-3.5 rounded-[inherit] pr-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-accent"
+      >
+        <div className="relative w-28 sm:w-36 shrink-0 overflow-hidden rounded-card aspect-[4/3] bg-subtle self-start">
+          <img src={listing.images[0]} alt="" loading="lazy" className="w-full h-full object-cover zoom-media" />
+        </div>
+        <div className="flex min-h-[126px] flex-1 min-w-0 flex-col gap-1">
           <div className="min-w-0">
             <MetaLine listing={listing} />
             <h3 className="min-h-10 font-semibold text-main leading-5 line-clamp-2 text-[15px] font-display mt-0.5">{listing.title}</h3>
           </div>
-          <FavoriteButton liked={liked} onToggle={toggleLiked} className="shrink-0 -mt-0.5 -mr-0.5" />
+          <RatingLine listing={listing} />
+          <div className="flex items-center justify-between gap-2 mt-auto pt-1.5">
+            <PriceBlock value={listing.pricePerDay} />
+            {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
+          </div>
         </div>
-        <RatingLine listing={listing} />
-        <div className="flex items-center justify-between gap-2 mt-auto pt-1.5">
-          <PriceBlock value={listing.pricePerDay} />
-          {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
-        </div>
-      </div>
+      </a>
+      <FavoriteButton liked={liked} onToggle={toggleLiked} className="absolute top-2.5 right-2.5 z-10" />
     </article>
   );
 }
@@ -143,6 +160,7 @@ const SWIPE_THRESHOLD_PX = 40;
 
 export function ImageGallery({ images, title }: { images: string[]; title: string }) {
   const [active, setActive] = useState(0);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const touchStartX = useRef<number | null>(null);
   const count = images.length;
 
@@ -151,9 +169,9 @@ export function ImageGallery({ images, title }: { images: string[]; title: strin
   useEffect(() => { setActive(0); }, [images]);
 
   return (
-    <div className="space-y-3">
+    <div className="listing-image-gallery">
       <div
-        className="relative aspect-[4/3] sm:aspect-[16/10] rounded-card-xl overflow-hidden bg-subtle group select-none"
+        className="listing-image-main relative rounded-card-lg overflow-hidden bg-subtle group select-none"
         onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
         onTouchEnd={(e) => {
           if (touchStartX.current === null || count < 2) return;
@@ -168,22 +186,24 @@ export function ImageGallery({ images, title }: { images: string[]; title: strin
         }}
         tabIndex={0}
         role="group"
-        aria-label={`${title} - image ${active + 1} of ${count}`}
+        aria-label={count ? `${title} - image ${active + 1} of ${count}` : `${title} - no images`}
       >
-        <img key={active} src={images[active]} alt={title} className="w-full h-full object-cover animate-cross-fade" />
+        {images[active] && !failedImages.has(images[active])
+          ? <img key={active} src={images[active]} alt={`${title} - photo ${active + 1}`} onError={() => setFailedImages(previous => new Set(previous).add(images[active]))} className="w-full h-full object-cover animate-cross-fade" />
+          : <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sec"><ImageOff size={32} aria-hidden="true" /><p className="text-sm">Photo unavailable</p></div>}
         {count > 1 && (
           <>
             <button
               onClick={() => step(-1)}
               aria-label="Previous image"
-              className="hidden sm:grid place-items-center absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 backdrop-blur-sm shadow-card opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-standard"
+              className="grid place-items-center absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 shadow-card"
             >
               <ChevronLeft size={20} className="text-gray-900" />
             </button>
             <button
               onClick={() => step(1)}
               aria-label="Next image"
-              className="hidden sm:grid place-items-center absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 backdrop-blur-sm shadow-card opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-standard"
+              className="grid place-items-center absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 shadow-card"
             >
               <ChevronRight size={20} className="text-gray-900" />
             </button>
@@ -199,13 +219,14 @@ export function ImageGallery({ images, title }: { images: string[]; title: strin
         )}
       </div>
       {count > 1 && (
-        <div className="hidden sm:flex gap-2 overflow-x-auto no-scrollbar">
+        <div className="listing-image-thumbnails" aria-label="Listing photos">
           {images.map((img, i) => (
             <button
               key={img + i}
               onClick={() => setActive(i)}
               aria-label={`Show image ${i + 1}`}
-              className={`w-20 h-16 rounded-card shrink-0 overflow-hidden border-2 transition-all duration-fast ${i === active ? 'border-accent' : 'border-transparent opacity-60 hover:opacity-100'}`}
+              aria-pressed={i === active}
+              className={`listing-image-thumbnail rounded-card overflow-hidden border-2 transition-colors duration-fast ${i === active ? 'border-accent' : 'border-transparent opacity-70 hover:opacity-100'}`}
             >
               <img src={img} alt="" className="w-full h-full object-cover" />
             </button>

@@ -4,13 +4,13 @@ import { useAuth } from '@/auth-context';
 import { claims, type Listing } from '@/data';
 import {
   fetchBookingsAsRenter, fetchBookingsAsOwner, respondToBookingRequest, cancelBooking,
-  markBookingActive, startBookingReturn, completeBookingReturn, type UiBooking,
+  startBookingReturn, completeBookingReturn, type UiBooking,
 } from '@/lib/bookings';
-import { createCheckoutSession } from '@/lib/payments';
 import { getOrCreateConversation } from '@/lib/messages';
-import { createReview, fetchReviewedBookingIds, fetchReviewsForUser } from '@/lib/reviews';
+import { createReview, fetchReviewedBookingIds, fetchReviewsForUser, REVIEW_MAX_LENGTH } from '@/lib/reviews';
 import { deleteOwnerListing, fetchListingsByOwner, toUiListing } from '@/lib/listings';
-import { fetchPayoutsByOwner, markBookingPaidOut, type DbPayoutRow } from '@/lib/payouts';
+import { fetchPayoutsByOwner, startConnectOnboarding, type DbPayoutRow } from '@/lib/payouts';
+import { RentalSettlement } from '@/components/rental-settlement';
 import { fetchUnavailableDates, setDateAvailability } from '@/lib/availability';
 import { AvailabilityCalendar } from '@/components/availability-calendar';
 import { BookingListSkeleton, BookingRowSkeleton, Skeleton } from '@/components/skeleton';
@@ -18,6 +18,7 @@ import { Button, Badge, Alert, EmptyState, Surface, SectionHeader, Overlay } fro
 import { textareaClass } from '@/components/form-classes';
 import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
 import { Rating } from '@/components/trust';
+import { SuccessNotice } from '@/components/success-feedback';
 import {
   Calendar, ChevronRight, Package, CheckCircle2, AlertCircle,
   Inbox, Star, X, CalendarCog, Wallet, MessageSquare, CreditCard, Search, Bell, Trash2,
@@ -182,6 +183,7 @@ export function BookingsPage({ initialTab = 'renting' }: { initialTab?: 'renting
 export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (count: number) => void } = {}) {
   const { navigate } = useRouter();
   const { user } = useAuth();
+  const [successNotice, setSuccessNotice] = useState<{ message: string; eventKey: string } | null>(null);
   const [bookings, setBookings] = useState<UiBooking[] | null>(null);
   const [tab, setTab] = useState<'requests' | 'upcoming' | 'active' | 'past' | 'claims'>('requests');
   const [actionError, setActionError] = useState<string | null>(null);
@@ -230,12 +232,12 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
   }
 
   const handleCancel = (id: string) => run(id, async () => { await cancelBooking(id); reload(); }, 'Could not cancel this booking.');
-  const handleStartCheckIn = (id: string, listingId: string) =>
-    run(id, async () => { await markBookingActive(id); navigate({ name: 'check-in', id: listingId }); }, 'Could not start check-in.');
+  const handleStartCheckIn = (id: string) =>
+    run(id, async () => { navigate({ name: 'check-in', id }); }, 'Could not start check-in.');
   const handleStartReturn = (id: string) =>
     run(id, async () => { await startBookingReturn(id); navigate({ name: 'check-out', id }); }, 'Could not start the return.');
   const handlePayNow = (id: string) =>
-    run(id, async () => { window.location.href = await createCheckoutSession(id); }, 'Could not start checkout.');
+    navigate({ name: 'confirmation',id });
 
   async function handleMessage(counterpartId: string, listingId: string, bookingId: string) {
     if (!user) return;
@@ -247,15 +249,18 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
 
   async function handleSubmitReview(rating: number, body: string) {
     if (!user || !reviewTarget) return;
+    setSuccessNotice(null);
     await createReview({ bookingId: reviewTarget.id, reviewerId: user.id, revieweeId: reviewTarget.counterpartId, rating, body });
     setReviewedBookingIds((prev) => new Set(prev).add(reviewTarget.id));
     setReviewTarget(null);
+    setSuccessNotice({ message: 'Your review was saved.', eventKey: `review:${reviewTarget.id}` });
   }
 
   return (
     <div className="animate-fade-in pb-20 md:pb-10">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
         {actionError && <Alert tone="error" className="mb-4">{actionError}</Alert>}
+        {successNotice && <SuccessNotice key={successNotice.eventKey} eventKey={successNotice.eventKey} onDismiss={() => setSuccessNotice(null)}>{successNotice.message}</SuccessNotice>}
         {loadError && <Alert tone="warning" className="mb-4">{loadError}</Alert>}
 
         {/* Attention first - the dashboard's real job */}
@@ -286,7 +291,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
                         Pay ${booking.total}
                       </Button>
                     ) : kind === 'checkin' ? (
-                      <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id, booking.listingId)}>
+                      <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id)}>
                         Start check-in
                       </Button>
                     ) : kind === 'return' ? (
@@ -391,7 +396,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
                   </Button>
                 )}
                 {booking.status === 'confirmed' && (
-                  <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id, booking.listingId)}>
+                  <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id)}>
                     Start check-in
                   </Button>
                 )}
@@ -410,6 +415,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
                     Leave a review
                   </Button>
                 )}
+                {booking.status === 'completed' && <RentalSettlement bookingId={booking.id} isOwner={false} />}
               </BookingRow>
             ))}
           </div>
@@ -427,7 +433,7 @@ function AttentionRow({ image, title, detail, action }: {
   image?: string; title: string; detail: string; action: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 p-3 rounded-card-lg bg-card border border-accent/35">
+    <div className="flex items-center gap-3 p-3 rounded-card-lg bg-card border border-[color-mix(in_srgb,var(--accent)_35%,var(--border))]">
       {image && <img src={image} alt="" className="w-11 h-11 rounded-card object-cover shrink-0 bg-subtle" />}
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-sm text-main truncate">{title}</p>
@@ -441,6 +447,8 @@ function AttentionRow({ image, title, detail, action }: {
 export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: number) => void } = {}) {
   const { navigate } = useRouter();
   const { user } = useAuth();
+  const [successNotice, setSuccessNotice] = useState<{ message: string; eventKey: string } | null>(null);
+  const [availabilityNotice, setAvailabilityNotice] = useState(false);
   const [bookings, setBookings] = useState<UiBooking[] | null>(null);
   const [myListings, setMyListings] = useState<Listing[] | null>(null);
   const [payouts, setPayouts] = useState<Map<string, DbPayoutRow>>(new Map());
@@ -450,6 +458,7 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
   const [reviewedBookingIds, setReviewedBookingIds] = useState<Set<string>>(new Set());
   const [reviewTarget, setReviewTarget] = useState<UiBooking | null>(null);
   const [availabilityTarget, setAvailabilityTarget] = useState<Listing | null>(null);
+  const availabilityRequest=useRef(0);
   const [availabilityListingId, setAvailabilityListingId] = useState('');
   const [availabilityDates, setAvailabilityDates] = useState<{ blocked: Set<string>; booked: Set<string> }>({ blocked: new Set(), booked: new Set() });
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -473,7 +482,9 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
       setMyListings(listings);
       setAvailabilityListingId((current) => current || listings[0]?.id || '');
     }).catch(() => setMyListings([]));
-    fetchPayoutsByOwner(user.id).then(setPayouts).catch(() => {});
+    fetchPayoutsByOwner(user.id).then(setPayouts).catch((err: unknown) => {
+      setActionError(err instanceof Error ? err.message : 'Could not verify your Stripe transfers.');
+    });
   }
 
   useEffect(reload, [user]);
@@ -506,7 +517,12 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
   const handleRespond = (id: string, approve: boolean) =>
     run(id, async () => { await respondToBookingRequest(id, approve); reload(); }, 'Could not respond to this request.');
   const handleMarkReturned = (id: string) =>
-    run(id, async () => { await completeBookingReturn(id); reload(); }, 'Could not complete this return.');
+    run(id, async () => {
+      const updated = await completeBookingReturn(id);
+      if (updated.status !== 'completed') throw new Error('The return status could not be confirmed.');
+      setSuccessNotice({ message: 'Return complete.', eventKey: `completed:${id}` });
+      reload();
+    }, 'Could not complete this return.');
 
   function toggleListingSelection(id: string) {
     setSelectedListingIds((current) => {
@@ -571,22 +587,26 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
 
   async function handleSubmitReview(rating: number, body: string) {
     if (!user || !reviewTarget) return;
+    setSuccessNotice(null);
     await createReview({ bookingId: reviewTarget.id, reviewerId: user.id, revieweeId: reviewTarget.counterpartId, rating, body });
     setReviewedBookingIds((prev) => new Set(prev).add(reviewTarget.id));
     setReviewTarget(null);
+    setSuccessNotice({ message: 'Your review was saved.', eventKey: `review:${reviewTarget.id}` });
   }
 
-  async function handleMarkPaidOut(booking: UiBooking) {
-    if (!user) return;
-    await run(booking.id, async () => {
-      await markBookingPaidOut(booking.id, user.id, booking.subtotal);
-      setPayouts(await fetchPayoutsByOwner(user.id));
-    }, 'Could not record this payout.');
-  }
-
-  function handleOpenAvailability(listing: Listing) {
-    setAvailabilityTarget(listing);
-    fetchUnavailableDates(listing.id).then(setAvailabilityDates).catch(() => {});
+  async function handleOpenAvailability(listing: Listing) {
+    const request=++availabilityRequest.current;
+    setActionError(null);
+    setAvailabilityNotice(false);
+    setAvailabilityTarget(null);
+    try{
+      const dates=await fetchUnavailableDates(listing.id);
+      if(request!==availabilityRequest.current)return;
+      setAvailabilityDates(dates);
+      setAvailabilityTarget(listing);
+    }catch(error){
+      if(request===availabilityRequest.current)setActionError(error instanceof Error?error.message:'Could not verify listing availability.');
+    }
   }
 
   function handleOpenSelectedAvailability() {
@@ -596,6 +616,7 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
 
   async function handleToggleAvailabilityDate(date: string) {
     if (!availabilityTarget) return;
+    setAvailabilityNotice(false);
     const isBlocked = availabilityDates.blocked.has(date);
     setAvailabilityDates((prev) => {
       const blocked = new Set(prev.blocked);
@@ -604,6 +625,7 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
     });
     try {
       await setDateAvailability(availabilityTarget.id, date, isBlocked);
+      setAvailabilityNotice(true);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Could not update availability for that date.');
       setAvailabilityDates((prev) => {
@@ -619,6 +641,7 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
         {actionError && <Alert tone="error" className="mb-4">{actionError}</Alert>}
         {listingNotice && <Alert tone="success" className="mb-4">{listingNotice}</Alert>}
+        {successNotice && <SuccessNotice key={successNotice.eventKey} eventKey={successNotice.eventKey} onDismiss={() => setSuccessNotice(null)}>{successNotice.message}</SuccessNotice>}
         {loadError && <Alert tone="warning" className="mb-4">{loadError}</Alert>}
 
         {/* Requests waiting on the owner */}
@@ -676,7 +699,7 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
             <div className="space-y-2.5">
               {upcomingRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
-                  <PayoutControl booking={booking} payout={payouts.get(booking.id)} onMarkPaidOut={handleMarkPaidOut} />
+                  <PayoutControl booking={booking} />
                 </BookingRow>
               ))}
             </div>
@@ -690,7 +713,7 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
               {activeRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
                   {booking.status === 'return_pending' && <Button size="sm" loading={busyId === booking.id} onClick={() => void handleMarkReturned(booking.id)}>Mark returned</Button>}
-                  <PayoutControl booking={booking} payout={payouts.get(booking.id)} onMarkPaidOut={handleMarkPaidOut} />
+                  <PayoutControl booking={booking} />
                 </BookingRow>
               ))}
             </div>
@@ -703,7 +726,7 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
             <div className="space-y-2.5">
               {pastRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
-                  <PayoutControl booking={booking} payout={payouts.get(booking.id)} onMarkPaidOut={handleMarkPaidOut} />
+                  <PayoutControl booking={booking} />
                   {booking.status === 'completed' && !reviewedBookingIds.has(booking.id) && (
                     <Button size="sm" variant="secondary" icon={<Star size={15} />} onClick={() => setReviewTarget(booking)}>Review {booking.counterpartName.split(' ')[0]}</Button>
                   )}
@@ -781,9 +804,12 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
                       <Badge tone={listing.available ? 'success' : 'neutral'}>{listing.available ? 'Published' : 'Draft'}</Badge>
                     </div>
                     {!selectingListings && (
-                      <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} className="mt-1.5 -ml-3.5 text-error hover:bg-error-soft" onClick={() => setRemovalTarget([listing])}>
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                      <Button size="sm" variant="secondary" onClick={() => navigate({ name: 'edit-listing',id: listing.id })}>Edit listing</Button>
+                      <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} className="text-error hover:bg-error-soft" onClick={() => setRemovalTarget([listing])}>
                         Remove listing
                       </Button>
+                      </div>
                     )}
                   </div>
                 </Surface>
@@ -813,14 +839,20 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
           <SectionHeader as="h3" title="Earnings" className="mb-3" />
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <StatCard icon={Wallet} label="Earned to date" value={`$${earned.toLocaleString()}`} />
-            <StatCard icon={CheckCircle2} label="Marked paid out" value={`$${paidOut.toLocaleString()}`} />
+            <StatCard icon={CheckCircle2} label="Transferred to Stripe" value={`$${paidOut.toLocaleString()}`} />
             <StatCard icon={Calendar} label="Upcoming & active" value={upcomingRentals.length + activeRentals.length} />
           </div>
           {paidOut > 0 && (
             <Alert tone="success" className="mt-3">
-              <span className="tnum">${paidOut.toLocaleString()}</span> of <span className="tnum">${earned.toLocaleString()}</span> marked as paid out.
+              <span className="tnum">${paidOut.toLocaleString()}</span> of <span className="tnum">${earned.toLocaleString()}</span> transferred to Stripe. This does not confirm a bank payout.
             </Alert>
           )}
+          <Button className="mt-3" size="sm" variant="secondary" loading={busyId === 'connect'}
+            onClick={() => void run('connect', async () => {
+              window.location.href = await startConnectOnboarding();
+            }, 'Could not open Stripe Connect setup.')}>
+            Set up Stripe payouts
+          </Button>
         </section>}
       </div>
 
@@ -851,6 +883,7 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
       {availabilityTarget && (
         <Sheet title={`Availability - ${availabilityTarget.title}`} onClose={() => setAvailabilityTarget(null)}>
           <p className="text-sm text-sec mb-3">Tap a date to block it. Booked dates are managed for you.</p>
+          {availabilityNotice && <SuccessNotice onDismiss={() => setAvailabilityNotice(false)}>Availability saved.</SuccessNotice>}
           <AvailabilityCalendar
             bookedDates={availabilityDates.booked}
             blockedDates={availabilityDates.blocked}
@@ -863,30 +896,9 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
   );
 }
 
-function PayoutControl({ booking, payout, onMarkPaidOut }: {
-  booking: UiBooking; payout?: DbPayoutRow; onMarkPaidOut: (booking: UiBooking) => Promise<void>;
-}) {
-  const [submitting, setSubmitting] = useState(false);
-  if (!PAID_OUT_ELIGIBLE_STATUSES.includes(booking.status)) return null;
-  if (payout?.status === 'paid') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-success">
-        <CheckCircle2 size={14} /> Paid out ${payout.amount}
-      </span>
-    );
-  }
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      icon={<Wallet size={15} />}
-      loading={submitting}
-      loadingLabel="Recording…"
-      onClick={async () => { setSubmitting(true); await onMarkPaidOut(booking); setSubmitting(false); }}
-    >
-      Mark ${booking.subtotal} paid out
-    </Button>
-  );
+function PayoutControl({ booking }: { booking: UiBooking }) {
+  if (booking.status !== 'completed') return null;
+  return <RentalSettlement bookingId={booking.id} isOwner autoProcess />;
 }
 
 /** Bottom sheet on mobile, centered dialog from `sm`. One implementation for both dashboards. */
@@ -961,6 +973,7 @@ function ReviewModal({ title, onSubmit, onClose }: { title: string; onSubmit: (r
       </div>
       <textarea
         value={body}
+        maxLength={REVIEW_MAX_LENGTH}
         onChange={(e) => setBody(e.target.value)}
         placeholder="What went well? Anything the next person should know?"
         rows={4}

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { assertPlainText, PICKUP_TEXT_MAX, sanitizeFilterValue, UUID_RE } from '@/lib/text-safety';
 import type { Listing, Category } from '@/data';
 import { fetchOwnerRatings } from '@/lib/reviews';
 
@@ -30,14 +31,26 @@ export interface DbListingRow {
   price_per_day: number;
   price_per_week: number | null;
   deposit: number;
+  estimated_value?: number | null;
+  item_condition?: string | null;
+  revision?: number;
+  offer_minimum_daily?: number | null;
+  offer_target_daily?: number | null;
+  offer_guardrail_pct?: number | null;
+  offer_start_date?: string | null;
+  offer_end_date?: string | null;
+  offer_expiration_hours?: number | null;
   location_lat: number | null;
   location_lng: number | null;
   location_label: string | null;
+  distance_miles?: number | null;
   instant_booking: boolean;
   protection_eligible: boolean;
   delivery_available: boolean;
   owner_verified: boolean;
-  status: 'draft' | 'published' | 'archived';
+  available_quantity: number;
+  negotiation_enabled: boolean;
+  status: 'draft' | 'published' | 'archived' | 'suspended';
   created_at: string;
   listing_images: DbListingImage[];
   owner: DbListingOwner | null;
@@ -46,6 +59,43 @@ export interface DbListingRow {
 
 export const LISTING_SELECT =
   '*, listing_images(url, sort_order), owner:profiles!owner_id(id, full_name, avatar_url), categories(name)';
+
+function listingImagePath(url: string): string | null {
+  try {
+    const pathname = new URL(url).pathname;
+    const match = pathname.match(/\/storage\/v1\/object\/(?:public|sign)\/listing-images\/(.+)$/);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function storedListingImageUrl(url: string): string {
+  const path = listingImagePath(url);
+  return path ? supabase.storage.from('listing-images').getPublicUrl(path).data.publicUrl : url;
+}
+
+async function signListingImageUrl(url: string): Promise<string> {
+  const path = listingImagePath(url);
+  if (!path) return url;
+  const { data, error } = await supabase.storage.from('listing-images').createSignedUrl(path, 3600);
+  if (error) throw new Error(`Could not load a listing photo: ${error.message}`);
+  return data.signedUrl;
+}
+
+export async function signListingImages(images: DbListingImage[]): Promise<DbListingImage[]> {
+  return Promise.all(images.map(async (image) => ({ ...image, url: await signListingImageUrl(image.url) })));
+}
+
+async function signListingRows(rows: DbListingRow[]): Promise<DbListingRow[]> {
+  return Promise.all(rows.map(async (row) => ({ ...row, listing_images: await signListingImages(row.listing_images) })));
+}
+
+const SEARCH_LISTING_SELECT =
+  'id, owner_id, category_id, title, price_per_day, deposit, location_lat, location_lng, location_label, instant_booking, protection_eligible, delivery_available, owner_verified, available_quantity, negotiation_enabled, status, created_at, listing_images(url, sort_order), owner:profiles!owner_id(id, full_name, avatar_url), categories(name)';
+
+const LEGACY_SEARCH_LISTING_SELECT =
+  'id, owner_id, category_id, title, description, price_per_day, deposit, location_lat, location_lng, location_label, status, created_at, listing_images(url, sort_order), owner:profiles!owner_id(id, full_name, avatar_url), categories(name)';
 
 export async function fetchCategories(): Promise<DbCategory[]> {
   const { data, error } = await supabase
@@ -74,29 +124,7 @@ export async function fetchPublishedListings(): Promise<DbListingRow[]> {
     .eq('status', 'published')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as DbListingRow[];
-}
-
-/**
- * One representative photo per category, for the home category rail.
- * ponytail: a single bounded scan of the newest listings covers every category in practice and
- * costs one request. Swap for a `category_cover_url` column if a category ever renders coverless.
- */
-export async function fetchCategoryCovers(limit = 240): Promise<Map<string, string>> {
-  const { data, error } = await supabase
-    .from('listings')
-    .select('category_id, listing_images(url, sort_order)')
-    .eq('status', 'published')
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  const covers = new Map<string, string>();
-  for (const row of (data ?? []) as unknown as { category_id: string; listing_images: { url: string; sort_order: number }[] }[]) {
-    if (covers.has(row.category_id)) continue;
-    const first = [...(row.listing_images ?? [])].sort((a, b) => a.sort_order - b.sort_order)[0];
-    if (first) covers.set(row.category_id, first.url);
-  }
-  return covers;
+  return signListingRows((data ?? []) as unknown as DbListingRow[]);
 }
 
 export async function fetchListingById(id: string): Promise<DbListingRow | null> {
@@ -106,7 +134,9 @@ export async function fetchListingById(id: string): Promise<DbListingRow | null>
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
-  return data as unknown as DbListingRow | null;
+  if (!data) return null;
+  const row = data as unknown as DbListingRow;
+  return { ...row, listing_images: await signListingImages(row.listing_images) };
 }
 
 export async function fetchListingsByOwner(ownerId: string): Promise<DbListingRow[]> {
@@ -117,7 +147,7 @@ export async function fetchListingsByOwner(ownerId: string): Promise<DbListingRo
     .neq('status', 'archived')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as DbListingRow[];
+  return signListingRows((data ?? []) as unknown as DbListingRow[]);
 }
 
 export async function deleteOwnerListing(ownerId: string, listingId: string): Promise<'deleted' | 'archived'> {
@@ -184,10 +214,16 @@ export async function deleteOwnerListing(ownerId: string, listingId: string): Pr
   return 'deleted';
 }
 
-export type SearchSortBy = 'recommended' | 'newest' | 'price-low' | 'price-high';
+export type SearchSortBy = 'recommended' | 'newest' | 'price-low' | 'price-high' | 'distance';
 
 export interface SearchListingsParams {
+  latitude?: number;
+  longitude?: number;
+  radiusMiles?: number | null;
+  startDate?: string;
+  endDate?: string;
   keyword?: string;
+  locationCity?: string;
   categoryId?: string | null;
   maxPrice?: number;
   verifiedOnly?: boolean;
@@ -206,14 +242,65 @@ export interface SearchListingsResult {
 }
 
 export const SEARCH_PAGE_SIZE = 24;
+const SEARCH_CACHE_TTL_MS = 30_000;
 
-/** Strips PostgREST filter-syntax separators so a keyword can't inject extra `.or()` clauses. */
+function searchCacheKey(params: SearchListingsParams): string {
+  return `ybuy:search:${JSON.stringify(params)}`;
+}
+
+/** Strips PostgREST filter-syntax characters so a keyword can't inject extra `.or()` clauses. */
 function sanitizeKeyword(keyword: string): string {
-  return keyword.replace(/[,()%]/g, '').trim();
+  return sanitizeFilterValue(keyword);
+}
+
+/** Accepts a category id or (case-insensitive) name from a URL; returns the real id or null. */
+export function resolveCategoryId(value: string | null | undefined, categories: { id: string; name: string }[]): string | null {
+  const wanted = value?.trim().toLowerCase();
+  if (!wanted) return null;
+  return categories.find((c) => c.id.toLowerCase() === wanted || c.name.toLowerCase() === wanted)?.id ?? null;
 }
 
 /** Real server-side search: keyword/category/price filter, sort, and pagination via Supabase. */
 export async function searchListings(params: SearchListingsParams): Promise<SearchListingsResult> {
+  // category_id is a uuid column; anything else would surface as a raw Postgres cast error.
+  if (params.categoryId && !UUID_RE.test(params.categoryId)) throw new Error('That category is not available.');
+  if (params.latitude !== undefined || params.longitude !== undefined || params.startDate || params.endDate) {
+    const pageSize = params.pageSize ?? SEARCH_PAGE_SIZE;
+    const offset = (params.page ?? 0) * pageSize;
+    const { data, error } = await supabase.rpc('search_available_listings', {
+      p_latitude: params.latitude ?? null, p_longitude: params.longitude ?? null,
+      p_radius_miles: params.radiusMiles === undefined ? 5 : params.radiusMiles,
+      p_start_date: params.startDate || null, p_end_date: params.endDate || null,
+      p_keyword: params.keyword || null, p_category_id: params.categoryId ?? null,
+      p_max_price: params.maxPrice ?? null, p_verified_only: params.verifiedOnly ?? false,
+      p_instant_only: params.instantOnly ?? false, p_protection_only: params.protectionOnly ?? false,
+      p_delivery_only: params.deliveryOnly ?? false, p_sort: params.sortBy ?? 'recommended',
+      p_limit: pageSize, p_offset: offset,
+    });
+    if (error) throw new Error(error.message);
+    if (!data || !Array.isArray(data.rows) || !Number.isSafeInteger(data.total)) {
+      throw new Error('Search returned an invalid result. Please retry.');
+    }
+    return {
+      rows: await signListingRows(data.rows as DbListingRow[]),
+      total: data.total,
+      hasMore: offset + data.rows.length < data.total,
+    };
+  }
+  const cacheKey = searchCacheKey(params);
+  try {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      const entry = JSON.parse(cached) as { cachedAt: number; result: SearchListingsResult };
+      if (Date.now() - entry.cachedAt < SEARCH_CACHE_TTL_MS) {
+        return { ...entry.result, rows: await signListingRows(entry.result.rows) };
+      }
+      sessionStorage.removeItem(cacheKey);
+    }
+  } catch {
+    // Storage can be unavailable in private browsing; the network path remains authoritative.
+  }
+
   const pageSize = params.pageSize ?? SEARCH_PAGE_SIZE;
   const page = params.page ?? 0;
   const from = page * pageSize;
@@ -221,7 +308,7 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
 
   let query = supabase
     .from('listings')
-    .select(LISTING_SELECT, { count: 'exact' })
+    .select(SEARCH_LISTING_SELECT, { count: 'exact' })
     .eq('status', 'published');
 
   if (params.categoryId) query = query.eq('category_id', params.categoryId);
@@ -233,6 +320,8 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
 
   const keyword = params.keyword ? sanitizeKeyword(params.keyword) : '';
   if (keyword) query = query.or(`title.ilike.%${keyword}%,description.ilike.%${keyword}%`);
+  const locationCity = params.locationCity ? sanitizeKeyword(params.locationCity) : '';
+  if (locationCity) query = query.ilike('location_label', `%${locationCity}%`);
 
   if (params.sortBy === 'price-low') {
     query = query.order('price_per_day', { ascending: true });
@@ -247,41 +336,77 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
     query = query.order('created_at', { ascending: false });
   }
 
-  let { data, error, count } = await query.range(from, to);
+  const { data, error, count } = await query.range(from, to);
+  let resultData: unknown[] | null = data;
+  let resultCount = count;
 
-  // Backward compatibility while local/staging DB is catching up with migrations:
-  // if any new filter/sort column is missing, retry with baseline searchable fields.
-  if (error && /owner_verified|instant_booking|protection_eligible|delivery_available/i.test(error.message)) {
+  // Older deployments can still serve published listings while optional listing
+  // flags and quantity-aware negotiation columns are waiting on migrations.
+  if (error?.code === '42703'
+    && /owner_verified|instant_booking|protection_eligible|delivery_available|available_quantity|negotiation_enabled/i.test(error.message)) {
+    if ((params.verifiedOnly && /owner_verified/i.test(error.message))
+      || (params.instantOnly && /instant_booking/i.test(error.message))
+      || (params.protectionOnly && /protection_eligible/i.test(error.message))
+      || (params.deliveryOnly && /delivery_available/i.test(error.message))) {
+      throw error;
+    }
     let fallback = supabase
       .from('listings')
-      .select(LISTING_SELECT, { count: 'exact' })
+      .select(LEGACY_SEARCH_LISTING_SELECT, { count: 'exact' })
       .eq('status', 'published');
 
     if (params.categoryId) fallback = fallback.eq('category_id', params.categoryId);
     if (params.maxPrice != null) fallback = fallback.lte('price_per_day', params.maxPrice);
+    if (params.verifiedOnly) fallback = fallback.eq('owner_verified', true);
+    if (params.instantOnly) fallback = fallback.eq('instant_booking', true);
+    if (params.protectionOnly) fallback = fallback.eq('protection_eligible', true);
+    if (params.deliveryOnly) fallback = fallback.eq('delivery_available', true);
     if (keyword) fallback = fallback.or(`title.ilike.%${keyword}%,description.ilike.%${keyword}%`);
+    if (locationCity) fallback = fallback.ilike('location_label', `%${locationCity}%`);
 
     if (params.sortBy === 'price-low') fallback = fallback.order('price_per_day', { ascending: true });
     else if (params.sortBy === 'price-high') fallback = fallback.order('price_per_day', { ascending: false });
     else fallback = fallback.order('created_at', { ascending: false });
 
-    ({ data, error, count } = await fallback.range(from, to));
+    const { data: fallbackData, error: fallbackError, count: fallbackCount } = await fallback.range(from, to);
+    if (fallbackError) throw fallbackError;
+    resultData = fallbackData;
+    resultCount = fallbackCount;
+  } else if (error) {
+    throw error;
   }
 
-  if (error) throw error;
-  const rows = (data ?? []) as unknown as DbListingRow[];
-  const total = count ?? rows.length;
-  return { rows, total, hasMore: from + rows.length < total };
+  const rows = (resultData ?? []) as unknown as DbListingRow[];
+  const total = resultCount ?? rows.length;
+  const result = { rows, total, hasMore: from + rows.length < total };
+  try {
+    sessionStorage.setItem(cacheKey, JSON.stringify({ cachedAt: Date.now(), result }));
+  } catch {
+    // Storage can be unavailable in private browsing; the network result is still valid.
+  }
+  return { ...result, rows: await signListingRows(rows) };
 }
 
 
-/** Maps a real DB category row to the UI's decorative `Category` shape (image/count are cosmetic). */
+const CATEGORY_PHOTOS = new Map([
+  ['Tools & Equipment', '30413428'],
+  ['Electronics', '19969452'],
+  ['Outdoor & Camping', '2526025'],
+  ['Party & Events', '1481316'],
+  ['Sports & Fitness', '36450314'],
+  ['Vehicles', '36450314'],
+  ['Home & Garden', '37554739'],
+  ['Other', '35486274'],
+]);
+
+/** Category artwork is fixed and never sourced from user listing uploads. */
 export function toUiCategory(row: DbCategory, listingCountByCategoryId: Map<string, number>): Category {
+  const photo = CATEGORY_PHOTOS.get(row.name);
   return {
     id: row.id,
     name: row.name,
     icon: row.icon ?? 'Package',
-    image: '',
+    image: photo ? `https://images.pexels.com/photos/${photo}/pexels-photo-${photo}.jpeg?auto=compress&cs=tinysrgb&w=400&h=300&fit=crop` : '',
     count: listingCountByCategoryId.get(row.id) ?? 0,
   };
 }
@@ -301,7 +426,7 @@ export function toUiListing(row: DbListingRow): Listing {
     category: cleanText(row.categories?.name),
     images: images.length > 0 ? images : [FALLBACK_IMAGE],
     pricePerDay: Number(row.price_per_day),
-    distance: 0,
+    distance: row.distance_miles == null ? 0 : Math.round(row.distance_miles * 10) / 10,
     distanceUnit: 'mi',
     owner: {
       id: row.owner?.id ?? row.owner_id,
@@ -320,15 +445,15 @@ export function toUiListing(row: DbListingRow): Listing {
     reviewCount: 0,
     rentalCount: 0,
     available: row.status === 'published',
-    instantBooking: row.instant_booking,
-    verifiedOwner: row.owner_verified,
-    protectionEligible: row.protection_eligible,
-    deliveryAvailable: row.delivery_available,
-    condition: '',
+    instantBooking: row.instant_booking === true,
+    verifiedOwner: row.owner_verified === true,
+    protectionEligible: row.protection_eligible === true,
+    deliveryAvailable: row.delivery_available === true,
+    condition: row.item_condition?.replace(/_/g, ' ') ?? '',
     description: cleanText(row.description),
     whatsIncluded: [],
     components: [],
-    declaredValue: 0,
+    declaredValue: Number(row.estimated_value ?? 0),
     assetId: '',
     serialPartial: '',
     ownershipVerified: false,
@@ -339,6 +464,10 @@ export function toUiListing(row: DbListingRow): Listing {
     cancellation: '',
     reviews: [],
     deposit: Number(row.deposit),
+    availableQuantity: Number(row.available_quantity ?? 1),
+    negotiationEnabled: row.negotiation_enabled === true,
+    offerRules: {minimumDaily:row.offer_minimum_daily ?? null,targetDaily:row.offer_target_daily ?? null,
+      guardrailPct:row.offer_guardrail_pct ?? null,startDate:row.offer_start_date ?? null,endDate:row.offer_end_date ?? null},
     lat: row.location_lat ?? 0,
     lng: row.location_lng ?? 0,
   };
@@ -385,13 +514,43 @@ export async function createDraftListing(ownerId: string, categoryId: string): P
   return data.id as string;
 }
 
-export async function uploadListingPhoto(listingId: string, file: File, sortOrder: number): Promise<string> {
+export async function uploadListingPhoto(
+  listingId: string,
+  file: File,
+  sortOrder: number,
+  replaceUrl?: string,
+): Promise<{ url: string; warning?: string }> {
   const path = `${listingId}/${crypto.randomUUID()}-${file.name}`;
   const { error: uploadError } = await supabase.storage.from('listing-images').upload(path, file);
   if (uploadError) throw uploadError;
+  const { data: signed, error: signError } = await supabase.storage.from('listing-images').createSignedUrl(path, 3600);
+  if (signError) {
+    const cleanup = await supabase.storage.from('listing-images').remove([path]);
+    if (cleanup.error) throw new Error(`Could not prepare the photo preview and storage cleanup also failed: ${cleanup.error.message}`);
+    throw signError;
+  }
   const { data } = supabase.storage.from('listing-images').getPublicUrl(path);
-  await addListingImageUrl(listingId, data.publicUrl, sortOrder);
-  return data.publicUrl;
+  try {
+    if (replaceUrl) {
+      const { data: replaced, error } = await supabase.from('listing_images').update({ url: data.publicUrl })
+        .eq('listing_id', listingId).eq('url', storedListingImageUrl(replaceUrl)).select('url').maybeSingle();
+      if (error) throw error;
+      if (!replaced) throw new Error('The photo being replaced is no longer on this listing. Reload and try again.');
+    } else {
+      await addListingImageUrl(listingId, data.publicUrl, sortOrder);
+    }
+  } catch (error) {
+    const cleanup = await supabase.storage.from('listing-images').remove([path]);
+    if (cleanup.error) throw new Error(`Could not attach the photo; storage cleanup also failed: ${cleanup.error.message}`);
+    throw error;
+  }
+  let warning: string | undefined;
+  const previousPath = replaceUrl ? listingImagePath(replaceUrl) : null;
+  if (previousPath) {
+    const { error: removeError } = await supabase.storage.from('listing-images').remove([previousPath]);
+    if (removeError) warning = `Photo replaced, but the old image file could not be deleted: ${removeError.message}`;
+  }
+  return { url: signed.signedUrl, warning };
 }
 
 export async function addListingImageUrl(listingId: string, url: string, sortOrder: number): Promise<void> {
@@ -400,8 +559,22 @@ export async function addListingImageUrl(listingId: string, url: string, sortOrd
 }
 
 export async function removeListingImageUrl(listingId: string, url: string): Promise<void> {
-  const { error } = await supabase.from('listing_images').delete().eq('listing_id', listingId).eq('url', url);
+  const storedUrl = storedListingImageUrl(url);
+  const { error } = await supabase.from('listing_images').delete().eq('listing_id', listingId).eq('url', storedUrl);
   if (error) throw error;
+  const path = listingImagePath(url);
+  if (path) {
+    const { error: storageError } = await supabase.storage.from('listing-images').remove([path]);
+    if (storageError) throw new Error(`Photo record removed but its storage object could not be deleted: ${storageError.message}`);
+  }
+}
+
+export async function saveListingImageOrder(listingId: string, urls: string[]): Promise<void> {
+  for (const [sort_order, url] of urls.entries()) {
+    const { error } = await supabase.from('listing_images').update({ sort_order })
+      .eq('listing_id', listingId).eq('url', storedListingImageUrl(url));
+    if (error) throw error;
+  }
 }
 
 export interface ListingDetailsUpdate {
@@ -410,30 +583,103 @@ export interface ListingDetailsUpdate {
   price_per_day: number;
   description: string;
   deposit: number;
+  estimated_value?: number | null;
+  item_condition?: string | null;
+  offer_minimum_daily?: number | null;
+  offer_target_daily?: number | null;
+  offer_guardrail_pct?: number | null;
+  offer_start_date?: string | null;
+  offer_end_date?: string | null;
+  offer_expiration_hours?: number | null;
   location_label: string;
   instant_booking?: boolean;
   protection_eligible?: boolean;
   delivery_available?: boolean;
   owner_verified?: boolean;
+  available_quantity?: number;
+  negotiation_enabled?: boolean;
+}
+
+export interface CategoryDepositRule { category_id: string; suggested_pct: number; minimum_amount: number; maximum_amount: number }
+export async function fetchDepositRules(): Promise<CategoryDepositRule[]> {
+  const { data, error } = await supabase.from('category_deposit_rules').select('category_id,suggested_pct,minimum_amount,maximum_amount');
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function fetchOwnerPickup(listingId: string): Promise<ListingPickupLocation | null> {
+  const { data, error } = await supabase.from('listing_pickup_locations').select('*').eq('listing_id',listingId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? { formattedAddress: data.address, streetAddress: data.street_address, city: data.city,
+    state: data.state, postalCode: data.postal_code, country: data.country, latitude: data.latitude,
+    longitude: data.longitude, placeId: data.place_id ?? '' } : null;
+}
+
+export async function saveOwnerListing(listingId: string, revision: number, details: ListingDetailsUpdate, pickup?: ListingPickupLocation): Promise<number> {
+  const { data, error } = await supabase.rpc('owner_save_listing', {
+    p_listing_id: listingId,p_revision: revision,p_details: details,p_pickup: pickup ?? null,
+  });
+  if (error) throw new Error(error.message);
+  if (!Number.isSafeInteger(data)) throw new Error('Could not verify the saved listing revision.');
+  return data;
 }
 
 export async function updateListingDetails(listingId: string, details: ListingDetailsUpdate): Promise<void> {
   let { error } = await supabase.from('listings').update(details).eq('id', listingId);
 
   // Backward compatibility while DB migrations are rolling out.
-  if (error && /owner_verified|instant_booking|protection_eligible|delivery_available/i.test(error.message)) {
+  if (error && /owner_verified|instant_booking|protection_eligible|delivery_available|available_quantity|negotiation_enabled/i.test(error.message)) {
     const legacyDetails = { ...details };
     delete legacyDetails.instant_booking;
     delete legacyDetails.protection_eligible;
     delete legacyDetails.delivery_available;
     delete legacyDetails.owner_verified;
+    delete legacyDetails.available_quantity;
+    delete legacyDetails.negotiation_enabled;
     ({ error } = await supabase.from('listings').update(legacyDetails).eq('id', listingId));
   }
 
   if (error) throw error;
 }
 
-export async function publishListing(listingId: string): Promise<void> {
-  const { error } = await supabase.from('listings').update({ status: 'published' }).eq('id', listingId);
+export interface ListingPickupLocation {
+  formattedAddress: string;
+  streetAddress: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  placeId: string;
+}
+
+export async function saveListingPickupLocation(listingId: string, ownerId: string, location: ListingPickupLocation): Promise<void> {
+  assertPlainText('Pickup address', location.formattedAddress, PICKUP_TEXT_MAX);
+  assertPlainText('Street address', location.streetAddress, PICKUP_TEXT_MAX);
+  assertPlainText('City', location.city, PICKUP_TEXT_MAX);
+  assertPlainText('State', location.state, PICKUP_TEXT_MAX);
+  assertPlainText('ZIP code', location.postalCode, PICKUP_TEXT_MAX);
+  assertPlainText('Country', location.country, PICKUP_TEXT_MAX);
+  const { error } = await supabase.from('listing_pickup_locations').upsert({
+    listing_id: listingId,
+    owner_id: ownerId,
+    address: location.formattedAddress,
+    street_address: location.streetAddress,
+    city: location.city,
+    state: location.state,
+    postal_code: location.postalCode,
+    country: location.country,
+    latitude: location.latitude,
+    longitude: location.longitude,
+    place_id: location.placeId || null,
+  }, { onConflict: 'listing_id' });
   if (error) throw error;
+}
+
+export async function publishListing(listingId: string): Promise<void> {
+  const { data, error } = await supabase.from('listings').update({ status: 'published' }).eq('id', listingId)
+    .select('id, status').single();
+  if (error) throw new Error(error.message);
+  if (data.status !== 'published') throw new Error('The listing has not been published. Please try again.');
 }

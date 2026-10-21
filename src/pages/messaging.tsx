@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
-import { fetchConversations, fetchMessages, sendMessage, subscribeToMessages, type UiConversation, type UiMessage } from '@/lib/messages';
+import { fetchConversations, fetchMessages, sendMessage, subscribeToMessages, MESSAGE_MAX_LENGTH, type UiConversation, type UiMessage } from '@/lib/messages';
+import { InputValidationError } from '@/lib/text-safety';
 import { ConversationListSkeleton } from '@/components/skeleton';
 import { Alert, EmptyState, SectionHeader, IconButton } from '@/components/ui';
+import { fieldClass } from '@/components/form-classes';
 import { ArrowLeft, Send, ShieldAlert, ChevronRight, MessageSquare, User, Loader2 } from 'lucide-react';
 
 function timeAgo(iso: string): string {
@@ -165,8 +167,8 @@ function ChatView({ convId }: { convId: string }) {
       setMessages((prev) => (prev.some((m) => m.id === sent.id) ? prev : [...prev, sent]));
       setInput((current) => current.trim() === body ? '' : current);
       setNotice(/zelle|venmo|cash app/i.test(body) ? 'Stay protected - keep payment and communication inside the platform.' : null);
-    } catch {
-      setChatError('Message not sent. Try again.');
+    } catch (err) {
+      setChatError(err instanceof InputValidationError ? err.message : 'Message not sent. Try again.');
     } finally {
       setSending(false);
     }
@@ -206,12 +208,12 @@ function ChatView({ convId }: { convId: string }) {
           const isMe = msg.senderId === user.id;
           return (
             <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[78%] px-3.5 py-2.5 ${
+              <div className={`min-w-0 max-w-[85%] sm:max-w-[78%] px-3.5 py-2.5 ${
                 isMe
                   ? 'bg-accent text-accent-text rounded-card-lg rounded-br-sm'
                   : 'bg-subtle text-main rounded-card-lg rounded-bl-sm'
               }`}>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.body}</p>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{msg.body}</p>
                 <p className={`text-[10px] mt-1 ${isMe ? 'opacity-75' : 'text-muted'}`}>{timeAgo(msg.createdAt)}</p>
               </div>
             </div>
@@ -235,10 +237,11 @@ function ChatView({ convId }: { convId: string }) {
           <input
             id="message-input"
             value={input}
+            maxLength={MESSAGE_MAX_LENGTH}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()}
             placeholder="Write a message"
-            className="min-w-0 flex-1 h-11 px-3 rounded-card border border-app bg-card text-sm text-main placeholder:text-muted focus:border-accent outline-none transition-colors duration-fast"
+            className={fieldClass('flex-1')}
           />
           <IconButton label="Send message" variant="primary" onClick={send} disabled={!input.trim() || sending}>
             {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}

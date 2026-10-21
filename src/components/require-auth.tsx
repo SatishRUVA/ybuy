@@ -6,7 +6,7 @@ import { LogIn } from 'lucide-react';
 
 // Client-side gate for UX only - RLS is the real authorization boundary for all data access.
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { user, loading, signInWithGoogle } = useAuth();
+  const { user, loading, openSignIn } = useAuth();
 
   if (loading) {
     return (
@@ -24,9 +24,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
         <EmptyState
           icon={<LogIn size={20} />}
           title="Sign in to continue"
-          description="YBuy uses your Google account so both sides of a rental know who they're dealing with."
-          actionLabel="Sign in with Google"
-          onAction={() => void signInWithGoogle()}
+          description="One account for renting and lending. Sign in or create your account to continue where you left off."
+          actionLabel="Sign in or create an account"
+          onAction={openSignIn}
         />
       </div>
     );

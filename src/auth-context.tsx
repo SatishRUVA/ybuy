@@ -1,14 +1,17 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 
 export interface Profile {
   id: string;
+  customer_id?: string;
   full_name: string;
   email: string;
   avatar_url: string | null;
   phone: string | null;
   location: string | null;
+  country_code?: string | null;
+  state_region_code?: string | null;
   created_at: string;
 }
 
@@ -17,7 +20,12 @@ interface AuthContextValue {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<void>;
+  error: string | null;
+  signInOpen: boolean;
+  authBusy: 'sign-in' | 'sign-out' | null;
+  openSignIn: () => void;
+  closeSignIn: () => void;
+  authenticate: (email: string, password: string, fullName?: string) => Promise<'authenticated' | 'confirmation-required' | 'error'>;
   signOut: () => Promise<void>;
 }
 
@@ -25,52 +33,219 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [authBusy, setAuthBusy] = useState<'sign-in' | 'sign-out' | null>(null);
+  const [verifiedUserId, setVerifiedUserId] = useState<string | null>(null);
+  const signingOut = useRef(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    let active = true;
+    let authChanged = false;
+    let hadSession = false;
+    const callbackUrl = new URL(window.location.href);
+    const hashParams = new URLSearchParams(callbackUrl.hash.slice(1));
+    if (callbackUrl.searchParams.has('error') || hashParams.has('error')) {
+      setError('Sign-in was cancelled or could not be completed. Please try again.');
+      for (const key of ['error', 'error_code', 'error_description']) {
+        callbackUrl.searchParams.delete(key);
+        hashParams.delete(key);
+      }
+      callbackUrl.hash = hashParams.toString();
+      window.history.replaceState(null, '', callbackUrl);
+    }
+
+    const { data } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (!active) return;
+      if (event === 'INITIAL_SESSION' && authChanged) return;
+      if (event !== 'INITIAL_SESSION') authChanged = true;
+      setSessionError(null);
+      if (event === 'SIGNED_OUT' && hadSession && !signingOut.current) {
+        setError('Your session has expired or ended. Please sign in again.');
+      } else if (newSession) {
+        setError(null);
+        if (event === 'SIGNED_IN') setSignInOpen(false);
+      }
+      if (!newSession) setVerifiedUserId(null);
+      hadSession = Boolean(newSession);
+      setSession(newSession);
       setLoading(false);
     });
 
-    const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
+    supabase.auth.getSession().then(({ data: sessionData, error: sessionError }) => {
+      if (!active || authChanged) return;
+      if (sessionError) {
+        console.error('Session restoration failed:', sessionError.message);
+        setError('Could not restore your session. Please sign in again.');
+      }
+      hadSession = Boolean(sessionData.session);
+      setSession(sessionData.session);
+      setLoading(false);
+    }).catch((err: unknown) => {
+      if (!active || authChanged) return;
+      console.error('Session restoration failed:', err);
+      setError('Could not restore your session. Please sign in again.');
+      setLoading(false);
     });
 
-    return () => data.subscription.unsubscribe();
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
-    const userId = session?.user.id;
-    if (!userId) {
-      setProfile(null);
-      return;
-    }
+    if (!session) return;
     let cancelled = false;
-    supabase.from('profiles').select('*').eq('id', userId).single().then((profileResult) => {
+    async function verifySession() {
+      try {
+        const { data, error: verificationError } = await supabase.rpc('has_active_session');
+        if (cancelled) return;
+        // PGRST202 = the function is not installed, i.e. migration 20261018000001 has not been applied.
+        // Without it the database cannot check revocation either, so fall back to token expiry only
+        // (still enforced here) rather than locking everyone out. Any other error stays a failure.
+        const checkUnavailable = verificationError?.code === 'PGRST202';
+        if (verificationError && !checkUnavailable) throw verificationError;
+        if (checkUnavailable) console.warn('has_active_session is not installed; apply migration 20261018000001. Session revocation is not being checked.');
+        if ((!checkUnavailable && data !== true) || !session?.expires_at || session.expires_at * 1000 <= Date.now()) {
+          setVerifiedUserId(null);
+          setSessionError('Your session has expired. Please sign in again.');
+          return;
+        }
+        setVerifiedUserId(session.user.id);
+        setSessionError(null);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Session verification failed:', err);
+        setVerifiedUserId(null);
+        setSessionError(session?.expires_at && session.expires_at * 1000 > Date.now()
+          ? 'Could not verify your session. Check your connection and refresh to try again.'
+          : 'Your session has expired. Please sign in again.');
+      }
+    }
+    void verifySession();
+    const expiryTimer = window.setTimeout(() => {
+      setVerifiedUserId(null);
+      setSessionError('Your session has expired. Please sign in again.');
+    }, Math.max(0, (session.expires_at ?? 0) * 1000 - Date.now()));
+    function onVisible() {
+      if (document.visibilityState === 'visible') void verifySession();
+    }
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(expiryTimer);
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [session]);
+
+  useEffect(() => {
+    const userId = session?.user.id;
+    setProfile(null);
+    setProfileError(null);
+    if (!userId || verifiedUserId !== userId) return;
+    let cancelled = false;
+    async function loadProfile() {
+      const viaRpc = await supabase.rpc('get_my_profile').single<Profile>();
+      // Same migration-not-applied fallback as the session check above.
+      if (viaRpc.error?.code !== 'PGRST202') return viaRpc;
+      console.warn('get_my_profile is not installed; apply migration 20261018000001.');
+      return supabase.from('profiles').select('*').eq('id', userId as string).single<Profile>();
+    }
+    loadProfile().then(({ data, error: profileError }) => {
       if (cancelled) return;
-      setProfile((profileResult.data as Profile) ?? null);
+      if (profileError || !data || data.id !== userId) {
+        console.error('Profile loading failed:', profileError?.message ?? 'Profile missing or mismatched.');
+        setProfileError('Could not load your profile. Refresh the page to try again.');
+        return;
+      }
+      setProfile(data);
+    }).catch((err: unknown) => {
+      if (cancelled) return;
+      console.error('Profile loading failed:', err);
+      setProfileError('Could not load your profile. Refresh the page to try again.');
     });
     return () => {
       cancelled = true;
     };
-  }, [session?.user.id]);
+  }, [session?.user.id, verifiedUserId]);
 
-  const signInWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.href },
-    });
-    if (error) console.error('Google sign-in failed:', error.message);
+  const authenticate = async (email: string, password: string, fullName?: string): Promise<'authenticated' | 'confirmation-required' | 'error'> => {
+    if (authBusy) return 'error';
+    setAuthBusy('sign-in');
+    setError(null);
+    try {
+      if (session) {
+        signingOut.current = true;
+        const { error: switchError } = await supabase.auth.signOut({ scope: 'local' });
+        if (switchError) {
+          console.error('Account switch sign-out failed:', switchError);
+          setError('Could not end your current YBuy session. Please try signing out before switching accounts.');
+          return 'error';
+        }
+        setSession(null);
+        setProfile(null);
+        setVerifiedUserId(null);
+      }
+      const returnUrl = new URL(window.location.href);
+      returnUrl.hash = '';
+      for (const key of ['code', 'error', 'error_code', 'error_description']) returnUrl.searchParams.delete(key);
+      const result = fullName === undefined
+        ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
+        : await supabase.auth.signUp({
+          email: email.trim(), password,
+          options: { data: { full_name: fullName.trim() }, emailRedirectTo: returnUrl.href },
+        });
+      if (result.error) throw result.error;
+      return result.data.session ? 'authenticated' : 'confirmation-required';
+    } catch (err) {
+      console.error('Email authentication failed:', err instanceof Error ? err.message : 'Unknown error');
+      setError(fullName === undefined
+        ? 'Could not sign in. Check your email and password, or confirm your email before trying again.'
+        : 'Could not create your account. Check your details and try again.');
+      return 'error';
+    } finally {
+      signingOut.current = false;
+      setAuthBusy(null);
+    }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    if (signingOut.current) return;
+    signingOut.current = true;
+    setAuthBusy('sign-out');
+    setError(null);
+    try {
+      const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' });
+      if (signOutError) throw signOutError;
+      setSession(null);
+      setProfile(null);
+      setVerifiedUserId(null);
+    } catch (err) {
+      console.error('Sign-out failed:', err);
+      setError('Could not sign out. Please try again.');
+    } finally {
+      signingOut.current = false;
+      setAuthBusy(null);
+    }
   };
 
   return (
     <AuthContext.Provider
-      value={{ session, user: session?.user ?? null, profile, loading, signInWithGoogle, signOut }}
+      value={{
+        session, user: session?.user.id === verifiedUserId ? session.user : null,
+        profile: profile?.id === session?.user.id && profile?.id === verifiedUserId ? profile : null,
+        loading: loading || Boolean(session && !error && !sessionError && verifiedUserId !== session.user.id),
+        error: error ?? sessionError ?? profileError, signInOpen, authBusy,
+        openSignIn: () => setSignInOpen(true),
+        closeSignIn: () => setSignInOpen(false),
+        authenticate, signOut,
+      }}
     >
       {children}
     </AuthContext.Provider>

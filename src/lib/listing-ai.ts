@@ -11,6 +11,7 @@ export interface ListingModerationResult {
   masked: { title: string; description: string; changed: boolean };
   suggestion: { title: string; description: string; categoryId: string | null } | null;
   flags: ListingFlag[];
+  photoQualitySuggestions: { photoIndex: number; reason: string; recommendation: string }[];
 }
 
 /**
@@ -21,14 +22,29 @@ export interface ListingModerationResult {
  */
 export async function moderateListingContent(params: {
   listingId: string;
-  photoUrl?: string;
+  photoUrls?: string[];
   title: string;
   description: string;
 }): Promise<ListingModerationResult | null> {
   try {
-    const { data, error } = await supabase.functions.invoke('analyze-listing-photo', { body: params });
+    const { data, error } = await supabase.functions.invoke('analyze-listing-photo', {
+      body: params,
+      signal: AbortSignal.timeout(15_000),
+    });
     if (error || !data?.ok) return null;
-    return { masked: data.masked, suggestion: data.suggestion, flags: data.flags ?? [] };
+    return {
+      masked: data.masked,
+      suggestion: data.suggestion,
+      flags: data.flags ?? [],
+      photoQualitySuggestions: Array.isArray(data.photoQualitySuggestions)
+        ? data.photoQualitySuggestions.filter((suggestion: unknown): suggestion is ListingModerationResult['photoQualitySuggestions'][number] => {
+          if (!suggestion || typeof suggestion !== 'object') return false;
+          const item = suggestion as Record<string, unknown>;
+          return Number.isInteger(item.photoIndex) && Number(item.photoIndex) >= 0 && Number(item.photoIndex) < 6
+            && typeof item.reason === 'string' && typeof item.recommendation === 'string';
+        })
+        : [],
+    };
   } catch {
     return null;
   }

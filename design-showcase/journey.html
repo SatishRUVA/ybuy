@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f3f4ef">
+    <meta name="description" content="A static, interactive preview of YBuy's core renter and owner journeys.">
+    <title>YBuy — Core journey prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Gloock&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/journey.css">
+    <script src="assets/journey.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#journey-main">Skip to prototype</a>
+    <div class="journey-app" data-journey-app>
+      <aside class="journey-rail" aria-label="YBuy prototype navigation">
+        <a class="journey-brand" href="index.html" aria-label="Back to YBuy design lab"><img src="assets/logo.png" width="120" height="42" alt="YBuy"><span>Design lab</span></a>
+        <div class="rail-label">YOUR RENTAL LOOP</div>
+        <nav class="journey-nav" aria-label="Prototype screens">
+          <a href="?screen=search" data-screen-link="search">Explore nearby</a>
+          <a href="?screen=item" data-screen-link="item">Item details</a>
+          <a href="?screen=checkout" data-screen-link="checkout">Request &amp; checkout</a>
+          <a href="?screen=booking" data-screen-link="booking">Booking handover</a>
+          <a href="?screen=renter" data-screen-link="renter">My rentals</a>
+          <a href="?screen=owner" data-screen-link="owner">Owner workspace</a>
+          <a href="?screen=listing" data-screen-link="listing">Create a listing</a>
+          <a href="?screen=messages" data-screen-link="messages">Messages</a>
+          <a href="?screen=profile" data-screen-link="profile">Profile &amp; review</a>
+        </nav>
+        <div class="rail-footer">
+          <p>Static prototype</p>
+          <span>No live bookings or payments</span>
+          <a href="index.html">Compare all eight directions</a>
+        </div>
+      </aside>
+
+      <div class="journey-content">
+        <header class="journey-topbar">
+          <div><span class="topbar-kicker">YBUY · CORE EXPERIENCE</span><span class="demo-pill">Sample content</span></div>
+          <label class="direction-select">Visual direction
+            <select data-direction-select aria-label="Choose a visual direction">
+              <option value="fresh-neighborhood">Fresh Neighborhood</option>
+              <option value="quiet-luxury">Quiet Luxury</option>
+              <option value="contemporary-commerce">Contemporary Commerce</option>
+              <option value="bold-creative">Bold Creative</option>
+              <option value="editorial-lifestyle">Editorial Lifestyle</option>
+              <option value="sophisticated-dark">Sophisticated Dark</option>
+              <option value="colorful-premium">Colorful Premium</option>
+              <option value="experimental-objects">Experimental Objects</option>
+            </select>
+          </label>
+        </header>
+
+        <main id="journey-main" class="journey-main" tabindex="-1">
+          <section class="journey-screen" data-screen="search" aria-labelledby="search-title">
+            <div class="screen-intro">
+              <div><h1 id="search-title">Good gear, close by.</h1><p>Browse sample items from the local fixtures. Prices and dates are for design review only.</p></div>
+              <span class="location-chip">Irving &amp; Dallas · sample area</span>
+            </div>
+            <form class="discovery-search" data-search-form role="search">
+              <label for="prototype-search">Search items</label><input id="prototype-search" name="query" type="search" placeholder="Try “camera” or “drill”">
+              <label for="prototype-category">Category</label><select id="prototype-category" name="category"><option value="all">All categories</option><option value="Cameras">Cameras</option><option value="Tools">Tools</option><option value="Electronics">Electronics</option></select>
+              <button class="primary-button" type="submit">Search sample items</button>
+            </form>
+            <div class="screen-section-head"><h2>Available in the sample set</h2><span data-search-count>3 items</span></div>
+            <div class="journey-listing-grid">
+              <article class="journey-listing" data-listing data-category="Cameras">
+                <img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=900&amp;h=700&amp;fit=crop" width="900" height="700" alt="Sample Sony camera available to rent">
+                <div><p class="listing-overline">CAMERAS · IRVING, TX <span>Sample</span></p><h3>Sony A7 IV Mirrorless Camera</h3><p>Request dates from the owner. Sample availability is not live.</p><div class="listing-actions"><strong>$85 <small>/ day</small></strong><button class="text-button" type="button" data-save-item aria-pressed="false">Save item</button><a class="primary-button" href="?screen=item">View item</a></div></div>
+              </article>
+              <article class="journey-listing" data-listing data-category="Tools">
+                <img src="https://images.pexels.com/photos/30413428/pexels-photo-30413428.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=900&amp;h=700&amp;fit=crop" width="900" height="700" alt="Sample DeWalt drill kit available to rent">
+                <div><p class="listing-overline">TOOLS · DALLAS, TX <span>Sample</span></p><h3>DeWalt 20V Cordless Drill Kit</h3><p>Batteries, charger, and bit set.</p><div class="listing-actions"><strong>$25 <small>/ day</small></strong><button class="text-button" type="button" data-save-item aria-pressed="false">Save item</button><a class="primary-button" href="?screen=item">View item</a></div></div>
+              </article>
+              <article class="journey-listing" data-listing data-category="Electronics">
+                <img src="https://images.pexels.com/photos/5515482/pexels-photo-5515482.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=900&amp;h=700&amp;fit=crop" width="900" height="700" alt="Sample projector available to rent">
+                <div><p class="listing-overline">ELECTRONICS · DALLAS, TX <span>Sample</span></p><h3>4K Ultra Short Throw Projector</h3><p>Ask the owner about available dates.</p><div class="listing-actions"><strong>$60 <small>/ day</small></strong><button class="text-button" type="button" data-save-item aria-pressed="false">Save item</button><a class="primary-button" href="?screen=item">View item</a></div></div>
+              </article>
+            </div>
+            <p class="empty-state" data-search-empty hidden>No sample items match. Change the search or category.</p>
+          </section>
+
+          <section class="journey-screen" data-screen="item" aria-labelledby="item-title" hidden>
+            <div class="item-detail-layout">
+              <div class="item-gallery"><img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=1200&amp;h=900&amp;fit=crop" width="1200" height="900" alt="Sony A7 IV camera body shown on dark fabric"><p>Image from the local sample fixture · Owner's exact pickup address is never shown here.</p></div>
+              <div class="item-summary">
+                <h1 id="item-title">Sony A7 IV Mirrorless Camera</h1>
+                <p class="item-meta">Cameras · Irving, TX · Sample listing. Availability is not live.</p>
+                <p class="item-subtitle">A full-frame camera for projects, trips, and the moments in between.</p>
+                <p class="item-price">$85 <span>/ day</span></p>
+                <div class="owner-mini"><span class="avatar">M</span><div><strong>Sample owner profile</strong><span>Profile details are illustrative</span></div><a href="?screen=profile">View profile</a></div>
+                <form class="date-form" data-date-form>
+                  <div class="field-pair"><label>Start date<input type="date" name="start" value="2026-10-24" required></label><label>End date<input type="date" name="end" value="2026-10-26" required></label></div>
+                  <p class="form-hint" role="status" aria-live="polite">Dates shown are a preview. Live availability must be checked before any booking.</p>
+                  <button class="primary-button" type="submit">Review request</button>
+                </form>
+                <div class="item-facts"><p><strong>Included</strong><span>Camera body · Sample kit</span></p><p><strong>Pickup</strong><span>Approximate area shared before approval</span></p></div>
+              </div>
+            </div>
+            <div class="detail-note"><h2>Rent with clarity.</h2><p>Ask about the item, confirm what is included, and agree on pickup details with the owner after approval.</p><a href="?screen=messages">Message the sample owner</a></div>
+          </section>
+
+          <section class="journey-screen" data-screen="checkout" aria-labelledby="checkout-title" hidden>
+            <h1 id="checkout-title">Review your rental.</h1>
+            <p class="screen-note">No payment will be taken in this static preview.</p>
+            <div class="checkout-layout">
+              <form class="checkout-form" data-checkout-form>
+                <h2>Your dates</h2><div class="field-pair"><label>Pick-up<input type="date" name="start" value="2026-10-24" required></label><label>Return<input type="date" name="end" value="2026-10-26" required></label></div>
+                <h2>How payment works</h2><p>The live product sends approved bookings to secure Stripe Checkout. This static preview does not collect card details or start a payment.</p>
+                <label class="checkbox-row"><input type="checkbox" required> <span>I have read the sample rental terms and understand this is a prototype.</span></label>
+                <button class="primary-button" type="submit">Preview request confirmation</button>
+                <p class="inline-status" data-checkout-status role="status" aria-live="polite"></p>
+              </form>
+              <aside class="price-summary"><img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=900&amp;h=600&amp;fit=crop" width="900" height="600" alt="Sample Sony camera"><div><span>Sample item</span><strong>Sony A7 IV Camera</strong></div><dl><div><dt>Rental estimate · 2 days</dt><dd>$170</dd></div><div><dt>Fees &amp; taxes</dt><dd>Calculated at secure checkout</dd></div><div><dt>Deposit / hold</dt><dd>Shown separately if applicable</dd></div><div class="summary-total"><dt>Sample estimate</dt><dd>$170+</dd></div></dl><p>No actual funds are authorized or captured from this prototype.</p></aside>
+            </div>
+          </section>
+
+          <section class="journey-screen" data-screen="renter" aria-labelledby="renter-title" hidden>
+            <div class="screen-intro"><div><h1 id="renter-title">Your rentals, in one place.</h1><p>Track requests, approved bookings, pickup, and return steps.</p></div><a class="primary-button" href="?screen=search">Find another item</a></div>
+            <div class="status-tabs" role="group" aria-label="Filter sample bookings"><button type="button" class="status-tab is-active" data-booking-filter="all" aria-pressed="true">All</button><button type="button" class="status-tab" data-booking-filter="requested" aria-pressed="false">Requested</button><button type="button" class="status-tab" data-booking-filter="confirmed" aria-pressed="false">Confirmed</button><button type="button" class="status-tab" data-booking-filter="active" aria-pressed="false">Active</button></div>
+            <article class="booking-row" data-booking-row data-status="requested"><div class="booking-thumb camera-thumb"></div><div><p class="listing-overline">REQUESTED · SAMPLE</p><h2>Sony A7 IV Mirrorless Camera</h2><p>Oct 24–26 · Irving, TX sample area</p></div><span class="status-badge requested">Awaiting owner</span><a href="?screen=booking">View request</a></article>
+            <article class="booking-row" data-booking-row data-status="confirmed"><div class="booking-thumb drill-thumb"></div><div><p class="listing-overline">CONFIRMED · SAMPLE</p><h2>DeWalt 20V Cordless Drill Kit</h2><p>Sample dates · Pickup details shared after approval</p></div><span class="status-badge confirmed">Confirmed</span><a href="?screen=booking">View booking</a></article>
+            <article class="booking-row" data-booking-row data-status="active"><div class="booking-thumb projector-thumb"></div><div><p class="listing-overline">ACTIVE · SAMPLE</p><h2>4K Ultra Short Throw Projector</h2><p>Sample rental · Return steps available</p></div><span class="status-badge active">In progress</span><a href="?screen=booking">Manage return</a></article>
+          </section>
+
+          <section class="journey-screen" data-screen="owner" aria-labelledby="owner-title" hidden>
+            <h1 id="owner-title">Keep your rentals moving.</h1>
+            <div class="owner-workspace">
+              <div class="owner-main"><div class="screen-section-head"><h2>Needs your response</h2><span class="demo-pill">Sample request</span></div>
+                <article class="request-panel" data-request-panel><div class="request-item"><div class="booking-thumb camera-thumb"></div><div><p class="listing-overline">REQUEST FOR SAMPLE ITEM</p><h3>Sony A7 IV Mirrorless Camera</h3><p>Two-day request · Dates need live availability check</p></div></div>
+                  <div class="request-person"><span class="avatar">J</span><div><strong>Sample renter</strong><span>Profile and history are illustrative</span></div></div>
+                  <div class="request-actions"><button class="primary-button" type="button" data-request-action="approved">Approve sample request</button><button class="secondary-button" type="button" data-request-action="declined">Decline</button></div>
+                  <p class="inline-status" data-request-status role="status" aria-live="polite"></p>
+                </article>
+              </div>
+              <aside class="owner-side"><h2>Your listings</h2><p><strong>3</strong><span>sample fixture items</span></p><a href="?screen=listing">Create a listing</a><p class="privacy-note">These are local sample fixtures, not account data.</p></aside>
+            </div>
+          </section>
+
+          <section class="journey-screen" data-screen="listing" aria-labelledby="listing-title" hidden>
+            <h1 id="listing-title">Create a listing.</h1>
+            <p class="screen-note">Drafts stay in this browser only; nothing is published.</p>
+            <ol class="wizard-progress" aria-label="Listing creation progress"><li class="is-current" data-wizard-step="0">Item</li><li data-wizard-step="1">Details</li><li data-wizard-step="2">Price</li><li data-wizard-step="3">Availability</li></ol>
+            <form class="listing-wizard" data-listing-wizard novalidate>
+              <div class="wizard-page" data-wizard-page="0"><h2>What are you sharing?</h2><label>Item name<input name="title" required placeholder="e.g. Cordless drill kit"></label><label>Category<select name="category" required><option value="">Choose a category</option><option>Tools</option><option>Electronics</option><option>Outdoor</option><option>Home</option></select></label></div>
+              <div class="wizard-page" data-wizard-page="1" hidden><h2>Give renters the details.</h2><label>Description<textarea name="description" rows="4" required placeholder="What should a renter know?"></textarea></label><label>Condition<select name="condition" required><option value="">Choose condition</option><option>Like new</option><option>Good</option><option>Well used</option></select></label></div>
+              <div class="wizard-page" data-wizard-page="2" hidden><h2>Set a clear daily price.</h2><label>Price per day<input name="price" type="number" min="1" max="10000" required placeholder="$"></label><p class="form-hint">You can review availability and terms before publishing.</p></div>
+              <div class="wizard-page" data-wizard-page="3" hidden><h2>Set when it's available.</h2><label>Public area<input name="area" required placeholder="City or approximate neighborhood"></label><label>Pickup notes<textarea name="pickup" rows="3" required placeholder="Share general pickup expectations. Keep exact address private."></textarea></label></div>
+              <p class="inline-status" data-wizard-status role="status" aria-live="polite"></p>
+              <div class="wizard-actions"><button class="secondary-button" type="button" data-wizard-back hidden>Back</button><button class="primary-button" type="button" data-wizard-next>Continue</button><button class="primary-button" type="submit" data-wizard-publish hidden>Save sample draft</button></div>
+              <p class="privacy-note">Preview only. No listing is published or saved to YBuy.</p>
+            </form>
+          </section>
+
+          <section class="journey-screen" data-screen="booking" aria-labelledby="booking-title" hidden>
+            <h1 id="booking-title">From request to return.</h1>
+            <div class="booking-detail-layout"><div>
+              <article class="booking-detail-card"><div class="booking-thumb camera-thumb"></div><div><p class="listing-overline">SONY A7 IV CAMERA · SAMPLE</p><h2>Oct 24–26 · Irving area</h2><p>Pickup details are only shared with authorized booking participants after approval.</p><a href="?screen=messages">Message the owner</a></div></article>
+              <ol class="booking-timeline"><li class="is-done"><span>01</span><div><strong>Request sent</strong><p>Waiting for the owner to respond.</p></div></li><li data-timeline-step="pickup"><span>02</span><div><strong>Confirm pickup</strong><p>Record handover and item condition.</p><button class="text-button" type="button" data-booking-action="pickup">Confirm sample pickup</button></div></li><li data-timeline-step="return"><span>03</span><div><strong>Confirm return</strong><p>Record return condition and accessories.</p><button class="text-button" type="button" data-booking-action="return" disabled>Mark sample returned</button></div></li><li data-timeline-step="review"><span>04</span><div><strong>Leave a review</strong><p>Share feedback after the rental.</p><a href="?screen=profile" data-review-link hidden>Write a sample review</a></div></li></ol>
+              <p class="inline-status" data-booking-status role="status" aria-live="polite"></p>
+            </div><aside class="booking-info"><h2>Booking summary</h2><p><span>Status</span><strong data-current-booking-status>Requested · sample</strong></p><p><span>Payment</span><strong>Not charged in prototype</strong></p><p><span>Location</span><strong>Approximate area only</strong></p><a href="?screen=checkout">Review sample estimate</a></aside></div>
+          </section>
+
+          <section class="journey-screen" data-screen="messages" aria-labelledby="messages-title" hidden>
+            <h1 id="messages-title">Coordinate the handoff.</h1>
+            <div class="message-layout"><aside class="conversation-list"><h2>Conversations</h2><button type="button" class="conversation is-selected"><span class="avatar">M</span><span><strong>Sample owner</strong><small>Sony A7 IV · sample request</small></span><span class="unread-dot" aria-label="Unread sample message"></span></button></aside>
+              <section class="message-thread" aria-label="Sample conversation"><header><span class="avatar">M</span><div><strong>Sample owner</strong><span>Sony A7 IV Mirrorless Camera</span></div><a href="?screen=booking">Booking</a></header>
+                <div class="message-log" data-message-log aria-live="polite"><p class="system-message">Sample request opened · No real message was sent</p><p class="message-bubble from-them">Hi! Thanks for your request. We can confirm pickup details after approval.</p><time>Today · sample conversation</time></div>
+                <form class="message-compose" data-message-form><label for="message-input">Write a message</label><textarea id="message-input" name="message" rows="2" maxlength="500" required placeholder="Ask about the item or pickup..."></textarea><button class="primary-button" type="submit">Add sample message</button></form>
+              </section>
+            </div>
+          </section>
+
+          <section class="journey-screen" data-screen="profile" aria-labelledby="profile-title" hidden>
+            <h1 id="profile-title">Good rentals start with clarity.</h1>
+            <div class="profile-layout"><article class="profile-card"><span class="profile-avatar">M</span><p class="listing-overline">SAMPLE PROFILE</p><h2>Neighbor profile</h2><p>Biographical and trust details are not live or verified in this prototype.</p><dl><div><dt>Profile</dt><dd>Sample data</dd></div><div><dt>Identity</dt><dd>Not assessed</dd></div><div><dt>Rental history</dt><dd>Not shown</dd></div></dl></article>
+              <form class="review-form" data-review-form><h2>Leave a useful review.</h2><p>Reviews belong to eligible completed bookings. This sample form does not publish.</p><fieldset><legend>Your sample rating</legend><div class="rating-options"><label><input type="radio" name="rating" value="5" required><span>5 · Excellent</span></label><label><input type="radio" name="rating" value="4"><span>4 · Good</span></label><label><input type="radio" name="rating" value="3"><span>3 · Okay</span></label></div></fieldset><label for="review-text">What should the next renter know?</label><textarea id="review-text" name="review" rows="4" maxlength="500" required placeholder="Keep it fair, specific, and helpful."></textarea><button class="primary-button" type="submit" data-review-submit disabled>Preview review</button><p class="inline-status" data-review-status role="status" aria-live="polite"></p></form>
+            </div>
+          </section>
+
+          <p class="global-demo-note">Design prototype only · Sample inventory and sample states · No account, payment, booking, or message is connected to production.</p>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

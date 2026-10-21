@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
-import { checkInSteps, checkOutSteps, type Listing } from '@/data';
-import { fetchBookingById, completeBookingReturn, type UiBooking } from '@/lib/bookings';
+import { checkInSteps, checkOutSteps } from '@/data';
+import { fetchBookingById, completeBookingReturn, markBookingActive, type UiBooking } from '@/lib/bookings';
 import { fetchListingById, toUiListing } from '@/lib/listings';
 import * as Icons from 'lucide-react';
-import { Button, Alert, Surface } from '@/components/ui';
+import { Button, Alert } from '@/components/ui';
 import { Skeleton } from '@/components/skeleton';
+import { SuccessIndicator } from '@/components/success-feedback';
+import { RentalSettlement } from '@/components/rental-settlement';
 import { ArrowLeft, Check, Camera, ArrowRight, AlertTriangle } from 'lucide-react';
 
 // Cosmetic checklist for the return-inspection wizard - not tied to any real per-item component
@@ -36,35 +38,116 @@ function WizardMissing({ message }: { message: string }) {
 
 export function CheckInPage({ id }: { id: string }) {
   const { navigate, back } = useRouter();
-  const [listing, setListing] = useState<Listing | null | undefined>(undefined);
+  const { user } = useAuth();
+  const [booking, setBooking] = useState<UiBooking | null | undefined>(undefined);
+  const [listing, setListing] = useState<ReturnType<typeof toUiListing> | null>(null);
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    fetchListingById(id)
-      .then((row) => { if (!cancelled) setListing(row ? toUiListing(row) : null); })
-      .catch(() => { if (!cancelled) setListing(null); });
+    if (!user) return;
+    setDone(false);
+    setCelebrate(false);
+    setBooking(undefined);
+    setListing(null);
+    setLoadError(null);
+    fetchBookingById(id, user.id)
+      .then(async (row) => {
+        if (cancelled) return;
+        if (!row) {
+          setBooking(null);
+          return;
+        }
+        if (row.status === 'active') {
+          setBooking(row);
+          setDone(true);
+          return;
+        }
+        if (row.status !== 'confirmed') {
+          setBooking(null);
+          return;
+        }
+        const listingRow = await fetchListingById(row.listingId);
+        if (cancelled) return;
+        setBooking(row);
+        setListing(listingRow ? toUiListing(listingRow) : null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setBooking(null);
+        setLoadError(err instanceof Error ? err.message : 'Could not load this booking.');
+      });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, user, loadAttempt]);
 
-  if (listing === undefined) return <WizardSkeleton />;
-  if (!listing) return <WizardMissing message="We couldn't find that item." />;
+  if (booking === undefined) return <WizardSkeleton />;
+  if (loadError) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20">
+        <Alert tone="error" title="We couldn't load this check-in">
+          <p>{loadError}</p>
+          <Button size="sm" variant="secondary" className="mt-3" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</Button>
+        </Alert>
+      </div>
+    );
+  }
+  if (!booking) return <WizardMissing message="This booking isn't ready for check-in." />;
+
+  const bookingId = booking.id;
+  async function handleConfirmHandoff() {
+    if (!user || completing) return;
+    setCompleting(true);
+    setError(null);
+    try {
+      const updated = await markBookingActive(bookingId);
+      if (updated.status !== 'active') throw new Error('The booking status could not be confirmed.');
+      setBooking((current) => current ? { ...current, status: 'active' } : current);
+      setCelebrate(true);
+      setDone(true);
+    } catch (err) {
+      try {
+        const latest = await fetchBookingById(bookingId, user.id);
+        if (latest?.status === 'active') {
+          setBooking(latest);
+          setCelebrate(true);
+          setDone(true);
+          return;
+        }
+      } catch {
+        setError('We could not verify whether the handoff was saved. Retry to check the booking status.');
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Could not confirm handoff. Please retry.');
+    } finally {
+      setCompleting(false);
+    }
+  }
 
   if (done) {
     return (
       <div className="animate-fade-in pb-20 md:pb-10">
         <div className="max-w-lg mx-auto px-4 sm:px-6 py-16 text-center">
-          <div className="w-16 h-16 rounded-full bg-success-soft grid place-items-center mx-auto mb-4 animate-booking-confirmed">
-            <Check className="text-success" size={34} />
+          <div className="flex justify-center mb-5">
+            <SuccessIndicator eventKey={celebrate ? `handoff:${booking.id}` : undefined} level="standard" />
           </div>
-          <h1 className="text-2xl font-bold text-main font-display">Check-in complete</h1>
-          <p className="text-sec text-sm mt-2 mb-7">The item is handed over and the rental is now active.</p>
+          <div className="success-content">
+            <h1 className="text-2xl font-bold text-main font-display">Check-in complete</h1>
+            <p className="text-sec text-sm mt-2 mb-2">The booking is marked active.</p>
+            <p className="text-sec text-sm mb-7">This version does not save checklist answers or photos.</p>
+          </div>
           <Button onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>View Bookings</Button>
         </div>
       </div>
     );
   }
+
+  if (!listing) return <WizardMissing message="This booking isn't ready for check-in." />;
 
   const stepData = checkInSteps[step];
   const StepIcon = (Icons as unknown as Record<string, typeof Camera>)[stepData.icon] ?? Camera;
@@ -83,6 +166,9 @@ export function CheckInPage({ id }: { id: string }) {
             <p className="text-xs text-sec truncate">{listing.title}</p>
           </div>
         </div>
+        <Alert tone="warning" className="mb-4">
+          Photo capture and evidence storage are not available. This checklist is not saved; only the booking status is updated when you confirm handoff.
+        </Alert>
         <div className="flex items-center gap-1.5 mb-8">
           {checkInSteps.map((s, i) => (
             <div key={s.id} className={`h-1.5 flex-1 rounded-full transition-colors duration-standard ${i <= step ? 'bg-accent' : 'bg-[var(--border-strong)]'}`} />
@@ -95,39 +181,22 @@ export function CheckInPage({ id }: { id: string }) {
           <p className="text-xs font-semibold text-muted tnum">Step {step + 1} of {checkInSteps.length}</p>
           <h2 className="text-xl font-bold text-main font-display mt-1.5 mb-2">{stepData.label}</h2>
           <p className="text-sm text-sec max-w-xs mx-auto leading-relaxed">
-            {step === 0 && 'Take a clear photo of the item showing its current condition.'}
-            {step === 1 && 'Photograph the serial number for verification.'}
+            {step === 0 && "Photo capture is unavailable. Review the item's current condition with the other participant."}
+            {step === 1 && 'A serial-number photo cannot be captured or saved in this version.'}
             {step === 2 && 'Confirm all components are present and accounted for.'}
-            {step === 3 && 'Record the item condition and any existing wear.'}
+            {step === 3 && 'Condition photos cannot be captured or saved in this version. Review any existing wear together.'}
             {step === 4 && 'Hand off the item to the renter and confirm handoff.'}
           </p>
-          {step === 2 && (
-            <div className="mt-6 text-left space-y-2 max-w-sm mx-auto">
-              {listing.components.map((c, i) => (
-                <Surface key={i} className="flex items-center gap-2 px-3 h-11">
-                  <Check size={15} className="text-success" />
-                  <span className="text-sm text-main flex-1">{c.name}</span>
-                  <span className="text-xs text-success font-semibold">Present</span>
-                </Surface>
-              ))}
-            </div>
-          )}
-          {step !== 2 && (
-            <div className="mt-6 flex justify-center">
-              <div className="w-32 h-32 rounded-card-lg border-2 border-dashed border-strong flex flex-col items-center justify-center gap-2 text-muted">
-                <Camera size={26} />
-                <span className="text-xs font-medium">Tap to capture</span>
-              </div>
-            </div>
-          )}
+          {step === 2 && <Alert tone="info" className="mt-6 text-left">Component checklists are not saved in this version. Confirm the item directly with the other participant.</Alert>}
         </div>
+        {error && <Alert tone="error" className="mt-4">{error}</Alert>}
         <div className="flex gap-2.5 mt-6">
           {step > 0 && (
             <Button variant="secondary" size="lg" onClick={() => setStep(step - 1)} aria-label="Previous step">
               <ArrowLeft size={16} />
             </Button>
           )}
-          <Button size="lg" fullWidth trailingIcon={<ArrowRight size={16} />} onClick={() => (isLast ? setDone(true) : setStep(step + 1))}>
+          <Button size="lg" fullWidth loading={completing} loadingLabel="Confirming handoff…" trailingIcon={<ArrowRight size={16} />} onClick={() => (isLast ? void handleConfirmHandoff() : setStep(step + 1))}>
             {isLast ? 'Confirm handoff' : 'Continue'}
           </Button>
         </div>
@@ -142,30 +211,76 @@ export function CheckOutPage({ id }: { id: string }) {
   const [booking, setBooking] = useState<UiBooking | null | undefined>(undefined);
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
   const [missingComponent, setMissingComponent] = useState<number | null>(null);
   const [completing, setCompleting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
     let cancelled = false;
+    if (!user) return;
+    setDone(false);
+    setCelebrate(false);
+    setBooking(undefined);
+    setLoadError(null);
     fetchBookingById(id, user.id)
-      .then((b) => { if (!cancelled) setBooking(b); })
-      .catch(() => { if (!cancelled) setBooking(null); });
+      .then((row) => {
+        if (cancelled) return;
+        if (row?.status === 'completed') {
+          setBooking(row);
+          setDone(true);
+        } else if (row?.status === 'return_pending') {
+          setBooking(row);
+        } else {
+          setBooking(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setBooking(null);
+        setLoadError(err instanceof Error ? err.message : 'Could not load this return.');
+      });
     return () => { cancelled = true; };
-  }, [id, user]);
+  }, [id, user, loadAttempt]);
 
   if (booking === undefined) return <WizardSkeleton />;
-  if (!booking) return <WizardMissing message="We couldn't find that booking." />;
+  if (loadError) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20">
+        <Alert tone="error" title="We couldn't load this return">
+          <p>{loadError}</p>
+          <Button size="sm" variant="secondary" className="mt-3" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</Button>
+        </Alert>
+      </div>
+    );
+  }
+  if (!booking) return <WizardMissing message="This booking isn't ready for return confirmation." />;
 
   async function handleComplete() {
+    if (!user || completing) return;
     setCompleting(true);
     setError(null);
     try {
-      await completeBookingReturn(id);
+      const updated = await completeBookingReturn(id);
+      if (updated.status !== 'completed') throw new Error('The return status could not be confirmed.');
+      setCelebrate(true);
       setDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not complete the return.');
+      try {
+        const latest = await fetchBookingById(id, user.id);
+        if (latest?.status === 'completed') {
+          setBooking(latest);
+          setCelebrate(true);
+          setDone(true);
+          return;
+        }
+      } catch {
+        setError('We could not verify whether the return was saved. Retry to check the booking status.');
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Could not complete the return. Please retry.');
     } finally {
       setCompleting(false);
     }
@@ -175,16 +290,21 @@ export function CheckOutPage({ id }: { id: string }) {
     return (
       <div className="animate-fade-in pb-20 md:pb-10">
         <div className="max-w-lg mx-auto px-4 sm:px-6 py-16 text-center">
-          <div className="w-16 h-16 rounded-full bg-success-soft grid place-items-center mx-auto mb-4 animate-booking-confirmed">
-            <Check className="text-success" size={34} />
+          <div className="flex justify-center mb-5">
+            <SuccessIndicator eventKey={celebrate ? `completed:${booking.id}` : undefined} level="standard" />
           </div>
-          <h1 className="text-2xl font-bold text-main font-display">Return complete</h1>
-          <p className="text-sec text-sm mt-2">
-            {missingComponent !== null ? 'A missing-component claim was filed and the owner has been notified.' : 'Everything came back as expected.'}
-          </p>
-          {booking.deposit > 0 && (
-            <p className="text-sec text-sm mt-1.5">Your ${booking.deposit} security hold is released within 3–5 business days.</p>
-          )}
+          <div className="success-content">
+            <h1 className="text-2xl font-bold text-main font-display">Return complete</h1>
+            <p className="text-sec text-sm mt-2">
+              {missingComponent !== null
+                ? 'The return was marked complete, but this checklist is not saved and no claim or notification was created.'
+                : 'The return was marked complete.'}
+            </p>
+            {booking.deposit > 0 && (
+              <p className="text-sec text-sm mt-1.5">The ${booking.deposit} charged deposit is eligible for refund when no unresolved dispute exists. See the verified status below.</p>
+            )}
+          </div>
+          <RentalSettlement bookingId={booking.id} isOwner={booking.isOwner} autoProcess />
           <Button className="mt-7" onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>View Bookings</Button>
         </div>
       </div>
@@ -220,6 +340,11 @@ export function CheckOutPage({ id }: { id: string }) {
           </div>
           <p className="text-xs font-semibold text-muted tnum">Step {step + 1} of {checkOutSteps.length}</p>
           <h2 className="text-xl font-bold text-main font-display mt-1.5 mb-2">{stepData.label}</h2>
+          {(step === 0 || step === 2) && (
+            <Alert tone="warning" className="mt-4 text-left">
+              Photo capture and evidence storage are not available. No photo will be captured or saved.
+            </Alert>
+          )}
           {step === 1 && (
             <div className="mt-6 text-left space-y-2 max-w-sm mx-auto">
               <div className="flex items-center justify-between mb-2">
@@ -242,16 +367,8 @@ export function CheckOutPage({ id }: { id: string }) {
                 </button>
               ))}
               {missingComponent !== null && (
-                <Alert tone="warning">A missing-component claim is filed automatically and the owner is notified.</Alert>
+                <Alert tone="warning">This checklist is for your reference only. It does not file a claim or notify the owner.</Alert>
               )}
-            </div>
-          )}
-          {(step === 0 || step === 2) && (
-            <div className="mt-6 flex justify-center">
-              <div className="w-32 h-32 rounded-card-lg border-2 border-dashed border-strong flex flex-col items-center justify-center gap-2 text-muted">
-                <Camera size={26} />
-                <span className="text-xs font-medium">Tap to capture</span>
-              </div>
             </div>
           )}
         </div>

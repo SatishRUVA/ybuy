@@ -61,9 +61,9 @@ export function SecurityHoldNote({ amount }: { amount: number }) {
     <div className="flex items-start gap-3 p-3.5 rounded-card-lg bg-warning-soft">
       <Lock size={16} className="text-warning shrink-0 mt-0.5" />
       <div className="text-sm">
-        <p className="font-semibold text-main tnum">${amount} refundable security hold</p>
+        <p className="font-semibold text-main tnum">${amount} refundable security deposit</p>
         <p className="text-sec mt-0.5 text-xs leading-relaxed">
-          Not a rental fee. Released according to rental terms after successful return and inspection.
+          Charged at checkout, not rental revenue. Refunded after owner-confirmed return when no unresolved dispute exists.
         </p>
       </div>
     </div>

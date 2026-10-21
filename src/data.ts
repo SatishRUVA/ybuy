@@ -58,6 +58,9 @@ export interface Listing {
   cancellation: string;
   reviews: Review[];
   deposit: number;
+  availableQuantity?: number;
+  negotiationEnabled?: boolean;
+  offerRules?: {minimumDaily:number|null;targetDaily:number|null;guardrailPct:number|null;startDate:string|null;endDate:string|null};
   lat: number;
   lng: number;
 }

@@ -3,6 +3,17 @@
     "flowstep": {
       "type": "http",
       "url": "https://api.flowstep.ai/mcp"
+    },
+    "playwright": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "tools": [
+        "*"
+      ]
     }
   }
 }

@@ -25,7 +25,7 @@ type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 const BUTTON_BASE =
-  'inline-flex items-center justify-center gap-2 font-semibold rounded-card whitespace-nowrap ' +
+  'inline-flex min-w-0 max-w-full items-center justify-center gap-2 font-semibold rounded-card whitespace-normal break-words text-center leading-snug [&>svg]:shrink-0 ' +
   'transition-[background-color,border-color,color,box-shadow,transform] duration-fast ease-out ' +
   'active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50';
 
@@ -42,9 +42,9 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
 };
 
 const BUTTON_SIZE: Record<ButtonSize, string> = {
-  sm: 'h-9 px-3.5 text-[13px]',
-  md: 'h-11 px-4 text-sm',
-  lg: 'h-12 px-6 text-[15px]',
+  sm: 'min-h-9 px-3.5 py-2 text-[13px]',
+  md: 'min-h-11 px-4 py-2.5 text-sm',
+  lg: 'min-h-12 px-6 py-3 text-[15px]',
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -86,7 +86,7 @@ export function IconButton({
       {...rest}
       aria-label={label}
       title={label}
-      className={`${BUTTON_BASE} ${BUTTON_VARIANT[variant]} ${box} p-0 ${className}`}
+      className={`${BUTTON_BASE} ${BUTTON_VARIANT[variant]} ${box} shrink-0 p-0 ${className}`}
     >
       {children}
     </button>
@@ -109,7 +109,7 @@ export function Badge({
 }: { tone?: BadgeTone; icon?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold leading-5 ${BADGE_TONE[tone]} ${className}`}
+      className={`inline-flex max-w-full items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold leading-5 whitespace-nowrap ${BADGE_TONE[tone]} ${className}`}
     >
       {icon}
       {children}
@@ -131,7 +131,7 @@ export function Alert({
   return (
     <div role="status" className={`flex items-start gap-2.5 p-3 rounded-card-lg ${map.cls} ${className}`}>
       <Icon size={16} className="shrink-0 mt-0.5" />
-      <div className="text-sm leading-relaxed min-w-0">
+      <div className="text-sm leading-relaxed min-w-0 [overflow-wrap:anywhere]">
         {title && <p className="font-semibold">{title}</p>}
         {children}
       </div>
@@ -153,16 +153,16 @@ export function SectionHeader({
 }) {
   const size = Tag === 'h1' ? 'text-[26px] sm:text-[32px]' : Tag === 'h2' ? 'text-xl sm:text-2xl' : 'text-lg';
   return (
-    <div className={`flex items-end justify-between gap-4 ${className}`}>
-      <div className="min-w-0">
+    <div className={`flex flex-wrap items-end justify-between gap-x-4 gap-y-3 ${className}`}>
+      <div className="min-w-0 flex-1 basis-56">
         <Tag className={`${size} font-bold text-main font-display leading-tight`}>{title}</Tag>
-        {subtitle && <p className="text-sec text-sm mt-1">{subtitle}</p>}
+        {subtitle && <p className="text-sec text-sm mt-1 leading-relaxed [overflow-wrap:anywhere]">{subtitle}</p>}
       </div>
       {action ??
         (actionLabel && onAction ? (
           <button
             onClick={onAction}
-            className="shrink-0 inline-flex items-center gap-1 text-sm font-semibold text-accent hover:text-accent-hover transition-colors duration-fast"
+            className="shrink-0 inline-flex min-h-9 items-center gap-1 text-sm font-semibold text-accent hover:text-accent-hover transition-colors duration-fast"
           >
             {actionLabel}
             <ArrowRight size={15} />
@@ -220,7 +220,7 @@ export function Field({
       <label htmlFor={htmlFor} className="block text-[13px] font-semibold text-main mb-1.5">{label}</label>
       {hint}
       {children}
-      {error && <p className="text-xs text-error mt-1.5">{error}</p>}
+      {error && <p id={htmlFor ? `${htmlFor}-error` : undefined} className="text-xs text-error mt-1.5">{error}</p>}
     </div>
   );
 }

@@ -15,20 +15,28 @@ export function FavoritesPage() {
   const [listings, setListings] = useState<Listing[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function reload() {
+  useEffect(() => {
     if (!user) return;
+    let cancelled = false;
+    setListings(null);
     setError(null);
     fetchFavoriteListings(user.id)
-      .then((rows) => setListings(rows.map(toUiListing)))
-      .catch((err: unknown) => { setListings([]); setError(err instanceof Error ? err.message : 'Failed to load favorites.'); });
-  }
-
-  useEffect(reload, [user]);
+      .then((rows) => { if (!cancelled) setListings(rows.map(toUiListing)); })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load favorites.');
+      });
+    return () => { cancelled = true; };
+  }, [user]);
 
   async function handleUnfavorite(listingId: string) {
     if (!user) return;
-    await removeFavorite(user.id, listingId);
-    setListings((prev) => (prev ?? []).filter((l) => l.id !== listingId));
+    setError(null);
+    try {
+      await removeFavorite(user.id, listingId);
+      setListings((prev) => (prev ?? []).filter((l) => l.id !== listingId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove this saved item. Please try again.');
+    }
   }
 
   return (
@@ -43,7 +51,7 @@ export function FavoritesPage() {
           className="mb-6"
         />
         {error && <Alert tone="warning" className="mb-4">{error}</Alert>}
-        {listings === null ? (
+        {listings === null ? !error && (
           <ListingGridSkeleton count={8} className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4" />
         ) : listings.length === 0 ? (
           <EmptyState

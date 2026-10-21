@@ -1,0 +1,50 @@
+.neighborhood-marketplace {
+  --canvas: #f2f5ed;
+  --paper: #fff;
+  --ink: #172d26;
+  --muted: #51675e;
+  --line: #dbe4d6;
+  --accent: #315b49;
+  --accent-strong: #234434;
+  --accent-contrast: #fff;
+  --surface-soft: #e4ecd9;
+  --focus: #1c5f9a;
+  --body-font: "DM Sans", sans-serif;
+  --display-font: "DM Sans", sans-serif;
+}
+.neighborhood-marketplace .site-header { min-height: 4.2rem; }
+.neighborhood-marketplace .site-brand img { width: 5.8rem; }
+.neighborhood-marketplace .header-list-link { padding: 0.6rem 1.1rem; background: var(--ink); color: #fff; border: 0; border-radius: 999px; }
+.neighborhood-hero { grid-template-columns: minmax(0, 0.88fr) minmax(20rem, 1.12fr); gap: clamp(2rem, 5vw, 5.5rem); padding-top: 3rem; }
+.neighborhood-marketplace .hero-copy { position: relative; }
+.neighborhood-marketplace .hero h1 { max-width: 9ch; font-size: clamp(3.5rem, 6vw, 6rem); letter-spacing: -0.035em; line-height: 0.98; }
+.neighborhood-marketplace .hero h1 em { color: var(--accent); font-family: "Newsreader", Georgia, serif; font-weight: 500; letter-spacing: -0.03em; }
+.neighborhood-marketplace .hero-lede { max-width: 38ch; margin: 1.1rem 0 1.3rem; }
+.neighborhood-marketplace .search-form { max-width: 37rem; padding: 0.45rem; border-radius: 0.8rem; box-shadow: 0 8px 24px rgb(36 59 47 / 7%); }
+.neighborhood-marketplace .search-button { border-radius: 0.55rem; }
+.location-note { margin: 0.85rem 0 0; color: var(--muted); font-size: 0.79rem; }
+.location-note span:first-child { color: var(--accent); font-size: 1.1rem; }
+.neighborhood-media { min-height: 27rem; border-radius: 11rem 1rem 1rem 1rem; }
+.neighborhood-marketplace .hero-media img { min-height: 27rem; max-height: 31rem; }
+.neighborhood-marketplace .hero-caption { right: 1rem; bottom: 1rem; left: 1rem; display: grid; gap: 0.25rem; padding: 1rem; font-size: 1rem; font-weight: 700; }
+.neighborhood-marketplace .hero-caption span { font-size: 0.75rem; font-weight: 500; }
+.neighborhood-stamp { position: absolute; top: 1rem; right: 1rem; display: grid; width: 4.5rem; height: 4.5rem; place-content: center; color: var(--ink); background: #d6e4b9; border-radius: 50%; font-size: 0.75rem; font-weight: 800; line-height: 1.15; text-align: center; transform: rotate(10deg); }
+.neighborhood-marketplace .header-list-link:hover { color: #fff; background: var(--accent-strong); }
+.neighborhood-section-heading { align-items: center; }
+.neighborhood-marketplace .section-heading h2 { max-width: 15ch; }
+.neighborhood-marketplace .content-note { margin-top: 0.5rem; font-size: 0.85rem; }
+.neighborhood-marketplace .listing-card { border: 0; box-shadow: 0 8px 25px rgb(27 48 38 / 7%); }
+.neighborhood-marketplace .listing-image { aspect-ratio: 1.35; }
+.neighborhood-marketplace .listing-content { padding: 1.1rem; }
+.neighborhood-marketplace .sample-tag { color: #315b49; background: #e5ecd8; }
+.neighborhood-marketplace .save-button { background: #fff; }
+.neighborhood-marketplace .steps li { border-top-color: #8fa97b; }
+.neighborhood-marketplace .owner-section { background: #e5ecd8; }
+.neighborhood-marketplace .owner-section h2 { max-width: 15ch; }
+.neighborhood-marketplace .owner-link { border-radius: 999px; }
+@media (max-width: 760px) {
+  .neighborhood-hero { grid-template-columns: 1fr; gap: 1.6rem; padding-top: 2rem; }
+  .neighborhood-marketplace .hero h1 { max-width: 10ch; font-size: clamp(3.5rem, 15vw, 5rem); }
+  .neighborhood-media { min-height: 19rem; border-top-left-radius: 6rem; }
+  .neighborhood-marketplace .hero-media img { min-height: 19rem; max-height: 22rem; }
+}

@@ -1,0 +1,1451 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Find and rent useful things from people nearby. Borrow more, own less with YBuy."
+    />
+    <title>YBuy — Borrow more. Own less.</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7faf9;
+        --bg-subtle: #ebf4f1;
+        --bg-card: #fff;
+        --text: #0f2a28;
+        --text-secondary: #4e7a70;
+        --text-muted: #718d85;
+        --border: #dfe9e5;
+        --accent: #0e7c66;
+        --accent-hover: #0a6553;
+        --accent-soft: #ddf3ec;
+        --star: #e0a538;
+        --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+        --font-display: "Plus Jakarta Sans", var(--font-sans);
+        --radius: 12px;
+        --radius-lg: 18px;
+        --shadow-card: 0 2px 10px rgb(15 42 40 / 6%);
+        --shadow-hover: 0 16px 36px rgb(15 42 40 / 12%);
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 92px;
+        overflow-x: clip;
+      }
+
+      body {
+        margin: 0;
+        overflow-x: clip;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-sans);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible {
+        outline: 3px solid rgb(14 124 102 / 35%);
+        outline-offset: 3px;
+      }
+
+      img {
+        display: block;
+        max-width: 100%;
+      }
+
+      .wrap {
+        width: min(1200px, calc(100% - 48px));
+        margin-inline: auto;
+      }
+
+      .announcement {
+        padding: 9px 16px;
+        background: var(--text);
+        color: #fff;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .announcement a {
+        margin-left: 5px;
+        color: #b8ecdc;
+        font-weight: 700;
+      }
+
+      .site-header {
+        position: sticky;
+        z-index: 5;
+        top: 0;
+        border-bottom: 1px solid var(--border);
+        background: rgb(255 255 255 / 94%);
+        backdrop-filter: blur(14px);
+      }
+
+      .nav-row {
+        display: flex;
+        min-height: 72px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-family: var(--font-display);
+        font-size: 21px;
+        font-weight: 800;
+        letter-spacing: -1px;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border-radius: 11px;
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .brand-mark svg {
+        width: 22px;
+        height: 22px;
+      }
+
+      .nav-links,
+      .nav-actions {
+        display: flex;
+        align-items: center;
+      }
+
+      .nav-links {
+        gap: 30px;
+        color: var(--text-secondary);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .nav-links a:hover,
+      .text-link:hover {
+        color: var(--accent);
+      }
+
+      .nav-actions {
+        gap: 12px;
+      }
+
+      .button {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        padding: 0 18px;
+        border: 1px solid transparent;
+        border-radius: var(--radius);
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 700;
+        transition:
+          background 160ms ease,
+          border-color 160ms ease,
+          transform 160ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button-primary {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .button-primary:hover {
+        background: var(--accent-hover);
+      }
+
+      .button-secondary {
+        border-color: var(--border);
+        background: #fff;
+        color: var(--text);
+      }
+
+      .button-secondary:hover {
+        border-color: var(--accent);
+      }
+
+      .menu-toggle {
+        display: none;
+        width: 44px;
+        height: 44px;
+        place-items: center;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: #fff;
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      .hero {
+        position: relative;
+        display: grid;
+        min-height: 510px;
+        grid-template-columns: 1fr 0.92fr;
+        align-items: center;
+        gap: 44px;
+        padding-block: 58px;
+      }
+
+      .hero-copy {
+        position: relative;
+        z-index: 1;
+        max-width: 590px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 18px;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .eyebrow-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1,
+      h2,
+      h3 {
+        font-family: var(--font-display);
+        letter-spacing: -0.045em;
+      }
+
+      h1 {
+        max-width: 580px;
+        margin-bottom: 18px;
+        font-size: clamp(42px, 5vw, 66px);
+        font-weight: 800;
+        line-height: 1.06;
+      }
+
+      h1 span {
+        color: var(--accent);
+      }
+
+      .hero-copy > p {
+        max-width: 500px;
+        margin-bottom: 26px;
+        color: var(--text-secondary);
+        font-size: 17px;
+        line-height: 1.7;
+      }
+
+      .search-panel {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr 1fr auto;
+        align-items: center;
+        gap: 4px;
+        padding: 7px;
+        border: 1px solid var(--border);
+        border-radius: 17px;
+        background: var(--bg-card);
+        box-shadow: 0 8px 30px rgb(15 42 40 / 9%);
+      }
+
+      .search-field {
+        min-width: 0;
+        padding: 6px 12px;
+      }
+
+      .search-field + .search-field {
+        border-left: 1px solid var(--border);
+      }
+
+      .search-field label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .search-field input {
+        width: 100%;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+
+      .search-field input:focus-visible {
+        outline: 0;
+      }
+
+      .search-panel .button {
+        width: 48px;
+        height: 48px;
+        min-height: 48px;
+        padding: 0;
+      }
+
+      .search-panel .button span {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+      }
+
+      .hero-proof {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 22px;
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+
+      .avatar-stack {
+        display: flex;
+        padding-left: 5px;
+      }
+
+      .avatar-stack img {
+        width: 28px;
+        height: 28px;
+        margin-left: -5px;
+        border: 2px solid var(--bg);
+        border-radius: 50%;
+        object-fit: cover;
+      }
+
+      .hero-visual {
+        position: relative;
+        min-height: 400px;
+      }
+
+      .hero-photo {
+        position: absolute;
+        inset: 0 18px 18px 18px;
+        overflow: hidden;
+        border-radius: 32px 32px 110px 32px;
+        background: var(--bg-subtle);
+      }
+
+      .hero-photo img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .hero-photo::after {
+        position: absolute;
+        inset: 45% 0 0;
+        background: linear-gradient(transparent, rgb(8 35 30 / 40%));
+        content: "";
+      }
+
+      .hero-photo-caption {
+        position: absolute;
+        z-index: 1;
+        right: 42px;
+        bottom: 42px;
+        left: 42px;
+        color: #fff;
+      }
+
+      .hero-photo-caption small {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 12px;
+      }
+
+      .hero-photo-caption strong {
+        font-family: var(--font-display);
+        font-size: 20px;
+      }
+
+      .float-card {
+        position: absolute;
+        right: 0;
+        bottom: 48px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 15px;
+        background: #fff;
+        box-shadow: var(--shadow-hover);
+      }
+
+      .float-icon {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border-radius: 12px;
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .float-card strong,
+      .float-card span {
+        display: block;
+      }
+
+      .float-card strong {
+        margin-bottom: 4px;
+        font-size: 13px;
+      }
+
+      .float-card span {
+        color: var(--text-muted);
+        font-size: 11px;
+      }
+
+      .section {
+        padding-block: 48px 62px;
+      }
+
+      .section-heading {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 22px;
+      }
+
+      .section-heading h2 {
+        margin-bottom: 7px;
+        font-size: clamp(24px, 3vw, 32px);
+        line-height: 1.2;
+      }
+
+      .section-heading p {
+        margin-bottom: 0;
+        color: var(--text-secondary);
+        font-size: 14px;
+      }
+
+      .text-link {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 7px;
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .category-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .category-tile {
+        overflow: hidden;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--bg-card);
+        color: var(--text);
+        cursor: pointer;
+        text-align: left;
+        transition:
+          border-color 160ms ease,
+          box-shadow 160ms ease,
+          transform 160ms ease;
+      }
+
+      .category-tile:hover,
+      .category-tile[aria-pressed="true"] {
+        transform: translateY(-2px);
+        border-color: var(--accent);
+        box-shadow: var(--shadow-card);
+      }
+
+      .category-tile img {
+        width: 100%;
+        aspect-ratio: 1.25;
+        object-fit: cover;
+      }
+
+      .category-name {
+        display: block;
+        padding: 12px 13px 13px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .category-tile[aria-pressed="true"] .category-name {
+        color: var(--accent);
+      }
+
+      .listing-section {
+        padding: 54px 0 68px;
+        background: #fff;
+      }
+
+      .filter-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 22px;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .filter-row::-webkit-scrollbar {
+        display: none;
+      }
+
+      .filter-chip {
+        min-height: 36px;
+        padding: 0 14px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .filter-chip:hover,
+      .filter-chip[aria-pressed="true"] {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .listing-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 20px;
+      }
+
+      .listing-card {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--bg-card);
+        transition:
+          transform 180ms ease,
+          box-shadow 180ms ease;
+      }
+
+      .listing-card:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--shadow-hover);
+      }
+
+      .listing-image {
+        position: relative;
+        overflow: hidden;
+        aspect-ratio: 4 / 3;
+        background: var(--bg-subtle);
+      }
+
+      .listing-image > img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 300ms ease;
+      }
+
+      .listing-card:hover .listing-image > img {
+        transform: scale(1.04);
+      }
+
+      .listing-badge {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        padding: 6px 9px;
+        border-radius: 999px;
+        background: #fff;
+        color: var(--text);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .favorite {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        border: 1px solid rgb(15 42 40 / 10%);
+        border-radius: 50%;
+        background: rgb(255 255 255 / 94%);
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      .favorite[aria-pressed="true"] {
+        color: #c83e4d;
+      }
+
+      .favorite[aria-pressed="true"] svg {
+        fill: currentColor;
+      }
+
+      .listing-content {
+        padding: 14px;
+      }
+
+      .listing-meta {
+        margin-bottom: 7px;
+        color: var(--text-muted);
+        font-size: 11px;
+      }
+
+      .listing-title {
+        min-height: 40px;
+        margin-bottom: 8px;
+        font-family: var(--font-display);
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.4;
+      }
+
+      .listing-rating {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-bottom: 12px;
+        color: var(--text-secondary);
+        font-size: 11px;
+      }
+
+      .star {
+        color: var(--star);
+        font-size: 14px;
+      }
+
+      .listing-price {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        padding-top: 11px;
+        border-top: 1px solid var(--border);
+        font-size: 12px;
+      }
+
+      .listing-price strong {
+        font-family: var(--font-display);
+        font-size: 16px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .listing-price span {
+        color: var(--text-muted);
+      }
+
+      .empty-results {
+        display: none;
+        padding: 32px 16px;
+        border: 1px dashed var(--border);
+        border-radius: var(--radius-lg);
+        color: var(--text-secondary);
+        text-align: center;
+      }
+
+      .empty-results.is-visible {
+        display: block;
+      }
+
+      .steps-section {
+        padding-block: 72px;
+      }
+
+      .steps-intro {
+        max-width: 570px;
+        margin: 0 auto 34px;
+        text-align: center;
+      }
+
+      .steps-intro h2 {
+        margin-bottom: 10px;
+        font-size: clamp(28px, 3vw, 36px);
+      }
+
+      .steps-intro p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .steps-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .step-card {
+        padding: 24px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--bg-card);
+      }
+
+      .step-number {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        margin-bottom: 18px;
+        place-items: center;
+        border-radius: 13px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-family: var(--font-display);
+        font-size: 15px;
+        font-weight: 800;
+      }
+
+      .step-card h3 {
+        margin-bottom: 8px;
+        font-size: 17px;
+      }
+
+      .step-card p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      .owner-banner {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        align-items: center;
+        gap: 30px;
+        overflow: hidden;
+        margin-bottom: 72px;
+        padding: 38px 44px;
+        border-radius: 25px;
+        background: var(--text);
+        color: #fff;
+      }
+
+      .owner-banner h2 {
+        max-width: 500px;
+        margin-bottom: 12px;
+        font-size: clamp(27px, 3vw, 38px);
+        line-height: 1.15;
+      }
+
+      .owner-banner p {
+        max-width: 510px;
+        margin-bottom: 22px;
+        color: #c1d8d1;
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .owner-banner .button {
+        background: #fff;
+        color: var(--text);
+      }
+
+      .owner-banner .button:hover {
+        background: #eaf5f1;
+      }
+
+      .owner-image {
+        height: 220px;
+        overflow: hidden;
+        border-radius: 18px;
+        transform: rotate(2deg);
+      }
+
+      .owner-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .site-footer {
+        padding-block: 28px;
+        border-top: 1px solid var(--border);
+        background: #fff;
+      }
+
+      .footer-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .footer-links {
+        display: flex;
+        gap: 20px;
+      }
+
+      .footer-links a:hover {
+        color: var(--accent);
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        clip-path: inset(50%);
+      }
+
+      @media (max-width: 900px) {
+        .hero {
+          min-height: 450px;
+          grid-template-columns: 1.05fr 0.95fr;
+          gap: 24px;
+        }
+
+        .hero-visual {
+          min-height: 350px;
+        }
+
+        .category-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .listing-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 680px) {
+        .wrap {
+          width: min(100% - 32px, 520px);
+        }
+
+        .nav-row {
+          min-height: 64px;
+          gap: 12px;
+        }
+
+        .nav-links {
+          position: absolute;
+          top: calc(100% + 1px);
+          right: 0;
+          left: 0;
+          display: none;
+          align-items: stretch;
+          gap: 0;
+          padding: 8px 16px 14px;
+          border-bottom: 1px solid var(--border);
+          background: #fff;
+        }
+
+        .nav-links.is-open {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .nav-links a {
+          padding: 13px 4px;
+        }
+
+        .nav-actions .button-secondary {
+          display: none;
+        }
+
+        .nav-actions .button-primary {
+          min-height: 40px;
+          padding-inline: 12px;
+          font-size: 12px;
+        }
+
+        .menu-toggle {
+          display: grid;
+          flex: 0 0 auto;
+        }
+
+        .hero {
+          min-height: 0;
+          grid-template-columns: 1fr;
+          gap: 22px;
+          padding-block: 42px 22px;
+        }
+
+        .hero-copy > p {
+          font-size: 15px;
+        }
+
+        h1 {
+          font-size: clamp(40px, 11vw, 56px);
+        }
+
+        .search-panel {
+          grid-template-columns: 1fr 1fr auto;
+          gap: 0;
+        }
+
+        .search-field:first-child {
+          grid-column: 1 / 3;
+          padding-bottom: 11px;
+        }
+
+        .search-field:nth-child(2) {
+          grid-column: 1;
+          padding-left: 12px;
+          border-top: 1px solid var(--border);
+          border-left: 0;
+        }
+
+        .search-field:nth-child(3) {
+          grid-column: 2;
+          border-top: 1px solid var(--border);
+        }
+
+        .search-panel .button {
+          grid-column: 3;
+          grid-row: 2;
+          margin-left: 4px;
+        }
+
+        .hero-visual {
+          min-height: 300px;
+        }
+
+        .hero-photo {
+          inset: 0 16px 12px 0;
+          border-radius: 24px 24px 80px 24px;
+        }
+
+        .hero-photo-caption {
+          right: 24px;
+          bottom: 26px;
+          left: 24px;
+        }
+
+        .float-card {
+          right: 0;
+          bottom: 27px;
+          padding: 10px 12px;
+        }
+
+        .section {
+          padding-block: 34px 44px;
+        }
+
+        .section-heading {
+          align-items: start;
+          margin-bottom: 18px;
+        }
+
+        .section-heading .text-link {
+          margin-top: 7px;
+        }
+
+        .category-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .category-tile img {
+          aspect-ratio: 1.55;
+        }
+
+        .listing-section {
+          padding-block: 38px 48px;
+        }
+
+        .listing-grid {
+          gap: 11px;
+        }
+
+        .listing-content {
+          padding: 10px;
+        }
+
+        .listing-title {
+          min-height: 38px;
+          font-size: 12px;
+        }
+
+        .listing-meta,
+        .listing-rating {
+          font-size: 10px;
+        }
+
+        .listing-price strong {
+          font-size: 14px;
+        }
+
+        .listing-price {
+          align-items: start;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .favorite {
+          width: 34px;
+          height: 34px;
+        }
+
+        .steps-section {
+          padding-block: 48px;
+        }
+
+        .steps-grid {
+          grid-template-columns: 1fr;
+          gap: 11px;
+        }
+
+        .step-card {
+          padding: 19px;
+        }
+
+        .step-number {
+          margin-bottom: 12px;
+        }
+
+        .owner-banner {
+          grid-template-columns: 1fr;
+          gap: 22px;
+          margin-bottom: 46px;
+          padding: 27px 22px;
+        }
+
+        .owner-image {
+          height: 175px;
+        }
+
+        .footer-row {
+          align-items: start;
+          flex-direction: column;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="announcement">
+      Your neighborhood has good stuff. Find it on YBuy.
+      <a href="#rentals">Explore nearby</a>
+    </div>
+
+    <header class="site-header">
+      <div class="wrap nav-row">
+        <a class="brand" href="#" aria-label="YBuy home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M5 7.5h14l-1.2 12H6.2L5 7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+              <path d="M9 8V6a3 3 0 0 1 6 0v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              <path d="m9.2 13 1.8 1.8 3.8-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <span>YBuy</span>
+        </a>
+        <nav class="nav-links" id="main-nav" aria-label="Main navigation">
+          <a href="#categories">Explore</a>
+          <a href="#rentals">Rentals</a>
+          <a href="#how-it-works">How it works</a>
+        </nav>
+        <div class="nav-actions">
+          <a class="button button-secondary" href="#how-it-works">Sign in</a>
+          <a class="button button-primary" href="#list-with-ybuy">List an item</a>
+          <button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="main-nav">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="wrap hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="eyebrow-dot"></span> The neighborhood sharing marketplace</div>
+          <h1 id="hero-title">Borrow more.<br /><span>Own less.</span></h1>
+          <p>Find the things you need from people nearby. Rent for a day, make something great, and give it back.</p>
+
+          <form class="search-panel" id="search-form" role="search">
+            <div class="search-field">
+              <label for="item-search">What do you need?</label>
+              <input id="item-search" name="item" type="search" placeholder="Camera, tent, power tools…" />
+            </div>
+            <div class="search-field">
+              <label for="location-search">Where?</label>
+              <input id="location-search" name="location" type="text" value="Dallas, TX" />
+            </div>
+            <div class="search-field">
+              <label for="date-search">When?</label>
+              <input id="date-search" name="date" type="text" placeholder="Add dates" onfocus="(this.type='date')" onblur="if(!this.value)this.type='text'" />
+            </div>
+            <button class="button button-primary" type="submit" aria-label="Search rentals">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="10.8" cy="10.8" r="6.8" stroke="currentColor" stroke-width="1.8" />
+                <path d="m16 16 4.2 4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+              <span>Search</span>
+            </button>
+          </form>
+
+          <div class="hero-proof">
+            <div class="avatar-stack" aria-hidden="true">
+              <img src="https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=80&amp;h=80&amp;fit=crop" alt="" />
+              <img src="https://images.pexels.com/photos/415829/pexels-photo-415829.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=80&amp;h=80&amp;fit=crop" alt="" />
+              <img src="https://images.pexels.com/photos/6975099/pexels-photo-6975099.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=80&amp;h=80&amp;fit=crop" alt="" />
+            </div>
+            <span>Good things, shared by people around you</span>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <div class="hero-photo">
+            <img
+              src="https://images.pexels.com/photos/5515482/pexels-photo-5515482.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=1100&amp;h=1000&amp;fit=crop"
+              alt="A projector ready for a backyard movie night"
+            />
+            <div class="hero-photo-caption">
+              <small>Make room for more experiences</small>
+              <strong>Movie night, sorted.</strong>
+            </div>
+          </div>
+          <div class="float-card" aria-label="Trusted by your community">
+            <div class="float-icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <div><strong>Good neighbors</strong><span>Real people. Useful things.</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="wrap section" id="categories" aria-labelledby="categories-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="categories-title">Find what you need</h2>
+            <p>From weekend plans to the once-a-year project.</p>
+          </div>
+          <a class="text-link" href="#rentals">Browse all rentals <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="category-grid">
+          <button class="category-tile" type="button" data-category-filter="Cameras" aria-pressed="false">
+            <img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=450&amp;h=350&amp;fit=crop" alt="" loading="lazy" />
+            <span class="category-name">Cameras</span>
+          </button>
+          <button class="category-tile" type="button" data-category-filter="Tools" aria-pressed="false">
+            <img src="https://images.pexels.com/photos/30413428/pexels-photo-30413428.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=450&amp;h=350&amp;fit=crop" alt="" loading="lazy" />
+            <span class="category-name">Tools</span>
+          </button>
+          <button class="category-tile" type="button" data-category-filter="Electronics" aria-pressed="false">
+            <img src="https://images.pexels.com/photos/5515482/pexels-photo-5515482.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=450&amp;h=350&amp;fit=crop" alt="" loading="lazy" />
+            <span class="category-name">Electronics</span>
+          </button>
+          <button class="category-tile" type="button" data-category-filter="Camping" aria-pressed="false">
+            <img src="https://images.pexels.com/photos/2526025/pexels-photo-2526025.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=450&amp;h=350&amp;fit=crop" alt="" loading="lazy" />
+            <span class="category-name">Camping</span>
+          </button>
+          <button class="category-tile" type="button" data-category-filter="Party" aria-pressed="false">
+            <img src="https://images.pexels.com/photos/35985211/pexels-photo-35985211.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=450&amp;h=350&amp;fit=crop" alt="" loading="lazy" />
+            <span class="category-name">Party</span>
+          </button>
+          <button class="category-tile" type="button" data-category-filter="Sports" aria-pressed="false">
+            <img src="https://images.pexels.com/photos/36450314/pexels-photo-36450314.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=450&amp;h=350&amp;fit=crop" alt="" loading="lazy" />
+            <span class="category-name">Outdoors</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="listing-section" id="rentals" aria-labelledby="rentals-title">
+        <div class="wrap">
+          <div class="section-heading">
+            <div>
+              <h2 id="rentals-title">Popular around Dallas</h2>
+              <p>Well-loved rentals from local owners.</p>
+            </div>
+            <a class="text-link" href="#search-form">See all <span aria-hidden="true">↗</span></a>
+          </div>
+          <div class="filter-row" aria-label="Filter listings by category">
+            <button class="filter-chip" type="button" data-category-filter="all" aria-pressed="true">All rentals</button>
+            <button class="filter-chip" type="button" data-category-filter="Cameras" aria-pressed="false">Cameras</button>
+            <button class="filter-chip" type="button" data-category-filter="Tools" aria-pressed="false">Tools</button>
+            <button class="filter-chip" type="button" data-category-filter="Electronics" aria-pressed="false">Electronics</button>
+            <button class="filter-chip" type="button" data-category-filter="Camping" aria-pressed="false">Camping</button>
+            <button class="filter-chip" type="button" data-category-filter="Party" aria-pressed="false">Party</button>
+            <button class="filter-chip" type="button" data-category-filter="Sports" aria-pressed="false">Outdoors</button>
+          </div>
+
+          <div class="listing-grid" id="listing-grid">
+            <article class="listing-card" data-category="Cameras" data-title="Sony A7 IV Mirrorless Camera" data-location="Irving, TX">
+              <div class="listing-image">
+                <img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=900&amp;h=675&amp;fit=crop" alt="Sony A7 IV mirrorless camera" loading="lazy" />
+                <span class="listing-badge">Popular</span>
+                <button class="favorite" type="button" aria-label="Save Sony A7 IV Mirrorless Camera" aria-pressed="false">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.8 8.8c0 4.1-8.8 10-8.8 10s-8.8-5.9-8.8-10a4.6 4.6 0 0 1 8.8-1.9 4.6 4.6 0 0 1 8.8 1.9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg>
+                </button>
+              </div>
+              <div class="listing-content">
+                <div class="listing-meta">Cameras · Irving, TX</div>
+                <h3 class="listing-title">Sony A7 IV Mirrorless Camera</h3>
+                <div class="listing-rating"><span class="star" aria-hidden="true">★</span><strong>4.9</strong><span>(128 reviews)</span></div>
+                <div class="listing-price"><div><strong>$85</strong><span> / day</span></div><span>Verified owner</span></div>
+              </div>
+            </article>
+
+            <article class="listing-card" data-category="Tools" data-title="DeWalt 20V Cordless Drill Kit" data-location="Dallas, TX">
+              <div class="listing-image">
+                <img src="https://images.pexels.com/photos/30413428/pexels-photo-30413428.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=900&amp;h=675&amp;fit=crop" alt="DeWalt cordless drill kit" loading="lazy" />
+                <span class="listing-badge">Instant book</span>
+                <button class="favorite" type="button" aria-label="Save DeWalt 20V Cordless Drill Kit" aria-pressed="false">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.8 8.8c0 4.1-8.8 10-8.8 10s-8.8-5.9-8.8-10a4.6 4.6 0 0 1 8.8-1.9 4.6 4.6 0 0 1 8.8 1.9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg>
+                </button>
+              </div>
+              <div class="listing-content">
+                <div class="listing-meta">Tools · Dallas, TX</div>
+                <h3 class="listing-title">DeWalt 20V Cordless Drill Kit</h3>
+                <div class="listing-rating"><span class="star" aria-hidden="true">★</span><strong>4.8</strong><span>(89 reviews)</span></div>
+                <div class="listing-price"><div><strong>$25</strong><span> / day</span></div><span>Verified owner</span></div>
+              </div>
+            </article>
+
+            <article class="listing-card" data-category="Electronics" data-title="4K Ultra Short Throw Projector" data-location="Irving, TX">
+              <div class="listing-image">
+                <img src="https://images.pexels.com/photos/5515482/pexels-photo-5515482.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=900&amp;h=675&amp;fit=crop" alt="4K ultra short throw projector" loading="lazy" />
+                <span class="listing-badge">Delivery available</span>
+                <button class="favorite" type="button" aria-label="Save 4K Ultra Short Throw Projector" aria-pressed="false">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.8 8.8c0 4.1-8.8 10-8.8 10s-8.8-5.9-8.8-10a4.6 4.6 0 0 1 8.8-1.9 4.6 4.6 0 0 1 8.8 1.9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg>
+                </button>
+              </div>
+              <div class="listing-content">
+                <div class="listing-meta">Electronics · Irving, TX</div>
+                <h3 class="listing-title">4K Ultra Short Throw Projector</h3>
+                <div class="listing-rating"><span class="star" aria-hidden="true">★</span><strong>4.9</strong><span>(56 reviews)</span></div>
+                <div class="listing-price"><div><strong>$60</strong><span> / day</span></div><span>Verified owner</span></div>
+              </div>
+            </article>
+
+            <article class="listing-card" data-category="Camping" data-title="4-Person Camping Tent + Sleeping Bags" data-location="Las Colinas, TX">
+              <div class="listing-image">
+                <img src="https://images.pexels.com/photos/2526025/pexels-photo-2526025.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=900&amp;h=675&amp;fit=crop" alt="Tent at a campsite" loading="lazy" />
+                <span class="listing-badge">Instant book</span>
+                <button class="favorite" type="button" aria-label="Save 4-Person Camping Tent and Sleeping Bags" aria-pressed="false">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.8 8.8c0 4.1-8.8 10-8.8 10s-8.8-5.9-8.8-10a4.6 4.6 0 0 1 8.8-1.9 4.6 4.6 0 0 1 8.8 1.9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg>
+                </button>
+              </div>
+              <div class="listing-content">
+                <div class="listing-meta">Camping · Las Colinas, TX</div>
+                <h3 class="listing-title">4-Person Camping Tent + Sleeping Bags</h3>
+                <div class="listing-rating"><span class="star" aria-hidden="true">★</span><strong>4.9</strong><span>(42 reviews)</span></div>
+                <div class="listing-price"><div><strong>$35</strong><span> / day</span></div><span>Verified owner</span></div>
+              </div>
+            </article>
+          </div>
+          <p class="empty-results" id="empty-results" role="status">No rentals match that search yet. Try another item or category.</p>
+        </div>
+      </section>
+
+      <section class="wrap steps-section" id="how-it-works" aria-labelledby="steps-title">
+        <div class="steps-intro">
+          <h2 id="steps-title">A better way to get what you need</h2>
+          <p>Useful things are already close by. YBuy makes it easy to find them, book with confidence, and share locally.</p>
+        </div>
+        <div class="steps-grid">
+          <article class="step-card">
+            <div class="step-number">01</div>
+            <h3>Find something nearby</h3>
+            <p>Search real listings by item, location, and dates. See what works for your plans.</p>
+          </article>
+          <article class="step-card">
+            <div class="step-number">02</div>
+            <h3>Book and connect</h3>
+            <p>Choose your rental dates, request to book, and coordinate pickup with the owner.</p>
+          </article>
+          <article class="step-card">
+            <div class="step-number">03</div>
+            <h3>Make it yours for a while</h3>
+            <p>Enjoy the project, trip, or celebration. Return the item and leave a review.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="wrap" id="list-with-ybuy" aria-labelledby="owner-title">
+        <div class="owner-banner">
+          <div>
+            <div class="eyebrow" style="color:#b8ecdc"><span class="eyebrow-dot" style="background:#b8ecdc"></span> For owners</div>
+            <h2 id="owner-title">Your gear could make someone’s day.</h2>
+            <p>List the things you already own, set when they’re available, and earn by sharing them with your community.</p>
+            <a class="button" href="#search-form">Start listing</a>
+          </div>
+          <div class="owner-image">
+            <img src="https://images.pexels.com/photos/6790821/pexels-photo-6790821.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=900&amp;h=600&amp;fit=crop" alt="Tools ready to be shared with a neighbor" loading="lazy" />
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-row">
+        <a class="brand" href="#" aria-label="YBuy home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M5 7.5h14l-1.2 12H6.2L5 7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+              <path d="M9 8V6a3 3 0 0 1 6 0v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              <path d="m9.2 13 1.8 1.8 3.8-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <span>YBuy</span>
+        </a>
+        <span>Borrow good things. Keep good neighbors.</span>
+        <div class="footer-links">
+          <a href="#how-it-works">How it works</a>
+          <a href="#list-with-ybuy">List an item</a>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      const listingCards = [...document.querySelectorAll(".listing-card")];
+      const filterControls = [...document.querySelectorAll("[data-category-filter]")];
+      const emptyResults = document.getElementById("empty-results");
+      const searchForm = document.getElementById("search-form");
+      const itemSearch = document.getElementById("item-search");
+      const locationSearch = document.getElementById("location-search");
+      let activeCategory = "all";
+
+      function updateListings() {
+        const query = itemSearch.value.trim().toLowerCase();
+        const location = locationSearch.value.trim().toLowerCase();
+        let visibleCount = 0;
+
+        listingCards.forEach((card) => {
+          const matchesCategory = activeCategory === "all" || card.dataset.category === activeCategory;
+          const matchesQuery = !query || `${card.dataset.title} ${card.dataset.category}`.toLowerCase().includes(query);
+          const matchesLocation = !location || card.dataset.location.toLowerCase().includes(location);
+          const visible = matchesCategory && matchesQuery && matchesLocation;
+          card.hidden = !visible;
+          if (visible) visibleCount += 1;
+        });
+
+        emptyResults.classList.toggle("is-visible", visibleCount === 0);
+      }
+
+      function selectCategory(category) {
+        activeCategory = category;
+        filterControls.forEach((control) => {
+          control.setAttribute("aria-pressed", String(control.dataset.categoryFilter === category));
+        });
+        updateListings();
+        document.getElementById("rentals").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      filterControls.forEach((control) => {
+        control.addEventListener("click", () => selectCategory(control.dataset.categoryFilter));
+      });
+
+      searchForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        activeCategory = "all";
+        filterControls.forEach((control) => control.setAttribute("aria-pressed", String(control.dataset.categoryFilter === "all")));
+        updateListings();
+        document.getElementById("rentals").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+
+      document.querySelectorAll(".favorite").forEach((button) => {
+        button.addEventListener("click", () => {
+          const isSaved = button.getAttribute("aria-pressed") === "true";
+          button.setAttribute("aria-pressed", String(!isSaved));
+          button.setAttribute("aria-label", `${isSaved ? "Save" : "Remove"} ${button.closest(".listing-card").dataset.title}`);
+        });
+      });
+
+      const menuToggle = document.querySelector(".menu-toggle");
+      const mainNav = document.getElementById("main-nav");
+      menuToggle.addEventListener("click", () => {
+        const isOpen = menuToggle.getAttribute("aria-expanded") === "true";
+        menuToggle.setAttribute("aria-expanded", String(!isOpen));
+        menuToggle.setAttribute("aria-label", isOpen ? "Open menu" : "Close menu");
+        mainNav.classList.toggle("is-open", !isOpen);
+      });
+
+      mainNav.querySelectorAll("a").forEach((link) => {
+        link.addEventListener("click", () => {
+          mainNav.classList.remove("is-open");
+          menuToggle.setAttribute("aria-expanded", "false");
+          menuToggle.setAttribute("aria-label", "Open menu");
+        });
+      });
+    </script>
+  </body>
+</html>
