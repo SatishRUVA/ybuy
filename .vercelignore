@@ -18,3 +18,7 @@ UX
 graphify-out
 *.html
 !index.html
+README.md
+.mcp.json
+.21st
+vite.config.ts.timestamp-*
