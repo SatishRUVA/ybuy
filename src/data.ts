@@ -39,6 +39,7 @@ export interface Listing {
   reviewCount: number;
   rentalCount: number;
   available: boolean;
+  listingStatus?: 'draft' | 'published' | 'archived' | 'suspended' | 'pending_approval';
   instantBooking: boolean;
   verifiedOwner: boolean;
   protectionEligible: boolean;
@@ -46,6 +47,10 @@ export interface Listing {
   condition: string;
   description: string;
   whatsIncluded: string[];
+  brand?: string;
+  model?: string;
+  additionalDetails?: string;
+  deliveryRadiusMiles?: number | null;
   components: Component[];
   declaredValue: number;
   assetId: string;
@@ -59,8 +64,17 @@ export interface Listing {
   reviews: Review[];
   deposit: number;
   availableQuantity?: number;
+  availabilityStart?: string | null;
+  availabilityEnd?: string | null;
+  deliveryFee?: number | null;
   negotiationEnabled?: boolean;
-  offerRules?: {minimumDaily:number|null;targetDaily:number|null;guardrailPct:number|null;startDate:string|null;endDate:string|null};
+  auctionEnabled?: boolean;
+  offerRules?: {minimumDaily:number|null;maximumDaily?:number|null;targetDaily:number|null;guardrailPct:number|null;startDate:string|null;endDate:string|null};
+  durationDiscount?: { minimumDays: number; percent: number } | null;
+  weeklyDiscountEnabled?: boolean;
+  weeklyDiscountPercent?: number;
+  monthlyDiscountEnabled?: boolean;
+  monthlyDiscountPercent?: number;
   lat: number;
   lng: number;
 }

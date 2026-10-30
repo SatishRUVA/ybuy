@@ -4,6 +4,8 @@ import {
   listBookings, listListings, listPayments, listPayouts, listReviews, listUsers,
   removeReview, setListingSuspension, setUserRestriction,
   listCheckoutExceptions,
+  getListingPublicationReview, approveListingPublication,
+  type ListingPublicationReview,
   type AdminListingRow, type AdminUserRow, type AdminReviewRow,
 } from '@/lib/admin';
 import { fmtDate, fmtDay, money, usePagedQuery } from './admin-utils';
@@ -68,6 +70,9 @@ export function ListingsSection() {
   const [status, setStatus] = useState('all');
   const [target, setTarget] = useState<AdminListingRow | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [review, setReview] = useState<ListingPublicationReview | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const query = usePagedQuery((limit, offset) => listListings({ search, status: filterArg(status), limit, offset }), [search, status]);
   const suspending = target ? target.status !== 'suspended' : false;
 
@@ -76,9 +81,10 @@ export function ListingsSection() {
       <PageHeader title="Listings" subtitle="Moderate listings. Suspended listings are hidden from search and cannot be re-published by the owner." />
       <div className="flex flex-col sm:flex-row gap-2 mb-4">
         <SearchBox onChange={setSearch} placeholder="Search title or owner email" />
-        <StatusFilter label="Filter by status" value={status} onChange={setStatus} options={['published', 'draft', 'archived', 'suspended']} />
+        <StatusFilter label="Filter by status" value={status} onChange={setStatus} options={['pending_approval', 'published', 'draft', 'archived', 'suspended']} />
       </div>
       {notice && <Alert tone="success" className="mb-4">{notice}</Alert>}
+      {reviewError && <Alert tone="error" className="mb-4">{reviewError}</Alert>}
       <PagedTable
         query={query} rowKey={(l) => l.id} emptyTitle="No listings match" emptyDescription="Adjust the search or status filter."
         columns={[
@@ -88,12 +94,38 @@ export function ListingsSection() {
           { header: 'Status', cell: (l) => <StatusBadge status={l.status} /> },
           { header: 'Flags', cell: (l) => l.open_flags > 0 ? <Badge tone="warning">{l.open_flags} open</Badge> : <span className="text-muted">—</span> },
           { header: '', className: 'text-right', cell: (l) => (
+            <div className="flex justify-end gap-2">
+            {l.status === 'pending_approval' && <Button size="sm" variant="secondary" disabled={reviewBusy} onClick={async () => {
+              setReviewBusy(true); setReviewError(null);
+              try { setReview(await getListingPublicationReview(l.id)); }
+              catch (error) { setReviewError((error as Error).message); }
+              finally { setReviewBusy(false); }
+            }}>Review publication</Button>}
             <Button size="sm" variant={l.status === 'suspended' ? 'secondary' : 'danger'} onClick={() => setTarget(l)}>
               {l.status === 'suspended' ? 'Reinstate' : 'Suspend'}
             </Button>
+            </div>
           ) },
         ]}
       />
+      <ReasonDialog open={review !== null} onOpenChange={(open) => !open && setReview(null)}
+        title={`Approve "${review?.title ?? 'listing'}"?`}
+        description="Review the exact saved listing. Approval is audited and is rejected if the listing changes or has blocking moderation flags."
+        confirmLabel="Approve publication"
+        onConfirm={async reason => {
+          const saved = await approveListingPublication(review!.id, review!.revision, reason);
+          if (saved.status !== 'published') throw new Error('The listing was not published.');
+          setNotice('Listing reviewed and published.'); query.reload();
+        }}>
+        {review && <div className="space-y-3 text-sm">
+          <p className="whitespace-pre-wrap">{review.description}</p>
+          <p>Declared value: {money(review.estimated_value)} · Deposit: {money(review.deposit)} · Daily price: {money(review.price_per_day)}</p>
+          <p>{review.available_quantity} unit(s) · {review.availability_start} to {review.availability_end} (exclusive) · Delivery fee: {money(review.delivery_fee)}</p>
+          <div className="flex gap-2 overflow-x-auto">{review.images.map((image, index) =>
+            <img key={image.url} src={image.url} alt={`Listing photo ${index + 1}`} className="h-28 w-28 rounded object-cover" />)}</div>
+          {review.blocking_flags.map((flag, index) => <p key={index} role="alert" className="text-error">{flag.type}: {flag.reason}</p>)}
+        </div>}
+      </ReasonDialog>
       <ReasonDialog
         open={target !== null} onOpenChange={(o) => !o && setTarget(null)} danger={suspending}
         title={`${suspending ? 'Suspend' : 'Reinstate'} "${target?.title ?? 'listing'}"?`}

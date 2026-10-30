@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/auth-context';
 import type { FeatureFlag } from '@/lib/feature-flag-store';
+import { signListingImages } from '@/lib/listings';
+import type { ListingFlowResult } from '@/lib/listing-flow';
 
 // Every call goes through a permission-checked SECURITY DEFINER RPC (see migration
 // 20261018000004_admin_foundation.sql); the UI only hides what the server would refuse anyway.
@@ -125,6 +127,20 @@ export const listListings = (a: PageArgs) =>
 export const setListingSuspension = (listingId: string, suspend: boolean, reason: string) =>
   rpc<{ ok: boolean }>('admin_set_listing_suspension', { p_listing_id: listingId, p_suspend: suspend, p_reason: reason });
 
+export interface ListingPublicationReview {
+  id: string; revision: number; title: string; description: string | null;
+  estimated_value: number; deposit: number; price_per_day: number; available_quantity: number;
+  availability_start: string; availability_end: string; delivery_fee: number;
+  images: { url: string; sort_order: number }[];
+  blocking_flags: { type: string; reason: string }[];
+}
+export async function getListingPublicationReview(listingId: string): Promise<ListingPublicationReview> {
+  const review = await rpc<ListingPublicationReview>('admin_get_listing_publication_review', { p_listing_id: listingId });
+  return { ...review, images: await signListingImages(review.images) };
+}
+export const approveListingPublication = (listingId: string, revision: number, reason: string) =>
+  rpc<ListingFlowResult>('admin_approve_listing_publication', { p_listing_id: listingId, p_revision: revision, p_reason: reason });
+
 export interface AdminBookingRow {
   id: string; status: string; start_date: string; end_date: string; subtotal: number; service_fee_amount: number;
   deposit: number; total: number; created_at: string; listing_title: string; renter_name: string; renter_email: string;
@@ -167,13 +183,20 @@ export const saveDepositRule = (categoryId: string, percentage: number, minimum:
 export const getAgreementTerms = () => rpc<{version:number;terms:string;approval_reference:string;created_at:string}|null>('admin_get_agreement_terms');
 export const publishAgreementTerms = (terms:string,approvalReference:string,reason:string) =>
   rpc<number>('admin_publish_agreement_terms',{p_terms:terms,p_approval_reference:approvalReference,p_reason:reason});
+export const publishTestDummyAgreementTerms = (reason:string) =>
+  rpc<number>('admin_publish_test_dummy_terms',{p_reason:reason});
 
 export interface AdminSetting {
-  key: string; value: number | boolean; value_type: 'number' | 'integer' | 'boolean';
+  key: string; value: number | boolean | string[]; value_type: 'number' | 'integer' | 'boolean' | 'country_codes';
   min_value: number | null; max_value: number | null; description: string; is_public: boolean; updated_at: string;
 }
 export const listSettings = () => rpc<AdminSetting[]>('admin_list_settings');
-export const updateSetting = (key: string, value: number | boolean, reason: string) =>
+export async function listCountryOptions(): Promise<{ code: string; name: string }[]> {
+  const { data, error } = await supabase.from('reference_countries').select('code,name').order('name');
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+export const updateSetting = (key: string, value: number | boolean | string[], reason: string) =>
   rpc<{ ok: boolean; error?: string }>('admin_update_setting', { p_key: key, p_value: value, p_reason: reason });
 
 export type { FeatureFlag } from '@/lib/feature-flag-store';

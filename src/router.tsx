@@ -22,12 +22,13 @@ export type Route =
   | { name: 'trust-profile' }
   | { name: 'messaging' }
   | { name: 'conversation'; id: string }
-  | { name: 'requests' }
+  | { name: 'requests'; tab?: 'browse' | 'mine' | 'offers' }
   | { name: 'favorites' }
   | { name: 'need-something' }
   | { name: 'protection' }
   | { name: 'notifications' }
   | { name: 'bidding' }
+  | { name: 'bidding-detail'; id: string }
   | { name: 'auction'; id: string }
   | { name: 'guidelines' }
   | { name: 'admin'; section?: string }
@@ -80,12 +81,13 @@ function routeToPath(route: Route): string {
     case 'trust-profile': return '/profile';
     case 'messaging': return '/messages';
     case 'conversation': return `/messages/${route.id}`;
-    case 'requests': return '/requests';
+    case 'requests': return route.tab && route.tab !== 'browse' ? `/requests?tab=${route.tab}` : '/requests';
     case 'favorites': return '/favorites';
     case 'need-something': return '/need-something';
     case 'protection': return '/protection';
     case 'notifications': return '/notifications';
     case 'bidding': return '/bidding';
+    case 'bidding-detail': return `/bidding/${route.id}`;
     case 'auction': return `/auction/${route.id}`;
     case 'guidelines': return '/guidelines';
     case 'admin': return route.section ? `/admin/${route.section}` : '/admin';
@@ -140,12 +142,15 @@ function pathToRoute(pathname: string, search: string): Route {
     case 'wallet': return { name: 'wallet' };
     case 'profile': return { name: 'trust-profile' };
     case 'messages': return second ? { name: 'conversation', id: second } : { name: 'messaging' };
-    case 'requests': return { name: 'requests' };
+    case 'requests': {
+      const tab = new URLSearchParams(search).get('tab');
+      return { name: 'requests', tab: tab === 'mine' || tab === 'offers' ? tab : 'browse' };
+    }
     case 'favorites': return { name: 'favorites' };
     case 'need-something': return { name: 'need-something' };
     case 'protection': return { name: 'protection' };
     case 'notifications': return { name: 'notifications' };
-    case 'bidding': return { name: 'bidding' };
+    case 'bidding': return second ? { name: 'bidding-detail', id: second } : { name: 'bidding' };
     case 'auction': return second ? { name: 'auction', id: second } : { name: 'home' };
     case 'guidelines': return { name: 'guidelines' };
     case 'admin': return { name: 'admin', section: second };

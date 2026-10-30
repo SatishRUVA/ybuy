@@ -16,7 +16,7 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
 
 const STATUS_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'error'> = {
   published: 'success', confirmed: 'success', completed: 'success', succeeded: 'success', paid: 'success', active: 'success',
-  requested: 'warning', pending_payment: 'warning', pending: 'warning', return_pending: 'warning', draft: 'neutral',
+  requested: 'warning', pending_payment: 'warning', pending: 'warning', pending_approval: 'warning', return_pending: 'warning', draft: 'neutral',
   cancelled: 'neutral', rejected: 'error', failed: 'error', suspended: 'error', refunded: 'warning', archived: 'neutral',
   open: 'warning', investigating: 'accent', in_progress: 'accent', awaiting_evidence: 'warning',
   awaiting_user: 'warning', escalated: 'error', decided: 'accent', resolved: 'success', closed: 'neutral',

@@ -22,10 +22,14 @@ interface AuthContextValue {
   loading: boolean;
   error: string | null;
   signInOpen: boolean;
+  passwordRecovery: boolean;
   authBusy: 'sign-in' | 'sign-out' | null;
   openSignIn: () => void;
   closeSignIn: () => void;
   authenticate: (email: string, password: string, fullName?: string) => Promise<'authenticated' | 'confirmation-required' | 'error'>;
+  requestPasswordReset: (email: string) => Promise<boolean>;
+  finishPasswordReset: (password: string) => Promise<boolean>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -38,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [authBusy, setAuthBusy] = useState<'sign-in' | 'sign-out' | null>(null);
   const [verifiedUserId, setVerifiedUserId] = useState<string | null>(null);
   const signingOut = useRef(false);
@@ -62,6 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!active) return;
       if (event === 'INITIAL_SESSION' && authChanged) return;
       if (event !== 'INITIAL_SESSION') authChanged = true;
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true);
+        setSignInOpen(true);
+      }
       setSessionError(null);
       if (event === 'SIGNED_OUT' && hadSession && !signingOut.current) {
         setError('Your session has expired or ended. Please sign in again.');
@@ -175,31 +184,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [session?.user.id, verifiedUserId]);
 
+  async function clearLocalSession() {
+    if (!session) return;
+    signingOut.current = true;
+    const { error: switchError } = await supabase.auth.signOut({ scope: 'local' });
+    if (switchError) throw new Error('Could not end your current YBuy session. Please sign out before switching accounts.');
+    setSession(null);
+    setProfile(null);
+    setVerifiedUserId(null);
+  }
+
+  function authReturnUrl() {
+    const url = new URL(window.location.href);
+    const hash = new URLSearchParams(url.hash.slice(1));
+    for (const key of ['code', 'error', 'error_code', 'error_description']) {
+      url.searchParams.delete(key);
+      hash.delete(key);
+    }
+    if (url.hash.includes('error=')) url.hash = hash.toString();
+    return url.href;
+  }
+
+  const signInWithGoogle = async () => {
+    if (authBusy) return;
+    setAuthBusy('sign-in');
+    setError(null);
+    try {
+      await clearLocalSession();
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: authReturnUrl(),
+          queryParams: { prompt: 'select_account' },
+          skipBrowserRedirect: true,
+        },
+      });
+      if (oauthError) throw oauthError;
+      if (!data.url) throw new Error('Google sign-in did not return an authorization URL.');
+      window.location.assign(data.url);
+    } catch (error) {
+      console.error('Google sign-in failed:', error instanceof Error ? error.message : 'Unknown error');
+      setError('Could not start Google sign-in. Please try again or use your YBuy email and password.');
+    } finally {
+      signingOut.current = false;
+      setAuthBusy(null);
+    }
+  };
+
   const authenticate = async (email: string, password: string, fullName?: string): Promise<'authenticated' | 'confirmation-required' | 'error'> => {
     if (authBusy) return 'error';
     setAuthBusy('sign-in');
     setError(null);
     try {
-      if (session) {
-        signingOut.current = true;
-        const { error: switchError } = await supabase.auth.signOut({ scope: 'local' });
-        if (switchError) {
-          console.error('Account switch sign-out failed:', switchError);
-          setError('Could not end your current YBuy session. Please try signing out before switching accounts.');
-          return 'error';
-        }
-        setSession(null);
-        setProfile(null);
-        setVerifiedUserId(null);
-      }
-      const returnUrl = new URL(window.location.href);
-      returnUrl.hash = '';
-      for (const key of ['code', 'error', 'error_code', 'error_description']) returnUrl.searchParams.delete(key);
+      await clearLocalSession();
       const result = fullName === undefined
         ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
         : await supabase.auth.signUp({
           email: email.trim(), password,
-          options: { data: { full_name: fullName.trim() }, emailRedirectTo: returnUrl.href },
+          options: { data: { full_name: fullName.trim() }, emailRedirectTo: authReturnUrl() },
         });
       if (result.error) throw result.error;
       return result.data.session ? 'authenticated' : 'confirmation-required';
@@ -214,6 +256,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthBusy(null);
     }
   };
+
+  async function requestPasswordReset(email: string): Promise<boolean> {
+    setError(null);
+    setAuthBusy('sign-in');
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: new URL('/', window.location.origin).href,
+      });
+      if (resetError) throw resetError;
+      return true;
+    } catch (err) {
+      console.error('Password reset request failed:', err instanceof Error ? err.message : 'Unknown error');
+      setError('Could not request a password reset. Check the email address and try again.');
+      return false;
+    } finally {
+      setAuthBusy(null);
+    }
+  }
+
+  async function finishPasswordReset(password: string): Promise<boolean> {
+    setError(null);
+    setAuthBusy('sign-in');
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) throw updateError;
+      setPasswordRecovery(false);
+      setSignInOpen(false);
+      return true;
+    } catch (err) {
+      console.error('Password update failed:', err instanceof Error ? err.message : 'Unknown error');
+      setError('Could not update your password. Request a new reset link and try again.');
+      return false;
+    } finally {
+      setAuthBusy(null);
+    }
+  }
 
   const signOut = async () => {
     if (signingOut.current) return;
@@ -241,10 +319,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session, user: session?.user.id === verifiedUserId ? session.user : null,
         profile: profile?.id === session?.user.id && profile?.id === verifiedUserId ? profile : null,
         loading: loading || Boolean(session && !error && !sessionError && verifiedUserId !== session.user.id),
-        error: error ?? sessionError ?? profileError, signInOpen, authBusy,
+        error: error ?? sessionError ?? profileError, signInOpen, passwordRecovery, authBusy,
         openSignIn: () => setSignInOpen(true),
         closeSignIn: () => setSignInOpen(false),
-        authenticate, signOut,
+        authenticate, requestPasswordReset, finishPasswordReset, signInWithGoogle, signOut,
       }}
     >
       {children}

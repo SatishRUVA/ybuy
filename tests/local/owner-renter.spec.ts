@@ -1,26 +1,30 @@
 import { expect, test, type Cookie, type Page } from '@playwright/test';
 import { computeTotpForTest } from '../../api/_lib/access-session.js';
-import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { createClient } from '@supabase/supabase-js';
+import { loadTestActors, type TestActor } from './test-accounts';
 
-interface Actor { email: string; password: string; id: string; name: string }
+type Actor = TestActor;
 const hosted = process.env.YBUY_E2E_HOSTED === 'true';
-const actors: Actor[] = JSON.parse(readFileSync(hosted ? 'ybuy-hosted-test-accounts.local' : 'ybuy-test-accounts.local', 'utf8')).accounts;
+const actors = loadTestActors(hosted);
 const cliOptions = { encoding: 'utf8' as const, stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'] };
-const keys = hosted ? JSON.parse(execSync('npx supabase projects api-keys --project-ref jzyjmsixfuwzfnntewqn --output json', cliOptions)) as { name: string; api_key: string }[] : [];
+const hostedApiUrl = 'https://jzyjmsixfuwzfnntewqn.supabase.co';
+const localApiUrl = 'http://localhost:54321';
+const keys = hosted ? JSON.parse(execSync('pnpm exec supabase projects api-keys --project-ref jzyjmsixfuwzfnntewqn --output json', cliOptions)) as { name: string; api_key: string }[] : [];
+const localStatus = hosted ? null : JSON.parse(execSync('pnpm exec supabase status --output json', cliOptions));
+if (localStatus && new URL(localStatus.API_URL).port !== '54321') throw new Error('Only the isolated local backend is allowed.');
 const status = hosted ? {
-  API_URL: 'https://jzyjmsixfuwzfnntewqn.supabase.co',
+  API_URL: hostedApiUrl,
   ANON_KEY: keys.find((key) => key.name === 'anon')?.api_key,
   SERVICE_ROLE_KEY: keys.find((key) => key.name === 'service_role')?.api_key,
-} : JSON.parse(execSync('npx supabase status --output json', cliOptions));
-if (!['http://127.0.0.1:54321', 'https://jzyjmsixfuwzfnntewqn.supabase.co'].includes(status.API_URL)) throw new Error('Only isolated test backends are allowed.');
+} : { ...localStatus, API_URL: localApiUrl };
+if (hosted && status.API_URL !== hostedApiUrl) throw new Error('Only the approved hosted test backend is allowed.');
 const admin = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 let diagnostics: { kind: string; detail: string }[] = [];
 let gateCookies: Cookie[] | null = null;
 
 async function unlockTestSite(page: Page) {
-  if (!hosted) return;
+  if (!hosted || process.env.YBUY_E2E_LOCAL_APP === 'true') return;
   const app = 'https://ybuy-e2e-test.vercel.app';
   if ((await page.context().cookies(app)).some((cookie) => cookie.name === 'ybuy_access')) return;
   if (gateCookies) {
@@ -65,6 +69,16 @@ async function signIn(page: Page, actor: Actor) {
   await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toHaveCount(0);
 }
 
+async function establishSession(page: Page, session: { access_token: string; refresh_token: string }) {
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(async (tokens) => {
+    const { supabase } = await import('/src/lib/supabase.ts');
+    const { error } = await supabase.auth.setSession(tokens);
+    if (error) throw error;
+  }, session);
+  await expect(page.getByRole('tab', { name: /^Renting(?: \d+)?$/ })).toBeVisible();
+}
+
 for (const actor of actors) {
   test(`${actor.email}: real UI sign-in, persisted session and sign-out`, async ({ page }) => {
     await signIn(page, actor);
@@ -79,7 +93,7 @@ for (const actor of actors) {
 }
 
 for (let pair = 1; pair <= 5; pair++) {
-test(`pair ${pair}: publication API fixture → UI request → UI approval → payment-pending`, async ({ browser }) => {
+test(`pair ${pair}: ${pair === 5 ? 'instant booking' : 'owner approval'} flow reaches payment-pending`, async ({ browser }) => {
   test.slow(true,'This scenario runs two independent authenticated browsers and checks every persisted booking transition.');
   const owner = actors.find((actor) => actor.email === `owner${pair}@example.test`)!;
   const renter = actors.find((actor) => actor.email === `renter${pair}@example.test`)!;
@@ -92,38 +106,76 @@ test(`pair ${pair}: publication API fixture → UI request → UI approval → p
   expect(renterLogin.error).toBeNull();
   const category = await ownerApi.from('categories').select('id').limit(1).single();
   expect(category.error).toBeNull();
+  const availabilityStart = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+  const availabilityEnd = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const listingTitle = `Local E2E camera fixture ${pair} ${crypto.randomUUID()}`;
   const listing = await ownerApi.from('listings').insert({
-    owner_id: owner.id, category_id: category.data!.id, title: 'Local E2E camera fixture',
+    owner_id: owner.id, category_id: category.data!.id, title: listingTitle,
     description: 'Isolated lifecycle fixture, no real payment.', price_per_day: 10, deposit: 0,
     location_label: 'Dallas, TX', location_lat: 32.78, location_lng: -96.8, status: 'draft',
+    availability_start: availabilityStart, availability_end: availabilityEnd,
     estimated_value:200,item_condition:'good',
-  }).select('id').single();
+    instant_booking: pair === 5,
+  }).select('id,deposit,instant_booking').single();
   expect(listing.error).toBeNull();
+  expect(listing.data!.instant_booking).toBe(pair === 5);
   const listingId = listing.data!.id;
   const ownerContext = await browser.newContext();
   const renterContext = await browser.newContext();
   const ownerPage = await ownerContext.newPage();
   const renterPage = await renterContext.newPage();
   try {
+    expect((await ownerApi.from('listing_images').insert({
+      listing_id: listingId, url: 'https://example.test/local-e2e-camera.jpg', sort_order: 0,
+    })).error).toBeNull();
+    expect((await ownerApi.from('listing_pickup_locations').insert({
+      listing_id: listingId, owner_id: owner.id, address: 'Private test pickup', city: 'Dallas',
+      state: 'TX', postal_code: '75201', country: 'US', latitude: 32.78, longitude: -96.8,
+    })).error).toBeNull();
     const publication = await ownerApi.from('listings').update({ status: 'published' }).eq('id', listingId).select('status').single();
     expect(publication.error).toBeNull();
     expect(publication.data!.status).toBe('published');
-    await signIn(ownerPage, owner);
-    await signIn(renterPage, renter);
-    await renterPage.goto(`/search?q=Local%20E2E%20camera%20fixture`, { waitUntil: 'domcontentloaded' });
+    await establishSession(ownerPage, ownerLogin.data.session!);
+    await establishSession(renterPage, renterLogin.data.session!);
+    await renterPage.goto(`/search?q=${encodeURIComponent(listingTitle)}`, { waitUntil: 'domcontentloaded' });
     await expect(renterPage.locator(`a[href="/listing/${listingId}"]`)).toBeVisible({ timeout: 20_000 });
     const start = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     const end = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
+    if (pair === 5) {
+      await renterContext.route('**/functions/v1/**', async (route) => {
+        if (!new URL(route.request().url()).pathname.endsWith('/create-checkout-session')) {
+          await route.continue();
+          return;
+        }
+        await route.fulfill({
+          status: 200, contentType: 'application/json', body: JSON.stringify({ url: 'http://localhost:5174/test-checkout' }),
+        });
+      });
+    }
     await renterPage.goto(`/checkout/${listingId}?start=${start}&end=${end}`, { waitUntil: 'domcontentloaded' });
-    await renterPage.getByRole('button', { name: 'Send booking request', exact: true }).filter({ visible: true }).click();
-    await expect(renterPage.getByRole('heading', { name: 'Request sent', exact: true })).toBeVisible();
-    const bookingId = new URL(renterPage.url()).pathname.split('/').pop()!;
+    const submitLabel = pair === 5 ? 'Continue to payment' : 'Send booking request';
+    await renterPage.getByRole('button', { name: submitLabel, exact: true }).filter({ visible: true }).first().click();
+    if (pair !== 5) await expect(renterPage.getByRole('heading', { name: 'Request sent', exact: true })).toBeVisible();
+    let instantBookingId: string | undefined;
+    if (pair === 5) {
+      await expect.poll(async () => {
+        const result = await admin.from('bookings').select('id').eq('listing_id', listingId).maybeSingle();
+        if (result.error) throw result.error;
+        instantBookingId = result.data?.id;
+        return Boolean(instantBookingId);
+      }, { timeout: 20_000, message: 'Instant booking must persist before checkout redirects' }).toBe(true);
+    }
+    const bookingId = pair === 5 ? instantBookingId : new URL(renterPage.url()).pathname.split('/').pop()!;
+    expect(bookingId).toBeTruthy();
     const booking = await renterApi.from('bookings').select('*').eq('id', bookingId).single();
     expect(booking.error).toBeNull();
-    expect(booking.data).toMatchObject({ owner_id: owner.id, renter_id: renter.id, status: 'requested', subtotal: 20, deposit: 0 });
-    const ownerNotification = await ownerApi.from('notifications').select('id,title').eq('event_key', `booking:${bookingId}:requested:${owner.id}`).single();
+    const initialStatus = pair === 5 ? 'pending_payment' : 'requested';
+    expect(booking.data).toMatchObject({ owner_id: owner.id, renter_id: renter.id, status: initialStatus,
+      booking_mode: pair === 5 ? 'instant' : 'owner_approval', subtotal: 20, deposit: listing.data!.deposit });
+    const ownerNotification = await ownerApi.from('notifications').select('id,title').eq('event_key',
+      pair === 5 ? `booking:${bookingId}:instant:${owner.id}` : `booking:${bookingId}:requested:${owner.id}`).single();
     expect(ownerNotification.error).toBeNull();
-    expect(ownerNotification.data!.title).toBe('New booking request');
+    expect(ownerNotification.data!.title).toBe(pair === 5 ? 'Instant booking received' : 'New booking request');
     const invalidDates = await renterApi.rpc('create_booking_request', { p_listing_id: listingId, p_start_date: end, p_end_date: start });
     expect(invalidDates.error).not.toBeNull();
     const duplicate = await renterApi.rpc('create_booking_request', { p_listing_id: listingId, p_start_date: start, p_end_date: end });
@@ -131,19 +183,25 @@ test(`pair ${pair}: publication API fixture → UI request → UI approval → p
     await renterPage.screenshot({ path: test.info().outputPath('renter-request.png') });
     const unauthorized = await renterApi.rpc('respond_to_booking_request', { p_booking_id: bookingId, p_approve: true });
     expect(unauthorized.error).not.toBeNull();
-    await ownerPage.goto('/dashboard?tab=lending', { waitUntil: 'domcontentloaded' });
-    await ownerPage.getByRole('button', { name: 'Accept request', exact: true }).click();
+    if (pair !== 5) {
+      await ownerPage.goto('/dashboard?tab=lending', { waitUntil: 'domcontentloaded' });
+      await ownerPage.getByRole('heading', { name: /Incoming requests/ }).locator('xpath=..')
+        .getByText(listingTitle, { exact: true }).locator('xpath=ancestor::div[contains(@class, "p-4")][1]')
+        .getByRole('button', { name: 'Accept request', exact: true }).click();
+    }
     await expect.poll(async () => {
       const result = await renterApi.from('bookings').select('status').eq('id', bookingId).single();
       if (result.error) throw result.error;
       return result.data.status;
     }).toBe('pending_payment');
-    await renterPage.reload({ waitUntil: 'domcontentloaded' });
-    await expect(renterPage.getByText('Payment is not confirmed yet', { exact: true })).toBeVisible();
+    if (pair !== 5) {
+      await renterPage.reload({ waitUntil: 'domcontentloaded' });
+      await expect(renterPage.getByText('Payment is not confirmed yet', { exact: true })).toBeVisible();
+    }
     await renterPage.screenshot({ path: test.info().outputPath('renter-approved-awaiting-payment.png') });
     const renterNotification = await renterApi.from('notifications').select('id,title').eq('event_key', `booking:${bookingId}:pending_payment:${renter.id}`).single();
     expect(renterNotification.error).toBeNull();
-    expect(renterNotification.data!.title).toBe('Complete your booking payment');
+    expect(renterNotification.data!.title).toBe(pair === 5 ? 'Instant booking - payment needed' : 'Complete your booking payment');
     const prematureHandoff = await ownerApi.rpc('mark_booking_active', { p_booking_id: bookingId });
     expect(prematureHandoff.error).not.toBeNull();
     const cancellation = await renterApi.rpc('cancel_booking', { p_booking_id: bookingId });
@@ -151,16 +209,25 @@ test(`pair ${pair}: publication API fixture → UI request → UI approval → p
     expect(cancellation.data.status).toBe('cancelled');
     const releasedDates = await renterApi.rpc('create_booking_request', { p_listing_id: listingId, p_start_date: start, p_end_date: end });
     expect(releasedDates.error).toBeNull();
-    const decline = await ownerApi.rpc('respond_to_booking_request', { p_booking_id: releasedDates.data.id, p_approve: false });
-    expect(decline.error).toBeNull();
-    expect(decline.data.status).toBe('rejected');
+    if (pair === 5) {
+      expect(releasedDates.data.status).toBe('pending_payment');
+      expect((await renterApi.rpc('cancel_booking', { p_booking_id: releasedDates.data.id })).error).toBeNull();
+    } else {
+      const decline = await ownerApi.rpc('respond_to_booking_request', { p_booking_id: releasedDates.data.id, p_approve: false });
+      expect(decline.error).toBeNull();
+      expect(decline.data.status).toBe('rejected');
+    }
     test.info().annotations.push({ type: 'blocked', description: 'Real Stripe sandbox payment/webhook not configured; pickup, return and completed-review lifecycle not claimed.' });
   } finally {
     const fixtureBookings = await admin.from('bookings').select('id').eq('listing_id', listingId);
     expect(fixtureBookings.error).toBeNull();
-    const agreements=await admin.from('rental_agreements').select('id').in('booking_id',(fixtureBookings.data??[]).map(booking=>booking.id));
-    expect(agreements.error).toBeNull();
-    if(agreements.data?.length){
+    const agreementRows = [];
+    for (const booking of fixtureBookings.data ?? []) {
+      const agreement = await admin.from('rental_agreements').select('id,booking_id').eq('booking_id', booking.id).maybeSingle();
+      expect(agreement.error).toBeNull();
+      if (agreement.data) agreementRows.push(agreement.data);
+    }
+    if (agreementRows.length) {
       for(const booking of fixtureBookings.data??[]){
         const state=await renterApi.from('bookings').select('status').eq('id',booking.id).single();
         expect(state.error).toBeNull();
@@ -170,7 +237,7 @@ test(`pair ${pair}: publication API fixture → UI request → UI approval → p
       }
       expect((await ownerApi.from('listings').update({status:'draft'}).eq('id',listingId)).error).toBeNull();
       await test.info().attach('retained-immutable-fixture',{
-        body:JSON.stringify({listingId,bookings:fixtureBookings.data,agreementIds:agreements.data.map(agreement=>agreement.id)}),
+        body:JSON.stringify({listingId,bookings:fixtureBookings.data,agreementIds:agreementRows.map(agreement=>agreement.id)}),
         contentType:'application/json',
       });
     }else{

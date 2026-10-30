@@ -1,1069 +1,851 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
+import { ArrowLeft, ArrowRight, BellRing, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, ImagePlus, MapPin, Minus, Plus, Save, ShieldCheck, Sparkles, Truck, X, Zap } from 'lucide-react';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import type { Category } from '@/data';
-import {
-  fetchCategories, toUiCategory, createDraftListing, uploadListingPhoto,
-  removeListingImageUrl, saveListingImageOrder, updateListingDetails, saveListingPickupLocation, publishListing, deleteOwnerListing,
-  fetchListingById, fetchOwnerPickup, saveOwnerListing, fetchDepositRules, type CategoryDepositRule,
-} from '@/lib/listings';
+import { fetchCategories, toUiCategory, createDraftListing, deleteOwnerListing, uploadListingPhoto, removeListingImageUrl, saveListingImageOrder, fetchListingById, fetchOwnerPickup } from '@/lib/listings';
+import { getListingFlowPolicy, saveListingFlow, type ListingFlowPolicy, type ListingFlowDetails } from '@/lib/listing-flow';
 import { moderateListingContent, type ListingFlag } from '@/lib/listing-ai';
-import {
-  ITEM_STEP_FIELDS, LISTING_FIELD_IDS, LISTING_RULES, TERMS_STEP_FIELDS, parseMoney, validateListing, type ListingField,
-} from '@/lib/listing-rules';
-import { Skeleton } from '@/components/skeleton';
-import { Button, Alert, Surface, Field, SectionHeader } from '@/components/ui';
+import { LISTING_RULES, LISTING_FIELD_IDS, ITEM_STEP_FIELDS, parseMoney, validateListing, type ListingField } from '@/lib/listing-rules';
+import { todayIso, addDaysIso } from '@/lib/geo';
+import { Button, Alert, Surface, Field, IconButton } from '@/components/ui';
 import { fieldClass, textareaClass } from '@/components/form-classes';
-import { CategoryIcon } from '@/components/category-icon';
 import { PickupLocation, type PickupLocationValue } from '@/components/pickup-location';
+import { ListingPhotoEditor } from '@/components/listing-photo-editor';
+import { ListingNegotiationSettings } from '@/components/listing-negotiation-settings';
+import { ListingAvailabilityPicker } from '@/components/listing-availability-picker';
+import { LISTING_MAX_AVAILABLE_DAYS, listingAvailabilityError } from '@/lib/listing-availability';
 import { SuccessFeedback } from '@/components/success-feedback';
-import {
-  ArrowDown, ArrowRight, ArrowUp, Camera, CheckCircle2, DollarSign, RotateCcw, Shield, Sparkles, X,
-} from 'lucide-react';
+import { ListingAiSkeleton, Skeleton } from '@/components/skeleton';
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from '@/components/shadcn/alert-dialog';
+import { EMPTY_ITEM_DETAILS, listingItemDetailsError, type ListingItemDetails } from '@/lib/listing-item-details';
+import { useFeatureFlag } from '@/lib/use-feature-flags';
+import { calculateRentalPricing } from '@/lib/rental-pricing';
+
+const STEPS = ['Photos', 'Details', 'Rental settings', 'Availability', 'Location', 'Review'] as const;
+const STEP_TITLES = ['Add photos of your item', 'Review and edit item details', 'Set rental settings', 'Set availability', 'Set location and handoff options', 'Review and publish'];
+const EMPTY_PICKUP: PickupLocationValue = { formattedAddress: '', streetAddress: '', city: '', state: '', postalCode: '', country: '', latitude: null, longitude: null, placeId: '' };
+const CONDITION_LABELS: Record<string, string> = { new: 'New', like_new: 'Like new', good: 'Good', fair: 'Fair' };
+const formatListingDate = (date: string) => date ? new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Choose date';
+type Form = {
+  title: string; categoryId: string; description: string; value: string; condition: string; price: string;
+  weeklyDiscountEnabled: boolean; weeklyDiscount: string; monthlyDiscountEnabled: boolean; monthlyDiscount: string;
+  instant: boolean; delivery: boolean; deliveryFee: string; quantity: number; start: string; end: string;
+  itemDetails: ListingItemDetails;
+};
+const EMPTY_FORM: Form = { title: '', categoryId: '', description: '', value: '', condition: '', price: '', weeklyDiscountEnabled: true, weeklyDiscount: '20', monthlyDiscountEnabled: true, monthlyDiscount: '30', instant: false, delivery: false, deliveryFee: '', quantity: 1, start: '', end: '', itemDetails: EMPTY_ITEM_DETAILS };
+type FlowErrors = Partial<Record<ListingField | 'availability' | 'delivery' | 'quantity' | 'item-details', string>>;
+const message = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 
 export function CreateListingPage({ editId }: { editId?: string }) {
-  const { navigate, back } = useRouter();
+  const { navigate } = useRouter();
   const { profile } = useAuth();
+  const durationDiscountFlag = useFeatureFlag('duration_discounts');
+  const reducedMotion = useReducedMotion();
+  const [form, setForm] = useState<Form>(EMPTY_FORM);
+  const priceForPreview = parseMoney(form.price) ?? 0;
+  const weeklyPreview = calculateRentalPricing(priceForPreview, 7, { weeklyEnabled: true, weeklyPercent: Number(form.weeklyDiscount) || 0 });
+  const monthlyPreview = calculateRentalPricing(priceForPreview, 30, { monthlyEnabled: true, monthlyPercent: Number(form.monthlyDiscount) || 0 });
+  const formRef = useRef(form);
+  formRef.current = form;
   const [photos, setPhotos] = useState<string[]>([]);
-  const [title, setTitle] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [priceText, setPriceText] = useState('');
-  const [description, setDescription] = useState('');
-  const [depositText, setDepositText] = useState('');
-  const [valueText, setValueText] = useState('');
-  const [condition, setCondition] = useState('');
-  const [depositEdited, setDepositEdited] = useState(false);
-  const [depositRules, setDepositRules] = useState<CategoryDepositRule[]>([]);
-  const [rulesError, setRulesError] = useState<string | null>(null);
-  const [revision, setRevision] = useState<number | null>(null);
-  const [loadingEdit, setLoadingEdit] = useState(Boolean(editId));
-  const [editingDraft,setEditingDraft]=useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [pickupChanged, setPickupChanged] = useState(false);
-  const [locationLabel, setLocationLabel] = useState('');
-  const [pickupLocation, setPickupLocation] = useState<PickupLocationValue>({ formattedAddress: '', streetAddress: '', city: '', state: '', postalCode: '', country: '', latitude: null, longitude: null, placeId: '' });
+  const [pickup, setPickup] = useState(EMPTY_PICKUP);
   const [pickupConfirmed, setPickupConfirmed] = useState(false);
-  const [instantBooking, setInstantBooking] = useState(false);
-  const [deliveryAvailable, setDeliveryAvailable] = useState(false);
-  const [protectionEligible, setProtectionEligible] = useState(false);
-  const [negotiationEnabled, setNegotiationEnabled] = useState(false);
-  const [availableQuantity, setAvailableQuantity] = useState(1);
-  const [offerMinimum,setOfferMinimum] = useState('');
-  const [offerTarget,setOfferTarget] = useState('');
-  const [offerGuardrail,setOfferGuardrail] = useState(false);
-  const [offerGuardrailPercent,setOfferGuardrailPercent] = useState('30');
-  const [offerStart,setOfferStart] = useState('');
-  const [offerEnd,setOfferEnd] = useState('');
-  const [offerHours,setOfferHours] = useState('');
-  const [published, setPublished] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [policy, setPolicy] = useState<ListingFlowPolicy | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [listingId, setListingId] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const idRef = useRef<string | null>(null);
+  const revision = useRef<number>(1);
+  const draftCreation = useRef<Promise<string> | null>(null);
+  const [status, setStatus] = useState('draft');
+  const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [step, setStep] = useState(1);
+  const [attempted, setAttempted] = useState(false);
+  const [working, setWorking] = useState(false);
+  const operation = useRef(false);
+  const saveInFlight = useRef<Promise<boolean> | null>(null);
+  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [completed, setCompleted] = useState(false);
+  const [version, setVersion] = useState(0);
+  const versionRef = useRef(0);
+  const [savedVersion, setSavedVersion] = useState(0);
+  const savedVersionRef = useRef(0);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiApplied, setAiApplied] = useState(false);
-  const [aiSuggestion, setAiSuggestion] = useState<{ title: string; description: string; categoryId: string | null } | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [photoErrors, setPhotoErrors] = useState<string[]>([]);
-  const [photoWarnings, setPhotoWarnings] = useState<Record<string, string>>({});
-  const [photoQualityWarnings, setPhotoQualityWarnings] = useState<Record<string, string>>({});
-  const [uploadProgress, setUploadProgress] = useState('');
-  const [draggingPhotos, setDraggingPhotos] = useState(false);
-  const [savingDraft, setSavingDraft] = useState(false);
-  const [draftNotice, setDraftNotice] = useState<string | null>(null);
-  const [shareMessage, setShareMessage] = useState<string | null>(null);
-  const [replaceTarget, setReplaceTarget] = useState<number | null>(null);
+  const aiRun = useRef(0);
+  const editedFields = useRef({ title: false, description: false, categoryId: false, brand: false, model: false });
   const [flags, setFlags] = useState<ListingFlag[]>([]);
-  const [flagsDismissed, setFlagsDismissed] = useState(false);
+  const [warnings, setWarnings] = useState<Record<string, string>>({});
+  const [qualitySuggestions, setQualitySuggestions] = useState<Record<string, string>>({});
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number; text: string } | null>(null);
+  const [preparingDetails, setPreparingDetails] = useState(false);
+  const [failedUploads, setFailedUploads] = useState<{ file: File; replaceUrl?: string; error: string }[]>([]);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [replaceIndex, setReplaceIndex] = useState<number | null>(null);
+  const [previewPhoto, setPreviewPhoto] = useState(0);
+  const [includedItem, setIncludedItem] = useState('');
+  const [includedError, setIncludedError] = useState<string | null>(null);
+  const [focusTarget, setFocusTarget] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [attempted, setAttempted] = useState({ item: false, terms: false });
-  const [focusField, setFocusField] = useState<{ field: ListingField; nonce: number } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const originalWindow = useRef<{ start: string; end: string } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const summary = useRef<HTMLDivElement>(null);
+  const resetButton = useRef<HTMLButtonElement | null>(null);
+  const resumeKey = profile ? `ybuy-listing-draft:${profile.id}` : null;
 
-  const pickupFields = [pickupLocation.formattedAddress, pickupLocation.streetAddress, pickupLocation.city, pickupLocation.state, pickupLocation.postalCode, pickupLocation.country];
-  const formErrors = validateListing({ photoCount: photos.length, title, categoryId, description, pickupConfirmed, pickupFields, priceText, depositText, valueText, condition });
-  const depositRule = depositRules.find((rule) => rule.category_id === categoryId);
-  const suggestedPct = Number(depositRule?.suggested_pct ?? 0.30);
-  const parsedValue = parseMoney(valueText);
-  const suggestedDeposit = parsedValue === null ? null : Math.min(Number(depositRule?.maximum_amount ?? 10000),
-    Math.max(Number(depositRule?.minimum_amount ?? 0),Math.round(parsedValue*suggestedPct*100)/100));
+  function changed() {
+    versionRef.current += 1;
+    setVersion(versionRef.current);
+    setNotice(null);
+  }
+  function update<K extends keyof Form>(key: K, value: Form[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+    changed();
+  }
+  function updateItemDetails<K extends keyof ListingItemDetails>(key: K, value: ListingItemDetails[K]) {
+    if (key === 'brand') editedFields.current.brand = true;
+    if (key === 'model') editedFields.current.model = true;
+    update('itemDetails', { ...form.itemDetails, [key]: value });
+  }
+  function addIncludedItem() {
+    const item = includedItem.trim();
+    const next = { ...form.itemDetails, included_items: [...form.itemDetails.included_items, item] };
+    const error = listingItemDetailsError(next);
+    if (error) { setIncludedError(error); return; }
+    update('itemDetails', next);
+    setIncludedItem(''); setIncludedError(null);
+  }
 
   useEffect(() => {
-    if (!depositEdited && suggestedDeposit !== null) setDepositText(suggestedDeposit.toFixed(2));
-  }, [depositEdited,suggestedDeposit]);
-
-  useEffect(() => {
+    if (!profile) return;
     let active = true;
-    fetchDepositRules().then((rules) => { if (active) setDepositRules(rules); })
-      .catch((error: unknown) => { if (active) setRulesError(error instanceof Error ? error.message : 'Could not load category deposit rules.'); });
-    return () => { active=false; };
-  }, []);
-
-  useEffect(() => {
-    if (!editId || !profile) return;
-    let active=true;
-    void Promise.all([fetchListingById(editId),fetchOwnerPickup(editId)]).then(([row,pickup]) => {
-      if (!active) return;
-      if (!row || row.owner_id!==profile.id) throw new Error('Listing not found or not owned by your account.');
-      if (typeof row.revision!=='number'||!Number.isSafeInteger(row.revision)) throw new Error('Listing editing requires the latest database migration.');
-      setEditingDraft(row.status==='draft');
-      setListingId(row.id); setRevision(row.revision); setTitle(row.title); setDescription(row.description ?? '');
-      setCategoryId(row.category_id); setPriceText(String(row.price_per_day)); setDepositText(String(row.deposit));
-      setDepositEdited(true); setValueText(row.estimated_value == null ? '' : String(row.estimated_value));
-      setCondition(row.item_condition ?? ''); setPhotos([...row.listing_images].sort((a,b) => a.sort_order-b.sort_order).map((image) => image.url));
-      setLocationLabel(row.location_label ?? ''); setInstantBooking(row.instant_booking);
-      setDeliveryAvailable(row.delivery_available); setProtectionEligible(row.protection_eligible);
-      setAvailableQuantity(row.available_quantity); setNegotiationEnabled(row.negotiation_enabled);
-      setOfferMinimum(row.offer_minimum_daily==null?'':String(row.offer_minimum_daily));
-      setOfferTarget(row.offer_target_daily==null?'':String(row.offer_target_daily));
-      setOfferGuardrail(row.offer_guardrail_pct!=null);
-      setOfferGuardrailPercent(String(Number(row.offer_guardrail_pct??0.30)*100));
-      setOfferStart(row.offer_start_date??'');setOfferEnd(row.offer_end_date??'');
-      setOfferHours(row.offer_expiration_hours==null?'':String(row.offer_expiration_hours));
-      if (pickup) { setPickupLocation(pickup); setPickupConfirmed(true); }
-    }).catch((error: unknown) => { if (active) setEditError(error instanceof Error ? error.message : 'Could not load this listing.'); })
-      .finally(() => { if (active) setLoadingEdit(false); });
-    return () => { active=false; };
-  }, [editId,profile]);
-  // Errors appear only after that step's first attempt, then update live as the owner fixes them.
-  const stepFields = step === 3 ? ITEM_STEP_FIELDS : step === 4 ? TERMS_STEP_FIELDS : [];
-  const errors = step === 1 && attempted.item ? { photos: formErrors.photos }
-    : step === 3 && attempted.item ? formErrors
-    : step === 4 && attempted.terms ? formErrors : {};
-  const errorFields = stepFields.filter((f) => errors[f]);
-
-  // Focus after the step re-renders, since the target field may only exist on the other step.
-  useEffect(() => {
-    if (!focusField) return;
-    const targetId = focusField.field === 'pickup' && !pickupConfirmed
-      ? (document.getElementById('pickup-confirm')?.hasAttribute('disabled') ? 'pickup-city' : 'pickup-confirm')
-      : LISTING_FIELD_IDS[focusField.field];
-    const target = document.getElementById(targetId);
-    target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    target?.focus({ preventScroll: true });
-  }, [focusField, pickupConfirmed]);
-
-  function showFirstError(fields: ListingField[], failing: Partial<Record<ListingField, string>>) {
-    const first = fields.find((f) => failing[f]);
-    if (!first) return false;
-    setStep(first === 'photos' ? 1 : ITEM_STEP_FIELDS.includes(first) ? 3 : 4);
-    setFocusField({ field: first, nonce: Date.now() });
-    return true;
-  }
-
-  async function generateListingDetails() {
-    setSaveError(null);
-    setAiError(null);
-    setAiLoading(true);
-    try {
-      const id = await ensureDraftListing();
-      const result = await moderateListingContent({
-        listingId: id,
-        photoUrls: photos,
-        title,
-        description,
-      });
-      if (!result) throw new Error('AI details are unavailable right now. You can enter everything manually.');
-      setFlags(result.flags);
-      setFlagsDismissed(false);
-      setAiSuggestion(result.suggestion);
-      setPhotoQualityWarnings(Object.fromEntries(result.photoQualitySuggestions
-        .filter(({ photoIndex }) => photoIndex < photos.length)
-        .map(({ photoIndex, reason, recommendation }) => [
-          photos[photoIndex],
-          `${reason} ${recommendation}`,
-        ])));
-      if (!result.suggestion) throw new Error('AI could not suggest details from these photos. You can enter everything manually.');
-    } catch (error) {
-      setAiSuggestion(null);
-      setAiError(error instanceof Error ? error.message : 'AI details are unavailable. You can enter everything manually.');
-    } finally {
-      setAiLoading(false);
-    }
-  }
-
-  function handleContinue() {
-    if (step === 1) {
-      if (photos.length === 0) {
-        setAttempted((a) => ({ ...a, item: true }));
-        setFocusField({ field: 'photos', nonce: Date.now() });
-        return;
+    void (async () => {
+      try {
+        const [nextPolicy, rows] = await Promise.all([getListingFlowPolicy(), fetchCategories()]);
+        let resumeId = editId;
+        if (!resumeId) {
+          try { resumeId = localStorage.getItem(`ybuy-listing-draft:${profile.id}`) ?? undefined; }
+          catch (error) { console.warn('Draft resume storage is unavailable.', error); }
+        }
+        const row = resumeId ? await fetchListingById(resumeId) : null;
+        if (resumeId && (!row || row.owner_id !== profile.id)) {
+          if (editId) throw new Error('Listing not found or not owned by your account.');
+          try { localStorage.removeItem(`ybuy-listing-draft:${profile.id}`); }
+          catch (error) { console.warn('Could not clear the stale draft pointer.', error); }
+        }
+        const ownRow = row?.owner_id === profile.id && (editId || row.status === 'draft') ? row : null;
+        const savedPickup = ownRow ? await fetchOwnerPickup(ownRow.id) : null;
+        if (!active) return;
+        setPolicy(nextPolicy);
+        setCategories(rows.map((category) => toUiCategory(category, new Map())));
+        if (ownRow) {
+          if (!Number.isSafeInteger(ownRow.revision)) throw new Error('Listing editing requires the latest database migration.');
+          revision.current = ownRow.revision!;
+          idRef.current = ownRow.id;
+          setListingId(ownRow.id);
+          setStatus(ownRow.status);
+          originalWindow.current = ownRow.availability_start && ownRow.availability_end
+            ? { start: ownRow.availability_start, end: ownRow.availability_end } : null;
+          setForm({
+            title: ownRow.title, description: ownRow.description ?? '', categoryId: ownRow.category_id,
+            value: ownRow.estimated_value == null ? '' : String(ownRow.estimated_value), condition: ownRow.item_condition ?? '',
+            price: String(ownRow.price_per_day), weeklyDiscountEnabled: ownRow.weekly_discount_enabled === true, weeklyDiscount: String(ownRow.weekly_discount_enabled && Number(ownRow.weekly_discount_percent) <= 0 ? 20 : ownRow.weekly_discount_percent ?? 20), monthlyDiscountEnabled: ownRow.monthly_discount_enabled === true, monthlyDiscount: String(ownRow.monthly_discount_enabled && Number(ownRow.monthly_discount_percent) <= 0 ? 30 : ownRow.monthly_discount_percent ?? 30), instant: ownRow.instant_booking, delivery: ownRow.delivery_available,
+            deliveryFee: String(ownRow.delivery_fee ?? 0), quantity: ownRow.available_quantity,
+            start: ownRow.availability_start ?? todayIso(), end: ownRow.availability_end ?? addDaysIso(todayIso(), Math.min(LISTING_MAX_AVAILABLE_DAYS, nextPolicy.listing_duration_days)),
+            itemDetails: { brand: ownRow.brand ?? '', model: ownRow.model ?? '', included_items: ownRow.included_items ?? [],
+              additional_details: ownRow.additional_details ?? '', delivery_radius_miles: ownRow.delivery_radius_miles ?? null },
+          });
+          setPhotos([...ownRow.listing_images].sort((a, b) => a.sort_order - b.sort_order).map((image) => image.url));
+          const hasSavedDetails = Boolean(ownRow.title.trim() || ownRow.description?.trim());
+          editedFields.current = {
+            title: Boolean(ownRow.title.trim()),
+            description: Boolean(ownRow.description?.trim()),
+            // Empty photo-only drafts use the first category only to satisfy the draft insert.
+            categoryId: ownRow.status !== 'draft' || hasSavedDetails,
+            brand: Boolean(ownRow.brand?.trim()),
+            model: Boolean(ownRow.model?.trim()),
+          };
+          if (savedPickup) { setPickup(savedPickup); setPickupConfirmed(true); }
+          setNotice(ownRow.status === 'draft' ? 'Your saved draft is ready to continue.' : 'Photo edits save immediately. Other changes save when you choose Save changes.');
+          if (editId) setStep(2);
+        } else {
+          setForm({ ...EMPTY_FORM, start: todayIso(), end: addDaysIso(todayIso(), Math.min(LISTING_MAX_AVAILABLE_DAYS, nextPolicy.listing_duration_days)) });
+        }
+        setReady(true);
+      } catch (error) {
+        if (active) setLoadError(message(error, 'Could not load the listing form.'));
       }
-      setStep(2);
-      return;
-    }
-    if (step === 2) {
-      setStep(3);
-      return;
-    }
-    if (step === 4) {
-      setAttempted((a) => ({ ...a, terms: true }));
-      if (!showFirstError(TERMS_STEP_FIELDS, formErrors)) setStep(5);
-      return;
-    }
-    if (step !== 3) return;
-    setAttempted((a) => ({ ...a, item: true }));
-    if (!showFirstError(ITEM_STEP_FIELDS, formErrors)) setStep(4);
-  }
+    })();
+    return () => { active = false; aiRun.current += 1; };
+  }, [editId, profile]);
+
+  useEffect(() => { heading.current?.focus({ preventScroll: true }); }, [step]);
+  useEffect(() => {
+    if (!focusTarget) return;
+    const target = document.getElementById(focusTarget);
+    target?.focus();
+    target?.scrollIntoView({ block: 'center' });
+    setFocusTarget(null);
+  }, [step, focusTarget]);
 
   useEffect(() => {
-    fetchCategories()
-      .then((rows) => {
-        const next = rows.map((r) => toUiCategory(r, new Map()));
-        setCategories(next);
-        if (next[0]) setCategoryId((prev) => prev || next[0].id);
-      })
-      .catch((error: unknown) => setSaveError(error instanceof Error ? error.message : 'Could not load categories.'));
-  }, []);
+    if (version === savedVersion) return;
+    const handler = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [version, savedVersion]);
 
-  /** Creates the draft listing row on first photo add so RLS-scoped storage uploads have an owner-linked id to target. */
-  async function ensureDraftListing(): Promise<string> {
-    if (listingId) return listingId;
-    if (!profile || categories.length === 0) throw new Error('Not ready yet - try again in a moment.');
-    const id = await createDraftListing(profile.id, categories[0].id);
-    setListingId(id);
-    return id;
+  async function ensureDraft(): Promise<string> {
+    if (idRef.current) return idRef.current;
+    if (draftCreation.current) return draftCreation.current;
+    if (!profile || !categories[0]) throw new Error('Categories and your account must be available before saving.');
+    draftCreation.current = createDraftListing(profile.id, categories[0].id).then(async (id) => {
+      idRef.current = id;
+      setListingId(id);
+      if (resumeKey) {
+        try { localStorage.setItem(resumeKey, id); }
+        catch (error) { console.warn('Could not remember the saved draft on this device.', error); setNotice('Draft created. Resume it from My listings.'); }
+      }
+      const row = await fetchListingById(id);
+      if (!row) throw new Error('Could not verify the new draft. Reload before continuing.');
+      return id;
+    }).finally(() => { draftCreation.current = null; });
+    return draftCreation.current;
   }
 
-  // Rechecks content at publication so deterministic contact masking and guideline checks
-  // still run even when an owner skips the optional AI suggestion step.
-  async function runModeration(currentTitle: string, currentDescription: string, listingIdOverride?: string): Promise<{ title: string; description: string }> {
-    const id = listingIdOverride ?? listingId;
-    if (!id) return { title: currentTitle, description: currentDescription };
-    setAiLoading(true);
+  async function refreshRevision(id: string) {
+    const row = await fetchListingById(id);
+    if (!row || !Number.isSafeInteger(row.revision)) throw new Error('Could not verify the latest listing revision. Reload before making further changes.');
+    revision.current = row.revision!;
+  }
+
+  const pickupFields = [pickup.formattedAddress, pickup.streetAddress, pickup.city, pickup.state, pickup.postalCode, pickup.country];
+  const errors: FlowErrors = validateListing({
+    photoCount: photos.length, title: form.title, categoryId: form.categoryId, description: form.description,
+    pickupConfirmed, pickupFields, priceText: form.price, depositText: '0', valueText: form.value, maxValue: policy?.max_estimated_value, condition: form.condition,
+  });
+  delete errors.deposit;
+  const retainedAvailability = status !== 'draft' && originalWindow.current?.start === form.start && originalWindow.current?.end === form.end;
+  if (!retainedAvailability) {
+    const availabilityError = listingAvailabilityError(form.start, form.end);
+    if (availabilityError) errors.availability = availabilityError;
+  }
+  if (!Number.isInteger(form.quantity) || form.quantity < 1 || (policy && form.quantity > policy.max_quantity)) errors.quantity = 'Choose an allowed number of identical units.';
+  const deliveryFee = parseMoney(form.deliveryFee || '0');
+  if (form.delivery && (deliveryFee === null || deliveryFee < 1 || (policy && deliveryFee > policy.max_delivery_fee))) errors.delivery = `Enter a delivery fee between $1 and $${policy?.max_delivery_fee ?? 99}.`;
+  const itemError = listingItemDetailsError(form.itemDetails);
+  if (itemError) errors['item-details'] = itemError;
+  const fieldsForStep: (keyof FlowErrors)[] = step === 1 ? ['photos'] : step === 2
+    ? [...ITEM_STEP_FIELDS.filter((field) => field !== 'photos' && field !== 'value'), 'item-details'] : step === 3
+      ? ['price', 'value', 'quantity'] : step === 4 ? ['availability'] : step === 5 ? ['pickup', 'delivery', 'item-details'] : Object.keys(errors) as (keyof FlowErrors)[];
+  const visibleErrors = attempted ? fieldsForStep.filter((field) => errors[field]) : [];
+  const blockingFlags = flags.filter((flag) => flag.confidence === 'high' && ['prohibited_item', 'drug_related'].includes(flag.type));
+
+  async function persist(publish: boolean): Promise<boolean> {
+    setAttempted(true);
+    if (fieldsForStep.some(field => errors[field])) {
+      requestAnimationFrame(() => summary.current?.focus());
+      return false;
+    }
+    if (saveInFlight.current) {
+      const saved = await saveInFlight.current;
+      if (!saved || (!publish && savedVersionRef.current === versionRef.current)) return saved;
+    }
+    const task = async () => {
+      if (!policy) return false;
+      const capturedVersion = versionRef.current;
+      const current = formRef.current;
+      setSaving(true); setSaveError(null);
+      try {
+        const weeklyEnabled = current.weeklyDiscountEnabled && (durationDiscountFlag.enabled || Boolean(editId));
+        const monthlyEnabled = current.monthlyDiscountEnabled && (durationDiscountFlag.enabled || Boolean(editId));
+        const price = current.price.trim() ? parseMoney(current.price) : 1;
+        const value = current.value.trim() ? parseMoney(current.value) : null;
+        if ((step === 3 || step === STEPS.length) && (price === null || price < LISTING_RULES.price.min || price > LISTING_RULES.price.max)) throw new Error('Enter a valid daily rental price before saving. Your entry has been kept.');
+        for (const discount of [current.weeklyDiscount, current.monthlyDiscount]) {
+          if (discount && (!/^\d{1,2}(\.\d{1,2})?$/.test(discount) || Number(discount) > 50)) throw new Error('Discounts must be between 0% and 50%.');
+        }
+        const id = await ensureDraft();
+        const allDetails: ListingFlowDetails = {
+          title: current.title.trim(), description: current.description.trim(), category_id: current.categoryId || categories[0].id,
+          price_per_day: price ?? undefined, estimated_value: value, item_condition: current.condition || null,
+          weekly_discount_enabled: weeklyEnabled, weekly_discount_percent: Number(current.weeklyDiscount || 0),
+          monthly_discount_enabled: monthlyEnabled, monthly_discount_percent: Number(current.monthlyDiscount || 0),
+          location_label: [pickup.city, pickup.state].filter(Boolean).join(', '),
+          instant_booking: current.instant, delivery_available: current.delivery, available_quantity: current.quantity,
+          delivery_fee: current.delivery ? parseMoney(current.deliveryFee || '0')! : 0,
+          availability_start: current.start, availability_end: current.end,
+          availability_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          item_details: current.itemDetails,
+        };
+        const stepKeys: (keyof ListingFlowDetails)[][] = [
+          [],
+          ['title', 'description', 'category_id', 'item_condition', 'item_details'],
+          ['price_per_day', 'weekly_discount_enabled', 'weekly_discount_percent', 'monthly_discount_enabled', 'monthly_discount_percent', 'estimated_value', 'instant_booking', 'available_quantity'],
+          ['availability_start', 'availability_end', 'availability_timezone'],
+          ['location_label', 'delivery_available', 'delivery_fee', 'item_details'],
+        ];
+        const details: ListingFlowDetails = step === STEPS.length ? allDetails : Object.fromEntries(
+          Object.entries(allDetails).filter(([key]) => stepKeys[step - 1].includes(key as keyof ListingFlowDetails)),
+        );
+        const confirmedPickup = step >= 5 && pickupConfirmed && pickup.latitude !== null && pickup.longitude !== null
+          ? { ...pickup, latitude: pickup.latitude, longitude: pickup.longitude } : undefined;
+        const result = await saveListingFlow(id, revision.current, details, confirmedPickup, publish);
+        revision.current = result.revision;
+        originalWindow.current = { start: current.start, end: current.end };
+        setStatus(result.status);
+        savedVersionRef.current = capturedVersion;
+        setSavedVersion(capturedVersion);
+        setNotice(publish ? null : result.status === 'draft' ? 'Draft saved. Resume it from My listings.'
+          : result.status === 'archived' ? 'Changes saved. This listing remains archived.'
+            : result.status === 'suspended' ? 'Changes saved. This listing remains suspended.' : 'Listing changes saved.');
+        if (publish) {
+          if (result.status !== 'published' && result.status !== 'pending_approval') throw new Error('The backend has not confirmed publication. Your listing has not been marked live.');
+          setCompleted(true);
+          if (resumeKey) {
+            try { localStorage.removeItem(resumeKey); } catch (error) { console.warn('Could not clear the saved draft pointer.', error); }
+          }
+        }
+        return true;
+      } catch (error) {
+        setSaveError(message(error, 'Could not save your listing. Your entries are still here; try again.'));
+        return false;
+      } finally { setSaving(false); }
+    };
+    saveInFlight.current = task();
+    try { return await saveInFlight.current; }
+    finally { saveInFlight.current = null; }
+  }
+
+  async function analyze(id: string, urls: string[]) {
+    if (!urls.length) { setFlags([]); return; }
+    const run = ++aiRun.current;
+    setAiLoading(true); setAiError(null);
     try {
-      const result = await moderateListingContent({
-        listingId: id,
-        photoUrls: photos,
-        title: currentTitle,
-        description: currentDescription,
-      });
-      if (!result) return { title: currentTitle, description: currentDescription };
-      setTitle(result.masked.title);
-      setDescription(result.masked.description);
+      const result = await moderateListingContent({ listingId: id, photoUrls: urls, title: formRef.current.title, description: formRef.current.description });
+      if (run !== aiRun.current) return;
       setFlags(result.flags);
-      if (result.flags.length > 0) setFlagsDismissed(false);
-      return result.masked;
-    } finally {
-      setAiLoading(false);
-    }
+      setQualitySuggestions(Object.fromEntries(result.photoQualitySuggestions.filter((item) => urls[item.photoIndex])
+        .map((item) => [urls[item.photoIndex], `${item.reason} ${item.recommendation}`])));
+      if (!result.suggestion) throw new Error(result.aiError || 'AI could not identify enough details. Please describe the item yourself.');
+      const suggestion = result.suggestion;
+      setForm((current) => ({
+        ...current,
+        title: editedFields.current.title ? current.title : suggestion.title,
+        description: editedFields.current.description ? current.description : suggestion.description,
+        categoryId: editedFields.current.categoryId || !suggestion.categoryId ? current.categoryId : suggestion.categoryId,
+        itemDetails: {
+          ...current.itemDetails,
+          brand: editedFields.current.brand || !suggestion.brand ? current.itemDetails.brand : suggestion.brand,
+          model: editedFields.current.model || !suggestion.model ? current.itemDetails.model : suggestion.model,
+        },
+      }));
+      changed(); setAiApplied(true);
+    } catch (error) {
+      if (run === aiRun.current) setAiError(message(error, 'AI suggestions are unavailable. Continue manually.'));
+    } finally { if (run === aiRun.current) setAiLoading(false); }
   }
 
-  async function inspectPhoto(file: File): Promise<{ width: number; height: number }> {
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      throw new Error('Choose a JPEG, PNG, or WebP image.');
-    }
-    if (file.size > 10 * 1024 * 1024) throw new Error('Images must be 10 MB or smaller.');
-    const bitmap = await createImageBitmap(file);
-    const dimensions = { width: bitmap.width, height: bitmap.height };
-    bitmap.close();
-    if (dimensions.width < 320 || dimensions.height < 320) {
-      throw new Error('Image must be at least 320 × 320 pixels.');
-    }
-    return dimensions;
-  }
-
-  async function uploadPhotos(files: File[], replaceIndex?: number) {
-    setSaveError(null);
-    setPhotoErrors([]);
-    const errorsFound: string[] = [];
-    const availableSlots = replaceIndex === undefined ? Math.max(0, 6 - photos.length) : 1;
-    if (files.length > availableSlots) {
-      errorsFound.push(`You can add ${availableSlots} more ${availableSlots === 1 ? 'photo' : 'photos'} (6 maximum).`);
-    }
-    const acceptedFiles = files.slice(0, availableSlots);
-    if (acceptedFiles.length === 0) {
-      setPhotoErrors(errorsFound);
-      return;
-    }
-    setUploading(true);
+  async function upload(files: File[], replacing?: number) {
+    if (operation.current || !policy) return;
+    operation.current = true; setWorking(true); setPhotoError(null); setSaveError(null);
+    const failures: typeof failedUploads = [];
+    const next = [...photos];
     try {
-      const id = await ensureDraftListing();
-      for (let index = 0; index < acceptedFiles.length; index += 1) {
-        const file = acceptedFiles[index];
-        setUploadProgress(`Checking photo ${index + 1} of ${acceptedFiles.length}…`);
+      if (saveInFlight.current && !await saveInFlight.current) throw new Error('Retry the draft save before changing photos.');
+      const slots = replacing === undefined ? policy.max_photos - photos.length : 1;
+      if (files.length > slots) setPhotoError(`Only ${slots} more ${slots === 1 ? 'photo is' : 'photos are'} allowed. The remaining files were not uploaded.`);
+      if (slots < 1) return;
+      const accepted = files.slice(0, slots);
+      const id = await ensureDraft();
+      for (const [index, file] of accepted.entries()) {
+        setUploadProgress({ done: index, total: accepted.length, text: `Uploading photo ${index + 1} of ${accepted.length}` });
         try {
-          const dimensions = await inspectPhoto(file);
-          setUploadProgress(`Uploading photo ${index + 1} of ${acceptedFiles.length}…`);
-          const order = replaceIndex === undefined ? photos.length + index : replaceIndex;
-          const oldUrl = replaceIndex === undefined ? undefined : photos[replaceIndex];
-          const result = await uploadListingPhoto(id, file, order, oldUrl);
-          const { url } = result;
-          if (replaceIndex === undefined) setPhotos((current) => [...current, url]);
-          else {
-            setPhotos((current) => current.map((value, at) => at === replaceIndex ? url : value));
-            if (oldUrl) setPhotoWarnings((current) => { const next = { ...current }; delete next[oldUrl]; return next; });
-            if (oldUrl) setPhotoQualityWarnings((current) => { const next = { ...current }; delete next[oldUrl]; return next; });
-          }
-          if (result.warning || dimensions.width < 1000 || dimensions.height < 1000) {
-            setPhotoWarnings((current) => ({
-              ...current,
-              [url]: result.warning ?? 'This image is a little small. A sharper, well-lit photo can help renters inspect the item.',
-            }));
-          }
-          if (editId) setRevision((current) => current === null ? null : current + 1);
+          if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Choose JPEG, PNG, or WebP.');
+          if (file.size > policy.max_photo_bytes) throw new Error(`Use a photo smaller than ${Math.round(policy.max_photo_bytes / 1048576)} MB.`);
+          const bitmap = await createImageBitmap(file);
+          const { width, height } = bitmap; bitmap.close();
+          if (width < policy.min_photo_dimension || height < policy.min_photo_dimension) throw new Error(`Use a photo at least ${policy.min_photo_dimension} pixels wide and tall.`);
+          const result = await uploadListingPhoto(id, file, replacing ?? next.length, replacing === undefined ? undefined : next[replacing]);
+          if (replacing === undefined) next.push(result.url); else next[replacing] = result.url;
+          setPhotos([...next]);
+          if (result.warning || width < 1000 || height < 1000) setWarnings((current) => ({ ...current, [result.url]: result.warning ?? 'Try a higher-resolution, well-lit photo so renters can inspect the item.' }));
+          changed();
         } catch (error) {
-          errorsFound.push(`${file.name}: ${error instanceof Error ? error.message : 'Upload failed.'}`);
+          failures.push({ file, replaceUrl: replacing === undefined ? undefined : photos[replacing], error: message(error, 'Upload failed. Retry this photo.') });
+        } finally {
+          setUploadProgress({ done: index + 1, total: accepted.length, text: index + 1 === accepted.length ? 'Finishing your photo uploads' : `Added ${index + 1} of ${accepted.length} photos` });
         }
       }
-    } catch (error) {
-      errorsFound.push(error instanceof Error ? error.message : 'Could not prepare the listing draft.');
-    } finally {
-      setUploading(false);
-      setUploadProgress('');
-      setPhotoErrors(errorsFound);
+      await refreshRevision(id);
+      setUploadProgress({ done: accepted.length, total: accepted.length, text: 'Photo uploads finished' });
+      if (!photos.length && next.length) void analyze(id, next);
+    } catch (error) { setSaveError(message(error, 'Could not prepare your photos.')); }
+    finally {
+      setFailedUploads((current) => [...current.filter((item) => !files.includes(item.file)), ...failures]);
+      setUploadProgress(null); setWorking(false); operation.current = false;
     }
   }
 
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = '';
-    const target = replaceTarget;
-    setReplaceTarget(null);
-    void uploadPhotos(files, target ?? undefined);
-  };
-
-  async function saveDraft() {
-    setSaveError(null);
-    setDraftNotice(null);
-    setSavingDraft(true);
+  async function mutatePhotos(action: () => Promise<string[]>) {
+    if (operation.current || !listingId) return;
+    operation.current = true; setWorking(true); setSaveError(null);
     try {
-      const id = await ensureDraftListing();
-      const draftCategoryId = categoryId || categories[0]?.id;
-      if (!draftCategoryId) throw new Error('No listing category is available yet. Try again in a moment.');
-      const draftPrice = priceText.trim() ? parseMoney(priceText) : 1;
-      const draftDeposit = depositText.trim() ? parseMoney(depositText) : 0;
-      const draftValue = valueText.trim() ? parseMoney(valueText) : null;
-      if (draftPrice === null || draftPrice < LISTING_RULES.price.min || draftPrice > LISTING_RULES.price.max) {
-        throw new Error('Enter a valid daily price before saving the draft. Your current entry is still here.');
-      }
-      if (draftDeposit === null || draftDeposit < LISTING_RULES.deposit.min || draftDeposit > LISTING_RULES.deposit.max) {
-        throw new Error('Enter a valid deposit before saving the draft. Your current entry is still here.');
-      }
-      if (valueText.trim() && (draftValue === null || draftValue <= 0 || draftValue > 1000000)) {
-        throw new Error('Enter a valid replacement value before saving the draft. Your current entry is still here.');
-      }
-      const draftOfferMinimum = offerMinimum.trim() ? parseMoney(offerMinimum) : null;
-      const draftOfferTarget = offerTarget.trim() ? parseMoney(offerTarget) : null;
-      const draftOfferHours = offerHours.trim() ? Number(offerHours) : null;
-      const draftGuardrail = parseMoney(offerGuardrailPercent);
-      if ((offerMinimum.trim() && draftOfferMinimum === null) || (offerTarget.trim() && draftOfferTarget === null)
-        || (offerHours.trim() && (!Number.isInteger(draftOfferHours) || Number(draftOfferHours) < 1 || Number(draftOfferHours) > 168))
-        || (offerGuardrail && (draftGuardrail === null || draftGuardrail < 0 || draftGuardrail > 100))) {
-        throw new Error('Enter valid offer settings before saving the draft. Your current entries are still here.');
-      }
-      const details = {
-        title: title.trim(),
-        category_id: draftCategoryId,
-        price_per_day: draftPrice,
-        description: description.trim(),
-        deposit: draftDeposit,
-        estimated_value: draftValue,
-        item_condition: condition || null,
-        location_label: locationLabel,
-        instant_booking: instantBooking,
-        protection_eligible: protectionEligible,
-        delivery_available: deliveryAvailable,
-        available_quantity: availableQuantity,
-        negotiation_enabled: negotiationEnabled,
-        offer_minimum_daily: draftOfferMinimum,
-        offer_target_daily: draftOfferTarget,
-        offer_guardrail_pct: offerGuardrail ? Number(draftGuardrail) / 100 : null,
-        offer_start_date: offerStart || null,
-        offer_end_date: offerEnd || null,
-        offer_expiration_hours: draftOfferHours,
-      };
-      await updateListingDetails(id, details);
-      if (pickupConfirmed && pickupLocation.latitude !== null && pickupLocation.longitude !== null) {
-        await saveListingPickupLocation(id, profile!.id, {
-          ...pickupLocation,
-          latitude: pickupLocation.latitude,
-          longitude: pickupLocation.longitude,
-        });
-      }
-      if (editId) setRevision((current) => current === null ? current : current + 1);
-      setDraftNotice('Draft saved. Resume it from My listings.');
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'Could not save your draft. Your entries are still here; try again.');
-    } finally {
-      setSavingDraft(false);
-    }
+      if (saveInFlight.current && !await saveInFlight.current) throw new Error('Retry saving before changing photos.');
+      const next = await action();
+      setPhotos(next); changed();
+      await refreshRevision(listingId);
+      setFlags([]);
+    } catch (error) { setSaveError(message(error, 'Could not save the gallery change. Reload to check its saved state.')); }
+    finally { operation.current = false; setWorking(false); }
   }
 
-  async function movePhoto(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= photos.length) return;
-    const next = [...photos];
-    [next[index], next[target]] = [next[target], next[index]];
-    setPhotos(next);
-    if (!listingId) return;
+  function retryFailedUpload(item: (typeof failedUploads)[number]) {
+    if (!item.replaceUrl) { void upload([item.file]); return; }
+    const currentIndex = photos.indexOf(item.replaceUrl);
+    if (currentIndex >= 0) { void upload([item.file], currentIndex); return; }
+    if (photos.length < policy!.max_photos) { void upload([item.file]); return; }
+    setPhotoError('The photo being replaced is no longer in the gallery. Remove a photo or choose a new one before retrying.');
+  }
+
+  async function continueStep() {
+    if (saving || working) return;
+    setAttempted(true);
+    if (fieldsForStep.some((field) => errors[field])) { requestAnimationFrame(() => summary.current?.focus()); return; }
+    setPreparingDetails(step === 1);
     try {
-      await saveListingImageOrder(listingId, next);
-      if (editId) setRevision((current) => current === null ? current : current + 1);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'Could not save the photo order.');
-    }
+      if (!await persist(false)) return;
+      setAttempted(false); setStep((current) => Math.min(STEPS.length, current + 1));
+    } finally { setPreparingDetails(false); }
   }
-
-  function applySuggestion(field: 'title' | 'description' | 'category') {
-    if (!aiSuggestion) return;
-    if (field === 'title') setTitle(aiSuggestion.title);
-    if (field === 'description') setDescription(aiSuggestion.description);
-    if (field === 'category' && aiSuggestion.categoryId) {
-      setCategoryId(aiSuggestion.categoryId);
+  async function goBack() {
+    if (step > 1) { setStep(step - 1); setAttempted(false); return; }
+    if (versionRef.current !== savedVersionRef.current) {
+      if (status !== 'draft') { setSaveError('Review and save your changes before leaving this listing.'); return; }
+      setSaveError('Use Continue or Save draft to save a valid step before leaving.');
+      return;
     }
-    setAiApplied(true);
+    navigate({ name: 'owner-dashboard' });
+  }
+  async function publish() {
+    if (operation.current) return;
+    setPublishError(null);
+    setAttempted(true);
+    if (Object.keys(errors).length || blockingFlags.length) { requestAnimationFrame(() => summary.current?.focus()); return; }
+    aiRun.current += 1;
+    setAiLoading(false);
+    operation.current = true; setWorking(true);
+    try {
+      if (status === 'archived' || status === 'suspended') {
+        await persist(false);
+        return;
+      }
+      if (status === 'draft' && !await persist(false)) return;
+      const currentDetails = formRef.current.itemDetails;
+      const extraDetails = [currentDetails.brand, currentDetails.model, ...currentDetails.included_items, currentDetails.additional_details].filter(Boolean).join('\n');
+      const result = await moderateListingContent({ listingId: await ensureDraft(), photoUrls: photos, title: formRef.current.title,
+        description: [formRef.current.description, extraDetails].filter(Boolean).join('\n\n') }, 'publication');
+      if (result) {
+        setFlags(result.flags);
+        if (result.flags.some((flag) => flag.confidence === 'high' && ['prohibited_item', 'drug_related'].includes(flag.type))) {
+          setPublishError('This listing needs a policy review. Correct the affected content and contact support to review any persisted policy flags.');
+          return;
+        }
+        if (result.masked.changed) {
+          if (extraDetails) {
+            setPublishError('Remove contact information from your item description, brand, model, included items or additional details before publishing.');
+            setStep(2);
+            return;
+          }
+          const next = { ...formRef.current, title: result.masked.title, description: result.masked.description };
+          formRef.current = next;
+          setForm(next);
+          changed();
+          setPublishError('Contact information was removed. Review the updated details before publishing.');
+          setStep(2);
+          return;
+        }
+      }
+      await persist(true);
+    } catch (error) { setPublishError(message(error, 'The required listing review did not finish. Retry publication.')); }
+    finally { operation.current = false; setWorking(false); }
   }
 
   async function shareListing() {
-    const url = `${window.location.origin}/listing/${listingId}`;
+    if (!listingId) return;
     try {
-      if (navigator.share) await navigator.share({ title, url });
-      else {
-        await navigator.clipboard.writeText(url);
-        setShareMessage('Listing link copied.');
-      }
+      const url = `${window.location.origin}/listing/${listingId}`;
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setNotice('Listing link copied.');
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') return;
-      setShareMessage('Sharing is unavailable here. You can copy the listing URL from your browser.');
+      console.warn('Listing link could not be copied.', error);
+      setShareCopied(false);
+      setNotice('Could not copy the listing link. Open the listing to copy its URL.');
     }
   }
-
-  const handleRemovePhoto = async (url: string, index: number) => {
-    setSaveError(null);
-    setUploading(true);
-    try {
-      if (listingId) await removeListingImageUrl(listingId, url);
-      const nextPhotos = photos.filter((_, i) => i !== index);
-      setPhotos(nextPhotos);
-      if (listingId) await saveListingImageOrder(listingId, nextPhotos);
-      setPhotoWarnings((current) => {
-        const next = { ...current };
-        delete next[url];
-        return next;
-      });
-      setPhotoQualityWarnings((current) => {
-        const next = { ...current };
-        delete next[url];
-        return next;
-      });
-      if (editId) setRevision((current) => current === null ? null : current+1);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'Could not remove that photo.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  /** Returns every field to its starting value. Shared by "List another item" and "Reset form". */
-  function resetForm() {
-    setPublished(false); setStep(1); setPhotos([]); setListingId(null); setTitle('');
-    setCategoryId(categories[0]?.id ?? ''); setPriceText(''); setDescription(''); setDepositText('');
-    setValueText(''); setCondition(''); setDepositEdited(false);
-    setAttempted({ item: false, terms: false }); setFocusField(null); setLocationLabel('');
-    setPickupLocation({ formattedAddress: '', streetAddress: '', city: '', state: '', postalCode: '', country: '', latitude: null, longitude: null, placeId: '' });
-    setPickupConfirmed(false); setInstantBooking(false); setDeliveryAvailable(false); setProtectionEligible(false);
-    setNegotiationEnabled(false); setAvailableQuantity(1);
-    setOfferMinimum('');setOfferTarget('');setOfferGuardrail(false);setOfferGuardrailPercent('30');setOfferStart('');setOfferEnd('');setOfferHours('');
-    setAiApplied(false); setFlags([]); setFlagsDismissed(false);
-    setSaveError(null); setDraftNotice(null); setShareMessage(null); setAiSuggestion(null); setAiError(null); setPhotoWarnings({}); setPhotoQualityWarnings({});
-    setPhotoErrors([]); setConfirmReset(false);
+  function startFresh() {
+    if (!policy) return;
+    aiRun.current += 1;
+    idRef.current = null; revision.current = 1;
+    versionRef.current = 0; savedVersionRef.current = 0;
+    editedFields.current = { title: false, description: false, categoryId: false, brand: false, model: false };
+    setForm({ ...EMPTY_FORM, start: todayIso(), end: addDaysIso(todayIso(), Math.min(LISTING_MAX_AVAILABLE_DAYS, policy.listing_duration_days)) });
+    setListingId(null); setStatus('draft'); setCompleted(false); setPhotos([]);
+    setPickup(EMPTY_PICKUP); setPickupConfirmed(false); setStep(1); setAttempted(false);
+    setIncludedItem(''); setIncludedError(null);
+    setVersion(0); setSavedVersion(0); setSaveError(null); setPublishError(null); setNotice(null); setShareCopied(false);
+    setAiLoading(false); setAiApplied(false); setAiError(null); setFlags([]);
+    setWarnings({}); setQualitySuggestions({}); setFailedUploads([]); setPhotoError(null);
+    setReplaceIndex(null); setPreviewPhoto(0); setConfirmReset(false);
+    originalWindow.current = null;
   }
-
-  // Discards the unpublished draft too, so its uploaded photos don't linger in storage or show up
-  // as an unfinished listing. If that fails the form is kept, so nothing is lost silently.
-  async function handleReset() {
-    setResetting(true);
-    setSaveError(null);
+  async function discardDraft() {
+    if (operation.current || !profile || status !== 'draft') return;
+    operation.current = true; setWorking(true); setSaveError(null);
     try {
-      if (listingId && profile) await deleteOwnerListing(profile.id, listingId);
-      resetForm();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err) {
-      setConfirmReset(false);
-      setSaveError(err instanceof Error ? `Couldn't discard your draft: ${err.message}` : "Couldn't discard your draft. Try again.");
-    } finally {
-      setResetting(false);
-    }
-  }
-
-  const handlePublish = async () => {
-    setSaveError(null);
-    setAttempted({ item: true, terms: true });
-    if (showFirstError([...ITEM_STEP_FIELDS, ...TERMS_STEP_FIELDS], formErrors)) return;
-    const price = parseMoney(priceText)!;
-    const deposit = parseMoney(depositText) ?? 0;
-    setPublishing(true);
-    try {
-      const id = await ensureDraftListing();
-      // Final moderation pass right before saving - guarantees contact-info auto-masking always
-      // applies to what actually gets persisted, even if the renter never blurred a field.
-      const final = await runModeration(title, description, id);
-      const moderatedErrors = validateListing({ photoCount: photos.length, title: final.title, categoryId, description: final.description, pickupConfirmed, pickupFields, priceText, depositText, valueText, condition });
-      if (showFirstError([...ITEM_STEP_FIELDS, ...TERMS_STEP_FIELDS], moderatedErrors)) return;
-      const details = {
-        title: final.title,
-        category_id: categoryId || categories[0]?.id,
-        price_per_day: price,
-        description: final.description,
-        deposit,
-        estimated_value: parseMoney(valueText),
-        item_condition: condition,
-        location_label: locationLabel,
-        instant_booking: instantBooking,
-        protection_eligible: protectionEligible,
-        delivery_available: deliveryAvailable,
-        available_quantity: availableQuantity,
-        negotiation_enabled: negotiationEnabled,
-        offer_minimum_daily: offerMinimum.trim()?parseMoney(offerMinimum):null,
-        offer_target_daily: offerTarget.trim()?parseMoney(offerTarget):null,
-        offer_guardrail_pct: offerGuardrail?Number(offerGuardrailPercent)/100:null,
-        offer_start_date: offerStart||null,offer_end_date:offerEnd||null,
-        offer_expiration_hours:offerHours.trim()?Number(offerHours):null,
-      };
-      if((offerMinimum.trim()&&details.offer_minimum_daily===null)||(offerTarget.trim()&&details.offer_target_daily===null)
-        ||(offerHours.trim()&&(!Number.isInteger(details.offer_expiration_hours)||Number(details.offer_expiration_hours)<1||Number(details.offer_expiration_hours)>168))
-        ||(offerGuardrail&&(parseMoney(offerGuardrailPercent)===null||Number(offerGuardrailPercent)>100))) {
-        throw new Error('Use valid offer prices and an expiry between 1 and 168 whole hours.');
+      if (saveInFlight.current && !await saveInFlight.current) throw new Error('Retry saving before discarding this draft.');
+      if (idRef.current) await deleteOwnerListing(profile.id, idRef.current);
+      if (resumeKey) {
+        try { localStorage.removeItem(resumeKey); }
+        catch (error) { console.warn('Could not clear the discarded draft pointer.', error); }
       }
-      const pickup = { ...pickupLocation, latitude: pickupLocation.latitude!, longitude: pickupLocation.longitude! };
-      if (editId) {
-        if (revision===null) throw new Error('Reload the listing before saving.');
-        setRevision(await saveOwnerListing(id,revision,details,pickupChanged ? pickup : undefined));
-        if(editingDraft)await publishListing(id);
-      } else {
-        await updateListingDetails(id,details);
-        await saveListingPickupLocation(id, profile!.id,pickup);
-        await publishListing(id);
-      }
-      setPublished(true);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to publish listing');
-    } finally {
-      setPublishing(false);
-    }
-  };
-
-  if (loadingEdit) return <div className="max-w-2xl mx-auto p-6" aria-busy="true"><Skeleton className="h-64 w-full" /></div>;
-  if (editError) return <div className="max-w-2xl mx-auto p-6"><Alert tone="error" title="Could not edit listing">{editError}</Alert><Button className="mt-4" onClick={() => window.location.reload()}>Reload</Button></div>;
-  if (published) {
-    return (
-      <div className="animate-fade-in pb-20 md:pb-10">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
-          <ol aria-label="Listing progress" className="grid grid-cols-6 gap-1.5 mb-6">
-            {['Photos', 'AI details', 'Item details', 'Rental terms', 'Preview', 'Live'].map((label, index) => (
-              <li key={label} className={`rounded-card border p-2 text-center text-[10px] sm:text-xs font-semibold ${index === 5 ? 'border-accent bg-accent-soft text-accent' : 'border-app bg-card text-sec'}`} aria-current={index === 5 ? 'step' : undefined}>
-                <span className="block">{index + 1}</span><span>{label}</span>
-              </li>
-            ))}
-          </ol>
-          <h1 className="text-2xl font-bold text-main mb-6">Your listing is live!</h1>
-          {shareMessage && <p role="status" className="text-sm text-sec mb-3">{shareMessage}</p>}
-          <SuccessFeedback kind="listing" id={listingId!} title={title} image={photos[0]}
-            primary={{ label: 'View listing', onClick: () => navigate({ name: 'listing', id: listingId! }) }}
-            secondary={{ label: 'Manage listing', onClick: () => navigate({ name: 'edit-listing', id: listingId! }) }}
-            tertiary={{ label: 'Share listing', onClick: () => void shareListing() }} />
-        </div>
-        <Surface className="p-4">
-          <h3 className="text-sm font-semibold text-main">Availability</h3>
-          <p className="text-xs text-sec mt-1">Your item is available for requests. Manage blocked dates from your owner dashboard after publishing.</p>
-        </Surface>
-      </div>
-    );
+      startFresh();
+      setNotice('Draft discarded. You can start again.');
+    } catch (error) { setSaveError(message(error, 'Could not discard the draft. Your entries have been kept.')); }
+    finally { operation.current = false; setWorking(false); }
   }
 
-  const busyReason = uploading ? 'Waiting for your photo to finish uploading…' : aiLoading ? 'Checking your listing against our guidelines…' : null;
-  const busy = Boolean(busyReason) || publishing;
-  const errorSummary = errorFields.length > 0 && (
-    <div role="alert">
-      <Alert tone="error" title={`Fix ${errorFields.length === 1 ? 'this' : 'these'} to ${step === 3 ? 'continue' : 'review'}`}>
-        <ul className="list-disc pl-4 space-y-1 mt-1">
-          {errorFields.map((f) => (
-            <li key={f}>
-              <button type="button" className="text-left underline" onClick={() => setFocusField({ field: f, nonce: Date.now() })}>{errors[f]}</button>
-            </li>
-          ))}
-        </ul>
-      </Alert>
-    </div>
-  );
-  // Offered when the listing doesn't meet requirements: field errors, guideline warnings or a failed save.
-  const showReset = !editId && (errorFields.length > 0 || (flags.length > 0 && !flagsDismissed) || Boolean(saveError));
-  const resetControl = showReset && (
-    <div className="flex flex-wrap items-center gap-2.5" role="group" aria-label="Start over">
-      {confirmReset ? (
-        <>
-          <p className="text-sm text-sec">Discard everything you've entered{photos.length > 0 ? ', including uploaded photos' : ''}?</p>
-          <Button size="sm" variant="danger" loading={resetting} loadingLabel="Resetting…" onClick={() => void handleReset()}>Yes, reset</Button>
-          <Button size="sm" variant="ghost" disabled={resetting} onClick={() => setConfirmReset(false)}>Keep editing</Button>
-        </>
-      ) : (
-        <Button size="sm" variant="secondary" icon={<RotateCcw size={15} />} disabled={busy} onClick={() => setConfirmReset(true)}>Reset form</Button>
-      )}
-    </div>
-  );
-  const fieldProps = (field: ListingField, id: string) => ({
-    'aria-invalid': errors[field] ? true : undefined,
-    'aria-describedby': errors[field] ? `${id}-error` : undefined,
-  });
+  if (loadError) return <div className="max-w-3xl mx-auto p-6"><Alert tone="error" title="Listing form unavailable">{loadError}</Alert><Button className="mt-4" onClick={() => window.location.reload()}>Retry</Button></div>;
+  if (!ready || !policy) return <div className="max-w-5xl mx-auto p-6" aria-busy="true"><Skeleton className="h-20 mb-6" /><Skeleton className="h-96" /></div>;
+  if (completed) return <div className="owner-listing min-h-screen px-4 sm:px-6 py-8 sm:py-12"><div className="max-w-3xl mx-auto space-y-6">
+    {notice && <p role="status" className="text-sm text-accent">{notice}</p>}
+    {status === 'published' ? <SuccessFeedback kind="listing" id={listingId!} title={form.title} image={photos[0]}
+      onListAnother={editId ? undefined : startFresh}
+      primary={{ label: 'View listing', onClick: () => navigate({ name: 'listing', id: listingId! }) }}
+      secondary={{ label: 'Manage listing', onClick: () => navigate({ name: 'edit-listing', id: listingId! }) }}
+      tertiary={{ label: shareCopied ? 'Copied!' : 'Share listing', onClick: () => void shareListing() }} />
+      : <Surface className="p-6 sm:p-10"><ShieldCheck aria-hidden="true" size={32} className="text-accent mb-4" />
+        <h1 className="text-2xl font-bold text-main">Submitted for review</h1><p role="status" className="text-sec mt-2">Your listing is not live yet. Review its status from My listings.</p>
+        <p className="mt-4 font-semibold">{form.title}</p><Button className="mt-6" onClick={() => navigate({ name: 'owner-dashboard' })}>My listings</Button></Surface>}
+    {status === 'published' && <ListingNegotiationSettings listingId={listingId!} />}
+    {!editId && status !== 'published' && <div className="text-center"><Button variant="ghost" onClick={startFresh}>List another item</Button></div>}
+  </div></div>;
 
+  const invalid = (field: keyof FlowErrors) => attempted && fieldsForStep.includes(field) ? errors[field] : undefined;
+  const fieldProps = (field: ListingField) => ({ 'aria-invalid': Boolean(invalid(field)), 'aria-describedby': invalid(field) ? `${LISTING_FIELD_IDS[field]}-error` : undefined });
+  const nextLabel = step === STEPS.length ? editId && status !== 'draft' ? 'Save changes' : 'Publish listing' : 'Continue';
+  const stepHeading = step === STEPS.length && status === 'archived' ? 'Review archived listing'
+    : step === STEPS.length && status === 'suspended' ? 'Review listing changes' : STEP_TITLES[step - 1];
+  const activePreview = Math.min(previewPhoto, Math.max(0, photos.length - 1));
   return (
-    <div className="animate-fade-in pb-32 md:pb-10">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
-        <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 mb-3 flex items-center justify-between gap-3 bg-card-blur backdrop-blur-md border-b border-app">
-          <button onClick={back} className="text-sm font-medium text-sec hover:text-main transition-colors duration-fast">Back</button>
-          <Button size="sm" variant="secondary" disabled={busy || savingDraft} loading={savingDraft} loadingLabel="Saving…" onClick={() => editId && !editingDraft ? void handlePublish() : void saveDraft()}>{editId && !editingDraft ? 'Save changes' : 'Save draft'}</Button>
-        </div>
-        <SectionHeader
-          as="h1"
-          title={editId ? 'Edit your listing' : 'List an item'}
-          subtitle={editId ? 'Future pricing can change. Item, pickup and photo changes are blocked while approved rentals are outstanding. Existing booking totals stay unchanged.' : 'Add photos, set your pickup location and rental details. Availability can be managed later from your owner dashboard.'}
-          className="mb-7"
-        />
-
-        <ol className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 sm:gap-2 mb-7" aria-label="Listing progress">
-          {[
-            ['Photos', 'Upload photos'],
-            ['AI details', 'Generate details'],
-            ['Item details', 'Confirm item'],
-            ['Rental terms', 'Set pricing'],
-            ['Preview', 'Review listing'],
-          ].map(([label, description], index) => {
-            const number = index + 1;
-            return (
-              <li key={label}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (number < step) setStep(number as 1 | 2 | 3 | 4 | 5);
-                    else if (number === step + 1) handleContinue();
-                  }}
-                  disabled={uploading || aiLoading || number > step + 1}
-                  aria-current={step === number ? 'step' : undefined}
-                  className={`w-full min-h-16 flex flex-col sm:flex-row items-center sm:items-start justify-center sm:justify-start gap-1 sm:gap-2 p-2 sm:p-2.5 rounded-card border text-center sm:text-left transition-colors duration-fast disabled:opacity-50 ${step === number ? 'border-accent bg-accent-soft' : 'border-app bg-card'}`}
-                >
-                  <span className={`grid place-items-center w-7 h-7 shrink-0 rounded-full text-xs font-bold ${step === number ? 'bg-accent text-accent-text' : 'bg-subtle text-sec'}`}>{number}</span>
-                  <span className="min-w-0">
-                    <span className="block text-[11px] sm:text-xs font-semibold text-main">{label}</span>
-                    <span className="hidden sm:block text-[10px] text-sec">{description}</span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-
-        <div className="space-y-8">
-          {errorSummary}
-          {rulesError && <Alert tone="error" title="Deposit rules unavailable">{rulesError} Reload before saving.</Alert>}
-          {editId && <Alert tone="info">Photo changes are saved immediately. Other changes are saved together when you select Save changes.</Alert>}
-          {resetControl}
-          {saveError && <Alert tone="error" title="Listing not saved">{saveError}</Alert>}
-          {draftNotice && <p role="status" className="text-sm text-success">{draftNotice}</p>}
-          {step === 1 && (
-            <div className="space-y-8">
-          <section>
-            <h2 className="text-base font-bold text-main font-display">Photos</h2>
-            <p className="text-sm text-sec mt-1">One photo minimum, up to six. The first one is the cover.</p>
-            <p className="text-xs text-muted mt-1.5 mb-4">Choose up to six clear photos. You can add, replace, reorder, or remove them at any time.</p>
-            <div
-              onDragOver={(event) => { event.preventDefault(); setDraggingPhotos(true); }}
-              onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingPhotos(false); }}
-              onDrop={(event) => { event.preventDefault(); setDraggingPhotos(false); void uploadPhotos(Array.from(event.dataTransfer.files)); }}
-              className={`grid grid-cols-2 sm:grid-cols-3 gap-3 rounded-card-lg transition-colors ${draggingPhotos ? 'bg-accent-soft ring-2 ring-accent' : ''}`}
-              aria-label="Listing photos"
-            >
-              {photos.map((photo, i) => (
-                <div key={photo} className="aspect-square rounded-card overflow-hidden border border-app relative bg-subtle group">
-                  <img src={photo} alt={`Listing photo ${i + 1}`} className="w-full h-full object-cover" />
-                  {i === 0 && (
-                    <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded-full bg-black/65 text-white text-[10px] font-semibold">
-                      Cover
-                    </span>
-                  )}
-                  {(photoWarnings[photo] || photoQualityWarnings[photo]) && <span className="absolute inset-x-0 bottom-0 p-2 bg-warning-soft text-warning text-[10px] leading-snug">{[photoWarnings[photo], photoQualityWarnings[photo]].filter(Boolean).join(' ')}</span>}
-                  <div className="absolute top-1 left-1 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                    <button type="button" disabled={i === 0 || uploading} onClick={() => void movePhoto(i, -1)} aria-label={`Move photo ${i + 1} earlier`} className="grid place-items-center min-w-9 h-9 rounded-full bg-white/95 text-gray-900 disabled:opacity-50"><ArrowUp size={16} /></button>
-                    <button type="button" disabled={i === photos.length - 1 || uploading} onClick={() => void movePhoto(i, 1)} aria-label={`Move photo ${i + 1} later`} className="grid place-items-center min-w-9 h-9 rounded-full bg-white/95 text-gray-900 disabled:opacity-50"><ArrowDown size={16} /></button>
-                  </div>
-                  <div className="absolute top-1 right-1 flex gap-1">
-                    <button type="button" onClick={() => { setReplaceTarget(i); fileInputRef.current?.click(); }} disabled={uploading} aria-label={`Replace photo ${i + 1}`} className="grid place-items-center min-w-9 h-9 rounded-full bg-white/95 text-gray-900"><RotateCcw size={14} /></button>
-                  <button
-                    type="button"
-                    onClick={() => void handleRemovePhoto(photo, i)}
-                    disabled={uploading || publishing}
-                    className="grid place-items-center min-w-9 h-9 rounded-full bg-white/95 text-gray-900 hover:bg-white transition-colors duration-fast"
-                    aria-label={`Remove photo ${i + 1}`}
-                  >
-                    <X size={14} />
-                  </button>
-                  </div>
-                </div>
-              ))}
-              {photos.length < 6 && (
-                <button
-                  id="listing-add-photo"
-                  onClick={() => { setReplaceTarget(null); fileInputRef.current?.click(); }}
-                  disabled={uploading}
-                  aria-describedby={errors.photos ? 'listing-photos-error' : undefined}
-                  className={`min-h-36 rounded-card border-2 border-dashed flex flex-col items-center justify-center gap-2 text-sec hover:border-accent hover:text-accent transition-colors duration-fast disabled:opacity-50 ${errors.photos ? 'border-error' : 'border-strong'}`}
-                >
-                  <Camera size={22} />
-                  <span className="text-xs font-semibold">{uploading ? 'Uploading…' : 'Add photos'}</span>
-                </button>
-              )}
-              <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={handleFileSelected} />
-            </div>
-            <p className="mt-2 text-xs text-sec">Drop image files here or choose files. JPEG, PNG, or WebP; 10 MB max each.</p>
-            {uploadProgress && <p role="status" className="text-sm text-accent mt-2">{uploadProgress}</p>}
-            {photoErrors.length > 0 && <Alert tone="error" title="Some photos need attention"><ul className="list-disc pl-4">{photoErrors.map((message) => <li key={message}>{message}</li>)}</ul>Failed files were not added; select them again to retry.</Alert>}
-            {errors.photos && <p id="listing-photos-error" className="text-xs text-error mt-2">{errors.photos}</p>}
-          </section>
-
-          {aiLoading && (
-            <Surface className="p-4 space-y-2">
-              <p className="text-xs font-semibold text-sec flex items-center gap-1.5"><Sparkles size={13} /> Checking your listing…</p>
-              <Skeleton className="h-4 w-2/3" />
-              <Skeleton className="h-3 w-full" />
-              <Skeleton className="h-3 w-5/6" />
-            </Surface>
-          )}
-
-          {flags.length > 0 && !flagsDismissed && (
-            <div className="relative">
-              <Alert tone="warning" title="This may not meet our community guidelines">
-                <ul className="list-disc pl-4 space-y-0.5 mt-1">
-                  {flags.map((f, i) => <li key={i}>{f.reason}</li>)}
-                </ul>
-                <p className="mt-2">
-                  You can still publish, but please{' '}
-                  <button onClick={() => navigate({ name: 'guidelines' })} className="font-semibold underline">review our guidelines</button>{' '}
-                  first.
-                </p>
-              </Alert>
-              <button
-                onClick={() => setFlagsDismissed(true)}
-                className="absolute top-2 right-2 grid place-items-center w-7 h-7 rounded-full hover:bg-black/5"
-                aria-label="Dismiss"
-              >
-                <X size={15} className="text-warning" />
-              </button>
-            </div>
-          )}
-            </div>
-          )}
-
-          {step === 2 && (
-            <section className="space-y-5">
-              <div>
-                <h2 className="text-base font-bold text-main font-display">Generate listing details with AI</h2>
-                <p className="text-sm text-sec mt-1">AI suggestions are optional. Review every detail and confirm or edit it on the next step. Nothing is applied automatically.</p>
-              </div>
-              <Button disabled={photos.length === 0 || aiLoading || uploading} loading={aiLoading} loadingLabel="Generating suggestions…" icon={<Sparkles size={16} />} onClick={() => void generateListingDetails()}>
-                {aiSuggestion ? 'Regenerate details' : 'Generate listing details with AI'}
-              </Button>
-              {aiSuggestion && (
-                <Surface className="p-4 space-y-4">
-                  <p className="text-sm font-semibold text-main">Suggested from your photos. Confirm only what you can verify.</p>
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div><p className="text-xs font-semibold text-sec">Title</p><p className="text-sm text-main mt-1">{aiSuggestion.title}</p></div>
-                      <Button size="sm" variant="secondary" onClick={() => applySuggestion('title')}>Use title</Button>
-                    </div>
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1"><p className="text-xs font-semibold text-sec">Description</p><p className="text-sm text-main mt-1 whitespace-pre-wrap">{aiSuggestion.description}</p></div>
-                      <Button size="sm" variant="secondary" onClick={() => applySuggestion('description')}>Use description</Button>
-                    </div>
-                    {aiSuggestion.categoryId && <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-sec">Suggested category: {categories.find((category) => category.id === aiSuggestion.categoryId)?.name}</p>
-                      <Button size="sm" variant="secondary" onClick={() => applySuggestion('category')}>Use category</Button>
-                    </div>}
-                  </div>
-                  <p className="text-xs text-muted">AI does not verify the item, brand, model, condition, or included accessories. Confirm those yourself.</p>
-                </Surface>
-              )}
-              {Object.entries(photoQualityWarnings).map(([photo, warning]) => (
-                <Alert key={photo} tone="warning" title={`Photo ${photos.indexOf(photo) + 1} suggestion`}>{warning}</Alert>
-              ))}
-              {aiError && <Alert tone="warning" title="AI suggestions unavailable">{aiError} Continue with manual entry.</Alert>}
-              {flags.length > 0 && !flagsDismissed && (
-                <Alert tone="warning" title="Review these photo or listing concerns">
-                  <ul className="list-disc pl-4 space-y-1">{flags.map((flag, index) => <li key={`${flag.type}-${index}`}>{flag.reason}</li>)}</ul>
-                </Alert>
-              )}
-              {photos.length === 0 && <p className="text-sm text-sec">Add at least one photo before asking for suggestions. Manual details are always available.</p>}
-            </section>
-          )}
-
-          {(step === 3 || step === 4) && <section className="space-y-5">
-            <h2 className="text-base font-bold text-main font-display">{step === 3 ? 'Confirm item details' : 'Set your rental terms'}</h2>
-
-            {step === 3 && (
-              <>
-            <Field
-              label="Title"
-              htmlFor="listing-title"
-              error={errors.title}
-              hint={aiApplied ? <p className="text-xs text-accent flex items-center gap-1 -mt-1 mb-1.5"><Sparkles size={12} /> Suggested from your photo - edit as needed.</p> : undefined}
-            >
-              <input
-                id="listing-title"
-                value={title}
-                maxLength={LISTING_RULES.title.max + 20}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Sony A7 IV mirrorless camera"
-                className={fieldClass()}
-                {...fieldProps('title', 'listing-title')}
-              />
-            </Field>
-
-            <div>
-              <p id="listing-category-label" className="text-[13px] font-semibold text-main mb-1.5">Category</p>
-              <div id="listing-category-group" role="group" aria-labelledby="listing-category-label" tabIndex={-1} className="flex flex-wrap gap-2 outline-none">
-                {categories.map((cat) => {
-                  const active = categoryId === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => setCategoryId(cat.id)}
-                      aria-pressed={active}
-                      className={`inline-flex items-center gap-1.5 px-3 h-9 rounded-full text-xs font-semibold border transition-colors duration-fast ${
-                        active ? 'border-accent text-accent bg-accent-soft' : 'border-app text-sec hover:bg-subtle'
-                      }`}
-                    >
-                      <CategoryIcon category={cat} size={14} /> {cat.name}
-                    </button>
-                  );
-                })}
-              </div>
-              {errors.category && <p className="text-xs text-error mt-1.5">{errors.category}</p>}
-            </div>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Estimated replacement value (USD)" htmlFor="listing-value" error={errors.value}>
-                <input id="listing-value" inputMode="decimal" value={valueText} onChange={(event) => setValueText(event.target.value)} className={fieldClass()} {...fieldProps('value','listing-value')} />
-                <p className="text-xs text-muted mt-1">Owner-declared, not independently verified.</p>
-              </Field>
-              <Field label="Item condition" htmlFor="listing-condition" error={errors.condition}>
-                <select id="listing-condition" value={condition} onChange={(event) => setCondition(event.target.value)} className={fieldClass()} {...fieldProps('condition','listing-condition')}>
-                  <option value="">Choose condition</option><option value="new">New</option><option value="like_new">Like new</option><option value="good">Good</option><option value="fair">Fair</option>
-                </select>
-              </Field>
-            </div>
-              </>
-            )}
-
-            {step === 4 && (
-              <>
-            <PickupLocation
-              value={pickupLocation}
-              onChange={(next) => { setPickupChanged(true); setPickupLocation(next); setLocationLabel([next.city, next.state].filter(Boolean).join(', ')); setPickupConfirmed(false); }}
-              onConfirm={() => setPickupConfirmed(true)}
-            />
-            {pickupConfirmed
-              ? <p role="status" className="text-xs text-success -mt-2">Pickup location confirmed.</p>
-              : errors.pickup && <p className="text-xs text-error -mt-2">{errors.pickup}</p>}
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label={`Price per day (${LISTING_RULES.currency})`} htmlFor="listing-price" error={errors.price}>
-                <div className="relative">
-                  <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
-                  <input
-                    id="listing-price"
-                    type="text"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    value={priceText}
-                    onChange={(e) => setPriceText(e.target.value)}
-                    placeholder="25"
-                    className={fieldClass('pl-9 tnum')}
-                    {...fieldProps('price', 'listing-price')}
-                  />
-                </div>
-              </Field>
-              <Field label={`Security deposit (${LISTING_RULES.currency})`} htmlFor="listing-deposit" error={errors.deposit}>
-                <div className="relative">
-                  <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
-                  <input
-                    id="listing-deposit"
-                    type="text"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    value={depositText}
-                    onChange={(e) => { setDepositEdited(true); setDepositText(e.target.value); }}
-                    placeholder={LISTING_RULES.deposit.min > 0 ? String(LISTING_RULES.deposit.min) : '0'}
-                    className={fieldClass('pl-9 tnum')}
-                    {...fieldProps('deposit', 'listing-deposit')}
-                  />
-                </div>
-                <p className="text-xs text-muted mt-1.5">Suggested {(suggestedPct*100).toLocaleString()}% of declared value, within category limits. Charged separately and refunded after an eligible return. Not full-value insurance.</p>
-                {suggestedDeposit !== null && <button type="button" className="text-xs text-accent underline mt-1" onClick={() => { setDepositEdited(false); setDepositText(suggestedDeposit.toFixed(2)); }}>Use suggested ${suggestedDeposit.toFixed(2)}</button>}
-              </Field>
-            </div>
-              </>
-            )}
-
-            {step === 3 && (
-            <Field
-              label={LISTING_RULES.description.required ? 'Description' : 'Description (optional)'}
-              htmlFor="listing-description"
-              error={errors.description}
-              hint={aiApplied ? <p className="text-xs text-accent flex items-center gap-1 -mt-1 mb-1.5"><Sparkles size={12} /> Suggested from your photo - edit as needed.</p> : undefined}
-            >
-              <textarea
-                id="listing-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={5}
-                maxLength={LISTING_RULES.description.max + 200}
-                placeholder="What's included, the condition it's in, and what it's best used for."
-                className={textareaClass()}
-                {...fieldProps('description', 'listing-description')}
-              />
-              <p className="text-xs text-muted mt-1.5">Plain text only. {description.trim().length}/{LISTING_RULES.description.max.toLocaleString('en-US')}</p>
-            </Field>
-            )}
-
-            {step === 4 && (
-            <div>
-              <p className="text-[13px] font-semibold text-main mb-1.5">Options</p>
-              <div className="grid sm:grid-cols-2 gap-2">
-                <ToggleChip label="Instant booking" checked={instantBooking} onChange={setInstantBooking} />
-                <ToggleChip label="Delivery available" checked={deliveryAvailable} onChange={setDeliveryAvailable} />
-                <ToggleChip label="Protection eligible" checked={protectionEligible} onChange={setProtectionEligible} />
-                <ToggleChip label="Allow rental offers" checked={negotiationEnabled} onChange={setNegotiationEnabled} />
-              </div>
-              {negotiationEnabled&&<Surface className="p-4 mt-3 space-y-3">
-                <h3 className="text-sm font-semibold">Listing offer rules</h3>
-                <p className="text-xs text-sec">Fixed-price requests stay available. Eligible renter offer prices and dates may appear in the public top-five ticker; bidder identities stay private. An offer never automatically confirms a booking.</p>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <Field label="Minimum daily offer (USD, optional)" htmlFor="offer-minimum"><input id="offer-minimum" value={offerMinimum} onChange={event=>setOfferMinimum(event.target.value)} inputMode="decimal" className={fieldClass()}/></Field>
-                  <Field label="Target daily price (USD, optional)" htmlFor="offer-target"><input id="offer-target" value={offerTarget} onChange={event=>setOfferTarget(event.target.value)} inputMode="decimal" className={fieldClass()}/></Field>
-                  <Field label="Earliest rental start (optional)" htmlFor="offer-start"><input id="offer-start" type="date" value={offerStart} onChange={event=>setOfferStart(event.target.value)} className={fieldClass()}/></Field>
-                  <Field label="Latest rental end (optional)" htmlFor="offer-end"><input id="offer-end" type="date" min={offerStart} value={offerEnd} onChange={event=>setOfferEnd(event.target.value)} className={fieldClass()}/></Field>
-                  <Field label="Offer expiry in hours (optional)" htmlFor="offer-hours"><input id="offer-hours" inputMode="numeric" value={offerHours} onChange={event=>setOfferHours(event.target.value)} placeholder="Platform default" className={fieldClass()}/></Field>
-                </div>
-                <label className="flex gap-2 text-sm text-sec"><input type="checkbox" checked={offerGuardrail} onChange={event=>setOfferGuardrail(event.target.checked)}/>Limit offers around the asking daily price</label>
-                {offerGuardrail&&<Field label="Allowed percentage below or above asking price" htmlFor="offer-guardrail"><input id="offer-guardrail" inputMode="decimal" value={offerGuardrailPercent} onChange={event=>setOfferGuardrailPercent(event.target.value)} className={fieldClass()}/></Field>}
-              </Surface>}
-              <div className="mt-3">
-                <Field label="Available quantity" htmlFor="listing-quantity">
-                  <input
-                    id="listing-quantity"
-                    type="number"
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={availableQuantity}
-                    onChange={(e) => setAvailableQuantity(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
-                    className={fieldClass('w-28')}
-                  />
-                  <p className="text-xs text-muted mt-1.5">How many identical units can be rented on the same dates.</p>
-                </Field>
-              </div>
-            </div>
-            )}
-          {step === 4 && (
-            <>
-          <Surface className="p-4 flex items-start gap-3">
-            <Shield size={17} className="text-accent shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-main">{instantBooking ? 'Instant booking is on' : 'You approve every request'}</p>
-              <p className="text-xs text-sec mt-0.5 leading-relaxed">
-                {instantBooking
-                  ? 'Eligible requests can book instantly when your item is available. You can block dates from your owner dashboard.'
-                  : 'Publishing makes the item visible. You approve each request, and you can block dates from your owner dashboard.'}
-              </p>
-            </div>
-          </Surface>
-
-            </>
-          )}
-          </section>}
-
-          {step === 5 && (
-            <section className="space-y-5">
-              <div className="flex items-start justify-between gap-3">
-                <div><h2 className="text-base font-bold text-main font-display">Preview your listing</h2><p className="text-sm text-sec mt-1">This is what renters will see. Review all details before publishing.</p></div>
-                <Button size="sm" variant="secondary" onClick={() => setStep(3)}>Edit details</Button>
-              </div>
-              {Object.keys(formErrors).length > 0 && <Alert tone="error" title="Complete required information before publishing">
-                <ul className="list-disc pl-4 space-y-1">{Object.entries(formErrors).map(([field, message]) => <li key={field}><button type="button" className="underline text-left" onClick={() => {
-                  const target = field === 'photos' ? 1 : ['pickup', 'price', 'deposit'].includes(field) ? 4 : 3;
-                  setStep(target);
-                }}>{message}</button></li>)}</ul>
-              </Alert>}
-              {photoErrors.length > 0 && <Alert tone="warning" title="Some selected photos were not added">{photoErrors.join(' ')}</Alert>}
-              <Surface className="overflow-hidden">
-                {photos[0] && <img src={photos[0]} alt={`Preview of ${title || 'your item'}`} className="w-full max-h-[420px] object-cover bg-subtle" />}
-                <div className="p-5 space-y-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0"><h3 className="text-lg font-bold text-main break-words">{title || 'Your item title'}</h3><p className="text-sm text-sec mt-1">{categories.find((category) => category.id === categoryId)?.name || 'Choose a category'} · {condition ? condition.replace('_', ' ') : 'Condition not confirmed'}</p></div>
-                      <p className="text-lg font-bold text-main whitespace-nowrap">${priceText || '—'}<span className="text-xs font-normal text-sec"> / day</span></p>
-                  </div>
-                  <p className="text-sm text-sec whitespace-pre-wrap">{description || 'Add an item description.'}</p>
-                  <div className="grid sm:grid-cols-2 gap-3 border-t border-app pt-4 text-sm">
-                    <p><span className="font-semibold">Estimated value:</span> {valueText ? `$${valueText}` : 'Not entered'}</p>
-                    <p><span className="font-semibold">Security deposit:</span> {depositText ? `$${depositText}` : 'Not entered'}</p>
-                    <p><span className="font-semibold">Pickup area:</span> {locationLabel || 'Not selected'} <span className="block text-xs text-muted">Exact address stays private until a rental is approved.</span></p>
-                    <p><span className="font-semibold">Availability:</span> Available for renter requests</p>
-                  </div>
-                </div>
-              </Surface>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" onClick={() => setStep(1)}>Edit photos</Button>
-                <Button variant="secondary" onClick={() => setStep(4)}>Edit rental terms</Button>
-              </div>
-            </section>
-          )}
-
-          <div className="hidden md:block">
-            <div className="flex flex-wrap gap-3">
-              <Button variant="secondary" disabled={busy || savingDraft} loading={savingDraft} loadingLabel="Saving draft…" onClick={() => void saveDraft()}>Save draft</Button>
-              {step < 5 ? (
-                <Button className="flex-1" size="lg" disabled={busy || savingDraft} trailingIcon={<ArrowRight size={17} />} onClick={handleContinue}>
-                  Continue
-                </Button>
-              ) : (
-                <Button className="flex-1" size="lg" disabled={uploading || aiLoading || Boolean(rulesError)} loading={publishing} loadingLabel="Publishing…" onClick={() => void handlePublish()}>
-                  {editId && !editingDraft ? 'Save changes' : 'Publish listing'}
-                </Button>
-              )}
-            </div>
-            {step > 1 && <button type="button" onClick={() => setStep((current) => (current - 1) as 1 | 2 | 3 | 4)} className="w-full mt-3 text-sm font-medium text-sec hover:text-main">Back</button>}
-            {busyReason && <p role="status" className="text-xs text-sec text-center mt-2.5">{busyReason}</p>}
+    <div className="owner-listing min-h-screen pb-10">
+      <div className={`owner-listing-shell mx-auto px-4 sm:px-6 pt-5 sm:pt-7 ${step === 3 ? 'owner-listing-shell--rental max-w-7xl' : step === 4 ? 'max-w-3xl' : 'max-w-xl'}`}>
+        <div className="owner-listing-toolbar flex flex-wrap items-center justify-between gap-3 mb-2">
+          <h1 className="text-lg sm:text-xl font-bold tracking-tight text-main">{editId ? 'Manage your listing' : 'Create a listing'}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+          <span role="status" className="inline-flex items-center gap-2 text-xs text-sec min-h-11">
+            <span aria-hidden="true" className={`h-2 w-2 rounded-full ${saveError ? 'bg-error' : 'bg-accent'}`} />{saving ? 'Saving...' : saveError ? 'Not saved - retry below' : version === savedVersion && listingId ? 'All changes saved' : listingId ? 'Unsaved changes' : 'Private draft'}
+          </span>
+          {status === 'draft' && <Button size="sm" variant="secondary" disabled={working || saving} loading={saving} icon={<Save aria-hidden="true" size={14} />} onClick={() => void persist(false)}>Save draft</Button>}
+          {!editId && status === 'draft' && <Button size="sm" variant="ghost" disabled={working || saving} onClick={event => { resetButton.current = event.currentTarget; setConfirmReset(true); }}>Reset form</Button>}
           </div>
         </div>
-      </div>
-
-      {/* Mobile: publish stays reachable while filling the form */}
-      <div className="md:hidden fixed bottom-[calc(4rem_+_env(safe-area-inset-bottom))] left-0 right-0 z-30 glass-surface border-t border-app px-4 py-3">
-        <div className="flex gap-2">
-          <Button className="flex-1" size="sm" variant="secondary" disabled={busy || savingDraft} loading={savingDraft} loadingLabel="Saving…" onClick={() => editId && !editingDraft ? void handlePublish() : void saveDraft()}>{editId && !editingDraft ? 'Save changes' : 'Save draft'}</Button>
-          {step < 5 ? <Button className="flex-1" size="sm" disabled={busy || savingDraft} trailingIcon={<ArrowRight size={16} />} onClick={handleContinue}>Continue</Button>
-            : <Button className="flex-1" size="sm" disabled={uploading || aiLoading || Boolean(rulesError)} loading={publishing} loadingLabel="Publishing…" onClick={() => void handlePublish()}>{editId && !editingDraft ? 'Save changes' : 'Publish listing'}</Button>}
+        <p className="owner-listing-mobile-step mb-2 text-sm font-semibold text-main sm:hidden" aria-live="polite">Step {step} of {STEPS.length}<span className="mx-2 text-sec" aria-hidden="true">·</span>{STEPS[step - 1]}</p>
+        <ol aria-label="Listing progress" className="owner-listing-progress grid grid-cols-6 mb-4 sm:mb-6">
+          {STEPS.map((label, index) => <li key={label} className="relative min-w-0" data-reached={index + 1 <= step}>
+            <button type="button" disabled={working || saving || index + 1 > step} onClick={() => { setStep(index + 1); setAttempted(false); }}
+              aria-current={step === index + 1 ? 'step' : undefined}
+              className={`owner-step-button relative flex w-full min-h-16 flex-col items-center gap-2 px-1 py-2 text-[10px] sm:text-xs disabled:cursor-default ${step === index + 1 ? 'text-accent' : 'text-sec'}`}>
+              <span className={`owner-step-number relative grid h-6 w-6 shrink-0 place-items-center rounded-full border text-xs font-bold ${index + 1 <= step ? 'bg-accent border-accent text-accent-text' : 'bg-card border-strong text-sec'}`}>{index + 1 < step ? <Check aria-hidden="true" size={12} /> : index + 1}</span>
+              <span className="owner-step-copy text-center"><span className="owner-step-label block font-semibold">{label}</span></span>
+            </button>
+          </li>)}
+        </ol>
+        {saveError && <div role="alert" className="owner-listing-save-error mb-5"><Alert tone="error" title="Your changes have not been saved">{saveError}
+        <Button variant="secondary" className="mt-3" disabled={working || saving} onClick={() => void persist(false)}>Retry save</Button></Alert></div>}
+        <div className="owner-listing-workspace mx-auto">
+          <Surface className="owner-listing-panel min-w-0 overflow-hidden" role="region" aria-label={`Step ${step}: ${STEPS[step - 1]}`}>
+            <div className="px-5 sm:px-6 pt-5 pb-2">
+              <div>
+                <h2 ref={heading} tabIndex={-1} className="text-lg font-bold text-main">{stepHeading}</h2>
+                <p className="text-xs text-sec mt-1.5 leading-relaxed">{['Clear photos help renters choose with confidence. Add up to ' + policy.max_photos + ' photos.', 'AI can help with details. Please review and edit as needed.', 'Configure pricing, quantity, booking type and protection.', 'Choose when your item will be available for rent.', 'Choose where renters can pick up or request delivery.', 'Check all the details before publishing your listing.'][step - 1]}</p></div>
+            </div>
+            {notice && <div className="border-b border-app bg-accent-soft px-5 sm:px-6 py-3"><p role="status" className="flex items-start gap-2 text-xs text-accent"><CheckCircle2 size={16} aria-hidden="true" className="shrink-0" />{notice}</p></div>}
+            <motion.fieldset key={step} disabled={working || saving}
+              initial={reducedMotion ? false : { opacity: 0.96, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="owner-listing-fields min-w-0 px-5 sm:px-6 pt-3 pb-5 space-y-4">
+              {visibleErrors.length > 0 && <div ref={summary} tabIndex={-1} role="alert" className="rounded-card-lg bg-error-soft p-4">
+                <h3 className="font-semibold text-error">A few details need your attention</h3>
+                <ul className="mt-2 space-y-2 text-sm text-error">{visibleErrors.map((field) => <li key={field}>
+                  <a href={`#${field in LISTING_FIELD_IDS ? LISTING_FIELD_IDS[field as ListingField] : `listing-${field}`}`} onClick={(event) => {
+                    event.preventDefault();
+                    setStep(field === 'photos' ? 1 : field === 'value' ? 3 : field === 'item-details' || ITEM_STEP_FIELDS.includes(field as ListingField) ? 2 : field === 'availability' ? 4 : ['pickup', 'delivery'].includes(field) ? 5 : 3);
+                    setFocusTarget(field in LISTING_FIELD_IDS ? LISTING_FIELD_IDS[field as ListingField] : `listing-${field}`);
+                  }}>{errors[field]}</a>
+                </li>)}</ul>
+              </div>}
+              {preparingDetails && step === 1 ? <motion.div initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4" role="status" aria-busy="true" aria-label="Saving photos and preparing item details">
+                <p className="text-sm font-semibold text-main">Saving photos and preparing your item details…</p>
+                <div className="overflow-hidden rounded-card-lg border border-app"><Skeleton className="aspect-[16/10] w-full" rounded="rounded-none" /></div>
+                <Skeleton className="h-5 w-2/3" /><Skeleton className="h-11 w-1/2" />
+                <div className="grid grid-cols-2 gap-3"><Skeleton className="h-11" /><Skeleton className="h-11" /></div>
+                <Skeleton className="h-28 w-full" />
+                <span className="sr-only">The next step will show your title and all listing details.</span>
+              </motion.div> : <>
+              {step === 1 && <>
+                <ListingPhotoEditor photos={photos} maximum={policy.max_photos} disabled={working || saving} uploadProgress={uploadProgress} preventLastPhotoRemoval={status === 'published'}
+                  warnings={{ ...warnings, ...qualitySuggestions }} error={invalid('photos')} onAdd={() => { setReplaceIndex(null); fileInput.current?.click(); }}
+                  onDrop={(files) => void upload(files)} onReplace={(index) => { setReplaceIndex(index); fileInput.current?.click(); }}
+                  onRemove={(index) => void mutatePhotos(async () => { await removeListingImageUrl(listingId!, photos[index]); const next = photos.filter((_, at) => at !== index); await saveListingImageOrder(listingId!, next); return next; })}
+                  onReorder={(from, to) => void mutatePhotos(async () => { const next = [...photos]; const [photo] = next.splice(from, 1); next.splice(to, 0, photo); await saveListingImageOrder(listingId!, next); return next; })} />
+                <input ref={fileInput} aria-label="Upload listing photos" type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only"
+                  disabled={working || saving} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; const target = replaceIndex; setReplaceIndex(null); void upload(files, target ?? undefined); }} />
+                <p className="text-xs text-sec">JPEG, PNG, or WebP. Up to {Math.round(policy.max_photo_bytes / 1048576)} MB each; minimum {policy.min_photo_dimension} x {policy.min_photo_dimension} pixels.</p>
+                {aiLoading && <ListingAiSkeleton />}
+                {photoError && <Alert tone="warning">{photoError}</Alert>}
+                {failedUploads.map((item, index) => <Alert key={`${item.file.name}-${index}`} tone="error" title={item.file.name}>{item.error}
+                  <div className="flex gap-2 mt-2"><Button variant="secondary" disabled={working || saving} onClick={() => retryFailedUpload(item)}>Retry photo</Button>
+                    <Button variant="ghost" onClick={() => setFailedUploads((items) => items.filter((_, at) => at !== index))}>Dismiss</Button></div></Alert>)}
+                <div className="flex gap-3 rounded-card-lg bg-warning-soft p-4"><ImagePlus aria-hidden="true" size={20} className="shrink-0 text-warning" /><div><p className="text-sm font-semibold text-main">A little light goes a long way</p><p className="text-sm text-sec mt-1 leading-relaxed">Use natural light and a clear background. Include different angles, accessories, and visible wear.</p></div></div>
+              </>}
+              {step === 2 && <>
+                <div className="owner-ai-panel rounded-card">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold text-accent inline-flex items-center gap-2"><Sparkles aria-hidden="true" size={14} />{aiLoading ? 'Creating suggestions from your photos...' : aiApplied ? 'AI suggestions ready' : 'AI suggestions'}</p>
+                    <Button variant="secondary" disabled={working || saving || aiLoading || !photos.length} onClick={() => void ensureDraft().then((id) => analyze(id, photos)).catch((error) => setAiError(message(error, 'Could not analyze photos.')))}>{aiApplied ? 'Regenerate' : 'Generate details'}</Button></div>
+                  <p className="text-xs text-sec mt-1">AI fills details, including brand and model, when identifiable. Review the suggestions and enter anything missing. Your edits are preserved when you regenerate.</p>
+                  {aiLoading && <Button variant="ghost" onClick={() => { aiRun.current += 1; setAiLoading(false); setAiError('Continue manually. You can retry AI later.'); }}>Continue manually</Button>}
+                </div>
+                {aiLoading && <ListingAiSkeleton />}
+                {aiError && <div role="status" className="text-xs text-warning"><p className="font-semibold">Manual entry is available</p><p className="mt-1">{aiError}</p></div>}
+                {flags.length > 0 && <Alert tone={blockingFlags.length ? 'error' : 'warning'} title={blockingFlags.length ? 'Review a potential policy violation' : 'Review these suggestions'}><ul className="list-disc pl-4">{flags.map((flag, index) => <li key={index}>{flag.reason}</li>)}</ul>
+                  <p className="mt-2">Correct affected photos or details and regenerate to recheck. Persisted blocking flags require a trusted support review, even after a clean recheck. Photo-quality tips alone do not block publication.</p></Alert>}
+                <Field label="Title" htmlFor="listing-title" error={invalid('title')}><input id="listing-title" value={form.title} maxLength={LISTING_RULES.title.max} placeholder="What are you sharing?"
+                  onChange={(event) => { editedFields.current.title = true; update('title', event.target.value); }} className={fieldClass()} {...fieldProps('title')} />
+                  <p className="text-xs text-sec text-right mt-1">{form.title.length}/{LISTING_RULES.title.max}</p></Field>
+                <Field label="Category" htmlFor="listing-category-group" error={invalid('category')}><select id="listing-category-group" value={form.categoryId}
+                  onChange={(event) => { editedFields.current.categoryId = true; update('categoryId', event.target.value); }} className={fieldClass()} {...fieldProps('category')}>
+                  <option value="">Choose a category</option>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></Field>
+                <div id="listing-item-details" tabIndex={-1} className="grid grid-cols-2 gap-3">
+                  <Field label="Brand (optional)" htmlFor="listing-brand"><input id="listing-brand" value={form.itemDetails.brand} maxLength={80}
+                    aria-invalid={Boolean(invalid('item-details'))} aria-describedby={invalid('item-details') ? 'listing-item-details-error' : undefined}
+                    onChange={event => updateItemDetails('brand', event.target.value)} className={fieldClass()} /></Field>
+                  <Field label="Model (optional)" htmlFor="listing-model"><input id="listing-model" value={form.itemDetails.model} maxLength={80}
+                    aria-invalid={Boolean(invalid('item-details'))} aria-describedby={invalid('item-details') ? 'listing-item-details-error' : undefined}
+                    onChange={event => updateItemDetails('model', event.target.value)} className={fieldClass()} /></Field>
+                </div>
+                {invalid('item-details') && <p id="listing-item-details-error" role="alert" className="text-xs text-error">{invalid('item-details')}</p>}
+                <fieldset id="listing-condition" tabIndex={-1} aria-describedby={invalid('condition') ? 'listing-condition-error' : undefined}>
+                  <legend className="text-[13px] font-semibold text-main mb-2">Item condition</legend>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{Object.entries(CONDITION_LABELS).map(([value, label]) => <label key={value} className={`owner-condition relative flex min-h-11 items-center justify-center gap-2 rounded-full border px-3 text-sm cursor-pointer ${form.condition === value ? 'bg-accent text-accent-text border-accent' : 'bg-card text-sec border-strong'}`}>
+                    <input type="radio" name="item-condition" value={value} checked={form.condition === value} onChange={() => update('condition', value)} className="absolute inset-0 h-full w-full opacity-0 cursor-pointer" />
+                    {form.condition === value && <Check aria-hidden="true" size={14} />}{label}
+                  </label>)}</div>
+                  {invalid('condition') && <p id="listing-condition-error" role="alert" className="text-sm text-error mt-2">{invalid('condition')}</p>}
+                </fieldset>
+                <Field label="Description" htmlFor="listing-description" error={invalid('description')}>
+                  <textarea id="listing-description" value={form.description} rows={5} required minLength={LISTING_RULES.description.min} maxLength={LISTING_RULES.description.max} placeholder="Describe the item, what is included, and any wear."
+                    onChange={(event) => { editedFields.current.description = true; update('description', event.target.value); }} className={textareaClass()} {...fieldProps('description')} />
+                  <p className="text-xs text-sec text-right mt-1">{form.description.length}/{LISTING_RULES.description.max}</p></Field>
+                <div>
+                  <p className="text-[13px] font-semibold text-main">What's included <span className="text-xs font-normal text-sec">(optional)</span></p>
+                  {form.itemDetails.included_items.length > 0 && <ul className="mt-2 flex flex-wrap gap-2" aria-label="Included items">
+                    {form.itemDetails.included_items.map((item, index) => <li key={item} className="inline-flex items-center gap-1 rounded-card bg-accent-soft pl-3 text-xs text-accent">
+                      {item}<button type="button" aria-label={`Remove included item ${item}`} className="grid min-h-11 min-w-9 place-items-center"
+                        onClick={() => updateItemDetails('included_items', form.itemDetails.included_items.filter((_, at) => at !== index))}><X size={12} aria-hidden="true" /></button>
+                    </li>)}
+                  </ul>}
+                  <div className="flex gap-2 mt-2">
+                    <label htmlFor="listing-included-item" className="sr-only">Included item</label>
+                    <input id="listing-included-item" maxLength={60} value={includedItem} placeholder="e.g. Carrying case" className={fieldClass('min-w-0 flex-1')}
+                      aria-describedby={includedError ? 'listing-included-error' : undefined}
+                      onChange={event => { setIncludedItem(event.target.value); setIncludedError(null); }}
+                      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addIncludedItem(); } }} />
+                    <Button size="sm" variant="secondary" icon={<Plus size={14} aria-hidden="true" />} disabled={form.itemDetails.included_items.length >= 12} onClick={addIncludedItem}>Add item</Button>
+                  </div>
+                  {includedError && <p id="listing-included-error" role="alert" className="text-xs text-error mt-2">{includedError}</p>}
+                </div>
+                <Field label="Additional details (optional)" htmlFor="listing-additional-details">
+                  <textarea id="listing-additional-details" value={form.itemDetails.additional_details} maxLength={500} rows={2}
+                    placeholder="Usage notes, features, or anything renters should know" onChange={event => updateItemDetails('additional_details', event.target.value)} className={textareaClass()} />
+                  <p className="text-xs text-sec text-right mt-1">{form.itemDetails.additional_details.length}/500</p>
+                </Field>
+              </>}
+              </>}
+              {step === 3 && <>
+                <div className="owner-rental-grid">
+                <section aria-label="Rental pricing" className="space-y-4">
+                  <h3 className="text-sm font-bold text-main">Pricing</h3>
+                  <Field label="Daily price (USD)" htmlFor="listing-price" error={invalid('price')}>
+                    <div className="relative mt-2">
+                      <span aria-hidden="true" className="absolute inset-y-0 left-4 flex items-center text-lg font-semibold text-muted">$</span>
+                      <input id="listing-price" inputMode="decimal" value={form.price} onChange={(event) => update('price', event.target.value)} className={fieldClass('pl-9 pr-20 text-lg font-semibold tnum')} {...fieldProps('price')} />
+                      <span aria-hidden="true" className="absolute inset-y-0 right-4 flex items-center text-sm text-sec">/ day</span>
+                    </div>
+                    <p className="mt-2 text-xs text-sec">Your regular price for each rental day.</p>
+                  </Field>
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-semibold text-main">Offer weekly and monthly rentals</h4>
+                    <p className="mt-1 text-xs leading-relaxed text-sec">You fund the discount; renters get a lower package price. Weekly starts at 20% off 7 days and monthly at 30% off 30 days. Extra days use your daily price.</p>
+                    <p className="mt-1 text-xs leading-relaxed text-sec">Changes apply to new bookings only. Existing bookings keep their agreed price.</p>
+                    {!durationDiscountFlag.loading && !durationDiscountFlag.enabled && <p className="mt-2 text-xs text-sec">Rental packages are turned off for this test environment.</p>}
+                    <fieldset disabled={!durationDiscountFlag.enabled || durationDiscountFlag.loading} className="mt-3 space-y-3">
+                      <div className="border-b border-app pb-3">
+                        <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-semibold text-main">
+                          <span>Offer Weekly rentals</span>
+                          <input type="checkbox" role="switch" checked={form.weeklyDiscountEnabled} onChange={event => { if (event.target.checked && Number(form.weeklyDiscount) <= 0) update('weeklyDiscount', '20'); update('weeklyDiscountEnabled', event.target.checked); }} aria-label="Offer Weekly rentals" className="h-5 w-5 accent-[var(--accent)]" />
+                        </label>
+                        {form.weeklyDiscountEnabled && <div className="mt-3 grid gap-3 sm:grid-cols-2 sm:items-end">
+                          <Field label="Weekly discount" htmlFor="listing-weekly-discount">
+                            <div className="relative"><input id="listing-weekly-discount" type="number" min={0} max={50} step="0.5" inputMode="decimal" value={form.weeklyDiscount} onChange={event => update('weeklyDiscount', event.target.value)} className={fieldClass('pr-8')} /><span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-sec">%</span></div>
+                          </Field>
+                          <p className="pb-2 text-xs text-sec">{priceForPreview > 0 ? <>7-day price: <strong className="text-main">${weeklyPreview.subtotal.toFixed(2)}</strong><span className="block mt-1">Save ${weeklyPreview.discountAmount.toFixed(2)}</span></> : 'Enter a daily price to preview your weekly price.'}</p>
+                        </div>}
+                      </div>
+                      <div>
+                        <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-semibold text-main">
+                          <span>Offer Monthly rentals</span>
+                          <input type="checkbox" role="switch" checked={form.monthlyDiscountEnabled} onChange={event => { if (event.target.checked && Number(form.monthlyDiscount) <= 0) update('monthlyDiscount', '30'); update('monthlyDiscountEnabled', event.target.checked); }} aria-label="Offer Monthly rentals" className="h-5 w-5 accent-[var(--accent)]" />
+                        </label>
+                        {form.monthlyDiscountEnabled && <div className="mt-3 grid gap-3 sm:grid-cols-2 sm:items-end">
+                          <Field label="Monthly discount" htmlFor="listing-monthly-discount">
+                            <div className="relative"><input id="listing-monthly-discount" type="number" min={0} max={50} step="0.5" inputMode="decimal" value={form.monthlyDiscount} onChange={event => update('monthlyDiscount', event.target.value)} className={fieldClass('pr-8')} /><span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-sec">%</span></div>
+                          </Field>
+                          <p className="pb-2 text-xs text-sec">{priceForPreview > 0 ? <>30-day price: <strong className="text-main">${monthlyPreview.subtotal.toFixed(2)}</strong><span className="block mt-1">Save ${monthlyPreview.discountAmount.toFixed(2)}</span></> : 'Enter a daily price to preview your monthly price.'}</p>
+                        </div>}
+                      </div>
+                    </fieldset>
+                  </div>
+                <div id="listing-quantity" tabIndex={-1}><p className="text-sm font-semibold mb-3">Available quantity</p><div className="inline-flex items-center rounded-card border border-strong overflow-hidden bg-card">
+                  <IconButton label="Decrease available quantity" disabled={form.quantity <= 1} variant="ghost" onClick={() => update('quantity', form.quantity - 1)}><Minus size={16} aria-hidden="true" /></IconButton>
+                  <output aria-label="Available quantity" className="min-w-12 text-center font-semibold tnum">{form.quantity}</output>
+                  <IconButton label="Increase available quantity" disabled={form.quantity >= policy.max_quantity} variant="ghost" onClick={() => update('quantity', form.quantity + 1)}><Plus size={16} aria-hidden="true" /></IconButton></div>
+                  <p className="text-xs text-sec mt-3 leading-relaxed">Identical units available for concurrent rentals. Maximum {policy.max_quantity}.</p>{invalid('quantity') && <p role="alert" className="text-error text-sm mt-2">{invalid('quantity')}</p>}</div>
+                <Field label="Estimated replacement value (USD)" htmlFor="listing-value" error={invalid('value')}>
+                  <input id="listing-value" inputMode="decimal" value={form.value} placeholder="What would a comparable replacement cost?"
+                    onChange={(event) => update('value', event.target.value)} className={fieldClass()} {...fieldProps('value')} />
+                  <p className="text-xs text-sec mt-2">Used to calculate protection and the refundable deposit. Maximum ${policy.max_estimated_value.toLocaleString('en-US')}.</p>
+                </Field>
+                </section>
+                <section aria-label="Booking approval settings" className="space-y-4">
+                <fieldset className="space-y-3"><legend className="text-sm font-semibold text-main mb-2">Booking approval</legend>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                  {[{ value: false, label: 'Owner approval required', detail: 'Review each request before the renter pays.', icon: ShieldCheck }, { value: true, label: 'Instant booking', detail: 'Existing eligibility and payment rules apply.', icon: Zap }].map((option) => <label key={option.label} className={`flex items-start gap-3 rounded-card-lg border p-4 cursor-pointer ${form.instant === option.value ? 'border-accent bg-accent-soft' : 'border-app'}`}>
+                    <input type="radio" name="booking-mode" className="mt-1 accent-[var(--accent)]" checked={form.instant === option.value} onChange={() => update('instant', option.value)} />
+                    <option.icon size={19} aria-hidden="true" className="mt-0.5 shrink-0 text-accent" />
+                    <span><span className="block text-sm font-semibold">{option.label}</span><span className="block text-xs text-sec mt-1">{option.detail}</span></span></label>)}
+                  </div>
+                </fieldset>
+                <p className="text-xs text-sec">After publication, configure private offers and scheduled bidding from the success screen or My listings.</p>
+                </section>
+                <aside aria-label="How negotiation works" className="rounded-card bg-accent-soft p-4 text-xs text-sec self-start">
+                  <h3 className="text-sm font-bold text-main mb-4">How this works</h3>
+                  <p>Publish your listing first. You can then enable private offers, competitive bidding or both without changing your rental price or availability.</p>
+                </aside>
+                </div>
+              </>}
+              {step === 4 && <>
+                <ListingAvailabilityPicker start={form.start} end={form.end}
+                  error={invalid('availability')} onChange={(start, end) => { setForm(current => ({ ...current, start, end })); changed(); }} />
+                {retainedAvailability && <p className="text-xs text-sec">Your saved listing dates are retained until you select a new range.</p>}
+                <div className="flex gap-3 rounded-card bg-subtle p-3 text-xs text-sec"><BellRing size={17} aria-hidden="true" className="shrink-0 text-accent" />
+                  <div><p className="font-semibold text-main">We'll remind you</p><p className="mt-1 leading-relaxed">In-app reminders run 7 days and 1 day before published availability begins, when your booking notifications are enabled.</p></div>
+                </div>
+              </>}
+              {step === 5 && <>
+                <div className="space-y-4 min-w-0">
+                  <PickupLocation showAreaMap value={pickup} onChange={(next) => {
+                    setPickup(next);
+                    setPickupConfirmed(Boolean(next.formattedAddress && next.city && next.latitude !== null && next.longitude !== null));
+                    changed();
+                  }} />
+                  {invalid('pickup') && <p role="alert" className="text-sm text-error">{invalid('pickup')}</p>}
+                  <fieldset className="space-y-3">
+                    <legend className="text-sm font-semibold text-main mb-2">Pickup options</legend>
+                    <p className="flex items-center gap-2 text-xs text-sec"><CheckCircle2 size={16} aria-hidden="true" className="text-accent" />Local pickup is included. Renters collect from your location.</p>
+                    <label className="flex items-center justify-between gap-3 min-h-11"><span><span className="block text-sm font-semibold">Delivery available</span><span className="block text-xs text-sec mt-1">Optional local delivery, arranged separately.</span></span>
+                      <input type="checkbox" role="switch" checked={form.delivery} onChange={(event) => update('delivery', event.target.checked)} aria-label="Delivery available" className="h-5 w-5 accent-[var(--accent)]" /></label>
+                    {form.delivery && <Field label="Delivery fee per trip (USD)" htmlFor="listing-delivery" error={invalid('delivery')}>
+                      <input id="listing-delivery" type="number" min={1} max={policy.max_delivery_fee} step="0.01" inputMode="decimal" value={form.deliveryFee} onChange={(event) => update('deliveryFee', event.target.value)} placeholder="25.00" aria-invalid={Boolean(invalid('delivery'))} aria-describedby={invalid('delivery') ? 'listing-delivery-error' : undefined} className={fieldClass('mt-2')} />
+                      <p className="text-xs text-sec mt-2">$1–${policy.max_delivery_fee} per trip. Not included in the online rental total.</p>
+                    </Field>}
+                    {form.delivery && <Field label="Delivery radius (optional)" htmlFor="listing-delivery-radius">
+                      <select id="listing-delivery-radius" value={form.itemDetails.delivery_radius_miles ?? ''} className={fieldClass()}
+                        onChange={event => updateItemDetails('delivery_radius_miles', event.target.value ? Number(event.target.value) : null)}>
+                        <option value="">Choose a radius</option>{[5, 10, 25, 50].map(miles => <option key={miles} value={miles}>Within {miles} miles</option>)}
+                      </select>
+                      <p className="mt-2 text-xs text-sec">Your declared delivery area, not an automatic address or checkout restriction.</p>
+                    </Field>}
+                  </fieldset>
+                </div>
+              </>}
+              {step === 6 && <>
+                {status === 'archived' && <p role="status" className="rounded-card-lg bg-subtle p-4 text-sm text-sec">This listing is archived. Saving changes here will keep it archived; it will not become visible to renters.</p>}
+                {status === 'suspended' && <p role="status" className="rounded-card-lg bg-warning-soft p-4 text-sm text-sec">This listing is suspended. You can save corrections, but it will stay hidden until it is reviewed.</p>}
+                <div className="owner-listing-review min-w-0 space-y-4">
+                {photos[activePreview] && <div><div className="relative"><img src={photos[activePreview]} alt={`Preview of ${form.title || 'your item'}`} className="w-full aspect-[16/10] object-cover rounded-card-lg bg-subtle" />
+                  {photos.length > 1 && <div className="absolute inset-0 flex items-center justify-between px-2 pointer-events-none">
+                    <IconButton className="pointer-events-auto bg-card" label="Previous preview photo" onClick={() => setPreviewPhoto((activePreview + photos.length - 1) % photos.length)}><ChevronLeft size={17} aria-hidden="true" /></IconButton>
+                    <IconButton className="pointer-events-auto bg-card" label="Next preview photo" onClick={() => setPreviewPhoto((activePreview + 1) % photos.length)}><ChevronRight size={17} aria-hidden="true" /></IconButton>
+                  </div>}</div>
+                  <div className="flex gap-2 overflow-x-auto mt-3 pb-1">{photos.map((photo, index) => <button key={photo} type="button" onClick={() => setPreviewPhoto(index)} aria-label={`Preview photo ${index + 1}`} aria-pressed={activePreview === index} className={`h-16 w-16 shrink-0 rounded-card overflow-hidden border-2 ${activePreview === index ? 'border-accent' : 'border-transparent'}`}><img src={photo} alt="" className="h-full w-full object-cover" /></button>)}</div></div>}
+                <div className="min-w-0 space-y-5">
+                <div><h3 className="text-xl font-bold text-main">{form.title}</h3><p className="mt-2 text-xl font-bold text-main">${form.price}<span className="text-sm text-sec font-normal"> / day</span></p>
+                  <p className="text-sm text-sec mt-2">{categories.find((category) => category.id === form.categoryId)?.name} &middot; {CONDITION_LABELS[form.condition]}</p></div>
+                {(form.itemDetails.brand || form.itemDetails.model) && <dl className="grid grid-cols-2 gap-3 text-xs">
+                  {form.itemDetails.brand && <div><dt className="text-sec">Brand</dt><dd className="text-main mt-1 font-semibold break-words">{form.itemDetails.brand}</dd></div>}
+                  {form.itemDetails.model && <div><dt className="text-sec">Model</dt><dd className="text-main mt-1 font-semibold break-words">{form.itemDetails.model}</dd></div>}
+                </dl>}
+                <div className="grid gap-4 text-sm text-sec"><p className="flex gap-2"><MapPin aria-hidden="true" size={17} className="shrink-0 text-accent" />{[pickup.city, pickup.state].filter(Boolean).join(', ')} (approximate area)</p>
+                  <p className="flex gap-2"><CalendarDays aria-hidden="true" size={17} className="shrink-0 text-accent" />Pickup from {formatListingDate(form.start)}. Return by {formatListingDate(form.end)}.</p>
+                  <p className="flex gap-2"><CheckCircle2 aria-hidden="true" size={17} className="shrink-0 text-accent" />{form.quantity} {form.quantity === 1 ? 'unit' : 'units'} available</p>
+                  <p className="flex gap-2"><ShieldCheck aria-hidden="true" size={17} className="shrink-0 text-accent" />{form.instant ? 'Instant booking rules apply' : 'Owner approval required'}</p>
+                  {form.delivery && <p className="flex gap-2"><Truck aria-hidden="true" size={17} className="shrink-0 text-accent" />Delivery available - ${form.deliveryFee || '0'} per trip{form.itemDetails.delivery_radius_miles ? `, within ${form.itemDetails.delivery_radius_miles} miles (owner-declared)` : ''}, arranged separately</p>}</div>
+                </div>
+                <section className="border-t border-app pt-5"><h3 className="font-semibold text-main mb-2">About this item</h3><p className="text-sm text-sec whitespace-pre-wrap leading-relaxed">{form.description || 'No additional description.'}</p></section>
+                {form.itemDetails.included_items.length > 0 && <section><h3 className="text-sm font-semibold mb-2">What's included</h3><ul className="flex flex-wrap gap-2">
+                  {form.itemDetails.included_items.map(item => <li key={item} className="rounded-card bg-subtle px-2 py-1 text-xs text-sec">{item}</li>)}</ul></section>}
+                {form.itemDetails.additional_details && <section><h3 className="text-sm font-semibold mb-2">Additional details</h3><p className="text-xs text-sec whitespace-pre-wrap">{form.itemDetails.additional_details}</p></section>}
+                <Button size="sm" variant="secondary" onClick={() => { setStep(2); setAttempted(false); }}>Edit details</Button>
+                <p className="text-xs text-sec">The exact pickup address stays private until an eligible booking is confirmed. Availability, payment verification, return, and deposit rules apply to every rental. Saved offer settings take effect only after publication.</p>
+                {blockingFlags.length > 0 && <Alert tone="error" title="Resolve policy concerns before publishing">{blockingFlags.map((flag) => flag.reason).join(' ')} <Button variant="secondary" onClick={() => setStep(2)}>Review details</Button></Alert>}
+                <div className="rounded-card-lg border border-app bg-subtle p-4 text-xs text-sec"><ShieldCheck aria-hidden="true" size={18} className="text-accent mb-2" />{policy.high_value_threshold === null || Number(form.value) > policy.high_value_threshold ? 'This declared value requires administrative review. The listing will not be marked live until approved.' : 'Publication is confirmed only after the server checks your photos, content, location and listing policy.'}</div>
+                </div>
+              </>}
+            </motion.fieldset>
+            {publishError && <div role="alert" className="px-5 sm:px-6 pb-4"><Alert tone="error" title="Your listing has not been published">
+              <p>{status === 'draft' && version === savedVersion ? 'Your draft is saved. ' : 'Your entries are kept. '}{publishError}</p>
+              <Button variant="secondary" className="mt-3" disabled={working || saving} onClick={() => void publish()}>Retry publication</Button>
+            </Alert></div>}
+            <div className="owner-listing-actions border-t border-app bg-card px-4 sm:px-8 py-4 flex flex-wrap items-center justify-between gap-3">
+              <Button variant="ghost" className="max-sm:w-11 max-sm:px-0" disabled={working || saving} icon={<ArrowLeft aria-hidden="true" size={16} />} onClick={() => void goBack()}><span className="sr-only sm:not-sr-only">Back</span></Button>
+              <div className="flex min-w-0 flex-wrap gap-2">
+                <Button disabled={working || saving || (step === STEPS.length && blockingFlags.length > 0)} loading={working && step === STEPS.length} loadingLabel="Saving..." trailingIcon={step < STEPS.length ? <ArrowRight aria-hidden="true" size={16} /> : <Check aria-hidden="true" size={16} />}
+                  onClick={() => step === STEPS.length ? void publish() : continueStep()}>{nextLabel}</Button>
+              </div>
+            </div>
+          </Surface>
         </div>
-        {step > 1 && <button type="button" onClick={() => setStep((current) => (current - 1) as 1 | 2 | 3 | 4)} className="w-full mt-2 text-sm font-medium text-sec">Back</button>}
-        {busyReason && <p role="status" className="text-xs text-sec text-center mt-1.5">{busyReason}</p>}
+        {!editId && status === 'draft' && <AlertDialog open={confirmReset} onOpenChange={open => { if (!working && !saving) setConfirmReset(open); }}>
+          <AlertDialogContent onCloseAutoFocus={event => { event.preventDefault(); resetButton.current?.focus(); }}>
+            <AlertDialogTitle>Reset this listing?</AlertDialogTitle>
+            <AlertDialogDescription>This permanently discards this draft, its uploaded photos and all entered details. You will start again with an empty listing.</AlertDialogDescription>
+            <AlertDialogFooter>
+              <AlertDialogCancel asChild><Button variant="secondary" disabled={working || saving}>Keep editing</Button></AlertDialogCancel>
+              <Button variant="danger" disabled={working || saving} loading={working} loadingLabel="Resetting..." onClick={() => void discardDraft()}>Yes, reset</Button>
+            </AlertDialogFooter>
+            {saveError && <p role="alert" className="mt-3 text-sm text-error">{saveError}</p>}
+          </AlertDialogContent>
+        </AlertDialog>}
       </div>
     </div>
-  );
-}
-
-function ToggleChip({ label, checked, onChange }: { label: string; checked: boolean; onChange: (next: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      aria-pressed={checked}
-      className={`flex items-center justify-between gap-2 px-3 h-11 rounded-card text-sm font-medium border text-left transition-colors duration-fast ${
-        checked ? 'border-accent text-accent bg-accent-soft' : 'border-app text-sec hover:bg-subtle'
-      }`}
-    >
-      {label}
-      {checked && <CheckCircle2 size={15} className="shrink-0" />}
-    </button>
   );
 }

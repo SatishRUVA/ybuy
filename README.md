@@ -1,7 +1,83 @@
 # ybuy
 
+## Brand assets
+
+The shared `BrandLogo` uses the latest supplied transparent wordmark and a
+compact favicon-derived mark on phone navigation. Empty margins are trimmed
+without changing the artwork. Dark mode adds a light backing to keep its dark
+lettering readable. The supplied ICO is served as the favicon, with derived
+Apple touch and web-manifest icons. Social previews use the same wordmark on
+a light background. These assets do not add offline support or change routing.
+
+## Marketplace countries
+
+Global Settings → `marketplace_country_codes` controls countries allowed for
+city/postal-code discovery, GPS/IP location detection, pickup address selection
+and new item requests. The initial setting is United States (`US`) only.
+Administrators with `config.manage` can add/remove countries from the existing
+country reference; at least one must remain enabled. Changes require a reason
+and are audited. This does not restrict self-reported profile nationality/region.
+
+Apply `20261026000005_marketplace_countries.sql` before deploying this frontend.
+Missing or unreadable configuration blocks location selection explicitly.
+New/changed pickup addresses and new requests validate the configured country
+on the server; request creation without a country is no longer available.
+Existing rentals, request history and unchanged pickup addresses are retained.
+Saved city selections are rechecked on load and when the window regains focus.
+New lookups read the current policy without a frontend deployment.
+
+## Local frontend with hosted Supabase
+
+To run against the isolated hosted test backend, configure the ignored
+`.env.hosted.local` with that project's `VITE_SUPABASE_URL` and public
+`VITE_SUPABASE_ANON_KEY`, then run:
+
+```powershell
+pnpm dev -- --host localhost --mode hosted
+```
+
+Open `http://localhost:5174/`. This mode overrides the default Supabase
+configuration without changing `.env.local` or applying hosted migrations.
+Use only a public anonymous key in the frontend, never a service-role key.
+Browsing supports hosted schemas without optional duration-discount columns;
+newer write flows still require their corresponding migrations.
+
 [Owner & Renter validation status report](docs/implementation/OWNER_RENTER_VALIDATION_STATUS.md)
 separates verified local behavior, unresolved failures and hosted release gates.
+
+## Homepage category discovery
+
+Browse by category uses the active database categories in their configured order
+and fixed, distinct category artwork (never user listing uploads). Cards form a
+two-column phone grid, expanding to nine columns on wide desktops, with full-card
+navigation, visible keyboard focus and reduced-motion-aware hover feedback.
+Missing or failed photos retain the category icon and destination. Loading
+skeletons, empty categories and catalog errors remain distinct states.
+
+Category cards open the existing category-filtered search. **Explore all
+categories** and **More** open the existing unfiltered search with its category
+filters; there is no separate category discovery route. Search, dates, location
+and filter logic are unchanged.
+
+## Top Offers banner
+
+The shared mint offer banner retains the reference's curved accents, white cards,
+top-corner ranks/status pills and green TEST DATA pill. It is 100px tall on desktop
+and phones, with compact
+site typography and continuous news-style scrolling instead of navigation arrows.
+Cards share fixed dimensions, equal padding, a one-pixel border and aligned
+48px images. Long titles truncate with an ellipsis and retain their full tooltip.
+Displayed daily prices round to whole dollars; underlying offer amounts do not
+change. LIVE BIDDING has a slow double-heartbeat glow and toggles motion on click.
+Hover pauses scrolling; keyboard focus and reduced motion provide a static,
+manually scrollable feed. Visual loop copies are hidden from assistive technology
+and cannot receive keyboard focus.
+
+The existing bidding flag, fifteen-second refresh, expiry filtering, retry and
+listing destinations remain unchanged. Real offers always take priority.
+Only an empty test-environment feed shows clearly labeled sample offers; its
+first three photos are cropped from the supplied reference. HOT, POPULAR and
+GREAT DEAL are illustrative sample labels, never inferred claims for real offers.
 
 ## Owner and Renter implementation increment (2026-10-21)
 
@@ -15,6 +91,21 @@ inventing a tax amount. Checkout still uses backend-authoritative prices, owner
 approval and the existing fifteen-minute payment reservation. Eligible listings
 retain secondary offers only when bidding is enabled. Owner reviews do not imply
 identity verification, account age or a completed-rental count.
+
+The owner listing journey follows five sequential screens: Photos, Details,
+Rental settings, Availability, and Location & review. It preserves revision-safe
+drafts, photo/AI editing, private pickup, and backend-confirmed publication.
+Owners can select 1–30 consecutive available calendar days within the next 90
+days. The owner selects pickup and return dates: November 19–20 is one rental
+day, returned by November 20. The return date is exclusive, matching the rental
+API. Return dates beyond pickup + 30 days or the 90-day horizon are disabled.
+The city is derived from the selected pickup address, with the marketplace
+location used as a search hint only. Drafts are saved before publication review;
+review failures expose Retry publication, not a misleading Retry save.
+Existing reservations cannot
+be displaced. Apply `20261027000001_listing_scheduling_window.sql` before releasing
+this policy to a hosted environment; it has only been applied locally. Offer
+preferences retain their existing post-publication authorization gate.
 
 The current implementation adds stable Customer IDs; private country and
 region settings; server-side five-mile discovery with optional dates; listing
@@ -79,11 +170,20 @@ acceptance gates. A successful build does not establish any of these.
 
 ## Local lifecycle test accounts
 
-The sign-in dialog uses Supabase email/password sign-in and registration instead
-of social sign-in. It preserves the destination route and existing session/RLS
+The sign-in dialog offers Supabase email/password sign-in and registration alongside
+Google sign-in (including Gmail accounts). It preserves the destination route and existing session/RLS
 checks. Registration displays a confirmation notice when Auth requires email
 verification; the client never treats an unverified signup as authenticated.
-Hosted deployments must enable email Auth in their own project settings.
+Hosted deployments must enable email and Google Auth in their own project settings.
+Google requires a server-side OAuth client ID/secret and an authorized Google Cloud
+redirect URI of `https://<project-ref>.supabase.co/auth/v1/callback`. Allow the app's
+return URLs in Supabase Auth URL Configuration. Never put the OAuth client secret
+in a `VITE_` variable. Account switching ends the local session before starting a
+new sign-in; Google asks the user to select an account. Initialization and callback
+errors remain visible, and email/password stays available.
+On 2026-10-22, the e2e project (`jzyjmsixfuwzfnntewqn`) was verified to have email
+Auth enabled and Google disabled. An operator must enable/configure Google before
+hosted Google sign-in can complete; rendering the button does not establish this.
 
 Local `supabase/config.toml` enables email/password Auth for isolated test actors.
 Production hosted Auth settings are unchanged. Restart local Supabase after changing that
@@ -96,7 +196,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Local Supabase must be running.' }
 ($status -join "`n") | node --experimental-websocket scripts\seed-local-test-users.mjs
 ```
 
-By default the script accepts only `http://127.0.0.1:54321`, never loads hosted environment
+By default the script accepts only `http://localhost:54321`, never loads hosted environment
 files, and refuses to overwrite unrelated users. Accounts use
 `owner1@example.test` through `owner5@example.test` and
 `renter1@example.test` through `renter5@example.test`. Generated passwords are
@@ -221,12 +321,35 @@ test slot, and cleans up its test account and value.
 discover active requests, submit offers, link published listings and negotiate
 through a persistent proposal history. Real offers remain in `/requests`.
 
-`/bidding` and `/auction/:id` are mock-only demo routes using the existing sample
-auctions. Enable `mock_bidding` in Admin Feature flags to show the Home demo rail
-and allow demo bids. Disabling it immediately hides the rail and replaces both
-demo routes with an offline banner. Demo bids live only in page memory, reset
-when leaving the auction or disabling the flag, and never create real offers,
-bookings or payments. The independent `bidding` flag does not enable this demo.
+`/bidding` is the live competitive-auction section. Owners manage their listings'
+auctions in My auctions. Explore auctions excludes the signed-in user's own listings
+before pagination and category counts; anonymous visitors see all eligible auctions.
+Renters explore auctions and place bids on the dedicated
+`/bidding/:listingId` page. Listings only link into Bidding; they do not contain a
+bid form or leaderboard. The owner view shows anonymous top bids only. Owners
+can select an eligible top bid during bidding, which closes the auction and
+starts a one-hour payment window.
+Each accepted new bid creates an unread owner in-app notification linking to
+Bidding, without exposing the bidder's identity. Bid retries do not duplicate
+alerts, and the owner's Bookings and rentals in-app preference is respected.
+Renters also receive bid-accepted and outbid alerts. Owners and participating
+renters receive auction-extension and bidding-closed updates. Selected renters
+keep the existing winner alert and receive one payment reminder in the last
+15 minutes of their checkout window. Not-selected alerts are final: they are
+sent only after another renter pays or the auction ends without a booking,
+preserving runner-up selection. Existing verified-booking confirmation alerts
+are reused for both parties. All new alerts are in-app only, respect the
+Bookings and rentals preference, and do not duplicate on retries.
+Auction countdowns use days and weeks for longer waits and approximate 30-day
+months (labeled "About") beyond a month. Within 24 hours they show live hours,
+minutes and seconds; actual auction deadlines and payment windows are unchanged.
+
+`/auction/:id` remains a mock-only demo route using the existing sample auctions.
+Enable `mock_bidding` in Admin Feature flags to show the Home demo rail and allow
+demo bids. Disabling it immediately hides the rail and replaces the demo route
+with an offline banner. Demo bids live only in page memory, reset when leaving
+the auction or disabling the flag, and never create real offers, bookings or
+payments. The independent `bidding` flag does not enable this demo.
 
 The `item_requests` feature flag controls request discovery, creation and
 request-based offers. The `bidding` flag controls direct offers on listings that
@@ -330,8 +453,9 @@ confirmation still requires Resend webhook registration/signing-secret setup.
 Database-backed feature flags use one shared Supabase Realtime/WebSocket
 subscription per active app instance. Admin flag switches and the implemented
 `item_requests` / `bidding` consumers update without refresh, focus, or navigation.
-The current bidding route is the requests/offers implementation, not the earlier
-mock auction; the retained `mock_bidding` row does not activate a mock page.
+The `bidding` flag controls competitive listing auctions and continues to update
+their directory and owner-management view without refresh, focus, or navigation.
+The separate `mock_bidding` flag only controls the simulated demo route.
 
 Apply [migration 10](supabase/migrations/20261018000010_feature_flags_realtime.sql)
 to publish flag changes. The client waits for the database subscription before

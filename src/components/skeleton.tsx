@@ -6,6 +6,19 @@ export function Skeleton({ className = '', rounded = 'rounded-card' }: { classNa
   return <div className={`skeleton ${rounded} ${className}`} />;
 }
 
+export function ListingAiSkeleton() {
+  return (
+    <div role="status" aria-label="Generating AI suggestions" aria-live="polite" aria-busy="true" className="space-y-3 rounded-card border border-app p-4">
+      <span className="sr-only">Generating suggestions from your photos. You can keep editing.</span>
+      <div aria-hidden="true" className="space-y-3">
+        <Skeleton className="h-5 w-2/3" />
+        <Skeleton className="h-4 w-1/3" />
+        <Skeleton className="h-16 w-full" />
+      </div>
+    </div>
+  );
+}
+
 /** Mirrors ListingCard: 4:3 media, meta line, two-line title, rating, price. */
 export function ListingCardSkeleton() {
   return (

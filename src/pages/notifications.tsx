@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Bell, CheckCheck, Mail, Settings } from 'lucide-react';
+import { Bell, CheckCheck, Mail, Settings, CheckCircle2, Clock, CreditCard, Gavel, Trophy, TrendingUp, XCircle } from 'lucide-react';
 import { useAuth } from '@/auth-context';
 import { Alert, Button } from '@/components/ui';
 import { Card, CardContent } from '@/components/shadcn/card';
@@ -22,6 +22,10 @@ import {
 } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 import { useRouter, type Route } from '@/router';
+import {
+  fetchMarketplaceNotifications, markAllMarketplaceNotificationsRead, markMarketplaceNotificationRead,
+  type MarketplaceNotification,
+} from '@/lib/marketplace';
 
 const PAGE_SIZE = 25;
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -31,6 +35,8 @@ function notificationRoute(destination: string): Route | null {
   if (destination === '/requests') return { name: 'requests' };
   if (destination === '/bidding') return { name: 'bidding' };
   if (destination === '/profile') return { name: 'trust-profile' };
+  const auction = new RegExp(`^/bidding/(${UUID})$`, 'i').exec(destination);
+  if (auction) return { name: 'bidding-detail', id: auction[1] };
   const booking = new RegExp(`^/confirmation/(${UUID})$`, 'i').exec(destination);
   if (booking) return { name: 'confirmation', id: booking[1] };
   const conversation = new RegExp(`^/messages/(${UUID})$`, 'i').exec(destination);
@@ -42,6 +48,26 @@ function notificationRoute(destination: string): Route | null {
   return null;
 }
 
+function NotificationIcon({ notification }: { notification: AppNotification }) {
+  const event = notification.event_key?.split(':')[0];
+  const styles: Record<string, { icon: typeof Bell; tone: string }> = {
+    'auction-bid': { icon: Gavel, tone: 'text-accent bg-accent-soft' },
+    'auction-bid-accepted': { icon: CheckCircle2, tone: 'text-accent bg-accent-soft' },
+    'auction-outbid': { icon: TrendingUp, tone: 'text-error bg-error-soft' },
+    'auction-extended': { icon: Clock, tone: 'text-accent bg-accent-soft' },
+    'auction-closed': { icon: Gavel, tone: 'text-warning bg-warning-soft' },
+    'auction-winner': { icon: Trophy, tone: 'text-accent bg-accent-soft' },
+    'auction-not-selected': { icon: XCircle, tone: 'text-muted bg-app' },
+    'auction-payment-reminder': { icon: CreditCard, tone: 'text-warning bg-warning-soft' },
+  };
+  const style = styles[event ?? '']
+    ?? { icon: notification.title === 'Booking confirmed' ? CheckCircle2 : Bell, tone: 'text-accent bg-accent-soft' };
+  const Icon = style.icon;
+  return <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${style.tone}`}>
+    <Icon size={20} aria-hidden="true" />
+  </span>;
+}
+
 function relativeTime(value: string): string {
   const timestamp = new Date(value).getTime();
   if (!Number.isFinite(timestamp)) return value;
@@ -51,6 +77,112 @@ function relativeTime(value: string): string {
   if (Math.abs(seconds) < 3600) return formatter.format(Math.round(seconds / 60), 'minute');
   if (Math.abs(seconds) < 86400) return formatter.format(Math.round(seconds / 3600), 'hour');
   return formatter.format(Math.round(seconds / 86400), 'day');
+}
+
+function MarketplaceUpdates({ enabled }: { enabled: boolean }) {
+  const { navigate } = useRouter();
+  const [rows, setRows] = useState<MarketplaceNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const pageSize = 25;
+
+  const load = useCallback(async () => {
+    if (!enabled) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await fetchMarketplaceNotifications(pageSize, 0);
+      setRows(result);
+      setHasMore(result.length === pageSize);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not load request updates.');
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled]);
+
+  useEffect(() => {
+    if (enabled) void load();
+    else { setRows([]); setLoading(false); }
+  }, [enabled, load]);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const next = await fetchMarketplaceNotifications(pageSize, rows.length);
+      setRows((current) => [...current, ...next.filter((item) => !current.some((existing) => existing.id === item.id))]);
+      setHasMore(next.length === pageSize);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not load more request updates.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function openUpdate(notification: MarketplaceNotification) {
+    setBusy(notification.id);
+    setError(null);
+    try {
+      if (!notification.read_at) {
+        await markMarketplaceNotificationRead(notification.id);
+        setRows((current) => current.map((item) => item.id === notification.id
+          ? { ...item, read_at: new Date().toISOString() } : item));
+      }
+      navigate({ name: 'requests', tab: notification.negotiation_id ? 'offers' : 'mine' });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not open this request update.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function markAllRead() {
+    setBusy('all');
+    setError(null);
+    try {
+      await markAllMarketplaceNotificationsRead();
+      const timestamp = new Date().toISOString();
+      setRows((current) => current.map((item) => item.read_at ? item : { ...item, read_at: timestamp }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not mark request updates as read.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (!enabled) return null;
+  const unread = rows.filter((row) => !row.read_at).length;
+  return <section aria-labelledby="marketplace-updates-title" className="space-y-3">
+    <header className="flex flex-wrap items-center justify-between gap-2">
+      <div><h2 id="marketplace-updates-title" className="text-lg font-semibold text-main">Request and offer updates</h2>
+        <p className="text-xs text-sec">{unread} unread update{unread === 1 ? '' : 's'}</p></div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="ghost" onClick={() => void load()}>Refresh</Button>
+        <Button size="sm" variant="secondary" disabled={unread === 0 || busy !== null} loading={busy === 'all'} onClick={() => void markAllRead()}>Mark updates read</Button>
+      </div>
+    </header>
+    {error && <Alert tone="error" title="Request updates unavailable">{error}</Alert>}
+    {loading ? <div className="space-y-3" aria-busy="true">{[0, 1].map((index) => <Skeleton key={index} className="h-24 w-full" />)}</div>
+      : rows.length === 0 ? <Card><CardContent className="p-5 text-sm text-sec">No request or offer updates yet.</CardContent></Card>
+        : <div className="space-y-3">{rows.map((notification) => <Card key={notification.id}>
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2">
+              {!notification.read_at && <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden="true" />}
+              <h3 className="font-semibold text-main">{notification.title}</h3>
+              {!notification.read_at && <span className="text-xs font-medium text-accent">Unread</span>}
+            </div><p className="mt-1 text-sm text-sec">{notification.body}</p>
+              <time className="mt-2 block text-xs text-muted" dateTime={notification.created_at}>{relativeTime(notification.created_at)}</time>
+            </div>
+            <Button size="sm" variant="secondary" className="shrink-0" loading={busy === notification.id} onClick={() => void openUpdate(notification)}>View update</Button>
+          </CardContent>
+        </Card>)}
+          {hasMore && <div className="flex justify-center"><Button variant="secondary" loading={loadingMore} onClick={() => void loadMore()}>Load more updates</Button></div>}
+        </div>}
+  </section>;
 }
 
 export function NotificationsPage() {
@@ -256,20 +388,23 @@ export function NotificationsPage() {
         </div> : rows.length === 0 ? <Card><CardContent className="flex flex-col items-center gap-2 p-8 text-center">
           <Bell size={24} className="text-muted" aria-hidden="true" />
           <p className="font-semibold text-main">No notifications yet</p>
-          <p className="text-sm text-sec">Booking, message, request, and case updates will appear here.</p>
+          <p className="text-sm text-sec">Auction, booking, message, request, and case updates will appear here.</p>
         </CardContent></Card> : <div className="space-y-3">
           {rows.map((notification) => <Card key={notification.id}>
             <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  {!notification.read_at && <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden="true" />}
-                  <h2 className="font-semibold text-main">{notification.title}</h2>
-                  {!notification.read_at && <span className="text-xs font-medium text-accent">Unread</span>}
+              <div className="flex min-w-0 gap-3">
+                <NotificationIcon notification={notification} />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!notification.read_at && <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden="true" />}
+                    <h2 className="font-semibold text-main">{notification.title}</h2>
+                    {!notification.read_at && <span className="text-xs font-medium text-accent">Unread</span>}
+                  </div>
+                  <p className="mt-1 text-sm text-sec">{notification.body}</p>
+                  <time className="mt-2 block text-xs text-muted" dateTime={notification.created_at} title={new Date(notification.created_at).toLocaleString()}>
+                    {relativeTime(notification.created_at)}
+                  </time>
                 </div>
-                <p className="mt-1 text-sm text-sec">{notification.body}</p>
-                <time className="mt-2 block text-xs text-muted" dateTime={notification.created_at} title={new Date(notification.created_at).toLocaleString()}>
-                  {relativeTime(notification.created_at)}
-                </time>
               </div>
               <Button
                 size="sm"
@@ -287,6 +422,8 @@ export function NotificationsPage() {
           </div>}
         </div>}
       </section>
+
+      <MarketplaceUpdates enabled={preferences?.requests_in_app === true} />
 
       <section aria-labelledby="notification-preferences-title" className="space-y-3">
         <div>

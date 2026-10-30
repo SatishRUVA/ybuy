@@ -35,6 +35,28 @@ export interface RentalSettlement {
   last_error: string | null;
 }
 
+export interface BankPayoutStatus {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  created: number;
+  arrival_date: number | null;
+  failure_code: string | null;
+  method: string;
+  type: string;
+}
+
+export async function fetchBankPayoutStatus(): Promise<{ connected: boolean; payouts: BankPayoutStatus[] }> {
+  const { data, error } = await supabase.functions.invoke<{ error?: string; connected?: boolean; payouts?: BankPayoutStatus[] }>(
+    'owner-payout-status', { body: {} },
+  );
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+  if (typeof data?.connected !== 'boolean' || !Array.isArray(data.payouts)) throw new Error('Invalid Stripe payout status response.');
+  return { connected: data.connected, payouts: data.payouts };
+}
+
 export async function fetchRentalSettlement(bookingId: string): Promise<RentalSettlement | null> {
   const { data, error } = await supabase.from('rental_settlements')
     .select('booking_id,deposit_amount,owner_amount,refund_status,transfer_status,last_error').eq('booking_id', bookingId).maybeSingle();

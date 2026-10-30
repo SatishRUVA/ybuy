@@ -38,9 +38,9 @@ export function ProtectionPage() {
           </div>
           <div className="p-5 rounded-card-xl bg-card border border-app">
             <CheckCircle2 size={24} className="text-success mb-3" />
-            <h3 className="font-semibold text-main text-sm mb-1">Insurance Coverage</h3>
+            <h3 className="font-semibold text-main text-sm mb-1">Insurance fee</h3>
             <p className="text-xs text-sec leading-relaxed">
-              Insurance-backed coverage for high-value items where applicable. Provided by our partners.
+              When enabled, checkout charges 1% of the owner-declared item value per rental day and item.
             </p>
           </div>
         </div>

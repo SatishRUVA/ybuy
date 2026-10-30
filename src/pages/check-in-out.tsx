@@ -9,6 +9,7 @@ import { Button, Alert } from '@/components/ui';
 import { Skeleton } from '@/components/skeleton';
 import { SuccessIndicator } from '@/components/success-feedback';
 import { RentalSettlement } from '@/components/rental-settlement';
+import { BookingPickup } from '@/components/booking-pickup';
 import { ArrowLeft, Check, Camera, ArrowRight, AlertTriangle } from 'lucide-react';
 
 // Cosmetic checklist for the return-inspection wizard - not tied to any real per-item component
@@ -166,6 +167,7 @@ export function CheckInPage({ id }: { id: string }) {
             <p className="text-xs text-sec truncate">{listing.title}</p>
           </div>
         </div>
+        <div className="mb-4"><BookingPickup bookingId={booking.id} status={booking.status} /></div>
         <Alert tone="warning" className="mb-4">
           Photo capture and evidence storage are not available. This checklist is not saved; only the booking status is updated when you confirm handoff.
         </Alert>

@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f4">
+  <meta name="description" content="Three homepage composition options for the YBuy marketplace redesign.">
+  <title>YBuy | Choose a homepage direction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --ocean: #0e7c66;
+      --ocean-deep: #075646;
+      --ink: #17241f;
+      --muted: #64716b;
+      --line: #dce3de;
+      --paper: #f6f7f4;
+      --white: #fff;
+      --mint: #e8f3ee;
+      --coral: #c5654d;
+      --display: Manrope, sans-serif;
+      --body: "DM Sans", sans-serif;
+      font-family: var(--body);
+      color: var(--ink);
+      background: var(--paper);
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    button, a { font: inherit; }
+    button:focus-visible, a:focus-visible { outline: 3px solid var(--coral); outline-offset: 3px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px clamp(18px, 4vw, 56px); border-bottom: 1px solid var(--line); background: var(--white); }
+    .brand { display: flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; font-weight: 700; }
+    .brand img { width: 36px; height: 36px; object-fit: contain; }
+    .brand span { font-size: 15px; }
+    .topbar-note { color: var(--muted); font-size: 13px; }
+    main { max-width: 1600px; margin: 0 auto; padding: 42px clamp(18px, 4vw, 56px) 64px; }
+    .intro { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 26px; }
+    .intro h1 { max-width: 690px; margin: 0; font: 700 clamp(28px, 3.4vw, 46px)/1.12 var(--display); letter-spacing: 0; }
+    .intro p { max-width: 340px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .sample-note { margin: 0 0 18px; padding: 10px 12px; border-left: 2px solid var(--ocean); color: var(--muted); background: #eef4f0; font-size: 12px; }
+    .options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+    .option { min-width: 0; border-top: 2px solid var(--ink); background: var(--white); }
+    .option.is-selected { border-top-color: var(--ocean); }
+    .option-head { min-height: 96px; padding: 16px 16px 13px; }
+    .option-head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .option-head h2 { margin: 0; font: 700 17px/1.3 var(--display); letter-spacing: 0; }
+    .option-index { color: var(--ocean); font-size: 11px; font-weight: 700; }
+    .option-head p { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .preview { min-height: 492px; overflow: hidden; border-block: 1px solid var(--line); background: var(--paper); }
+    .mini-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; background: var(--white); border-bottom: 1px solid var(--line); }
+    .mini-brand { font: 800 13px var(--display); color: var(--ocean-deep); }
+    .mini-links { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 10px; white-space: nowrap; }
+    .mini-links strong { color: var(--ocean); font-weight: 700; }
+    .mini-pad { padding: 16px; }
+    .mini-kicker { color: var(--ocean); font-size: 9px; font-weight: 700; letter-spacing: .05em; }
+    .mini-title { margin: 5px 0 8px; font: 700 22px/1.08 var(--display); letter-spacing: 0; }
+    .mini-copy { max-width: 320px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .mini-search { display: grid; grid-template-columns: 1.2fr 1fr auto; align-items: center; gap: 6px; margin-top: 14px; padding: 7px; border: 1px solid var(--line); background: var(--white); }
+    .mini-field { min-width: 0; padding: 6px 7px; color: var(--muted); font-size: 9px; }
+    .mini-field + .mini-field { border-left: 1px solid var(--line); }
+    .mini-field b { display: block; margin-bottom: 2px; color: var(--ink); font-size: 9px; }
+    .mini-submit { border: 0; padding: 9px 10px; color: white; background: var(--ocean); font-size: 9px; font-weight: 700; }
+    .mini-cats { display: flex; gap: 6px; overflow: hidden; margin-top: 12px; color: var(--muted); font-size: 9px; white-space: nowrap; }
+    .mini-cats span { padding: 5px 8px; border-bottom: 1px solid var(--line); }
+    .mini-cats .active { border-bottom: 2px solid var(--ocean); color: var(--ocean-deep); font-weight: 700; }
+    .mini-section { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 18px 0 8px; }
+    .mini-section h3 { margin: 0; font: 700 13px var(--display); }
+    .mini-section span { color: var(--muted); font-size: 9px; }
+    .mini-feature { display: grid; grid-template-columns: 1.1fr 1fr; min-height: 134px; background: var(--white); }
+    .mini-feature img, .mini-row img, .journal-photo img { width: 100%; height: 100%; object-fit: cover; }
+    .mini-feature-copy { display: flex; flex-direction: column; justify-content: center; padding: 11px; }
+    .mini-feature-copy small, .mini-row small { color: var(--ocean); font-size: 8px; font-weight: 700; }
+    .mini-feature-copy b { margin: 4px 0; font: 700 12px/1.2 var(--display); }
+    .mini-feature-copy p { margin: 0; color: var(--muted); font-size: 9px; }
+    .mini-price { margin-top: 9px !important; color: var(--ink) !important; font-size: 10px !important; font-weight: 700; }
+    .owner-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; }
+    .owner-line a { color: var(--ocean); font-weight: 700; text-decoration: none; }
+
+    .neighborhood .mini-pad { padding: 0; }
+    .neighborhood-lead { display: grid; grid-template-columns: 1.05fr .95fr; min-height: 190px; background: #e9eee7; }
+    .neighborhood-copy { padding: 17px 14px; }
+    .neighborhood-copy .mini-title { font-size: 20px; }
+    .neighborhood-photo { min-height: 190px; }
+    .neighborhood-photo img { object-position: center; }
+    .area-line { display: flex; align-items: center; gap: 5px; margin-top: 12px; color: var(--ocean-deep); font-size: 9px; font-weight: 700; }
+    .local-list { padding: 12px 14px; background: var(--white); }
+    .mini-row { display: grid; grid-template-columns: 70px 1fr auto; align-items: center; gap: 9px; min-height: 62px; padding: 7px 0; border-top: 1px solid var(--line); }
+    .mini-row img { width: 70px; height: 48px; }
+    .mini-row b { display: block; margin-top: 2px; font-size: 10px; }
+    .mini-row em { color: var(--ink); font-size: 9px; font-style: normal; font-weight: 700; white-space: nowrap; }
+    .local-owner { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; padding: 10px; background: var(--mint); font-size: 9px; }
+    .local-owner strong { font-size: 10px; }
+    .local-owner a { color: var(--ocean-deep); font-weight: 700; text-decoration: none; }
+
+    .journal .mini-nav { background: #fbfaf6; }
+    .journal .mini-pad { padding: 13px; background: #fbfaf6; }
+    .journal-feature { display: grid; grid-template-columns: .9fr 1.1fr; gap: 10px; min-height: 177px; }
+    .journal-copy { display: flex; flex-direction: column; justify-content: center; }
+    .journal-copy .mini-title { font: 500 24px/1.02 Newsreader, Georgia, serif; }
+    .journal-copy .mini-copy { font-size: 10px; }
+    .journal-photo { min-height: 177px; overflow: hidden; }
+    .journal-search { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; padding: 8px; margin-top: 10px; background: white; border-block: 1px solid var(--line); }
+    .journal-search .mini-field { padding: 4px; }
+    .journal-collection { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 13px; }
+    .journal-collection figure { margin: 0; }
+    .journal-collection img { display: block; width: 100%; height: 65px; object-fit: cover; }
+    .journal-collection figcaption { padding-top: 4px; color: var(--muted); font-size: 8px; }
+
+    .option-foot { padding: 14px 16px 16px; }
+    .option-foot p { min-height: 32px; margin: 0 0 12px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .choose { width: 100%; min-height: 42px; border: 1px solid var(--ocean); padding: 9px 12px; color: var(--ocean-deep); background: var(--white); font-size: 12px; font-weight: 700; cursor: pointer; }
+    .choose:hover, .option.is-selected .choose { color: white; background: var(--ocean); }
+    .selection-status { min-height: 20px; margin: 16px 0 0; color: var(--ocean-deep); font-size: 13px; font-weight: 600; }
+    .footer-note { margin-top: 38px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.55; }
+    @media (max-width: 1040px) { .options { grid-template-columns: 1fr; } .preview { min-height: auto; } .option-head { min-height: auto; } .mini-pad { padding: 20px; } .neighborhood .mini-pad { padding: 0; } }
+    @media (max-width: 560px) {
+      .topbar { padding: 14px 16px; }
+      .topbar-note { max-width: 150px; text-align: right; font-size: 11px; }
+      main { padding: 26px 14px 44px; }
+      .intro { display: block; }
+      .intro p { margin-top: 12px; }
+      .mini-nav { padding-inline: 9px; }
+      .mini-links { gap: 7px; font-size: 8px; }
+      .mini-pad { padding: 12px; }
+      .mini-title { font-size: 19px; }
+      .mini-search, .journal-search { grid-template-columns: 1fr 1fr; }
+      .mini-submit { grid-column: 1 / -1; }
+      .neighborhood-lead { grid-template-columns: 1fr; }
+      .neighborhood-photo { min-height: 145px; }
+      .journal-feature { grid-template-columns: 1fr; }
+      .journal-photo { min-height: 155px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><img src="assets/logo.png" alt=""><span>YBuy redesign options</span></a>
+    <span class="topbar-note">Preview only. The production app is unchanged.</span>
+  </header>
+  <main>
+    <div class="intro">
+      <h1>Choose how YBuy should introduce the marketplace.</h1>
+      <p>Same Ocean Green identity, real marketplace controls, and two booking paths. The difference is the discovery composition.</p>
+    </div>
+    <p class="sample-note">All listings below are illustrative layout samples, not live inventory, prices, availability, ratings, or owner claims.</p>
+
+    <section class="options" aria-label="Homepage design directions">
+      <article class="option" data-option="atlas">
+        <header class="option-head"><div class="option-head-row"><h2>Search-first object atlas</h2><span class="option-index">01</span></div><p>Search leads; categories and one featured object make the inventory easy to scan.</p></header>
+        <div class="preview atlas">
+          <nav class="mini-nav" aria-label="Search-first preview navigation"><span class="mini-brand">YBuy</span><span class="mini-links"><strong>Browse</strong><span>Bookings</span><span>List an item</span></span></nav>
+          <div class="mini-pad">
+            <span class="mini-kicker">RENT WHAT YOU NEED</span>
+            <h3 class="mini-title">Good things, close by.</h3>
+            <p class="mini-copy">Find useful gear from people nearby. Clear dates, pickup area, and rental cost before you book.</p>
+            <div class="mini-search"><div class="mini-field"><b>What</b>Camera, tools, camping...</div><div class="mini-field"><b>Where</b>Choose an area</div><button class="mini-submit" type="button">Search</button></div>
+            <div class="mini-cats"><span class="active">Popular</span><span>Tools</span><span>Outdoor</span><span>Photo</span><span>Events</span></div>
+            <div class="mini-section"><h3>Featured rental</h3><span>View all</span></div>
+            <div class="mini-feature"><img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=700&amp;h=500&amp;fit=crop" alt="Illustrative camera listing photograph"><div class="mini-feature-copy"><small>EXAMPLE ITEM</small><b>Mirrorless camera kit</b><p>Pickup area shown before booking</p><p class="mini-price">$85 / day · example</p></div></div>
+            <div class="owner-line"><span>Have something useful to share?</span><a href="#atlas">List an item</a></div>
+          </div>
+        </div>
+        <footer class="option-foot"><p>Best when fast discovery and clear search are the main first-screen job.</p><button class="choose" type="button" data-choice="Search-first object atlas">Choose this direction</button></footer>
+      </article>
+
+      <article class="option" data-option="neighborhood">
+        <header class="option-head"><div class="option-head-row"><h2>Neighborhood exchange</h2><span class="option-index">02</span></div><p>Local context leads; pickup area and nearby objects explain the person-to-person value.</p></header>
+        <div class="preview neighborhood">
+          <nav class="mini-nav" aria-label="Neighborhood preview navigation"><span class="mini-brand">YBuy</span><span class="mini-links"><strong>Nearby</strong><span>Bookings</span><span>List an item</span></span></nav>
+          <div class="mini-pad">
+            <div class="neighborhood-lead"><div class="neighborhood-copy"><span class="mini-kicker">YOUR LOCAL RENTAL MARKET</span><h3 class="mini-title">Borrow from your neighbors.</h3><p class="mini-copy">Useful things, shared close to home. Exact pickup details stay private until an eligible booking.</p><div class="area-line">Selected area <span>Choose a city</span></div></div><div class="neighborhood-photo"><img src="https://images.pexels.com/photos/30413428/pexels-photo-30413428.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=700&amp;h=500&amp;fit=crop" alt="Illustrative power tool listing photograph"></div></div>
+            <div class="local-list"><div class="mini-section"><h3>Items in your area</h3><span>Change area</span></div>
+              <div class="mini-row"><img src="https://images.pexels.com/photos/5515482/pexels-photo-5515482.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=300&amp;h=200&amp;fit=crop" alt="Illustrative projector listing photograph"><div><small>EXAMPLE ITEM</small><b>Portable projector</b></div><em>$60/day*</em></div>
+              <div class="mini-row"><img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=300&amp;h=200&amp;fit=crop" alt="Illustrative camera listing photograph"><div><small>EXAMPLE ITEM</small><b>Camera kit</b></div><em>$85/day*</em></div>
+              <div class="local-owner"><strong>Own something people could use?</strong><a href="#neighborhood">List an item</a></div>
+            </div>
+          </div>
+        </div>
+        <footer class="option-foot"><p>Best when locality, pickup clarity, and equal owner participation should be the signature.</p><button class="choose" type="button" data-choice="Neighborhood exchange">Choose this direction</button></footer>
+      </article>
+
+      <article class="option" data-option="journal">
+        <header class="option-head"><div class="option-head-row"><h2>Editorial rental journal</h2><span class="option-index">03</span></div><p>A featured object sets the tone, with practical search immediately following it.</p></header>
+        <div class="preview journal">
+          <nav class="mini-nav" aria-label="Editorial preview navigation"><span class="mini-brand">YBuy</span><span class="mini-links"><strong>Discover</strong><span>Bookings</span><span>List an item</span></span></nav>
+          <div class="mini-pad">
+            <div class="journal-feature"><div class="journal-copy"><span class="mini-kicker">MADE TO BE SHARED</span><h3 class="mini-title">One good thing. Right when you need it.</h3><p class="mini-copy">Explore useful items from local owners, with the rental details up front.</p></div><div class="journal-photo"><img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=700&amp;h=600&amp;fit=crop" alt="Illustrative camera listing photograph"></div></div>
+            <div class="journal-search"><div class="mini-field"><b>Find an item</b>Camera, drill, tent...</div><div class="mini-field"><b>Set your area</b>City or ZIP</div><button class="mini-submit" type="button">Search</button></div>
+            <div class="mini-section"><h3>Start with what you need</h3><span>All categories</span></div>
+            <div class="journal-collection"><figure><img src="https://images.pexels.com/photos/30413428/pexels-photo-30413428.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=320&amp;h=180&amp;fit=crop" alt="Illustrative tools category"><figcaption>Tools &amp; repair</figcaption></figure><figure><img src="https://images.pexels.com/photos/5515482/pexels-photo-5515482.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=320&amp;h=180&amp;fit=crop" alt="Illustrative electronics category"><figcaption>Photo &amp; tech</figcaption></figure><figure><img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=320&amp;h=180&amp;fit=crop" alt="Illustrative outdoor category"><figcaption>Trips &amp; outdoors</figcaption></figure></div>
+            <div class="owner-line"><span>Share the things you already own.</span><a href="#journal">List an item</a></div>
+          </div>
+        </div>
+        <footer class="option-foot"><p>Best when the brand should feel curated without hiding search or owner entry.</p><button class="choose" type="button" data-choice="Editorial rental journal">Choose this direction</button></footer>
+      </article>
+    </section>
+    <p class="selection-status" role="status" aria-live="polite" id="selection-status">Select an option to mark your preference; this page does not modify YBuy.</p>
+    <p class="footer-note">Preview-only composition study. No live inventory, owner identity, availability, booking, bidding, offers, or prices are represented. Production routes and data remain untouched until a direction is selected.</p>
+  </main>
+  <script>
+    document.querySelectorAll('[data-choice]').forEach((button) => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.option').forEach((option) => option.classList.remove('is-selected'));
+        button.closest('.option').classList.add('is-selected');
+        document.querySelector('#selection-status').textContent = `Selected: ${button.dataset.choice}. The production app has not been changed.`;
+      });
+    });
+  </script>
+</body>
+</html>

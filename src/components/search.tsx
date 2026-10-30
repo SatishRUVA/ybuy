@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, MapPin, ChevronDown, Check, LocateFixed, Map } from 'lucide-react';
+import { Search, MapPin, ChevronDown, Check, LocateFixed } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useTheme } from '@/theme-context';
 import { Palette, Moon, Check as CheckIcon } from 'lucide-react';
-import { findCities, haversineMiles, locationLabel, type MarketplaceLocation } from '@/lib/geo';
+import { findCities, haversineMiles, locationLabel, todayIso, type MarketplaceLocation } from '@/lib/geo';
 import { useMarketplaceLocation } from '@/location-context';
 import { DateRangePicker } from '@/components/date-range-picker';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/shadcn/select';
 import { SEARCH_RADII, parseSearchRadius, savedSearchState, saveSearchState, type SearchRadius } from '@/lib/search-state';
 
 export interface SearchParams {
@@ -15,16 +17,24 @@ export interface SearchParams {
   radius: SearchRadius;
 }
 
-export function SearchRadiusSelect({ value, onChange, label = 'Search radius' }: {
-  value: SearchRadius; onChange: (value: SearchRadius) => void; label?: string;
+export function SearchRadiusSelect({ value, onChange, label = 'Search radius', disabled = false }: {
+  value: SearchRadius; onChange: (value: SearchRadius) => void; label?: string; disabled?: boolean;
 }) {
   return (
-    <select aria-label={label} value={value === null ? 'any' : value}
-      onChange={(event) => onChange(parseSearchRadius(event.target.value))}
-      className="h-11 w-full min-w-0 rounded-card border border-app bg-card px-3 text-sm font-medium text-main focus-visible:outline-accent">
-      {SEARCH_RADII.map((miles) => <option key={miles} value={miles}>Within {miles} miles</option>)}
-      <option value="any">Any distance</option>
-    </select>
+    <div className="search-radius-wrap relative min-w-0">
+      <MapPin size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-accent" />
+      <Select value={value === null ? 'any' : String(value)} disabled={disabled} onValueChange={(next) => onChange(parseSearchRadius(next))}>
+        <SelectTrigger aria-label={`${label}: ${value === null ? 'any distance' : `within ${value} miles`}`}
+          title={disabled ? 'Choose a location before setting a distance' : label}
+          className="search-radius-select h-11 pl-9 pr-3 text-sm font-semibold">
+          <SelectValue>{value === null ? 'Any distance' : `${value} mi`}</SelectValue>
+        </SelectTrigger>
+        <SelectContent align="start" className="search-radius-content min-w-[11rem]">
+          {SEARCH_RADII.map((miles) => <SelectItem key={miles} value={String(miles)} className="min-h-11">Within {miles} miles</SelectItem>)}
+          <SelectItem value="any" className="min-h-11">Any distance</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -42,13 +52,14 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
   variant?: 'hero' | 'compact'; defaultValue?: string; initialStartDate?: string; initialEndDate?: string;
   initialRadius?: SearchRadius; radius?: SearchRadius; onRadiusChange?: (radius: SearchRadius) => void;
 }) {
-  const { location, selectCity, requestBrowserLocation, clearLocation } = useMarketplaceLocation();
+  const { location, selectCity, requestBrowserLocation, resolveInitialLocation } = useMarketplaceLocation();
   const [what, setWhat] = useState(defaultValue);
   const [cityQuery, setCityQuery] = useState('');
   const [cities, setCities] = useState<MarketplaceLocation[]>([]);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [searchingCities, setSearchingCities] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [initialLocationStatus, setInitialLocationStatus] = useState<'idle' | 'locating' | 'manual'>('idle');
   const [locationPermission, setLocationPermission] = useState<PermissionState | 'unavailable'>('prompt');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [startDate, setStartDate] = useState(initialStartDate ?? '');
@@ -59,12 +70,31 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
   // On small screens the compact variant starts as a one-line summary and expands on tap,
   // so the search page keeps its results above the fold.
   const [mobileExpanded, setMobileExpanded] = useState(variant === 'hero');
+  const reduceMotion = useReducedMotion();
   const desktopLocRef = useRef<HTMLDivElement>(null);
   const mobileLocRef = useRef<HTMLDivElement>(null);
   const locationTriggerRef = useRef<HTMLButtonElement | null>(null);
 
+  useEffect(() => {
+    if (variant !== 'hero' || location.source !== 'NONE') return;
+    let active = true;
+    setInitialLocationStatus('locating');
+    void resolveInitialLocation().then((resolved) => {
+      if (active) setInitialLocationStatus(resolved ? 'idle' : 'manual');
+    }).catch(() => {
+      if (active) setInitialLocationStatus('manual');
+    });
+    return () => { active = false; };
+  }, [variant, location.source, resolveInitialLocation]);
+
   useEffect(() => { setWhat(defaultValue); }, [defaultValue]);
-  useEffect(() => { setStartDate(initialStartDate ?? ''); setEndDate(initialEndDate ?? ''); }, [initialStartDate, initialEndDate]);
+  useEffect(() => {
+    const today = todayIso();
+    const safeStart = initialStartDate && initialStartDate >= today ? initialStartDate : '';
+    const safeEnd = safeStart && initialEndDate && initialEndDate > safeStart ? initialEndDate : '';
+    setStartDate(safeStart);
+    setEndDate(safeEnd);
+  }, [initialStartDate, initialEndDate]);
   useEffect(() => {
     if (variant === 'hero') saveSearchState({ ...savedSearchState(), q: what, start: startDate, end: endDate, radius });
   }, [variant, what, startDate, endDate, radius]);
@@ -97,6 +127,7 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
 
   useEffect(() => {
     if (!showLocMenu) return;
+    setLocationError(null);
     const controller = new AbortController();
     const query = cityQuery.trim();
     if (query.length < 2 && location.source !== 'BROWSER') {
@@ -109,7 +140,6 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
     const nearbyLookup = !query && location.source === 'BROWSER'
       && location.latitude !== undefined && location.longitude !== undefined;
     const timer = setTimeout(() => {
-      setLocationError(null);
       void findCities(
         query || location.city,
         controller.signal,
@@ -157,6 +187,11 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
   }, [showLocMenu]);
 
   function runSearch() {
+    if (location.source === 'NONE') {
+      setLocationError('Choose a city or ZIP code, or enable location access, to search nearby.');
+      setShowLocMenu(true);
+      return;
+    }
     onSearch?.({ keyword: what, location, startDate, endDate, radius });
     if (variant === 'compact') setMobileExpanded(false);
   }
@@ -175,14 +210,19 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
     }
   }
 
-  function chooseCity(city: MarketplaceLocation) {
-    selectCity(city);
-    onLocationChange?.(city);
-    setCityQuery('');
-    setShowLocMenu(false);
+  async function chooseCity(city: MarketplaceLocation) {
+    try {
+      await selectCity(city);
+      onLocationChange?.(city);
+      setLocationError(null);
+      setCityQuery('');
+      setShowLocMenu(false);
+    } catch (error) {
+      setLocationError(error instanceof Error ? error.message : 'Could not select this city.');
+    }
   }
 
-  const displayLocation = location.source === 'IP' ? `Near ${locationLabel(location)}` : locationLabel(location);
+  const displayLocation = location.source === 'IP' ? `Near ${locationLabel(location)}` : location.city ? locationLabel(location) : initialLocationStatus === 'locating' ? 'Finding nearby…' : 'Choose your area';
 
   const isSelectedCity = (city: MarketplaceLocation) =>
     location.source === 'USER_SELECTED' && city.city === location.city && city.state === location.state && city.postalCode === location.postalCode;
@@ -199,7 +239,11 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
 
   // z-[210] clears the shared dim Overlay (z-200) so the menu never renders under its own backdrop.
   const locationMenu = (
-    <div role="dialog" aria-modal="true" aria-label="Choose location" onKeyDown={(event) => {
+    <motion.div role="dialog" aria-modal="true" aria-label="Choose location"
+      initial={reduceMotion ? false : { opacity: 0, y: 7, scale: 0.99 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+      onKeyDown={(event) => {
       if (event.key === 'Escape') { event.stopPropagation(); setShowLocMenu(false); }
       if (event.key === 'Tab') {
         const controls = event.currentTarget.querySelectorAll<HTMLElement>('input, button:not(:disabled)');
@@ -220,7 +264,7 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
               type="button"
               key={`${city.city}|${city.state}|${city.country}|${city.postalCode ?? ''}`}
               onClick={() => chooseCity(city)}
-              className={`w-full flex items-center justify-between gap-2 min-h-10 px-2 rounded-card text-left text-sm transition-colors duration-fast ${
+              className={`w-full flex items-center justify-between gap-2 min-h-11 px-2 rounded-card text-left text-sm transition-colors duration-fast ${
                 selected ? 'bg-accent-soft text-accent font-semibold' : 'text-main hover:bg-subtle'
               }`}
             >
@@ -232,22 +276,16 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
             </button>
           );
         })}
-        {!searchingCities && cities.length === 0 && !locationError && <p role="status" className="px-2 py-2 text-xs text-sec">{cityQuery.trim().length >= 2 ? 'No matching location. Try another city or postal code.' : 'Enter a city or ZIP/postal code to search.'}</p>}
+        {!searchingCities && cityQuery.trim().length >= 2 && cities.length === 0 && !locationError && <p role="status" className="px-2 py-2 text-xs text-sec">No matching location. Try another search.</p>}
         {locationError && <p role="status" className="px-2 py-2 text-xs text-error">{locationError}</p>}
       </div>
       <div className="mt-1 pt-2 border-t border-app">
-        {locationPermission === 'denied' && <p className="px-2 pb-2 text-xs text-sec">Location access is blocked. Allow it in browser settings, or enter a city or ZIP code above.</p>}
-        <button type="button" onClick={() => void chooseBrowserLocation()} disabled={locating || locationPermission === 'denied'} className="w-full flex items-center gap-2.5 min-h-10 px-2 rounded-card text-left text-sm font-medium text-main hover:bg-subtle disabled:opacity-60">
+        <button type="button" onClick={() => void chooseBrowserLocation()} disabled={locating || locationPermission === 'denied'} className="w-full flex items-center gap-2.5 min-h-11 px-2 rounded-card text-left text-sm font-medium text-main hover:bg-subtle disabled:opacity-60">
           <LocateFixed size={16} className="text-accent shrink-0" />
-          {locating ? 'Finding your city…' : locationPermission === 'denied' ? 'Location blocked' : 'Use my current location'}
+          {locating ? 'Finding your location…' : locationPermission === 'denied' ? 'Location blocked in browser settings' : 'Use current location'}
         </button>
-        {location.source !== 'NONE' && (
-          <button type="button" onClick={() => { clearLocation(); onLocationChange?.({ city: '', state: '', country: '', source: 'NONE' }); setShowLocMenu(false); }} className="w-full flex items-center gap-2.5 min-h-10 px-2 rounded-card text-left text-xs font-medium text-sec hover:bg-subtle hover:text-main">
-            <Map size={14} className="text-muted shrink-0" />Browse without a location
-          </button>
-        )}
       </div>
-    </div>
+    </motion.div>
   );
 
   return (
@@ -261,11 +299,11 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
       )}
       {/* Desktop: one pill, three segments, one action. Segments light up on hover/focus. */}
       <div
-        className={`search-control hidden sm:flex flex-wrap gap-y-2 items-center w-full min-w-0 glass-surface border border-app rounded-card-lg shadow-xs
+        className={`search-control hidden sm:grid items-center w-full min-w-0 glass-surface border border-app rounded-card-lg shadow-xs
           transition-shadow duration-standard ease-out focus-within:shadow-hover hover:shadow-hover
           ${variant === 'hero' ? 'p-1.5' : 'p-1'}`}
       >
-        <div className="search-input-shell flex-1 min-w-[10rem] flex items-center gap-2.5 pl-4 pr-3 h-11 rounded-card transition-colors duration-fast hover:bg-subtle focus-within:bg-subtle">
+        <div className="search-input-shell search-field-keyword flex min-w-0 items-center gap-2.5 pl-4 pr-3 h-12 rounded-card transition-colors duration-fast hover:bg-subtle focus-within:bg-subtle">
           <Search size={18} className="text-sec shrink-0" />
           <div className="flex-1 min-w-0">
             <label htmlFor="search-what" className="sr-only">Search for items to rent</label>
@@ -282,32 +320,34 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
           </div>
         </div>
 
-        <span className="w-px h-6 bg-[var(--border)] shrink-0" aria-hidden="true" />
+        <span className="search-field-divider w-px h-7 bg-[var(--border)] shrink-0" aria-hidden="true" />
 
-        <div ref={desktopLocRef} className="relative min-w-0 shrink-0">
+        <div ref={desktopLocRef} className="search-field-location relative min-w-0">
           <button
             onClick={toggleLocation}
             aria-haspopup="dialog"
             aria-expanded={showLocMenu}
-            className="flex items-center gap-2 px-4 h-11 rounded-card text-sm font-medium text-main whitespace-nowrap transition-colors duration-fast hover:bg-subtle"
+            className="flex w-full min-w-0 items-center gap-2 px-3 h-12 rounded-card text-sm font-medium text-main transition-colors duration-fast hover:bg-subtle"
           >
             {location.source === 'BROWSER' ? <LocateFixed size={16} className="shrink-0 text-accent" /> : <MapPin size={16} className="shrink-0 text-accent" />}
-            <span className="max-w-32 truncate">{displayLocation}</span>
+            <span className="min-w-0 flex-1 truncate text-left">{displayLocation}</span>
             <ChevronDown size={14} className={`text-muted transition-transform duration-fast ${showLocMenu ? 'rotate-180' : ''}`} />
           </button>
           {showLocMenu && locationMenu}
         </div>
 
-        <div className="w-36 shrink-0">
-          <SearchRadiusSelect value={radius} onChange={changeRadius} />
+        <div className="search-field-radius min-w-0">
+          <SearchRadiusSelect value={radius} onChange={changeRadius} disabled={location.source === 'NONE' || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)} />
         </div>
-        <div className="min-w-0 shrink-0 ml-auto">
+        <div className="search-field-dates min-w-0">
           <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
         </div>
 
         <button
           onClick={runSearch}
-          className="ml-1 shrink-0 inline-flex items-center gap-2 h-11 px-5 rounded-card bg-accent text-accent-text font-semibold text-sm hover:bg-accent-hover active:scale-[0.98] transition-all duration-fast"
+          disabled={location.source === 'NONE'}
+          title={location.source === 'NONE' ? 'Choose a location before searching' : undefined}
+          className="search-field-submit inline-flex items-center justify-center gap-2 h-12 px-5 rounded-card bg-accent text-accent-text font-semibold text-sm hover:bg-accent-hover active:scale-[0.98] transition-all duration-fast disabled:cursor-not-allowed disabled:opacity-55"
         >
           <Search size={16} />
           <span>Search</span>
@@ -316,7 +356,9 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
 
       {/* Mobile: compact summary that expands into the full form. */}
       <div className="sm:hidden">
+        <AnimatePresence initial={false} mode="wait">
         {!mobileExpanded ? (
+          <motion.div key="search-summary" initial={reduceMotion ? false : { opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={reduceMotion ? undefined : { opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
           <button
             onClick={() => setMobileExpanded(true)}
             className="w-full flex items-center gap-3 h-12 px-4 rounded-card-lg glass-surface border border-app shadow-xs text-left active:scale-[0.99] transition-transform duration-fast"
@@ -329,9 +371,9 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
               <span className="block truncate">{displayLocation}</span>
               <span className="block">{radius === null ? 'Any distance' : `Within ${radius} miles`}</span>
             </span>
-          </button>
+          </button></motion.div>
         ) : (
-          <div className="rounded-card-xl glass-surface border border-app shadow-card p-3.5 space-y-3 animate-modal">
+          <motion.div key="search-expanded" initial={reduceMotion ? false : { opacity: 0, y: 8, scale: 0.99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduceMotion ? undefined : { opacity: 0, y: -5 }} transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }} className="rounded-card-xl glass-surface border border-app shadow-card p-3.5 space-y-3">
             <div className="search-input-shell flex items-center gap-2.5 h-11 px-3 rounded-card bg-subtle">
               <Search size={16} className="text-sec shrink-0" />
               <input
@@ -352,7 +394,7 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
                 className="w-full flex items-center justify-between h-11 px-3 rounded-card bg-subtle text-sm font-medium text-main"
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <MapPin size={15} className="text-accent" />
+                  {location.source === 'BROWSER' ? <LocateFixed size={15} className="text-accent" /> : <MapPin size={15} className="text-accent" />}
                   <span className="truncate">{displayLocation}</span>
                 </span>
                 <ChevronDown size={14} className={`text-muted transition-transform duration-fast ${showLocMenu ? 'rotate-180' : ''}`} />
@@ -360,7 +402,7 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
               {showLocMenu && locationMenu}
             </div>
 
-            <SearchRadiusSelect value={radius} onChange={changeRadius} />
+            <SearchRadiusSelect value={radius} onChange={changeRadius} disabled={location.source === 'NONE' || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)} />
 
             <div className="px-1">
               <DateRangePicker
@@ -372,16 +414,25 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
             </div>
             <button
               onClick={runSearch}
-              className="w-full h-12 rounded-card bg-accent text-accent-text font-semibold text-sm active:scale-[0.99] transition-transform duration-fast flex items-center justify-center gap-2"
+              disabled={location.source === 'NONE'}
+              title={location.source === 'NONE' ? 'Choose a location before searching' : undefined}
+              className="w-full h-12 rounded-card bg-accent text-accent-text font-semibold text-sm active:scale-[0.99] transition-transform duration-fast flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-55"
             >
               <Search size={16} />
               Search
             </button>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
       </div>
-      <p className={`mt-2 text-xs ${variant === 'compact' && !mobileExpanded ? 'hidden sm:block' : ''} ${variant === 'hero' ? 'text-white/90' : 'text-sec'}`}>
-        Dates are optional.{location.source === 'NONE' ? ' Choose a location to apply your radius, or search all locations.' : ' Distances are approximate; exact pickup addresses stay private.'}
+      <p role={initialLocationStatus === 'locating' ? 'status' : undefined} className={`mt-2 text-xs ${variant === 'compact' && !mobileExpanded ? 'hidden sm:block' : ''} ${variant === 'hero' ? 'text-white/90' : 'text-sec'}`}>
+        {initialLocationStatus === 'locating' && location.source === 'NONE'
+          ? 'Finding your area… You can still search while we check.'
+          : location.source === 'IP'
+            ? `Approximate area: ${locationLabel(location)}. Choose a city to refine your distance.`
+            : location.source === 'NONE'
+              ? 'We couldn’t determine your location. Choose a city or ZIP code before searching nearby.'
+              : 'Dates are optional. Distances are approximate; exact pickup addresses stay private.'}
       </p>
     </div>
   );

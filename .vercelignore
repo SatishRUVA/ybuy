@@ -5,6 +5,8 @@ test-results-local
 playwright-hosted-report
 test-results-hosted
 test-results-settlement
+test-results-private-offers
+test-results-session
 playwright*.config.ts
 supabase
 tests
@@ -21,4 +23,5 @@ graphify-out
 README.md
 .mcp.json
 .21st
+.tmp-auction
 vite.config.ts.timestamp-*

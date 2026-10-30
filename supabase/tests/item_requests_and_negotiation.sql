@@ -12,12 +12,32 @@ insert into auth.sessions (id, user_id) values
   ('b2000000-0000-4000-8000-000000000003', 'b1000000-0000-4000-8000-000000000003');
 insert into public.categories (id, name) values
   ('b3000000-0000-4000-8000-000000000001', 'Marketplace test category');
+-- This rollback-only test fixture establishes the offer bounds it exercises.
+update public.app_settings set value='true'::jsonb where key='listing_offers_configured';
+update public.app_settings set value='0.5'::jsonb where key in ('listing_offer_below_pct','listing_offer_above_pct');
 insert into public.listings (
-  id, owner_id, category_id, title, price_per_day, deposit, available_quantity, negotiation_enabled, status,estimated_value,item_condition
+  id, owner_id, category_id, title, description, price_per_day, deposit, available_quantity,
+  negotiation_enabled, status, estimated_value, item_condition, availability_start, availability_end
 ) values (
   'b4000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000002',
-  'b3000000-0000-4000-8000-000000000001', 'Marketplace test item', 40, 10, 2, true, 'published',200,'good'
+  'b3000000-0000-4000-8000-000000000001', 'Marketplace test item',
+  'A test listing for request and offer validation.', 40, 10, 2, false, 'draft', 200, 'good', current_date, current_date+30
 );
+insert into public.listing_images(listing_id,url,sort_order)
+values ('b4000000-0000-4000-8000-000000000001','https://example.test/marketplace-test.jpg',0);
+insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,latitude,longitude)
+values ('b4000000-0000-4000-8000-000000000001','b1000000-0000-4000-8000-000000000002',
+ 'Private test pickup','Dallas','TX','75201',32.78,-96.8);
+update public.listings set status='published' where id='b4000000-0000-4000-8000-000000000001';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"b1000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"b2000000-0000-4000-8000-000000000002","exp":4102444800}';
+select lives_ok($$select public.owner_save_offer_preferences(
+  'b4000000-0000-4000-8000-000000000001',
+  (select revision from public.listings where id='b4000000-0000-4000-8000-000000000001'),
+  jsonb_build_object('negotiation_enabled',true,'offer_minimum_daily',20,'offer_maximum_daily',60,
+    'offer_target_daily',40,'offer_start_date',current_date,'offer_end_date',current_date+30,'offer_expiration_hours',72)
+ )$$,'Test owner saves policy-valid listing offers');
+reset role;
 update public.feature_flags set enabled = false where key in ('item_requests', 'bidding');
 
 set local role authenticated;
@@ -112,3 +132,6 @@ select is((select status from public.item_requests where id = 'b5000000-0000-400
 
 select * from finish();
 rollback;
+
+
+

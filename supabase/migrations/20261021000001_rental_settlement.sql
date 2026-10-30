@@ -2,9 +2,9 @@
 alter table public.bookings add column return_confirmed_at timestamptz;
 
 create unique index payments_checkout_unique on public.payments(stripe_checkout_session_id)
-  where stripe_checkout_session_id is not null;
+  where stripe_checkout_session_id is not null and stripe_checkout_session_id <> 'demo_seed';
 create unique index payments_intent_unique on public.payments(stripe_payment_intent_id)
-  where stripe_payment_intent_id is not null;
+  where stripe_payment_intent_id is not null and stripe_payment_intent_id <> 'demo_seed';
 
 create table public.owner_connect_accounts (
   owner_id uuid primary key references public.profiles(id),

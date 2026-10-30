@@ -1,16 +1,24 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { loadTestActors } from './test-accounts';
 
-const status = JSON.parse(execSync('npx supabase status --output json', {
-  encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-}));
-if (status.API_URL !== 'http://127.0.0.1:54321') throw new Error('These fixtures require the isolated local backend.');
+const hosted = process.env.YBUY_E2E_HOSTED === 'true';
+const cliOptions = { encoding: 'utf8' as const, stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'] };
+const hostedApiUrl = 'https://jzyjmsixfuwzfnntewqn.supabase.co';
+const localApiUrl = 'http://localhost:54321';
+const keys = hosted ? JSON.parse(execSync('pnpm exec supabase projects api-keys --project-ref jzyjmsixfuwzfnntewqn --output json', cliOptions)) as { name: string; api_key: string }[] : [];
+const localStatus = hosted ? null : JSON.parse(execSync('pnpm exec supabase status --output json', cliOptions));
+if (localStatus && new URL(localStatus.API_URL).port !== '54321') throw new Error('These fixtures require the isolated local backend.');
+const status = hosted ? {
+  API_URL: hostedApiUrl,
+  ANON_KEY: keys.find((key) => key.name === 'anon')?.api_key,
+  SERVICE_ROLE_KEY: keys.find((key) => key.name === 'service_role')?.api_key,
+} : { ...localStatus, API_URL: localApiUrl };
 const options = { auth: { persistSession: false, autoRefreshToken: false } };
 const admin = createClient(status.API_URL, status.SERVICE_ROLE_KEY, options);
-const actors: { id: string; email: string; password: string }[] = JSON.parse(readFileSync('ybuy-test-accounts.local','utf8')).accounts;
+const actors = loadTestActors(hosted);
 
 async function signIn(page: Page, actor: { email: string; password: string }) {
   await page.goto('/profile');
@@ -23,6 +31,7 @@ async function signIn(page: Page, actor: { email: string; password: string }) {
 }
 
 test('concurrent genuine local signups receive distinct immutable Customer IDs', async ({ page }) => {
+  test.skip(hosted, 'Hosted Auth rate-limits public signups; run this concurrency check against local Auth.');
   const run = randomUUID();
   const clients = Array.from({ length: 6 }, () => createClient(status.API_URL, status.ANON_KEY, options));
   const created: string[] = [];
@@ -88,32 +97,41 @@ test('real coordinate search honors five-mile default, optional dates, expansion
   const start = new Date(Date.now()+10*86400000).toISOString().slice(0,10);
   const end = new Date(Date.now()+12*86400000).toISOString().slice(0,10);
   try {
-    for (const [label,latitude] of [['Near',0.05],['Far',0.10]] as const) {
+    for (const [label,latitude] of [['Near',32.85],['Far',32.90]] as const) {
       const listing = await ownerApi.from('listings').insert({
         owner_id: owner.id,category_id: category.data!.id,title: `${keyword} ${label}`,price_per_day: 10,
         description: 'Isolated coordinate discovery fixture.',status: 'draft',location_label: 'Different city labels',
-        location_lat: latitude,location_lng: 0,available_quantity: 1,estimated_value:200,item_condition:'good',
+        location_lat: latitude,location_lng: -96.8,available_quantity: 1,estimated_value:200,item_condition:'good',
+        availability_start: start,availability_end: end,
       }).select('id').single();
       expect(listing.error).toBeNull();
       listingIds.push(listing.data!.id);
+      expect((await ownerApi.from('listing_images').insert({
+        listing_id: listing.data!.id, url: `https://example.test/${label.toLowerCase()}-geo-fixture.jpg`, sort_order: 0,
+      })).error).toBeNull();
+      expect((await ownerApi.from('listing_pickup_locations').insert({
+        listing_id: listing.data!.id, owner_id: owner.id, address: 'Private test pickup', city: 'Test city',
+        state: 'TX', postal_code: '75001', country: 'US', latitude, longitude: -96.8,
+      })).error).toBeNull();
       expect((await ownerApi.from('listings').update({ status: 'published' }).eq('id',listing.data!.id)).error).toBeNull();
     }
     expect((await ownerApi.from('listing_availability').insert({ listing_id: listingIds[0], date: start, is_available: false })).error).toBeNull();
-    await page.goto(`/search?q=${keyword}&lat=0&lng=0`);
+    await page.goto(`/search?q=${keyword}&lat=32.8&lng=-96.8`);
     await expect(page.locator(`a[href="/listing/${listingIds[0]}"]`)).toBeVisible();
     await expect(page.locator(`a[href="/listing/${listingIds[1]}"]`)).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Within 5 mi' })).toBeVisible();
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('ybuy-marketplace-location')!).latitude)).toBe(0);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('ybuy-marketplace-location')!).latitude)).toBe(32.8);
     await page.reload();
     await expect(page.locator(`a[href="/listing/${listingIds[0]}"]`)).toBeVisible();
     await page.getByRole('button', { name: /^Filters/ }).click();
-    await page.getByLabel('Max distance').selectOption('10');
+    await page.getByLabel(/^Max distance:/).click();
+    await page.getByRole('option', { name: 'Within 10 miles', exact: true }).click();
     await expect(page.locator(`a[href="/listing/${listingIds[1]}"]`)).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('real-radius-expanded.png') });
-    await page.goto(`/search?q=${keyword}&lat=0&lng=0&start=${start}&end=${end}`);
-    await expect(page.getByRole('heading', { name: 'No matching items near Selected location' })).toBeVisible();
+    await page.goto(`/search?q=${keyword}&lat=32.8&lng=-96.8&start=${start}&end=${end}&radius=5`);
+    await expect(page.getByRole('heading', { name: "Couldn't find what you need?" })).toBeVisible();
     await expect(page.locator(`a[href="/listing/${listingIds[0]}"]`)).toHaveCount(0);
-    await page.getByRole('button', { name: 'Expand search radius' }).click();
+    await page.getByRole('button', { name: 'Search 10 miles', exact: true }).click();
     await expect(page.locator(`a[href="/listing/${listingIds[1]}"]`)).toBeVisible();
     await expect(page.locator(`a[href="/listing/${listingIds[0]}"]`)).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('real-date-availability.png') });
@@ -209,17 +227,39 @@ test('real request form suggests existing nearby listings and persists a located
       const category=await ownerApi.from('categories').select('id').limit(1).single();
       expect(category.error).toBeNull();
       const title=`RequestQA ${randomUUID()}`;
+      const availabilityStart=new Date(Date.now()+86400000).toISOString().slice(0,10);
+      const availabilityEnd=new Date(Date.now()+90*86400000).toISOString().slice(0,10);
       let listingId:string|undefined;
       let requestId:string|undefined;
       try{
         expect((await admin.from('feature_flags').update({enabled:true}).eq('key','item_requests')).error).toBeNull();
+        await page.routeWebSocket('**/realtime/v1/websocket**', socket => {
+          socket.onMessage(message => {
+            const [joinRef, ref, topic, event, payload] = JSON.parse(String(message));
+            if (event === 'phx_join') {
+              socket.send(JSON.stringify([joinRef, ref, topic, 'phx_reply', {
+                status: 'ok', response: { postgres_changes: payload.config.postgres_changes.map((filter: object) => ({ ...filter, id: 1 })) },
+              }]));
+            } else if (event === 'heartbeat' || event === 'phx_leave') {
+              socket.send(JSON.stringify([joinRef, ref, topic, 'phx_reply', { status: 'ok', response: {} }]));
+            }
+          });
+        });
         const listing=await ownerApi.from('listings').insert({
           owner_id:owner.id,category_id:category.data!.id,title,description:'Isolated nearby request matching fixture.',
-          price_per_day:10,deposit:0,estimated_value:200,item_condition:'good',status:'published',
+          price_per_day:10,deposit:0,estimated_value:200,item_condition:'good',status:'draft',
+          availability_start:availabilityStart,availability_end:availabilityEnd,
           location_label:'Dallas, Texas',location_lat:32.8,location_lng:-96.8,
         }).select('id').single();
         expect(listing.error).toBeNull();
         listingId=listing.data!.id;
+        expect((await ownerApi.from('listing_images').insert({ listing_id:listingId,url:'https://example.test/request-fixture.jpg',sort_order:0 })).error).toBeNull();
+        expect((await ownerApi.from('listing_pickup_locations').insert({
+          listing_id:listingId,owner_id:owner.id,address:'Private test pickup',city:'Dallas',state:'TX',postal_code:'75201',country:'US',latitude:32.8,longitude:-96.8,
+        })).error).toBeNull();
+        const published=await ownerApi.from('listings').update({ status:'published' }).eq('id',listingId).select('status').single();
+        expect(published.error).toBeNull();
+        expect(published.data!.status).toBe('published');
         await page.route('**/src/lib/geo.ts*',async route=>{
           const response=await route.fetch();
           await route.fulfill({response,body:(await response.text()).replace(/const key = [^\n]+;/g,'const key = "test-map-key";')});
@@ -250,9 +290,13 @@ test('real request form suggests existing nearby listings and persists a located
         expect(request.error).toBeNull();
         requestId=request.data!.id;
         expect(request.data).toMatchObject({location_lat:32.8,location_lng:-96.8,radius_miles:5});
+        await expect(page.getByRole('button',{name:'Continue exploring',exact:true})).toBeVisible();
         await page.getByRole('button',{name:'View my requests',exact:true}).click();
         await page.getByRole('tab',{name:'My requests',exact:true}).click();
-        await expect(page.getByRole('link',{name:`${title} - $10/day`,exact:true})).toBeVisible();
+        await page.locator(`[aria-controls="request-details-${requestId}"]`).click();
+        await expect(page.getByRole('link',{name:title,exact:true})).toHaveAttribute('href',`/listing/${listingId}`);
+        await expect(page.getByText('Estimated rental before fees and deposit: $10.00. Availability is rechecked when you book.',{exact:true}).first()).toBeVisible();
+        await expect(page.getByText('Request created',{exact:true})).toBeVisible();
         await page.setViewportSize({width:375,height:812});
         expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
         await page.screenshot({path:test.info().outputPath('located-request-nearby-match.png')});

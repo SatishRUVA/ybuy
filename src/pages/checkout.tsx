@@ -3,18 +3,26 @@ import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import { fetchListingById, toUiListing } from '@/lib/listings';
 import { createBookingRequest, fetchBookingById, type UiBooking } from '@/lib/bookings';
+import { quoteOwnerPromotion } from '@/lib/owner-promotions';
+import { BookingPickup } from '@/components/booking-pickup';
 import { getOrCreateConversation } from '@/lib/messages';
 import type { Listing } from '@/data';
 import { Rating, VerifiedBadge } from '@/components/trust';
 import { Button, Alert, Surface, Badge } from '@/components/ui';
 import { SuccessFeedback } from '@/components/success-feedback';
-import { fetchConfirmedPayment, type ConfirmedPayment } from '@/lib/payments';
+import { createCheckoutSession, fetchConfirmedPayment, type ConfirmedPayment } from '@/lib/payments';
 import { Skeleton } from '@/components/skeleton';
 import { RentalSettlement } from '@/components/rental-settlement';
 import { CheckoutReservation } from '@/components/checkout-reservation';
 import { RentalAgreement } from '@/components/rental-agreement';
 import { ArrowLeft, CheckCircle2, Calendar, MapPin, Lock, MessageSquare, ShieldCheck } from 'lucide-react';
-import { formatFeePct, usePlatformFeePct } from '@/lib/settings';
+import { usePlatformFeePct } from '@/lib/settings';
+import { useFeatureFlag } from '@/lib/use-feature-flags';
+import { fieldClass } from '@/components/form-classes';
+import { calculateRentalPricing } from '@/lib/rental-pricing';
+import { insuranceAmountCents } from '@/lib/insurance-pricing';
+import { InsuranceAmount } from '@/components/insurance-amount';
+import { demoTaxCents } from '@/lib/demo-tax';
 
 function formatDay(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
@@ -28,9 +36,17 @@ function formatMoney(value: number): string {
 export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate?: string; endDate?: string }) {
   const { navigate, back } = useRouter();
   const feePct = usePlatformFeePct();
+  const promotions = useFeatureFlag('owner_promotions');
+  const durationDiscounts = useFeatureFlag('duration_discounts');
+  const insuranceFlag = useFeatureFlag('insurance');
   const [listing, setListing] = useState<Listing | null | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
+  const [paymentBookingId, setPaymentBookingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [promotionCode, setPromotionCode] = useState('');
+  const [appliedPromotion, setAppliedPromotion] = useState<{ code: string; percent: number; amount: number } | null>(null);
+  const [promotionError, setPromotionError] = useState<string | null>(null);
+  const [checkingPromotion, setCheckingPromotion] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,21 +86,55 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
   }
 
   const days = Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000));
-  const rental = listing.pricePerDay * days;
+  const rentalPricing = calculateRentalPricing(listing.pricePerDay, days, {
+    weeklyEnabled: durationDiscounts.enabled && listing.weeklyDiscountEnabled,
+    weeklyPercent: listing.weeklyDiscountPercent,
+    monthlyEnabled: durationDiscounts.enabled && listing.monthlyDiscountEnabled,
+    monthlyPercent: listing.monthlyDiscountPercent,
+  });
+  const grossRental = rentalPricing.gross;
+  const durationDiscount = rentalPricing.discountAmount;
+  const selectedRentalOption = rentalPricing.packageKind === 'monthly' ? 'Monthly (30 days)'
+    : rentalPricing.packageKind === 'weekly' ? 'Weekly (7 days)' : `${days} ${days === 1 ? 'day' : 'days'}`;
+  const appliedDiscount = appliedPromotion?.amount ?? durationDiscount;
+  const rental = Math.max(0, grossRental - appliedDiscount);
   const serviceFee = Math.round(rental * feePct * 100) / 100;
-  const total = rental + serviceFee + listing.deposit;
+  const insuranceAmount = insuranceFlag.enabled ? insuranceAmountCents(listing.declaredValue, days) / 100 : 0;
+  const isTaxDemo = import.meta.env.VITE_TEST_ENVIRONMENT === 'true';
+  const taxDemo = isTaxDemo ? demoTaxCents(rental) / 100 : 0;
+  const paymentEstimate = rental + serviceFee + insuranceAmount + listing.deposit;
+  const total = paymentEstimate + taxDemo;
 
   async function handleConfirm() {
     setSubmitting(true);
     setError(null);
     try {
-      const booking = await createBookingRequest({ listingId: id, startDate: startDate!, endDate: endDate! });
+      if (paymentBookingId) {
+        window.location.href = await createCheckoutSession(paymentBookingId);
+        return;
+      }
+      if (insuranceFlag.loading || insuranceFlag.error) throw new Error('Insurance pricing could not be verified. Please retry once settings reconnect.');
+      const booking = await createBookingRequest({ listingId: id, startDate: startDate!, endDate: endDate!, promotionCode: appliedPromotion?.code });
+      if (booking.status === 'pending_payment') {
+        setPaymentBookingId(booking.id);
+        window.location.href = await createCheckoutSession(booking.id);
+        return;
+      }
       navigate({ name: 'confirmation', id: booking.id });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the booking request.');
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function applyPromotion() {
+    setCheckingPromotion(true); setPromotionError(null); setAppliedPromotion(null);
+    try {
+      const quote = await quoteOwnerPromotion({ listingId: id, code: promotionCode, days });
+      setAppliedPromotion({ code: promotionCode.trim().toUpperCase(), percent: quote.discount_percent, amount: quote.discount_amount });
+    } catch (reason) { setPromotionError(reason instanceof Error ? reason.message : 'This promo code is invalid or unavailable.'); }
+    finally { setCheckingPromotion(false); }
   }
 
   return (
@@ -94,8 +144,10 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
           <ArrowLeft size={18} /> Back
         </button>
 
-        <h1 className="text-[26px] sm:text-[32px] font-extrabold text-main font-display leading-tight">Review and request</h1>
-        <p className="text-sec text-sm mt-1.5 mb-6">One last look before {listing.owner.name.split(' ')[0]} gets your request.</p>
+        <h1 className="text-[26px] sm:text-[32px] font-extrabold text-main font-display leading-tight">{listing.instantBooking ? 'Review and book' : 'Review and request'}</h1>
+        <p className="text-sec text-sm mt-1.5 mb-6">{listing.instantBooking
+          ? 'This item books instantly. Your dates are reserved while you complete payment.'
+          : `One last look before ${listing.owner.name.split(' ')[0]} gets your request.`}</p>
 
         {/* Item */}
         <Surface className="p-4 flex gap-4 mb-4">
@@ -122,8 +174,9 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-main">{formatDay(startDate)} → {formatDay(endDate)}</p>
               <p className="text-xs text-sec mt-0.5 tnum">{days} {days === 1 ? 'day' : 'days'}</p>
+              <p className="text-xs text-sec mt-1">Selected option: <strong className="text-main">{selectedRentalOption}</strong></p>
             </div>
-            <Button size="sm" variant="ghost" onClick={() => navigate({ name: 'listing', id })}>Change</Button>
+            <Button size="sm" variant="ghost" disabled={submitting || Boolean(paymentBookingId)} onClick={() => navigate({ name: 'listing', id })}>Change</Button>
           </div>
         </Surface>
 
@@ -131,38 +184,63 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
         <Surface className="p-5 mb-5">
           <h2 className="font-semibold text-main font-display mb-4">Price breakdown</h2>
           <div className="space-y-3 text-sm">
-            <Row label={`$${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'}`} value={rental} />
-            <Row label={`Service fee (${formatFeePct(feePct)})`} value={serviceFee} />
+            {appliedPromotion || !rentalPricing.packageKind
+              ? <Row label={`$${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'}`} value={grossRental} />
+              : <>
+                <Row label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} package · ${rentalPricing.packageDays} days`} value={listing.pricePerDay * rentalPricing.packageDays} />
+                {durationDiscount > 0 && <Row label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} savings (${rentalPricing.discountPercent}%)`} value={-durationDiscount} />}
+                {rentalPricing.extraDays > 0 && <Row label={`${rentalPricing.extraDays} extra ${rentalPricing.extraDays === 1 ? 'day' : 'days'} × $${formatMoney(listing.pricePerDay)}`} value={listing.pricePerDay * rentalPricing.extraDays} />}
+              </>}
+            {appliedPromotion && <Row label={`Owner promo ${appliedPromotion.code} (${appliedPromotion.percent}% off)`} value={-appliedPromotion.amount} />}
+            <Row label="Service fee" value={serviceFee} />
+            <InsuranceAmount days={days} replacementValue={listing.declaredValue} />
+            {isTaxDemo ? <Row label="Tax (7% demo)" value={taxDemo} />
+              : <div className="flex justify-between gap-3 text-sec"><span>Tax</span><span>Not yet calculated</span></div>}
             <div className="pt-3 border-t border-app flex justify-between font-bold text-base text-main">
-              <span>Rental charge</span>
-              <span className="tnum">${formatMoney(rental + serviceFee)}</span>
+              <span>Rental and fees</span>
+              <span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount)}</span>
             </div>
           </div>
           {listing.deposit > 0 && (
             <div className="mt-4 pt-4 border-t border-app">
               <div className="flex justify-between items-center text-sm">
-                <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Refundable deposit (charged)</span>
-                <span className="font-semibold text-warning tnum">${formatMoney(listing.deposit)}</span>
+                <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Refundable security deposit</span>
+                <span className="font-semibold text-main tnum">${formatMoney(listing.deposit)}</span>
               </div>
               <p className="text-xs text-muted mt-1.5 leading-relaxed">
-                Charged at checkout. Refunded after the owner confirms return when no unresolved dispute exists.
+                Paid with your rental, not held on your card. Refunded after the owner confirms the return and any disputes are resolved.
               </p>
-              <div className="flex justify-between text-sm font-semibold text-main mt-3 pt-3 border-t border-app">
-                <span>Total charged at payment</span>
-                <span className="tnum">${formatMoney(total)}</span>
-              </div>
             </div>
           )}
+          <div className="flex justify-between gap-3 text-sm text-sec mt-4">
+            <span>Security hold</span><span>No card hold placed</span>
+          </div>
+          <div className="flex justify-between text-sm font-semibold text-main mt-3 pt-3 border-t border-app">
+            <span>Estimated total</span><span className="tnum">${formatMoney(total)}</span>
+          </div>
+          {isTaxDemo && <p className="text-xs text-sec mt-2">Payment estimate excluding demo tax: ${formatMoney(paymentEstimate)}. Demo tax applies to discounted rental only and is not charged.</p>}
+          <p className="text-xs text-sec mt-2 leading-relaxed">Includes rental, service fee{insuranceFlag.enabled ? ', insurance' : ''} and refundable deposit{isTaxDemo ? ', plus demo tax' : ''}. Excludes tax.</p>
         </Surface>
 
-        {error && <Alert tone="error" title="Request not sent" className="mb-4">{error}</Alert>}
+        {promotions.enabled && !paymentBookingId && <Surface className="p-5 mb-5">
+          <h2 className="font-semibold text-main font-display mb-2">Promo code</h2>
+          <p className="text-xs text-sec mb-3">Enter a code from the owner. A promo replaces any long-rental discount.</p>
+          <div className="flex gap-2"><input aria-label="Promo code" value={promotionCode} onChange={(event) => { setPromotionCode(event.target.value.toUpperCase()); setAppliedPromotion(null); setPromotionError(null); }} maxLength={24} className={fieldClass('flex-1')} placeholder="Enter code" /><Button variant="secondary" loading={checkingPromotion} disabled={!promotionCode.trim()} onClick={() => void applyPromotion()}>Apply</Button></div>
+          {promotionError && <Alert tone="error" className="mt-3">{promotionError}</Alert>}
+          {appliedPromotion && <p role="status" className="text-sm text-accent mt-3">{appliedPromotion.code} applied. You save ${formatMoney(appliedPromotion.amount)}.</p>}
+        </Surface>}
+
+        {error && <Alert tone="error" title={paymentBookingId ? 'Could not open payment' : 'Booking not created'} className="mb-4">
+          {error}
+          {paymentBookingId && <p className="mt-2">Your booking was created. Retry payment below, or open it from Bookings. Do not submit a new booking.</p>}
+        </Alert>}
 
         <div className="hidden md:block">
-          <Button fullWidth size="lg" loading={submitting} loadingLabel="Sending request…" onClick={handleConfirm}>
-            Send booking request
+          <Button fullWidth size="lg" loading={submitting} loadingLabel={listing.instantBooking ? 'Booking…' : 'Sending request…'} onClick={handleConfirm}>
+            {paymentBookingId ? 'Retry secure payment' : listing.instantBooking ? 'Continue to payment' : 'Send booking request'}
           </Button>
           <p className="flex items-center justify-center gap-1.5 text-xs text-sec mt-3">
-            <ShieldCheck size={14} /> No charge now - you pay only if the owner approves.
+            <ShieldCheck size={14} /> {listing.instantBooking ? 'No charge now - pay securely to confirm.' : 'No charge now - you pay only if the owner approves.'}
           </p>
         </div>
       </div>
@@ -171,11 +249,11 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
       <div className="md:hidden fixed bottom-[calc(4rem_+_env(safe-area-inset-bottom))] left-0 right-0 z-30 glass-surface border-t border-app px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="min-w-0">
-            <p className="text-lg font-bold text-main tnum">${formatMoney(rental + serviceFee)}</p>
-            <p className="text-xs text-sec">No charge yet</p>
+            <p className="text-lg font-bold text-main tnum">${formatMoney(total)}</p>
+            <p className="text-xs text-sec">Est. total · no charge yet</p>
           </div>
-          <Button className="flex-1" loading={submitting} loadingLabel="Sending…" onClick={handleConfirm}>
-            Send request
+          <Button className="flex-1" loading={submitting} loadingLabel={listing.instantBooking ? 'Booking…' : 'Sending…'} onClick={handleConfirm}>
+            {paymentBookingId ? 'Retry payment' : listing.instantBooking ? 'Continue to payment' : 'Send request'}
           </Button>
         </div>
       </div>
@@ -185,10 +263,11 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
 }
 
 function Row({ label, value }: { label: string; value: number }) {
+  const isCredit = value < 0;
   return (
-    <div className="flex justify-between text-sec">
+    <div className={`flex justify-between ${isCredit ? 'text-success' : 'text-sec'}`}>
       <span>{label}</span>
-      <span className="text-main font-medium tnum">${formatMoney(value)}</span>
+      <span className={`font-medium tnum ${isCredit ? 'text-success' : 'text-main'}`}>{isCredit ? '-' : ''}${formatMoney(Math.abs(value))}</span>
     </div>
   );
 }
@@ -327,13 +406,18 @@ export function ConfirmationPage({ id }: { id: string }) {
           </div>
         </Surface>}
 
+        <div className="mb-4"><BookingPickup bookingId={booking.id} status={booking.status} /></div>
         <RentalAgreement bookingId={booking.id} isOwner={booking.isOwner} />
         <Surface id="booking-summary" tabIndex={-1} className="p-5 mb-6 space-y-3 text-sm">
           <p className="text-xs text-sec break-all">Booking reference: {booking.id}</p>
           <div className="flex justify-between">
-            <span className="text-sec">Rental charge</span>
-            <span className="font-semibold text-main tnum">${booking.subtotal + booking.serviceFeeAmount}</span>
+            <span className="text-sec">Rental subtotal</span>
+            <span className="font-semibold text-main tnum">${booking.subtotal + booking.ownerDiscountAmount}</span>
           </div>
+          {booking.ownerDiscountAmount > 0 && <div className="flex justify-between"><span className="text-sec">Package savings</span><span className="font-semibold text-main tnum">-${booking.ownerDiscountAmount}</span></div>}
+          <div className="flex justify-between"><span className="text-sec">Service fee</span><span className="font-semibold text-main tnum">${booking.serviceFeeAmount}</span></div>
+          {booking.insuranceAmount > 0 && <div className="flex justify-between"><span className="text-sec">Insurance</span><span className="font-semibold text-main tnum">${booking.insuranceAmount.toFixed(2)}</span></div>}
+          <div className="flex justify-between"><span className="text-sec">Rental charge after discount</span><span className="font-semibold text-main tnum">${booking.subtotal + booking.serviceFeeAmount}</span></div>
           {booking.deposit > 0 && (
             <div className="flex justify-between">
               <span className="text-sec">Security deposit (charged)</span>

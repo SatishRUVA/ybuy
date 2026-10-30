@@ -44,7 +44,7 @@ export function cents(amount: number): number {
 }
 
 export function requireTestSettlement(key: string, url: string, enabled: string | undefined): void {
-  const allowed = ['http://kong:8000', 'http://127.0.0.1:54321', 'http://localhost:54321',
+  const allowed = ['http://kong:8000', 'http://localhost:54321',
     'https://jzyjmsixfuwzfnntewqn.supabase.co'];
   if (enabled !== 'true' || !/^(sk|rk)_test_/.test(key) || !allowed.includes(url)) {
     throw new Error('Settlement is disabled: an isolated backend and Stripe test credentials are required');

@@ -17,6 +17,7 @@ const NAMED_ICONS: Record<string, LucideIcon> = {
   fitness: Icons.Dumbbell,
   vehicle: Icons.Car,
   vehicles: Icons.Car,
+  homegarden: Icons.Leaf,
 };
 
 function normalize(value: string) {

@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { mockSupabaseModule } from './mock-supabase';
+import { appUrl } from './test-url';
 
 test('notification subscribers have independent channels and cleanup', async ({ page }) => {
   await page.route('**/src/lib/supabase.ts*', mockSupabaseModule);
-  await page.route('http://127.0.0.1:54321/**', (route) =>
+  await page.route('http://localhost:54321/**', (route) =>
     route.fulfill({ contentType: 'application/json', body: '[]' }));
   await page.routeWebSocket('**/realtime/v1/websocket**', (socket) => {
     socket.onMessage((message) => {
@@ -18,7 +19,7 @@ test('notification subscribers have independent channels and cleanup', async ({ 
       }
     });
   });
-  await page.goto('http://127.0.0.1:5174/notifications');
+  await page.goto(`${appUrl}/notifications`);
   const result = await page.evaluate(async () => {
     const { subscribeToNotifications } = await import('/src/lib/notifications.ts');
     const { supabase } = await import('/src/lib/supabase.ts');

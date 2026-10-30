@@ -1,6 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
 process.env.YBUY_E2E_HOSTED = 'true';
+process.env.YBUY_E2E_LOCAL_APP = 'true';
+
+const appUrl = 'http://localhost:5174';
 
 export default defineConfig({
   testDir: './tests/local',
@@ -9,8 +12,13 @@ export default defineConfig({
   reporter: [['list'], ['html', { outputFolder: 'playwright-hosted-report', open: 'never' }]],
   outputDir: 'test-results-hosted',
   use: {
-    baseURL: 'https://ybuy-e2e-test.vercel.app',
+    baseURL: appUrl,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+  },
+  webServer: {
+    command: 'pnpm run dev -- --host localhost --port 5174 --strictPort --mode hosted',
+    url: appUrl,
+    reuseExistingServer: !process.env.CI,
   },
 });

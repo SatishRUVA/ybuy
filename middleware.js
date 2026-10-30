@@ -4,7 +4,7 @@ import { verifyAccessSession, ACCESS_COOKIE_NAME } from './api/_lib/access-sessi
 
 export const config = {
   // Excludes the access page itself, its API, and static assets — everything else is gated.
-  matcher: ['/((?!api/access|access$|assets/|favicon\\.ico).*)'],
+  matcher: ['/((?!api/access|access$|assets/|favicon\\.ico|apple-touch-icon\\.png$|icon-(?:192|512)\\.png$|site\\.webmanifest$|ybuy-social\\.png$).*)'],
 };
 
 function parseCookie(header, name) {

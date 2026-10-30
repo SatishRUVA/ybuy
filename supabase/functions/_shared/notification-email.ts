@@ -25,7 +25,7 @@ export function renderNotificationEmail(
     throw new Error('Notification destination must be a safe in-app path.');
   }
   if (!['https:', 'http:'].includes(base.protocol)) throw new Error('PUBLIC_APP_URL must use HTTP or HTTPS.');
-  if (base.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(base.hostname)) {
+  if (base.protocol === 'http:' && base.hostname !== 'localhost') {
     throw new Error('PUBLIC_APP_URL must use HTTPS outside local development.');
   }
 

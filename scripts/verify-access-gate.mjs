@@ -2,6 +2,15 @@
 // Run with: node scripts/verify-access-gate.mjs
 import assert from 'node:assert/strict';
 import { verifyTotp, signAccessSession, verifyAccessSession, computeTotpForTest } from '../api/_lib/access-session.js';
+import { config } from '../middleware.js';
+
+const gatedPath = new RegExp(`^${config.matcher[0]}$`);
+for (const path of ['/apple-touch-icon.png', '/icon-192.png', '/icon-512.png', '/site.webmanifest', '/ybuy-social.png']) {
+  assert.equal(gatedPath.test(path), false, `${path} must remain available to icon and preview clients`);
+}
+for (const path of ['/', '/checkout', '/admin/settings', '/site.webmanifest/private']) {
+  assert.equal(gatedPath.test(path), true, `${path} must retain the access gate`);
+}
 
 const SECRET = 'JBSWY3DPEHPK3PXP'; // well-known test-only base32 TOTP secret
 const now = Date.now();

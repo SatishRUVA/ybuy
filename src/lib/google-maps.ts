@@ -1,5 +1,7 @@
 export interface GooglePlacesLibrary {
-  PlaceAutocompleteElement: new () => HTMLElement;
+  PlaceAutocompleteElement: new () => HTMLElement & {
+    locationBias?: { center: { lat: number; lng: number }; radius: number };
+  };
 }
 
 type GoogleMapsRuntime = {

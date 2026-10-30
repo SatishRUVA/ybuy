@@ -9,10 +9,14 @@ import {
 import { getOrCreateConversation } from '@/lib/messages';
 import { createReview, fetchReviewedBookingIds, fetchReviewsForUser, REVIEW_MAX_LENGTH } from '@/lib/reviews';
 import { deleteOwnerListing, fetchListingsByOwner, toUiListing } from '@/lib/listings';
-import { fetchPayoutsByOwner, startConnectOnboarding, type DbPayoutRow } from '@/lib/payouts';
+import { fetchBankPayoutStatus, fetchPayoutsByOwner, startConnectOnboarding, type BankPayoutStatus, type DbPayoutRow } from '@/lib/payouts';
 import { RentalSettlement } from '@/components/rental-settlement';
+import { BookingPickup } from '@/components/booking-pickup';
 import { fetchUnavailableDates, setDateAvailability } from '@/lib/availability';
 import { AvailabilityCalendar } from '@/components/availability-calendar';
+import { DurationDiscountControl } from '@/components/duration-discount-control';
+import { OwnerPromotionControl } from '@/components/owner-promotion-control';
+import { ListingNegotiationSettings } from '@/components/listing-negotiation-settings';
 import { BookingListSkeleton, BookingRowSkeleton, Skeleton } from '@/components/skeleton';
 import { Button, Badge, Alert, EmptyState, Surface, SectionHeader, Overlay } from '@/components/ui';
 import { textareaClass } from '@/components/form-classes';
@@ -119,6 +123,7 @@ function BookingRow({
           </div>
         </div>
       </div>
+      {['confirmed', 'active', 'return_pending'].includes(booking.status) && <div className="mt-3.5"><BookingPickup bookingId={booking.id} status={booking.status} /></div>}
       {(children || onMessage) && (
         <div className="flex flex-wrap items-center gap-2 mt-3.5 pt-3.5 border-t border-app">
           {children}
@@ -452,6 +457,9 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
   const [bookings, setBookings] = useState<UiBooking[] | null>(null);
   const [myListings, setMyListings] = useState<Listing[] | null>(null);
   const [payouts, setPayouts] = useState<Map<string, DbPayoutRow>>(new Map());
+  const [bankPayouts, setBankPayouts] = useState<BankPayoutStatus[] | null>(null);
+  const [bankPayoutConnected, setBankPayoutConnected] = useState(false);
+  const [bankPayoutError, setBankPayoutError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [listingNotice, setListingNotice] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -466,6 +474,7 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
   const [selectingListings, setSelectingListings] = useState(false);
   const [selectedListingIds, setSelectedListingIds] = useState<Set<string>>(new Set());
   const [removalTarget, setRemovalTarget] = useState<Listing[] | null>(null);
+  const [negotiationListing, setNegotiationListing] = useState<Listing | null>(null);
   const [removingListings, setRemovingListings] = useState(false);
   const [removalError, setRemovalError] = useState<string | null>(null);
 
@@ -484,6 +493,13 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
     }).catch(() => setMyListings([]));
     fetchPayoutsByOwner(user.id).then(setPayouts).catch((err: unknown) => {
       setActionError(err instanceof Error ? err.message : 'Could not verify your Stripe transfers.');
+    });
+    fetchBankPayoutStatus().then((result) => {
+      setBankPayoutConnected(result.connected);
+      setBankPayouts(result.payouts);
+      setBankPayoutError(null);
+    }).catch((err: unknown) => {
+      setBankPayoutError(err instanceof Error ? err.message : 'Could not load your Stripe bank payout status.');
     });
   }
 
@@ -801,7 +817,9 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
                     <div className="flex items-center gap-2 mt-1"><Rating value={listing.rating} count={listing.reviewCount} size="sm" /></div>
                     <div className="flex items-center justify-between gap-2 mt-2">
                       <p className="font-bold text-main text-sm tnum">${listing.pricePerDay}<span className="text-xs text-sec font-medium">/day</span></p>
-                      <Badge tone={listing.available ? 'success' : 'neutral'}>{listing.available ? 'Published' : 'Draft'}</Badge>
+                      <Badge tone={listing.available ? 'success' : listing.listingStatus === 'pending_approval' ? 'warning' : 'neutral'}>
+                        {listing.available ? 'Published' : listing.listingStatus === 'pending_approval' ? 'Pending approval' : listing.listingStatus === 'suspended' ? 'Suspended' : listing.listingStatus === 'archived' ? 'Archived' : 'Draft'}
+                      </Badge>
                     </div>
                     {!selectingListings && (
                       <div className="flex flex-wrap gap-1 mt-1.5">
@@ -809,6 +827,11 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
                       <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} className="text-error hover:bg-error-soft" onClick={() => setRemovalTarget([listing])}>
                         Remove listing
                       </Button>
+                      {listing.listingStatus === 'published' && <>
+                        <Button size="sm" variant="secondary" onClick={() => setNegotiationListing(listing)}>Negotiation options</Button>
+                        <DurationDiscountControl listingId={listing.id} onSaved={reload} />
+                        <OwnerPromotionControl listingId={listing.id} onSaved={reload} />
+                      </>}
                       </div>
                     )}
                   </div>
@@ -853,6 +876,28 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
             }, 'Could not open Stripe Connect setup.')}>
             Set up Stripe payouts
           </Button>
+          <div className="mt-5 rounded-card-lg border border-app p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div><h4 className="text-sm font-semibold text-main">Bank payout status</h4>
+                <p className="text-xs text-sec mt-1">Status comes from Stripe Connect. YBuy does not initiate payouts.</p></div>
+              <Button size="sm" variant="secondary" loading={busyId === 'bank-payouts'} disabled={!bankPayoutConnected}
+                onClick={() => void run('bank-payouts', async () => {
+                  const result = await fetchBankPayoutStatus();
+                  setBankPayoutConnected(result.connected);setBankPayouts(result.payouts);setBankPayoutError(null);
+                }, 'Could not refresh bank payout status.')}>Refresh status</Button>
+            </div>
+            {bankPayoutError && <Alert tone="warning" className="mt-3">{bankPayoutError}</Alert>}
+            {!bankPayoutConnected && !bankPayoutError && <p className="text-sm text-sec mt-3">Complete Stripe Connect setup to see payouts.</p>}
+            {bankPayoutConnected && bankPayouts?.length === 0 && <p className="text-sm text-sec mt-3">Stripe has no bank payouts to show yet.</p>}
+            {!!bankPayouts?.length && <ul className="mt-3 divide-y divide-[var(--border)]">
+              {bankPayouts.map((payout) => <li key={payout.id} className="py-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="text-main"><strong className="tnum">{new Intl.NumberFormat(undefined,{style:'currency',currency:payout.currency.toUpperCase()}).format(payout.amount)}</strong>
+                  <span className="text-sec"> · {payout.status}</span></span>
+                <span className="text-xs text-sec">{payout.arrival_date ? `Expected ${new Date(payout.arrival_date*1000).toLocaleDateString()}` : `Created ${new Date(payout.created*1000).toLocaleDateString()}`}
+                  {payout.failure_code ? ` · ${payout.failure_code}` : ''}</span>
+              </li>)}
+            </ul>}
+          </div>
         </section>}
       </div>
 
@@ -860,6 +905,9 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
         <ReviewModal title={reviewTarget.counterpartName} onSubmit={handleSubmitReview} onClose={() => setReviewTarget(null)} />
       )}
 
+      {negotiationListing && <Sheet title={`Negotiation: ${negotiationListing.title}`} onClose={() => setNegotiationListing(null)}>
+        <ListingNegotiationSettings listingId={negotiationListing.id} onSaved={reload} />
+      </Sheet>}
       {removalTarget && (
         <Sheet title={removalTarget.length === 1 ? 'Remove listing' : `Remove ${removalTarget.length} listings`} onClose={closeRemoval} locked={removingListings}>
           <p className="text-sm text-sec leading-relaxed break-words">

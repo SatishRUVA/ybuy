@@ -5,8 +5,8 @@ export interface RentalAgreement {
   snapshot: {
     booking_id: string;currency: string;owner_name: string;renter_name: string;
     listing: { title: string;description: string | null;condition: string | null;owner_declared_value: number | null;photos: string[];approximate_pickup_area: string | null };
-    start_date: string;end_date: string;quantity: number;daily_rate: number;rental_subtotal: number;service_fee: number;deposit: number;total: number;
-    deposit_model: string;terms_version: number | null;terms: string | null;legal_status: 'approval_pending' | 'approved_template';missing_policy_approval: string[];
+    start_date: string;end_date: string;quantity: number;daily_rate: number;rental_subtotal: number;owner_discount_amount?: number;owner_discount_source?: string;promo_code?: string|null;service_fee: number;insurance_amount?: number;deposit: number;total: number;
+    deposit_model: string;terms_version: number | null;terms: string | null;legal_status: 'approval_pending' | 'approved_template' | 'test_dummy';test_only_dummy_terms?: boolean;missing_policy_approval: string[];
   };
   acceptances: { role: string;accepted_at: string }[];
 }

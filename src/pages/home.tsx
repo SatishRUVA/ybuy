@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight, Calendar, CheckCircle2, Compass, CreditCard,
-  PackageCheck, ShieldCheck, Sparkles, Clock, MoreHorizontal,
+  PackageCheck, ShieldCheck, Sparkles, Clock, LayoutGrid, PackageSearch,
 } from 'lucide-react';
 import { SearchBar } from '@/components/search';
 import { ListingCard } from '@/components/listing-card';
@@ -21,7 +21,7 @@ import { fetchFavoriteListingIds, addFavorite, removeFavorite } from '@/lib/favo
 import { haversineMiles, listingIsInCity, locationLabel } from '@/lib/geo';
 import { useMarketplaceLocation } from '@/location-context';
 import { SHOW_HERO_CATEGORY_PILLS } from '@/lib/feature-flags';
-import logo from '@/assets/logo.png';
+import { BrandLogo } from '@/components/brand-logo';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { savedSearchState } from '@/lib/search-state';
 
@@ -160,33 +160,56 @@ export function HomePage() {
 
       {/* Categories */}
       <Shell className="pt-10 sm:pt-14">
-        <SectionHeader
-          title="Browse by category"
-          actionLabel="See all"
-          onAction={() => navigate({ name: 'search' })}
-          className="mb-5"
-        />
-        <div className="flex gap-4 sm:gap-6 overflow-x-auto no-scrollbar pb-1">
-          {loading && categories.length === 0
-            ? Array.from({ length: 9 }).map((_, i) => (
-                <div key={i} className="shrink-0 w-20 sm:w-24">
-                  <div className="skeleton rounded-card-lg aspect-square" />
-                  <div className="skeleton h-3 w-14 mt-2 rounded" />
-                </div>
-              ))
-            : (
-              <>
-                {categories.map((cat) => (
-                  <CategoryTile
-                    key={cat.id}
-                    category={cat}
-                    onClick={() => navigate({ name: 'search', category: cat.id })}
-                  />
-                ))}
-                <CategoryMoreTile onClick={() => navigate({ name: 'search' })} />
-              </>
-            )}
-        </div>
+        <section aria-labelledby="browse-categories-heading">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
+            <div>
+              <span aria-hidden="true" className="block h-0.5 w-10 bg-accent mb-3" />
+              <h2 id="browse-categories-heading" className="text-2xl sm:text-3xl font-bold text-main">
+                Browse by category
+              </h2>
+              <p className="text-sm text-sec mt-2">For the project, the weekend, and everything in between.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate({ name: 'search' })}
+              className="inline-flex items-center self-start sm:self-auto gap-2 min-h-11 text-sm font-semibold text-accent hover:underline underline-offset-4 rounded-card-sm"
+            >
+              Explore all categories <ArrowRight size={18} aria-hidden="true" />
+            </button>
+          </div>
+          <div
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9 gap-3 sm:gap-4"
+            aria-busy={loading && categories.length === 0}
+          >
+            {loading && categories.length === 0
+              ? Array.from({ length: 9 }).map((_, i) => (
+                  <div key={i} aria-hidden="true" className="rounded-card-lg border border-app bg-card overflow-hidden">
+                    <div className="skeleton aspect-[6/5] sm:aspect-[5/6]" />
+                    <div className="h-16 flex items-center justify-center">
+                      <div className="skeleton h-4 w-3/4 rounded" />
+                    </div>
+                  </div>
+                ))
+              : (
+                <>
+                  {categories.map((cat) => (
+                    <CategoryTile
+                      key={cat.id}
+                      category={cat}
+                      onClick={() => navigate({ name: 'search', category: cat.id })}
+                    />
+                  ))}
+                  <CategoryMoreTile onClick={() => navigate({ name: 'search' })} />
+                </>
+              )}
+          </div>
+          {loading && categories.length === 0 && <p role="status" className="sr-only">Loading categories</p>}
+          {!loading && categories.length === 0 && (
+            <p role="status" className="mt-4 text-sm text-sec">
+              {error ? 'Categories could not be loaded. Please try again above.' : 'No categories are available yet. You can still explore all rentals.'}
+            </p>
+          )}
+        </section>
       </Shell>
 
       {/* Featured */}
@@ -215,6 +238,24 @@ export function HomePage() {
             ))}
           </Rail>
         )}
+      </Shell>
+
+      {/* A contextual path for shoppers who cannot find a suitable listing. */}
+      <Shell className="pt-8 sm:pt-10">
+        <button
+          type="button"
+          onClick={() => navigate({ name: 'need-something' })}
+          className="group w-full rounded-card-xl border border-app bg-subtle px-5 py-5 sm:px-7 sm:py-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-left transition-[border-color,box-shadow,transform] duration-standard hover:border-strong hover:shadow-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+        >
+          <span className="flex items-start gap-4 min-w-0">
+            <span className="grid place-items-center w-11 h-11 shrink-0 rounded-card bg-card text-accent shadow-xs"><PackageSearch size={21} /></span>
+            <span className="min-w-0">
+              <span className="block text-lg font-semibold text-main font-display">Can’t find what you need?</span>
+              <span className="block mt-1 text-sm text-sec">Tell nearby owners what you’re looking for and when you need it.</span>
+            </span>
+          </span>
+          <span className="inline-flex items-center gap-2 text-sm font-semibold text-accent sm:shrink-0 sm:ml-4">Request an item <ArrowRight size={16} className="transition-transform duration-standard group-hover:translate-x-1" /></span>
+        </button>
       </Shell>
 
       {/* Near you - only claims proximity when we actually have coordinates */}
@@ -407,28 +448,54 @@ function TrustPoint({ icon, children }: { icon: React.ReactNode; children: React
   );
 }
 
+const CATEGORY_CARD_CLASS = 'group min-w-0 flex flex-col rounded-card-lg border border-app bg-card shadow-xs hover:shadow-hover hover:border-strong motion-safe:hover:-translate-y-0.5 transition-[transform,box-shadow,border-color] duration-standard';
+
 function CategoryTile({ category, onClick }: { category: Category; onClick: () => void }) {
+  const [failedImage, setFailedImage] = useState<string | null>(null);
+  const hasImage = category.image && failedImage !== category.image;
+
   return (
-    <button onClick={onClick} className="group shrink-0 w-20 sm:w-24 flex flex-col items-center gap-2 text-center">
-      <span className="relative block w-full aspect-square rounded-card-lg overflow-hidden border border-app bg-subtle">
-        {category.image ? (
-          <img src={category.image} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover zoom-media" />
+    <button type="button" onClick={onClick} className={CATEGORY_CARD_CLASS}>
+      <span className="relative block w-full aspect-[6/5] sm:aspect-[5/6] rounded-t-[inherit] overflow-hidden bg-subtle">
+        {hasImage ? (
+          <>
+            <img
+              src={category.image}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              width={400}
+              height={300}
+              onError={() => setFailedImage(category.image)}
+              className="absolute inset-0 w-full h-full object-cover zoom-media"
+            />
+            <span className="absolute bottom-2 left-2 grid place-items-center w-9 h-9 rounded-card bg-card text-accent shadow-xs">
+              <CategoryIcon category={category} size={20} />
+            </span>
+          </>
         ) : (
-          <span className="absolute inset-0 grid place-items-center text-accent"><CategoryIcon category={category} size={26} /></span>
+          <span aria-hidden="true" className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-accent">
+            <CategoryIcon category={category} size={32} />
+            {failedImage === category.image && <span className="text-xs text-sec">Photo unavailable</span>}
+          </span>
         )}
       </span>
-      <span className="text-xs sm:text-sm font-medium text-main leading-tight line-clamp-2">{category.name}</span>
+      <span className="flex items-center justify-center flex-1 w-full min-h-16 px-2 py-3 text-sm font-semibold text-main leading-snug [overflow-wrap:anywhere]">
+        {category.name}
+      </span>
     </button>
   );
 }
 
 function CategoryMoreTile({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="shrink-0 w-20 sm:w-24 flex flex-col items-center gap-2 text-center">
-      <span className="grid place-items-center w-full aspect-square rounded-card-lg border border-app bg-subtle text-sec">
-        <MoreHorizontal size={22} />
+    <button type="button" onClick={onClick} aria-label="More categories" className={CATEGORY_CARD_CLASS}>
+      <span className="grid place-items-center w-full aspect-[6/5] sm:aspect-[5/6] rounded-t-[inherit] bg-accent-soft text-accent">
+        <LayoutGrid size={36} strokeWidth={1.5} aria-hidden="true" />
       </span>
-      <span className="text-xs sm:text-sm font-medium text-main">More</span>
+      <span className="flex items-center justify-center gap-2 flex-1 w-full min-h-16 px-2 py-3 text-sm font-semibold text-accent">
+        More <ArrowRight size={16} aria-hidden="true" />
+      </span>
     </button>
   );
 }
@@ -498,8 +565,7 @@ function Footer({ onNavigate }: { onNavigate: ReturnType<typeof useRouter>['navi
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-5">
           <div className="flex items-center gap-2.5">
-            <img src={logo} alt="" className="w-8 h-8 rounded-card object-cover" />
-            <span className="font-extrabold text-main font-display">YBuy</span>
+            <BrandLogo />
           </div>
           <nav className="flex items-center gap-6 text-sm text-sec">
             <button onClick={() => onNavigate({ name: 'search' })} className="hover:text-main transition-colors duration-fast">Browse</button>

@@ -40,6 +40,21 @@ export interface DbListingRow {
   offer_start_date?: string | null;
   offer_end_date?: string | null;
   offer_expiration_hours?: number | null;
+  offer_maximum_daily?: number | null;
+  brand?: string;
+  model?: string;
+  included_items?: string[];
+  additional_details?: string;
+  delivery_radius_miles?: number | null;
+  availability_start?: string | null;
+  availability_end?: string | null;
+  delivery_fee?: number;
+  duration_discount_min_days?: number | null;
+  duration_discount_percent?: number;
+  weekly_discount_enabled?: boolean;
+  weekly_discount_percent?: number;
+  monthly_discount_enabled?: boolean;
+  monthly_discount_percent?: number;
   location_lat: number | null;
   location_lng: number | null;
   location_label: string | null;
@@ -50,7 +65,12 @@ export interface DbListingRow {
   owner_verified: boolean;
   available_quantity: number;
   negotiation_enabled: boolean;
-  status: 'draft' | 'published' | 'archived' | 'suspended';
+  auction_enabled?: boolean;
+  auction_start_date?: string | null;
+  auction_end_date?: string | null;
+  auction_bidding_starts_at?: string | null;
+  auction_bidding_ends_at?: string | null;
+  status: 'draft' | 'published' | 'archived' | 'suspended' | 'pending_approval';
   created_at: string;
   listing_images: DbListingImage[];
   owner: DbListingOwner | null;
@@ -90,9 +110,6 @@ export async function signListingImages(images: DbListingImage[]): Promise<DbLis
 async function signListingRows(rows: DbListingRow[]): Promise<DbListingRow[]> {
   return Promise.all(rows.map(async (row) => ({ ...row, listing_images: await signListingImages(row.listing_images) })));
 }
-
-const SEARCH_LISTING_SELECT =
-  'id, owner_id, category_id, title, price_per_day, deposit, location_lat, location_lng, location_label, instant_booking, protection_eligible, delivery_available, owner_verified, available_quantity, negotiation_enabled, status, created_at, listing_images(url, sort_order), owner:profiles!owner_id(id, full_name, avatar_url), categories(name)';
 
 const LEGACY_SEARCH_LISTING_SELECT =
   'id, owner_id, category_id, title, description, price_per_day, deposit, location_lat, location_lng, location_label, status, created_at, listing_images(url, sort_order), owner:profiles!owner_id(id, full_name, avatar_url), categories(name)';
@@ -308,7 +325,7 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
 
   let query = supabase
     .from('listings')
-    .select(SEARCH_LISTING_SELECT, { count: 'exact' })
+    .select(LISTING_SELECT, { count: 'exact' })
     .eq('status', 'published');
 
   if (params.categoryId) query = query.eq('category_id', params.categoryId);
@@ -389,14 +406,14 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
 
 
 const CATEGORY_PHOTOS = new Map([
-  ['Tools & Equipment', '30413428'],
+  ['Tools & Equipment', '1249611'],
   ['Electronics', '19969452'],
-  ['Outdoor & Camping', '2526025'],
-  ['Party & Events', '1481316'],
-  ['Sports & Fitness', '36450314'],
-  ['Vehicles', '36450314'],
-  ['Home & Garden', '37554739'],
-  ['Other', '35486274'],
+  ['Outdoor & Camping', '699558'],
+  ['Party & Events', '169190'],
+  ['Sports & Fitness', '841130'],
+  ['Vehicles', '170811'],
+  ['Home & Garden', '4503273'],
+  ['Other', '1866149'],
 ]);
 
 /** Category artwork is fixed and never sourced from user listing uploads. */
@@ -445,13 +462,18 @@ export function toUiListing(row: DbListingRow): Listing {
     reviewCount: 0,
     rentalCount: 0,
     available: row.status === 'published',
+    listingStatus: row.status,
     instantBooking: row.instant_booking === true,
     verifiedOwner: row.owner_verified === true,
     protectionEligible: row.protection_eligible === true,
     deliveryAvailable: row.delivery_available === true,
     condition: row.item_condition?.replace(/_/g, ' ') ?? '',
     description: cleanText(row.description),
-    whatsIncluded: [],
+    whatsIncluded: row.included_items ?? [],
+    brand: row.brand ?? '',
+    model: row.model ?? '',
+    additionalDetails: row.additional_details ?? '',
+    deliveryRadiusMiles: row.delivery_radius_miles ?? null,
     components: [],
     declaredValue: Number(row.estimated_value ?? 0),
     assetId: '',
@@ -460,14 +482,26 @@ export function toUiListing(row: DbListingRow): Listing {
     rentalHistory: 0,
     damageHistory: '',
     pickup: cleanText(row.location_label),
-    delivery: '',
+    delivery: row.delivery_available && row.delivery_fee != null
+      ? `Delivery available${row.delivery_radius_miles ? ` within ${row.delivery_radius_miles} miles (owner-declared)` : ''} for $${Number(row.delivery_fee).toFixed(2)} per trip, arranged separately and not included in the online rental total.`
+      : '',
     cancellation: '',
     reviews: [],
     deposit: Number(row.deposit),
     availableQuantity: Number(row.available_quantity ?? 1),
-    negotiationEnabled: row.negotiation_enabled === true,
-    offerRules: {minimumDaily:row.offer_minimum_daily ?? null,targetDaily:row.offer_target_daily ?? null,
-      guardrailPct:row.offer_guardrail_pct ?? null,startDate:row.offer_start_date ?? null,endDate:row.offer_end_date ?? null},
+    availabilityStart: row.availability_start ?? null,
+    availabilityEnd: row.availability_end ?? null,
+    deliveryFee: row.delivery_fee == null ? null : Number(row.delivery_fee),
+    negotiationEnabled: row.status === 'published' && row.negotiation_enabled === true && row.offer_maximum_daily != null,
+    auctionEnabled: row.auction_enabled === true,
+    durationDiscount: row.duration_discount_percent && row.duration_discount_min_days
+      ? { minimumDays: row.duration_discount_min_days, percent: Number(row.duration_discount_percent) } : null,
+    weeklyDiscountEnabled: row.weekly_discount_enabled === true,
+    weeklyDiscountPercent: Number(row.weekly_discount_percent ?? 0),
+    monthlyDiscountEnabled: row.monthly_discount_enabled === true,
+    monthlyDiscountPercent: Number(row.monthly_discount_percent ?? 0),
+    offerRules: {minimumDaily:row.offer_minimum_daily ?? null,maximumDaily:row.offer_maximum_daily ?? null,targetDaily:row.offer_target_daily ?? null,
+      guardrailPct:row.offer_guardrail_pct ?? null,startDate:row.offer_start_date ?? row.availability_start ?? null,endDate:row.offer_end_date ?? row.availability_end ?? null},
     lat: row.location_lat ?? 0,
     lng: row.location_lng ?? 0,
   };
@@ -570,11 +604,10 @@ export async function removeListingImageUrl(listingId: string, url: string): Pro
 }
 
 export async function saveListingImageOrder(listingId: string, urls: string[]): Promise<void> {
-  for (const [sort_order, url] of urls.entries()) {
-    const { error } = await supabase.from('listing_images').update({ sort_order })
-      .eq('listing_id', listingId).eq('url', storedListingImageUrl(url));
-    if (error) throw error;
-  }
+  const { error } = await supabase.rpc('owner_reorder_listing_images', {
+    p_listing_id: listingId, p_urls: urls.map(storedListingImageUrl),
+  });
+  if (error) throw error;
 }
 
 export interface ListingDetailsUpdate {
@@ -591,6 +624,10 @@ export interface ListingDetailsUpdate {
   offer_start_date?: string | null;
   offer_end_date?: string | null;
   offer_expiration_hours?: number | null;
+  offer_maximum_daily?: number | null;
+  availability_start?: string | null;
+  availability_end?: string | null;
+  delivery_fee?: number;
   location_label: string;
   instant_booking?: boolean;
   protection_eligible?: boolean;

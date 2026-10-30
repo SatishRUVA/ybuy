@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MessageSquare, User, Menu, X, Home, Search, Plus, PackagePlus, Calendar, Heart, LogOut, ShieldCheck, Bell } from 'lucide-react';
+import { MessageSquare, User, Menu, X, Home, Search, Plus, PackagePlus, Calendar, Heart, LogOut, ShieldCheck, Bell, Gavel } from 'lucide-react';
 import { useRouter, type Route } from '@/router';
 import { useAuth } from '@/auth-context';
 import { useAdminAccess } from '@/lib/admin';
@@ -8,13 +8,12 @@ import { Alert, Button } from '@/components/ui';
 import { SHOW_DEMO_THEMES } from '@/lib/feature-flags';
 import { subscribeToNotifications, unreadNotificationCount } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
-import logo from '@/assets/logo.png';
+import { BrandLogo } from '@/components/brand-logo';
 
 function Wordmark({ onClick }: { onClick: () => void }) {
   return (
     <button onClick={onClick} className="flex items-center gap-2.5 shrink-0" aria-label="YBuy home">
-      <img src={logo} alt="" className="w-9 h-9 rounded-card object-cover" />
-      <span className="font-extrabold text-[19px] tracking-tight text-main font-display hidden sm:inline">YBuy</span>
+      <BrandLogo compact />
     </button>
   );
 }
@@ -60,12 +59,14 @@ export function Header() {
     { label: 'Home', route: { name: 'home' }, icon: Home },
     { label: 'Browse', route: { name: 'search' }, icon: Search },
     { label: 'Requests & offers', route: { name: 'requests' }, icon: PackagePlus },
+    { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
     { label: 'Bookings', route: { name: 'dashboard' }, icon: Calendar },
     { label: 'Messages', route: { name: 'messaging' }, icon: MessageSquare },
   ];
 
   const isActive = (r: Route) => {
-    if (r.name === 'requests') return route.name === 'requests' || route.name === 'bidding' || route.name === 'auction';
+    if (r.name === 'requests') return route.name === 'requests';
+    if (r.name === 'bidding') return route.name === 'bidding' || route.name === 'bidding-detail' || route.name === 'auction';
     if (r.name === 'dashboard') return route.name === 'dashboard' || route.name === 'renter-dashboard' || route.name === 'owner-dashboard';
     return route.name === r.name;
   };

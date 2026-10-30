@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, ChevronDown, X } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Calendar, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X, ArrowRight } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { todayIso, addDaysIso, MAX_BOOKING_RANGE_DAYS } from '@/lib/geo';
 import { Overlay } from '@/components/ui';
 
@@ -11,7 +12,7 @@ const PRESETS: { key: PresetKey; label: string }[] = [
   { key: 'tomorrow', label: 'Tomorrow' },
   { key: 'weekend', label: 'This weekend' },
   { key: 'next7', label: 'Next 7 days' },
-  { key: 'next30', label: `Next ${MAX_BOOKING_RANGE_DAYS} days` },
+  { key: 'next30', label: 'Next 30 days' },
 ];
 
 function presetRange(key: PresetKey): { start: string; end: string } {
@@ -68,10 +69,10 @@ function rangeHasUnavailable(start: string, end: string, bookedDates: Set<string
   return false;
 }
 
-function MonthGrid({
-  monthDate, todayStr, draftStart, draftEnd, maxDate, bookedDates, blockedDates, onPick,
+export function MonthGrid({
+  monthDate, todayStr, minDate, draftStart, draftEnd, maxDate, bookedDates, blockedDates, onPick, showMonthLabel = true,
 }: {
-  monthDate: Date; todayStr: string; draftStart: string | null; draftEnd: string | null; maxDate: string; bookedDates: Set<string>; blockedDates: Set<string>; onPick: (iso: string) => void;
+  monthDate: Date; todayStr: string; minDate: string; draftStart: string | null; draftEnd: string | null; maxDate: string; bookedDates: Set<string>; blockedDates: Set<string>; onPick: (iso: string) => void; showMonthLabel?: boolean;
 }) {
   const firstWeekday = monthDate.getDay();
   const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
@@ -81,16 +82,16 @@ function MonthGrid({
   }
   return (
     <div className="flex-1">
-      <p className="text-sm font-bold text-main mb-3 text-center">{monthLabel(monthDate)}</p>
-      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold text-muted mb-1">
+      {showMonthLabel && <p aria-live="polite" className="text-base font-bold tracking-tight text-main mb-5 text-center">{monthLabel(monthDate)}</p>}
+      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-wide text-muted mb-2">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((w) => <div key={w}>{w}</div>)}
       </div>
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-x-1 gap-y-1.5 sm:gap-y-2">
         {cells.map((date, i) => {
           if (!date) return <div key={i} />;
           const isBooked = bookedDates.has(date);
           const isBlocked = blockedDates.has(date);
-          const disabled = date < todayStr || date > maxDate || isBooked || isBlocked;
+          const disabled = date < minDate || date > maxDate || isBooked || isBlocked;
           const isStart = date === draftStart;
           const isEnd = date === draftEnd;
           const isToday = date === todayStr;
@@ -103,13 +104,13 @@ function MonthGrid({
             : isEnd ? 'end date of selected range'
               : inRange ? 'within selected range'
                 : undefined;
-          let tone = 'text-main hover:bg-subtle';
+          let tone = 'text-main hover:bg-subtle hover:text-accent';
           if (isBooked) tone = 'text-muted opacity-45 cursor-not-allowed line-through';
           else if (isBlocked) tone = 'text-warning opacity-55 cursor-not-allowed';
           else if (disabled) tone = 'text-muted opacity-30 cursor-not-allowed';
-          else if (isStart || isEnd) tone = 'bg-accent text-accent-text font-semibold';
-          else if (inRange) tone = 'bg-accent-soft text-accent';
-          else if (isToday) tone = 'text-accent font-semibold ring-1 ring-inset ring-accent hover:bg-subtle';
+          else if (isStart || isEnd) tone = 'bg-accent text-accent-text font-semibold shadow-sm';
+          else if (inRange) tone = 'bg-accent-soft text-accent font-semibold';
+          else if (isToday) tone = 'text-accent font-semibold ring-1 ring-inset ring-accent hover:bg-accent-soft';
           return (
             <button
               key={date}
@@ -119,8 +120,16 @@ function MonthGrid({
               aria-pressed={Boolean(isStart || isEnd || inRange)}
               aria-current={isToday ? 'date' : undefined}
               onClick={() => onPick(date)}
+              onKeyDown={(event) => {
+                const offset = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7, Home: -new Date(`${date}T12:00:00`).getDay(), End: 6 - new Date(`${date}T12:00:00`).getDay() }[event.key];
+                if (offset === undefined) return;
+                event.preventDefault();
+                const next = addDaysIso(date, offset);
+                event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`button[data-date="${next}"]:not(:disabled)`)?.focus();
+              }}
+              data-date={date}
               title={isBooked ? 'Booked' : isBlocked ? 'Blocked' : undefined}
-              className={`relative aspect-square rounded-full text-xs transition-colors duration-fast ${tone}`}
+              className={`relative aspect-square min-h-11 sm:min-h-12 rounded-xl text-sm sm:text-[15px] font-medium transition-[color,background-color,box-shadow] duration-fast focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 ${tone}`}
             >
               {Number(date.slice(-2))}
               {(isBooked || isBlocked) && <span aria-hidden="true" className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full ${isBooked ? 'bg-muted' : 'bg-warning'}`} />}
@@ -138,6 +147,8 @@ const NO_DATES: Set<string> = new Set();
 export function DateRangePicker({
   startDate, endDate, onChange,
   mode = 'dual', bookedDates = NO_DATES, blockedDates = NO_DATES,
+  minimumDate, maximumDate,
+  presentation = 'dialog',
 }: {
   startDate: string;
   endDate: string;
@@ -145,6 +156,9 @@ export function DateRangePicker({
   mode?: 'dual' | 'range';
   bookedDates?: Set<string>;
   blockedDates?: Set<string>;
+  minimumDate?: string | null;
+  maximumDate?: string | null;
+  presentation?: 'dialog' | 'listing';
 }) {
   const [open, setOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
@@ -153,19 +167,17 @@ export function DateRangePicker({
   const [activePreset, setActivePreset] = useState<PresetKey>('custom');
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const naturalPanelHeight = useRef<number | null>(null);
-  const [desktopLayout, setDesktopLayout] = useState<{ above: boolean; maxHeight: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+  const reduceMotion = useReducedMotion();
+  const [position, setPosition] = useState<{ left: number; top: number } | undefined>();
+  const compact = presentation === 'listing';
   const todayStr = todayIso();
-  const maxDate = addDaysIso(todayStr, MAX_BOOKING_RANGE_DAYS);
-
-  useEffect(() => {
-    if (mode === 'range') return;
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [mode]);
+  const minDate = minimumDate && minimumDate > todayStr ? minimumDate : todayStr;
+  const horizon = addDaysIso(todayStr, MAX_BOOKING_RANGE_DAYS);
+  const maxDate = maximumDate && maximumDate < horizon ? maximumDate : horizon;
+  const validRange = (start: string, end: string) => start >= minDate && end > start && end <= maxDate
+    && !rangeHasUnavailable(start, end, bookedDates, blockedDates);
 
   useEffect(() => {
     if (!open) return;
@@ -176,51 +188,61 @@ export function DateRangePicker({
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [open]);
 
-  useLayoutEffect(() => {
-    if (!open || mode === 'range') return;
-    let frame = 0;
-    function measure() {
-      const trigger = ref.current?.getBoundingClientRect();
-      const panel = panelRef.current;
+  useEffect(() => {
+    if (!open || !compact) return;
+    function placePanel() {
+      if (!window.matchMedia('(min-width: 641px)').matches) { setPosition(undefined); return; }
+      const trigger = triggerRef.current?.getBoundingClientRect();
+      const panel = panelRef.current?.getBoundingClientRect();
       if (!trigger || !panel) return;
-
-      naturalPanelHeight.current ??= panel.scrollHeight;
-      const gap = 8;
-      const viewportPadding = 12;
-      const below = window.innerHeight - trigger.bottom - gap - viewportPadding;
-      const above = trigger.top - gap - viewportPadding;
-      const naturalHeight = naturalPanelHeight.current;
-      const placeAbove = naturalHeight > below && above > below;
-      const availableHeight = placeAbove ? above : below;
-      const comfortableHeight = Math.min(560, Math.floor(window.innerHeight * 0.72));
-      const next = { above: placeAbove, maxHeight: Math.max(220, Math.min(naturalHeight, availableHeight, comfortableHeight)) };
-      setDesktopLayout((current) => current?.above === next.above && current.maxHeight === next.maxHeight ? current : next);
+      const below = trigger.bottom + 10;
+      const above = trigger.top - panel.height - 10;
+      setPosition({
+        left: Math.max(12, Math.min(trigger.right - panel.width, window.innerWidth - panel.width - 12)),
+        top: Math.max(12, Math.min(below + panel.height <= window.innerHeight - 12 ? below : above, window.innerHeight - panel.height - 12)),
+      });
     }
-    function scheduleMeasure() {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    }
+    const frame = requestAnimationFrame(placePanel);
+    window.addEventListener('resize', placePanel);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', placePanel); };
+  }, [open, compact, monthOffset]);
 
-    measure();
-    window.addEventListener('resize', scheduleMeasure);
-    window.addEventListener('scroll', scheduleMeasure, true);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener('resize', scheduleMeasure);
-      window.removeEventListener('scroll', scheduleMeasure, true);
-    };
-  }, [open, mode, monthOffset]);
+  useEffect(() => {
+    if (open) {
+      wasOpen.current = true;
+      const frame = requestAnimationFrame(() => {
+        const firstDate = panelRef.current?.querySelector<HTMLButtonElement>('button[data-date]:not(:disabled)');
+        // The first enabled date can be several rows below the start of the month.
+        // Focusing it normally scrolls both the calendar and page on smaller screens,
+        // hiding the month header as soon as the dialog opens.
+        firstDate?.focus({ preventScroll: true });
+        const calendarBody = panelRef.current?.querySelector<HTMLElement>('.calendar-dialog-body');
+        if (firstDate && calendarBody && window.matchMedia('(max-height: 600px)').matches) {
+          const dateTop = firstDate.getBoundingClientRect().top;
+          const bodyTop = calendarBody.getBoundingClientRect().top;
+          calendarBody.scrollTop += dateTop - bodyTop - 88;
+        }
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    if (wasOpen.current) {
+      wasOpen.current = false;
+      triggerRef.current?.focus();
+    }
+  }, [open]);
 
   function openPicker() {
-    setDraftStart(startDate);
-    setDraftEnd(endDate);
-    setMonthOffset(0);
-    setDesktopLayout(null);
-    naturalPanelHeight.current = null;
+    const safeStart = startDate >= minDate && startDate <= maxDate ? startDate : '';
+    setDraftStart(safeStart);
+    setDraftEnd(safeStart && endDate > safeStart && endDate <= maxDate ? endDate : null);
+    const firstMonth = parseIsoLocal(safeStart || minDate);
+    const currentMonth = parseIsoLocal(todayStr);
+    setMonthOffset(Math.max(0, (firstMonth.getFullYear() - currentMonth.getFullYear()) * 12 + firstMonth.getMonth() - currentMonth.getMonth()));
     setOpen(true);
   }
 
   function handlePick(date: string) {
+    if (date < minDate || date > maxDate) return;
     setActivePreset('custom');
     if (!draftStart || (draftStart && draftEnd)) { setDraftStart(date); setDraftEnd(null); return; }
     if (date <= draftStart) { setDraftStart(date); setDraftEnd(null); return; }
@@ -239,7 +261,8 @@ export function DateRangePicker({
   }
 
   function handleApply() {
-    if (draftStart && draftEnd) onChange(draftStart, draftEnd);
+    if (!draftStart || !draftEnd || !validRange(draftStart, draftEnd)) return;
+    onChange(draftStart, draftEnd);
     setOpen(false);
   }
 
@@ -254,127 +277,159 @@ export function DateRangePicker({
   const leftMonth = new Date(new Date().getFullYear(), new Date().getMonth() + monthOffset, 1);
   const rightMonth = new Date(leftMonth.getFullYear(), leftMonth.getMonth() + 1, 1);
   const nights = draftStart && draftEnd ? daysBetweenIso(draftStart, draftEnd) : 0;
-  const datePickerPanel = open && (
-    <div
-      ref={panelRef}
-      role="dialog"
-      aria-modal={mode === 'range' ? true : undefined}
-      aria-label="Select dates"
-      style={mode === 'dual' && desktopLayout ? { maxHeight: desktopLayout.maxHeight } : undefined}
-      className={`flex flex-col bg-card border border-app shadow-pop animate-modal overflow-hidden ${mode === 'range'
-        ? 'relative w-full max-h-[88dvh] rounded-t-card-xl pb-[env(safe-area-inset-bottom)]'
-        : `absolute z-[210] ${desktopLayout?.above ? 'bottom-full mb-2' : 'top-full mt-2'} right-0 w-[min(92vw,680px)] max-w-[92vw] max-h-[min(80dvh,560px)] rounded-card-xl`
-      }`}
-    >
-      <div className="shrink-0 p-3.5 sm:p-2.5 border-b border-app">
-        <div className="flex items-center justify-between gap-3">
-          <h4 className="font-semibold text-main">Select dates</h4>
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={handleClear} className="min-h-9 text-xs text-accent font-semibold hover:underline">Clear dates</button>
-            {mode === 'range' && (
-              <button type="button" onClick={() => setOpen(false)} aria-label="Close calendar" className="grid place-items-center w-9 h-9 rounded-full hover:bg-subtle">
-                <X size={18} className="text-sec" />
+  const triggerDateLabel = fmtRangeShort(startDate, endDate);
+  const datePickerPanel = (
+    <Overlay className={`flex ${compact ? 'items-center justify-center p-3 listing-calendar-layer' : 'items-end justify-center sm:items-center sm:p-5'} ${open ? '' : 'pointer-events-none'}`}>
+      <AnimatePresence initial={false}>
+        {open && <motion.button
+          key="calendar-backdrop"
+          type="button"
+          aria-label="Close date picker"
+          onClick={() => setOpen(false)}
+          className={`absolute inset-0 ${compact ? 'bg-black/20' : 'bg-black/50'}`}
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0 }}
+        />}
+      </AnimatePresence>
+      <AnimatePresence initial={false}>
+        {open && <motion.div
+          key="date-range-panel"
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Choose rental dates"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); }
+            if (event.key === 'Tab') {
+              const controls = event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled)');
+              const first = controls[0];
+              const last = controls[controls.length - 1];
+              if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+              else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+            }
+          }}
+          initial={reduceMotion ? false : { opacity: 0, y: 22, scale: 0.99 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0, y: 18, scale: 0.99 }}
+          transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+          style={compact && position ? { position: 'fixed', ...position } : undefined}
+          className={`calendar-dialog relative z-[201] flex w-full max-w-[960px] flex-col overflow-hidden rounded-t-card-xl border border-app bg-card shadow-pop sm:rounded-card-xl${compact ? ' listing-calendar-popover' : ''}`}
+        >
+          <header className="calendar-dialog-header shrink-0">
+            <div className="calendar-dialog-heading">
+              <span className="calendar-dialog-icon"><CalendarDays size={20} aria-hidden="true" /></span>
+              <div className="min-w-0">
+                <h2 className="text-xl font-bold text-main">Choose rental dates</h2>
+                <p className="mt-1 text-sm text-sec">Pick your pickup and return days.</p>
+              </div>
+            </div>
+            <div className="calendar-range-pair" aria-live="polite">
+              <div className={draftStart ? 'calendar-range-value is-selected' : 'calendar-range-value'}>
+                <span>Pickup</span><strong>{draftStart ? formatIsoLocal(draftStart, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Add date'}</strong>
+              </div>
+              <ArrowRight size={16} className="calendar-range-arrow" aria-hidden="true" />
+              <div className={draftEnd ? 'calendar-range-value is-selected' : 'calendar-range-value'}>
+                <span>Return</span><strong>{draftEnd ? formatIsoLocal(draftEnd, { month: 'short', day: 'numeric', year: 'numeric' }) : draftStart ? 'Choose date' : 'Add date'}</strong>
+              </div>
+            </div>
+            <button type="button" onClick={() => setOpen(false)} aria-label="Close calendar" className="calendar-close grid h-11 w-11 place-items-center rounded-full text-sec hover:bg-subtle">
+              <X size={19} />
+            </button>
+          </header>
+
+          {!compact && <div className="calendar-dialog-presets shrink-0" aria-label="Quick date choices">
+            {PRESETS.filter((preset) => preset.key !== 'custom').map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                disabled={!validRange(presetRange(preset.key).start, presetRange(preset.key).end)}
+                onClick={() => handlePreset(preset.key)}
+                className={`calendar-preset${activePreset === preset.key ? ' is-active' : ''}`}
+              >
+                {preset.label}
               </button>
-            )}
-          </div>
-        </div>
-        <div className="hidden sm:flex mt-1.5 items-center gap-1 overflow-x-auto no-scrollbar">
-          {PRESETS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => handlePreset(p.key)}
-              className={`px-2.5 py-1 rounded-card-lg text-xs font-medium whitespace-nowrap transition-colors ${
-                activePreset === p.key ? 'bg-accent-soft text-accent' : 'text-sec hover:bg-subtle'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
+            ))}
+          </div>}
 
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3.5 sm:p-3">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs text-muted" />
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setMonthOffset((o) => Math.max(0, o - 1))} disabled={monthOffset === 0} className="grid place-items-center w-9 h-9 rounded-card text-sec hover:bg-subtle disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Previous month">
-              <ChevronLeft size={17} />
-            </button>
-            <button type="button" onClick={() => setMonthOffset((o) => o + 1)} className="grid place-items-center w-9 h-9 rounded-card text-sec hover:bg-subtle" aria-label="Next month">
-              <ChevronRight size={17} />
-            </button>
+          <div className="calendar-dialog-body min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="calendar-dialog-toolbar">
+              <span>{compact ? 'Select pickup, then return' : 'Dates before today are unavailable'}</span>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => setMonthOffset((offset) => Math.max(0, offset - 1))} disabled={monthOffset === 0} className="calendar-month-nav" aria-label="Previous month">
+                  <ChevronLeft size={18} />
+                </button>
+                <button type="button" onClick={() => setMonthOffset((offset) => offset + 1)} disabled={new Date(rightMonth.getFullYear(), rightMonth.getMonth(), 1) > parseIsoLocal(maxDate)} className="calendar-month-nav" aria-label="Next month">
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="calendar-months">
+              <MonthGrid monthDate={leftMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} />
+              <MonthGrid monthDate={rightMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} />
+            </div>
           </div>
-        </div>
-        <div className="flex flex-col xl:flex-row gap-4">
-          {/* xl:hidden, not lg:hidden - otherwise 1024-1279px renders no calendar at all. */}
-          <div className="xl:hidden">
-            <MonthGrid monthDate={leftMonth} todayStr={todayStr} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} />
-          </div>
-          <div className="hidden xl:block xl:flex-1">
-            <MonthGrid monthDate={leftMonth} todayStr={todayStr} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} />
-          </div>
-          <div className="hidden xl:block xl:flex-1">
-            <MonthGrid monthDate={rightMonth} todayStr={todayStr} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} />
-          </div>
-        </div>
-      </div>
 
-      <div className={`shrink-0 gap-3 p-3.5 sm:p-3 border-t border-app bg-subtle ${mode === 'range' ? 'flex flex-col items-stretch' : 'flex items-center justify-between'}`}>
-        <div className="text-sm text-sec min-w-0">
-          <p className="text-xs font-medium text-muted">Selected dates</p>
-          <p className="font-medium text-main truncate">
-            {draftStart && draftEnd ? `${fmtRangeTiny(draftStart, draftEnd)} (${nights} night${nights === 1 ? '' : 's'})` : draftStart ? 'Choose an end date' : 'No dates selected'}
-          </p>
-        </div>
-        <button type="button" onClick={handleApply} disabled={!draftStart || !draftEnd} className="w-full sm:w-auto shrink-0 px-6 h-10 rounded-card bg-accent text-accent-text text-sm font-semibold hover:bg-accent-hover disabled:opacity-50 transition-colors duration-fast">Apply</button>
-      </div>
-    </div>
+          <footer className="calendar-dialog-footer shrink-0">
+            <button type="button" onClick={handleClear} className="calendar-clear min-h-11 px-2 text-sm font-semibold">Clear dates</button>
+            <div className="calendar-footer-summary" aria-live="polite">
+              <span>{draftStart && draftEnd ? `${nights} ${compact ? `rental day${nights === 1 ? '' : 's'}` : `night${nights === 1 ? '' : 's'}`}` : draftStart ? 'Select your return date' : 'No dates selected'}</span>
+              <strong>{draftStart && draftEnd ? fmtRangeTiny(draftStart, draftEnd) : draftStart ? formatIsoLocal(draftStart, { month: 'short', day: 'numeric' }) : ''}</strong>
+            </div>
+            <button type="button" onClick={handleApply} disabled={!draftStart || !draftEnd || !validRange(draftStart, draftEnd)} className="calendar-apply">Use these dates</button>
+          </footer>
+        </motion.div>}
+      </AnimatePresence>
+    </Overlay>
   );
 
   return (
     // No z-index here: it would cap the panel below the shared dim Overlay (z-200).
     <div ref={ref} className="relative">
-      {mode === 'range' ? (
+      {compact ? (
+        <button ref={triggerRef} type="button" aria-haspopup="dialog" aria-expanded={open}
+          aria-label={`Choose a date range${startDate ? `, ${triggerDateLabel}` : ''}`}
+          onClick={() => open ? setOpen(false) : openPicker()}
+          className={`listing-date-range-trigger${open ? ' is-open' : ''}`}>
+          <CalendarDays size={19} aria-hidden="true" />
+          <span className="listing-date-range-value"><strong>{startDate ? formatIsoLocal(startDate, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Add date'}</strong><span>Pickup</span></span>
+          <ChevronRight size={17} aria-hidden="true" className="text-muted shrink-0" />
+          <span className="listing-date-range-value"><strong>{endDate ? formatIsoLocal(endDate, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Add date'}</strong><span>Return</span></span>
+          <ChevronDown size={16} aria-hidden="true" className="text-sec shrink-0" />
+        </button>
+      ) : mode === 'range' ? (
         <button
+          ref={triggerRef}
           type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={`Choose a date range${startDate ? `, ${triggerDateLabel}` : ''}`}
           onClick={() => (open ? setOpen(false) : openPicker())}
-          className="w-full min-h-11 flex items-center justify-between gap-2 px-0 py-1 text-sm text-main"
+          className="calendar-trigger w-full min-h-11 flex items-center justify-between gap-2 px-0 py-1 text-sm text-main"
         >
           <span className="flex items-center gap-2 min-w-0">
             <Calendar size={16} className="text-accent shrink-0" />
-            <span className="truncate">{fmtRangeShort(startDate, endDate)}</span>
+            <span className="min-w-0 text-left"><span className="calendar-trigger-kicker">Date range</span><span className="block truncate">{triggerDateLabel}</span></span>
           </span>
           <ChevronDown size={14} className={`text-muted shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
       ) : (
         <button
+          ref={triggerRef}
           type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={`Choose a date range${startDate ? `, ${triggerDateLabel}` : ''}`}
           onClick={() => (open ? setOpen(false) : openPicker())}
-          className="flex items-center gap-2 px-3.5 h-11 rounded-full text-sm font-medium text-main hover:bg-subtle transition-colors duration-fast whitespace-nowrap"
+          className="calendar-trigger flex min-w-0 items-center gap-2 px-3.5 min-h-12 rounded-full text-sm font-medium text-main hover:bg-subtle transition-colors duration-fast whitespace-nowrap"
         >
           <Calendar size={16} className="text-accent shrink-0" />
-          <span>{fmtRangeShort(startDate, endDate)}</span>
+          <span className="min-w-0 text-left"><span className="calendar-trigger-kicker">Date range</span><span className="block truncate">{triggerDateLabel}</span></span>
           <ChevronDown size={14} className={`text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
       )}
 
-      {mode === 'range' && open ? (
-        <Overlay className="sm:hidden flex flex-col justify-end">
-          <button type="button" className="absolute inset-0 bg-black/45 animate-fade-in" onClick={() => setOpen(false)} aria-label="Close date picker" />
-          {datePickerPanel}
-        </Overlay>
-      ) : (
-        <>
-          {/* Not portaled: a portaled backdrop lives in a different stacking context than this
-              panel, so its z-index can't be trusted to lose against the panel's z-[210]. Staying
-              in the same local tree keeps the two comparable and the panel reliably clickable. */}
-          {mode === 'dual' && open && (
-            <button type="button" className="fixed inset-0 z-[200] bg-black/45 animate-fade-in" onClick={() => setOpen(false)} aria-label="Close date picker" />
-          )}
-          {datePickerPanel}
-        </>
-      )}
+      {datePickerPanel}
     </div>
   );
 }

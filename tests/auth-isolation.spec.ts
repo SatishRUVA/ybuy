@@ -2,12 +2,14 @@ import { expect, test, type Page } from '@playwright/test';
 import type { Session, User } from '@supabase/supabase-js';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { mockSupabaseModule } from './mock-supabase';
+import { appUrl, appWebSocketUrl } from './test-url';
 
 // Mocked Data API tests exercise browser state, not RLS or real Google OAuth.
-const appUrl = 'http://127.0.0.1:5174';
-const apiUrl = 'http://127.0.0.1:54321';
+const apiUrl = 'http://localhost:54321';
 const aliceId = '10000000-0000-4000-8000-000000000001';
 const bobId = '10000000-0000-4000-8000-000000000002';
+test.setTimeout(60_000);
 
 function sessionFor(id: string): Session {
   const name = id === aliceId ? 'Alice' : 'Bob';
@@ -34,10 +36,14 @@ const aliceListing = {
 };
 
 async function setup(page: Page, id?: string) {
+  await page.routeWebSocket(`${appWebSocketUrl}/**`, () => {});
   await page.route('**/*', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.origin === appUrl) return route.continue();
+    if (url.origin === appUrl) {
+      if (url.pathname === '/src/lib/supabase.ts') return mockSupabaseModule(route);
+      return route.continue();
+    }
     if (url.origin !== apiUrl) return route.fulfill({ contentType: 'application/json', body: '{}' });
 
     const token = request.headers().authorization?.replace('Bearer ', '');
@@ -65,7 +71,7 @@ async function setup(page: Page, id?: string) {
   });
   if (id) {
     await page.addInitScript((session) => {
-      localStorage.setItem('sb-127-auth-token', JSON.stringify(session));
+      localStorage.setItem('sb-localhost-auth-token', JSON.stringify(session));
     }, sessionFor(id));
   }
 }
@@ -79,19 +85,100 @@ async function switchAccount(page: Page, id: string) {
   }, sessionFor(id));
 }
 
-test('protected navigation preserves destination and offers email authentication', async ({ page }) => {
+test('protected navigation preserves destination and offers YBuy and Google authentication', async ({ page }) => {
   await setup(page);
-  await page.goto(appUrl);
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.getByRole('navigation', { name: 'Main', exact: true }).getByRole('button', { name: 'Bookings' }).click();
   await expect(page).toHaveURL(`${appUrl}/dashboard`);
   await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible();
-  await page.goto(`${appUrl}/dashboard?tab=lending#section`);
+  await page.goto(`${appUrl}/dashboard?tab=lending#section`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Sign in or create an account' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel('Email', { exact: true })).toBeVisible();
   await expect(dialog.getByLabel('Password', { exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: /Google/ })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Continue with Google', exact: true })).toBeVisible();
   await expect(page).toHaveURL(`${appUrl}/dashboard?tab=lending#section`);
+});
+
+test('Google sign-in preserves the private destination and prompts for an account', async ({ page }) => {
+  await setup(page);
+  await page.goto(`${appUrl}/dashboard?tab=lending#section`);
+  await page.getByRole('button', { name: 'Sign in or create an account' }).click();
+  const authorization = page.waitForRequest((req) => new URL(req.url()).pathname === '/auth/v1/authorize');
+  await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
+  const url = new URL((await authorization).url());
+  expect(url.searchParams.get('provider')).toBe('google');
+  expect(url.searchParams.get('redirect_to')).toBe(`${appUrl}/dashboard?tab=lending#section`);
+  expect(url.searchParams.get('prompt')).toBe('select_account');
+});
+
+test('Google initialization failure stays visible with email sign-in available', async ({ page }) => {
+  await setup(page);
+  await page.goto(`${appUrl}/dashboard`);
+  await page.getByRole('button', { name: 'Sign in or create an account' }).click();
+  await page.evaluate(async () => {
+    const modulePath = '/src/lib/supabase.ts';
+    const { supabase } = await import(modulePath);
+    supabase.auth.signInWithOAuth = async () => { throw new Error('Provider unavailable'); };
+  });
+  await page.getByRole('button', { name: 'Continue with Google', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Could not start Google sign-in');
+  await expect(page.getByRole('dialog').getByLabel('Email', { exact: true })).toBeEnabled();
+});
+
+test('YBuy email and password sign-in still authenticates on the requested page', async ({ page }) => {
+  await setup(page);
+  await page.route('**/auth/v1/token?grant_type=password', async (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({ email: 'alice@example.test', password: 'Test-password-123' });
+    await route.fulfill({ json: sessionFor(aliceId) });
+  });
+  await page.goto(`${appUrl}/favorites`);
+  await page.getByRole('button', { name: 'Sign in or create an account' }).click();
+  await page.getByRole('dialog').getByLabel('Email', { exact: true }).fill('alice@example.test');
+  await page.getByRole('dialog').getByLabel('Password', { exact: true }).fill('Test-password-123');
+  await page.getByRole('dialog').getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByText('Alice camera')).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page).toHaveURL(`${appUrl}/favorites`);
+});
+
+test('password reset request returns enumeration-safe confirmation', async ({ page }) => {
+  await setup(page);
+  let resetEmail = '';
+  await page.route('**/auth/v1/recover', async (route) => {
+    resetEmail = route.request().postDataJSON().email;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await page.goto(appUrl);
+  await page.getByRole('button', { name: 'Sign in or create an account' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Email', { exact: true }).fill('alice@example.test');
+  await dialog.getByRole('button', { name: 'Forgot password?' }).click();
+  await dialog.getByRole('button', { name: 'Send reset link' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('If an account uses that email');
+  expect(resetEmail).toBe('alice@example.test');
+});
+
+test('password recovery callback accepts a new password', async ({ page }) => {
+  await setup(page);
+  let updatedPassword = '';
+  await page.route('**/auth/v1/user', async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback();
+    updatedPassword = route.request().postDataJSON().password;
+    await route.fulfill({ json: sessionFor(aliceId).user });
+  });
+  const recovery = sessionFor(aliceId);
+  const hash = new URLSearchParams({
+    access_token: recovery.access_token, refresh_token: recovery.refresh_token,
+    expires_in: '3600', token_type: 'bearer', type: 'recovery',
+  });
+  await page.goto(`${appUrl}/#${hash}`);
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
+  await dialog.getByLabel('New password', { exact: true }).fill('New-test-password-456');
+  await dialog.getByRole('button', { name: 'Update password' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(updatedPassword).toBe('New-test-password-456');
 });
 
 test('OAuth callback failures are visible and private routes stay gated', async ({ page }) => {
@@ -179,7 +266,7 @@ for (const status of [400, 503]) {
     await expect(page.getByRole('alert')).toContainText('Could not sign out');
     await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible();
     await expect(page.getByText('Signed in as alice@example.test')).toHaveCount(0);
-    expect(await page.evaluate(() => localStorage.getItem('sb-127-auth-token'))).toBeNull();
+    expect(await page.evaluate(() => localStorage.getItem('sb-localhost-auth-token'))).toBeNull();
   });
 }
 
@@ -189,7 +276,7 @@ test('successful logout clears private UI and persisted auth state', async ({ pa
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible();
   await expect(page.getByText('Signed in as alice@example.test')).toHaveCount(0);
-  expect(await page.evaluate(() => localStorage.getItem('sb-127-auth-token'))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('sb-localhost-auth-token'))).toBeNull();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 

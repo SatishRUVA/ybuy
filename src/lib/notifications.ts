@@ -6,6 +6,7 @@ export type NotificationPreferenceKey = `${NotificationCategory}_${NotificationC
 
 export interface AppNotification {
   id: string;
+  event_key: string;
   category: NotificationCategory;
   title: string;
   body: string;
@@ -32,7 +33,7 @@ export async function listNotifications(params: {
   read?: 'all' | 'read' | 'unread';
 }): Promise<{ rows: AppNotification[]; total: number }> {
   let query = supabase.from('notifications')
-    .select('id,category,title,body,destination,created_at,read_at', { count: 'exact' })
+    .select('id,event_key,category,title,body,destination,created_at,read_at', { count: 'exact' })
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .range(params.offset, params.offset + params.limit - 1);

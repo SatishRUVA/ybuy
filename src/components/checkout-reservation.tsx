@@ -37,7 +37,7 @@ export function CheckoutReservation({ bookingId,canPay }: { bookingId: string; c
     ? <Alert tone="warning" title="Checkout reservation expired" className="mb-4">Availability has been released. Submit a new booking request if you still want this item. If you already paid, wait for payment reconciliation and contact support before paying again.</Alert> : null;
   return <Alert tone={remaining===0 ? 'warning' : 'info'} title="15-minute payment reservation" className="mb-4">
     <p>{remaining===null ? 'Checking server reservation…' : remaining===0 ? 'The payment window has ended. Checking the server for final status.' : `Time remaining: ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`}</p>
-    <p className="text-xs mt-1">Starts when the owner approves your request or an offer is accepted. Only verified backend payment confirmation secures the rental.</p>
+    <p className="text-xs mt-1">Starts with an instant booking, owner approval or an accepted offer. Only verified backend payment confirmation secures the rental.</p>
     {canPay && <Button className="mt-3" disabled={remaining===null || remaining<=0} loading={busy} onClick={async () => {
       setBusy(true);
       try { window.location.href=await createCheckoutSession(bookingId); }

@@ -6,15 +6,16 @@ import { useAuth } from '@/auth-context';
 import type { Listing, Category } from '@/data';
 import { fetchCategories, fetchCategoryCounts, searchListings, resolveCategoryId, toUiCategory, toUiListing, enrichListingsWithRatings, SEARCH_PAGE_SIZE, type SearchSortBy } from '@/lib/listings';
 import { fetchFavoriteListingIds, addFavorite, removeFavorite } from '@/lib/favorites';
-import { findCities, locationLabel as formatLocation } from '@/lib/geo';
+import { cityForCoordinates, findCities, locationLabel as formatLocation } from '@/lib/geo';
 import { useMarketplaceLocation } from '@/location-context';
 import { loadLeaflet, type LeafletMap } from '@/lib/leaflet';
 import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
+import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { ListingGridSkeleton, ListingCardWideSkeleton } from '@/components/skeleton';
 import { Button, Alert, EmptyState } from '@/components/ui';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/shadcn/dialog';
 import * as Icons from 'lucide-react';
-import { Map as MapIcon, List, SlidersHorizontal, X, Star, Shield, Zap, CheckCircle2, Truck, MapPin, SearchX, Loader2 } from 'lucide-react';
+import { Map as MapIcon, List, SlidersHorizontal, X, Star, Shield, Zap, CheckCircle2, Truck, MapPin, SearchX, Loader2, PackagePlus } from 'lucide-react';
 import { SEARCH_RADII, searchStateParams, saveSearchState, type SearchState, type SearchRadius } from '@/lib/search-state';
 
 // The price slider's top stop is labelled "$200+", so it must mean "no upper limit", not "$200".
@@ -39,6 +40,7 @@ export function SearchPage({
 }) {
   const { navigate } = useRouter();
   const { user, openSignIn } = useAuth();
+  const itemRequestsFlag = useFeatureFlag('item_requests');
   const { location, selectCity, clearLocation } = useMarketplaceLocation();
   const lastRouteLocation = useRef<string | null>(null);
   const [routeLocationReady, setRouteLocationReady] = useState(false);
@@ -119,24 +121,17 @@ export function SearchPage({
   useEffect(() => {
     const routeKey = `${initialLocationLabel ?? ''}:${initialCoords?.lat ?? ''}:${initialCoords?.lng ?? ''}`;
     if (lastRouteLocation.current === routeKey) return;
-    if (initialCoords && Number.isFinite(initialCoords.lat) && Number.isFinite(initialCoords.lng)
-      && Math.abs(initialCoords.lat) <= 90 && Math.abs(initialCoords.lng) <= 180) {
-      lastRouteLocation.current = routeKey;
-      if (location.latitude !== initialCoords.lat || location.longitude !== initialCoords.lng
-        || (initialLocationLabel && formatLocation(location) !== initialLocationLabel)) {
-        const [city, ...region] = (initialLocationLabel || 'Selected location').split(',').map((part) => part.trim());
-        selectCity({ city, state: region.join(', '), country: '', source: 'USER_SELECTED',
-          latitude: initialCoords.lat, longitude: initialCoords.lng });
-      }
-      setRouteLocationReady(true);
-      return;
-    }
-    if (!initialLocationLabel || initialLocationLabel === 'Near me' || initialLocationLabel === 'Nearby') {
+    if (initialCoords && location.country && location.latitude === initialCoords.lat && location.longitude === initialCoords.lng) {
       lastRouteLocation.current = routeKey;
       setRouteLocationReady(true);
       return;
     }
-    if (formatLocation(location).toLowerCase() === initialLocationLabel.trim().toLowerCase()
+    if (!initialCoords && (!initialLocationLabel || initialLocationLabel === 'Near me' || initialLocationLabel === 'Nearby')) {
+      lastRouteLocation.current = routeKey;
+      setRouteLocationReady(true);
+      return;
+    }
+    if (!initialCoords && formatLocation(location).toLowerCase() === initialLocationLabel?.trim().toLowerCase()
       && Number.isFinite(location.latitude) && Number.isFinite(location.longitude)) {
       lastRouteLocation.current = routeKey;
       setRouteLocationReady(true);
@@ -144,10 +139,17 @@ export function SearchPage({
     }
     const controller = new AbortController();
     setLocationError(null);
-    void findCities(initialLocationLabel, controller.signal).then((cities) => {
+    const lookup = initialCoords
+      ? cityForCoordinates(initialCoords.lat, initialCoords.lng).then(city => city ? [city] : [])
+      : findCities(initialLocationLabel ?? '', controller.signal);
+    void lookup.then(async (cities) => {
       if (controller.signal.aborted) return;
-      lastRouteLocation.current = routeKey;
-      if (cities[0]) { selectCity(cities[0]); setRouteLocationReady(true); }
+      if (cities[0]) {
+        await selectCity(cities[0]);
+        if (controller.signal.aborted) return;
+        lastRouteLocation.current = routeKey;
+        setRouteLocationReady(true);
+      }
       else { setLocationError('Could not find that city or postal code. Choose another location.'); setLoading(false); }
     }).catch((error: unknown) => {
       if (!controller.signal.aborted) {
@@ -501,6 +503,9 @@ export function SearchPage({
               </h1>
               <p className="text-xs text-sec sm:shrink-0">{preciseLocation ? `${maxDistance === null ? 'Any distance from' : `Within ${maxDistance} miles of`} ${formatLocation(location)} (approximate distances)` : 'Choose a city or allow location access to filter by distance.'}</p>
             </div>
+            {itemRequestsFlag.enabled && !error && !loading && filtered.length > 0 && <div className="mb-3 flex justify-end">
+              <Button size="sm" variant="ghost" icon={<PackagePlus size={15} />} onClick={() => navigate({ name: 'need-something' })}>Request an item instead</Button>
+            </div>}
 
             {categoryNotice && !error && <Alert tone="info" className="mb-4">{categoryNotice}</Alert>}
             {locationError && <Alert tone="error" className="mb-4">{locationError}</Alert>}
@@ -579,16 +584,22 @@ export function SearchPage({
             {!error && !loading && routeLocationReady && !hasMore && filtered.length === 0 && (
               <><EmptyState
                 icon={<SearchX size={20} />}
-                title={location.source !== 'NONE' ? `No matching items near ${formatLocation(location)}` : 'Nothing matches those filters'}
+                title={itemRequestsFlag.enabled ? "Couldn't find what you need?" : location.source !== 'NONE' ? `No matching items near ${formatLocation(location)}` : 'Nothing matches those filters'}
                 description={
-                  location.source !== 'NONE'
+                  itemRequestsFlag.enabled
+                    ? 'Request an item and nearby owners can respond with listings that fit your dates and budget.'
+                    : location.source !== 'NONE'
                     ? `No rentals match${maxDistance === null ? ' at any distance' : ` within ${maxDistance} miles`}. Expand the radius below, change your dates or filters, or choose another city.`
                     : activeFilterCount > 0
                     ? 'Try widening the distance or price, or clear the filters to see everything nearby.'
                     : 'Try a different word, or browse a category to see what people near you are lending.'
                 }
-                actionLabel={location.source !== 'NONE' ? 'Browse all locations' : activeFilterCount > 0 ? 'Clear all filters' : 'Browse everything'}
-                onAction={() => { if (location.source !== 'NONE') clearLocation(); else { clearAllFilters(); setKeyword(''); } }}
+                actionLabel={itemRequestsFlag.enabled ? 'Request an item' : location.source !== 'NONE' ? 'Browse all locations' : activeFilterCount > 0 ? 'Clear all filters' : 'Browse everything'}
+                onAction={() => {
+                  if (itemRequestsFlag.enabled) navigate({ name: 'need-something' });
+                  else if (location.source !== 'NONE') clearLocation();
+                  else { clearAllFilters(); setKeyword(''); }
+                }}
               />
               <div className="mt-3 flex flex-wrap justify-center gap-3">
                 {preciseLocation && maxDistance !== null && <>
@@ -597,7 +608,7 @@ export function SearchPage({
                   ))}
                   <Button variant="secondary" onClick={() => setMaxDistance(null)}>Search Any distance</Button>
                 </>}
-                <Button variant="secondary" onClick={() => navigate({ name: 'requests' })}>Request an item</Button>
+                {itemRequestsFlag.enabled && <Button variant="secondary" onClick={() => { clearAllFilters(); setKeyword(''); }}>Continue browsing</Button>}
               </div></>
             )}
           </div>

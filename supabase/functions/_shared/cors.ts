@@ -1,7 +1,7 @@
 // Shared CORS handling for the browser-callable Edge Functions.
 //
 // APP_ORIGIN is a comma-separated allowlist, e.g.
-//   https://ybuy.vercel.app,http://localhost:5173,http://127.0.0.1:5173
+//   https://ybuy.vercel.app,http://localhost:5173
 // A request's Origin is echoed back only when it is on the list. When APP_ORIGIN is unset the
 // functions stay permissive (`*`), which is the previous behavior and only suitable for development.
 const ALLOWED_HEADERS = 'authorization, x-client-info, apikey, content-type, x-notification-worker-secret';

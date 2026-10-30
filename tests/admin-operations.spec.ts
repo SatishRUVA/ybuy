@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import { appUrl } from './test-url';
 
 // Mocked RPC checks cover browser behavior; database tests cover authorization and persistence.
-const appUrl = 'http://127.0.0.1:5174';
 const userId = 'b0000000-0000-4000-8000-000000000001';
 const caseId = 'b0000000-0000-4000-8000-000000000002';
 const now = '2026-10-18T12:00:00Z';
@@ -20,11 +20,11 @@ async function setup(page: Page, permissions: string[]) {
     user: { id: userId, aud: 'authenticated', role: 'authenticated', email: 'operations@example.test',
       app_metadata: { provider: 'google' }, user_metadata: { full_name: 'Test Operator' }, created_at: now },
   };
-  await page.addInitScript((value) => { localStorage.setItem('sb-127-auth-token', JSON.stringify(value)); }, session);
+  await page.addInitScript((value) => { localStorage.setItem('sb-localhost-auth-token', JSON.stringify(value)); }, session);
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     if (url.origin === appUrl) return route.continue();
-    if (url.hostname !== '127.0.0.1') return route.fulfill({ contentType: 'application/json', body: '{}' });
+    if (url.hostname !== 'localhost') return route.fulfill({ contentType: 'application/json', body: '{}' });
     let body: unknown = [];
     if (url.pathname.endsWith('/has_active_session')) body = true;
     if (url.pathname.endsWith('/get_my_profile')) body = { id: userId, full_name: 'Test Operator', email: 'operations@example.test', created_at: now };
@@ -42,6 +42,36 @@ async function setup(page: Page, permissions: string[]) {
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   });
 }
+
+test('configuration administrator can add marketplace countries with an audit reason', async ({ page }) => {
+  await setup(page, ['config.manage']);
+  await page.route('**/rest/v1/rpc/admin_get_agreement_terms', route =>
+    route.fulfill({ contentType: 'application/json', body: 'null' }));
+  await page.route('**/rest/v1/rpc/admin_list_settings', route =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify([{
+      key: 'marketplace_country_codes', value: ['US'], value_type: 'country_codes',
+      min_value: null, max_value: null, description: 'Enabled marketplace countries', is_public: true, updated_at: now,
+    }]) }));
+  await page.route('**/rest/v1/reference_countries?**', route =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify([
+      { code: 'US', name: 'United States' }, { code: 'CA', name: 'Canada' },
+    ]) }));
+  await page.route('**/rest/v1/rpc/admin_update_setting', route =>
+    route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }));
+  await page.goto(`${appUrl}/admin/settings`);
+  await expect(page.getByRole('heading', { name: 'Global settings', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Change', exact: true }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog.getByRole('checkbox', { name: 'United States', exact: true })).toBeChecked();
+  await dialog.getByRole('checkbox', { name: 'Canada', exact: true }).check();
+  await dialog.getByLabel('Reason (recorded in the audit log)').fill('Enable Canadian marketplace locations');
+  const save = page.waitForRequest(request => request.url().endsWith('/admin_update_setting'));
+  await dialog.getByRole('button', { name: 'Save change', exact: true }).click();
+  expect((await save).postDataJSON()).toEqual({
+    p_key: 'marketplace_country_codes', p_value: ['US', 'CA'], p_reason: 'Enable Canadian marketplace locations',
+  });
+  await expect(page.getByText('marketplace_country_codes updated.', { exact: true })).toBeVisible();
+});
 
 test('support operator sees supported modules, but not financial grants', async ({ page }) => {
   await setup(page, ['support.manage']);

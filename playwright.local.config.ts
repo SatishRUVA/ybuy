@@ -1,21 +1,53 @@
-import { execSync } from 'node:child_process';
 import { defineConfig } from '@playwright/test';
-import mockedConfig from './playwright.config';
 
-const status = JSON.parse(execSync('npx supabase status --output json', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-if (status.API_URL !== 'http://127.0.0.1:54321' || !status.ANON_KEY) {
-  throw new Error('Real tests require the running local Supabase stack.');
+const appUrl = 'http://localhost:5174';
+const localAnonKey = process.env.YBUY_LOCAL_SUPABASE_ANON_KEY;
+
+if (process.env.YBUY_E2E_HOSTED === 'true') {
+  throw new Error('This config is local-only. Unset YBUY_E2E_HOSTED to prevent contacting a remote backend.');
+}
+if (!localAnonKey) {
+  throw new Error('Set YBUY_LOCAL_SUPABASE_ANON_KEY from `supabase status` before running local owner/renter E2E tests.');
 }
 
 export default defineConfig({
   testDir: './tests/local',
+  testMatch: '**/*.spec.ts',
+  fullyParallel: false,
   workers: 1,
-  timeout: 60_000,
-  reporter: [['list'], ['html', { outputFolder: 'playwright-local-report', open: 'never' }]],
-  outputDir: 'test-results-local',
-  use: { baseURL: 'http://127.0.0.1:5174', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  timeout: 120_000,
+  reporter: 'list',
+  use: {
+    baseURL: appUrl,
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    channel: 'chrome',
+  },
   webServer: {
-    ...mockedConfig.webServer,
-    env: { ...mockedConfig.webServer?.env, VITE_SUPABASE_ANON_KEY: status.ANON_KEY },
+    command: 'pnpm run dev -- --host localhost --port 5174 --strictPort --mode e2e',
+    url: appUrl,
+    reuseExistingServer: false,
+    env: {
+      YBUY_TEST_APP_URL: appUrl,
+      VITE_SUPABASE_URL: 'http://localhost:54321',
+      VITE_SUPABASE_ANON_KEY: localAnonKey,
+      VITE_AUTH_PROVIDERS: 'google',
+      VITE_GOOGLE_CLIENT_ID: '',
+      VITE_GOOGLE_MAPS_API_KEY: '',
+      VITE_MAP_API_KEY: '',
+      VITE_STRIPE_PUBLISHABLE_KEY: '',
+      VITE_TEST_ENVIRONMENT: 'true',
+      VITE_MAX_BOOKING_RANGE_DAYS: '',
+      VITE_SERVICE_FEE_PERCENT: '',
+      VITE_SHOW_DEMO_THEMES: 'false',
+      VITE_SHOW_HERO_CATEGORY_PILLS: 'false',
+      VITE_SHOW_OUT_OF_SCOPE_PAGES: 'false',
+      SUPABASE_URL: 'http://localhost:54321',
+      SUPABASE_SERVICE_ROLE_KEY: '',
+      STRIPE_SECRET_KEY: '',
+      STRIPE_WEBHOOK_SECRET: '',
+      RESEND_API_KEY: '',
+      OPENROUTER_API_KEY: '',
+    },
   },
 });

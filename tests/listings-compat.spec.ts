@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { appUrl } from './test-url';
 
-const appUrl = 'http://127.0.0.1:5174';
 const listing = {
   id: '30000000-0000-4000-8000-000000000001',
   owner_id: '10000000-0000-4000-8000-000000000001',
@@ -29,16 +29,17 @@ test('published listings still load before optional marketplace columns are migr
 
     if (url.pathname === '/rest/v1/listings') {
       const select = url.searchParams.get('select') ?? '';
-      if (select.includes('available_quantity')) {
+      if (select.startsWith('*') && url.searchParams.get('order')?.includes('owner_verified')) {
         sawNewSchemaQuery = true;
         return route.fulfill({
           status: 400,
           contentType: 'application/json',
           body: JSON.stringify({
             code: '42703',
-            message: 'column listings.available_quantity does not exist',
+            message: 'column listings.owner_verified does not exist',
           }),
         });
+
       }
       if (select.startsWith('id,owner_id,category_id,title,description')) {
         sawLegacyFallback = true;
@@ -78,4 +79,38 @@ test('published listings still load before optional marketplace columns are migr
     availableQuantity: 1,
     negotiationEnabled: false,
   });
+});
+
+test('published listings load before duration discount columns are migrated', async ({ page }) => {
+  let sawCompatibleQuery = false;
+  await page.route('**/*', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.origin === appUrl) return route.continue();
+    if (url.pathname === '/rest/v1/listings') {
+      const select = url.searchParams.get('select') ?? '';
+      if (select.includes('duration_discount_')) {
+        return route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: '42703',
+            message: 'column listings.duration_discount_min_days does not exist',
+          }),
+        });
+      }
+      if (select.startsWith('*')) {
+        sawCompatibleQuery = true;
+        return route.fulfill({
+          contentType: 'application/json',
+          headers: { 'content-range': '0-0/1' },
+          body: JSON.stringify([{ ...listing, owner_verified: false, instant_booking: false }]),
+        });
+      }
+    }
+    return route.fulfill({ contentType: 'application/json', body: '[]' });
+  });
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Legacy compatibility item')).toBeVisible();
+  await expect(page.getByText("We couldn't load listings")).toHaveCount(0);
+  expect(sawCompatibleQuery).toBe(true);
 });

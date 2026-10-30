@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui';
-import logo from '@/assets/logo.png';
+import { BrandLogo } from '@/components/brand-logo';
 
 function getRedirectTarget(): string {
   const params = new URLSearchParams(window.location.search);
@@ -59,8 +59,7 @@ export function AccessPage() {
     <div className="min-h-dvh grid place-items-center bg-app px-4 py-8">
       <div className="w-full max-w-sm bg-card border border-app rounded-card-xl shadow-card p-6 sm:p-8 animate-fade-in">
         <div className="flex items-center gap-2.5">
-          <img src={logo} alt="" className="w-9 h-9 rounded-card object-cover" />
-          <span className="font-extrabold text-main font-display">YBuy</span>
+          <BrandLogo />
         </div>
 
         <h1 className="mt-6 text-xl font-bold text-main font-display">Welcome to YBuy</h1>

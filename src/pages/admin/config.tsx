@@ -4,9 +4,9 @@ import { Alert, Badge, Button, EmptyState } from '@/components/ui';
 import { fieldClass,textareaClass } from '@/components/form-classes';
 import { Skeleton } from '@/components/skeleton';
 import {
-  listCategories, listSettings, setFeatureFlag, updateSetting, upsertCategory,
+  listCategories, listSettings, listCountryOptions, setFeatureFlag, updateSetting, upsertCategory,
   saveDepositRule,
-  getAgreementTerms,publishAgreementTerms,
+  getAgreementTerms,publishAgreementTerms,publishTestDummyAgreementTerms,
   type AdminCategory, type AdminSetting, type FeatureFlag,
 } from '@/lib/admin';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/shadcn/dialog';
@@ -150,14 +150,17 @@ const asPercent = (s: AdminSetting) => (s.key.endsWith('_pct') && typeof s.value
 
 export function SettingsSection() {
   const { data, loading, error, reload } = useLoad(listSettings);
+  const countries = useLoad(listCountryOptions);
   const [target, setTarget] = useState<AdminSetting | null>(null);
   const [value, setValue] = useState('');
+  const [countryCodes, setCountryCodes] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
 
   return (
     <>
       <PageHeader title="Global settings" subtitle="Business rules stored in the database. Deployments never overwrite these values; secrets are never shown here." />
       <AgreementTermsSettings />
+      <Alert tone="info" className="mb-4">Listing policy settings below are authoritative. Set both offer percentage fractions before enabling listing_offers_configured; bidding must also be enabled. A zero high-value threshold means all publications await review in Listings. Delivery fees are stored terms, not an additional checkout charge. Photo dimensions are browser-validated; byte limits are enforced by storage.</Alert>
       {notice && <Alert tone="success" className="mb-4">{notice}</Alert>}
       <LoadState loading={loading} error={error} reload={reload} rows={2} />
       <div className="grid gap-4">
@@ -168,10 +171,14 @@ export function SettingsSection() {
                 <CardTitle><code className="text-sm [overflow-wrap:anywhere]">{s.key}</code></CardTitle>
                 <CardDescription className="mt-1">{s.description}</CardDescription>
               </div>
-              <Button size="sm" variant="secondary" icon={<Pencil size={13} />} onClick={() => { setTarget(s); setValue(String(s.value)); }}>Change</Button>
+              <Button size="sm" variant="secondary" icon={<Pencil size={13} />} onClick={() => {
+                setTarget(s); setValue(String(s.value)); setCountryCodes(Array.isArray(s.value) ? s.value : []);
+              }}>Change</Button>
             </CardHeader>
             <CardContent className="text-sm text-sec">
-              <span className="text-main font-semibold tnum">{String(s.value)}{asPercent(s)}</span>
+              <span className="text-main font-semibold tnum">{Array.isArray(s.value)
+                ? s.value.map(code => countries.data?.find(country => country.code === code)?.name ?? code).join(', ')
+                : String(s.value)}{asPercent(s)}</span>
               {s.min_value != null && s.max_value != null && <span> · allowed {s.min_value}–{s.max_value}</span>}
               <span> · updated {fmtDate(s.updated_at)}</span>
             </CardContent>
@@ -181,18 +188,35 @@ export function SettingsSection() {
       <ReasonDialog
         open={target !== null} onOpenChange={(o) => !o && setTarget(null)}
         title={`Change ${target?.key ?? 'setting'}`}
-        description="The new value applies to future activity only. Existing bookings keep their price snapshot."
+        description={target?.value_type === 'country_codes'
+          ? 'Controls city search, location detection, new pickup addresses and new item requests. Existing rentals and historical addresses remain unchanged.'
+          : 'The new value applies to future activity only. Existing bookings keep their price snapshot.'}
         confirmLabel="Save change"
         onConfirm={async (reason) => {
-          const parsed = target!.value_type === 'boolean' ? value === 'true' : Number(value);
-          if (target!.value_type !== 'boolean' && (value.trim() === '' || !Number.isFinite(parsed as number))) throw new Error('Enter a valid number.');
+          const parsed = target!.value_type === 'country_codes' ? countryCodes
+            : target!.value_type === 'boolean' ? value === 'true' : Number(value);
+          if (target!.value_type === 'country_codes') {
+            if (countries.loading || countries.error) throw new Error('Load the country options before saving.');
+            if (countryCodes.length === 0) throw new Error('Choose at least one country.');
+          } else if (target!.value_type !== 'boolean' && (value.trim() === '' || !Number.isFinite(parsed))) throw new Error('Enter a valid number.');
           const res = await updateSetting(target!.key, parsed, reason);
           if (!res.ok) throw new Error(res.error ?? 'The change was rejected.');
           setNotice(`${target!.key} updated.`);
           reload();
         }}
       >
-        <label className="block text-[13px] font-semibold text-main">New value
+        {target?.value_type === 'country_codes' ? <fieldset>
+          <legend className="text-sm font-semibold text-main">Enabled marketplace countries</legend>
+          <LoadState loading={countries.loading} error={countries.error} reload={countries.reload} rows={2} />
+          <div className="mt-2 max-h-64 overflow-auto rounded-card border border-app">
+            {countries.data?.map(country => <label key={country.code} className="flex items-center gap-3 px-3 min-h-11 text-sm text-main">
+              <input type="checkbox" checked={countryCodes.includes(country.code)} onChange={event => {
+                setCountryCodes(current => event.target.checked ? [...current, country.code] : current.filter(code => code !== country.code));
+              }} />
+              {country.name}
+            </label>)}
+          </div>
+        </fieldset> : <label className="block text-[13px] font-semibold text-main">New value
           {target?.value_type === 'boolean' ? (
             <select className={fieldClass('mt-1.5 font-normal')} value={value} onChange={(e) => setValue(e.target.value)}>
               <option value="true">true</option><option value="false">false</option>
@@ -200,7 +224,7 @@ export function SettingsSection() {
           ) : (
             <input className={fieldClass('mt-1.5 font-normal tnum')} inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} />
           )}
-        </label>
+        </label>}
       </ReasonDialog>
     </>
   );
@@ -208,6 +232,7 @@ export function SettingsSection() {
 
 function AgreementTermsSettings() {
   const current=useLoad(getAgreementTerms);
+  const dummyFlag=useFeatureFlags().data?.find(flag=>flag.key==='test_dummy_legal_terms')?.enabled===true;
   const [terms,setTerms]=useState('');
   const [reference,setReference]=useState('');
   const [reason,setReason]=useState('');
@@ -218,7 +243,8 @@ function AgreementTermsSettings() {
   return <Card className="mb-5"><CardHeader><CardTitle>Rental agreement policies</CardTitle><CardDescription>Publish only externally reviewed and approved legal terms. No binding policy text is generated automatically. New versions apply to future agreement snapshots only.</CardDescription></CardHeader>
     <CardContent>
       <LoadState loading={current.loading} error={current.error} reload={current.reload} rows={1}/>
-      {!current.loading&&!current.error&&<p className="text-sm text-sec mb-3">{current.data?`Latest approved policy: version ${current.data.version}. Approval reference: ${current.data.approval_reference}`:'No approved legal policy is configured. Booking snapshots are labeled approval pending and cannot be accepted.'}</p>}
+      {!current.loading&&!current.error&&<p className="text-sm text-sec mb-3">{current.data?`${current.data.approval_reference.startsWith('TEST ONLY:')?'Latest test-only sample':'Latest approved policy'}: version ${current.data.version}. Reference: ${current.data.approval_reference}`:'No approved legal policy is configured. Booking snapshots are labeled approval pending and cannot be accepted.'}</p>}
+      {dummyFlag&&<div className="rounded-card border border-warning bg-warning-soft p-3 mb-3"><p className="text-sm font-semibold text-main">Test-only dummy terms are enabled</p><p className="text-xs text-sec mt-1">Publishing sample terms enables acceptance for test bookings. They are fictional, not legally reviewed, and must never be used for real rentals.</p><Button size="sm" variant="secondary" className="mt-2" onClick={async()=>{setBusy(true);setError(null);setNotice(null);try{const version=await publishTestDummyAgreementTerms('Enable isolated booking lifecycle tests with fictional terms');setNotice(`Test-only dummy terms version ${version} published.`);current.reload();}catch(reason){setError(reason instanceof Error?reason.message:'Could not publish test-only terms.');}finally{setBusy(false);}}} loading={busy}>Publish test-only dummy terms</Button></div>}
       {current.data&&<details className="mb-3"><summary className="text-sm font-semibold text-accent cursor-pointer">View current policy</summary><p className="mt-2 whitespace-pre-wrap text-sm text-sec">{current.data.terms}</p></details>}
       <details><summary className="text-sm font-semibold text-accent cursor-pointer">Publish a new approved policy version</summary>
         <form className="space-y-3 mt-3" onSubmit={async event=>{

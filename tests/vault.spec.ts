@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mockSupabaseModule } from './mock-supabase';
+import { appUrl } from './test-url';
 
-const appUrl = 'http://127.0.0.1:5174';
 const userId = 'e1000000-0000-4000-8000-000000000001';
 const factorId = 'e2000000-0000-4000-8000-000000000001';
 
@@ -25,7 +25,7 @@ async function setup(page: Page, options: { admin?: boolean; enroll?: boolean; r
   let secretWrites = 0;
   let stored = false;
   let verifyPosts = 0;
-  await page.addInitScript((value) => localStorage.setItem('sb-127-auth-token', JSON.stringify(value)), session('aal1'));
+  await page.addInitScript((value) => localStorage.setItem('sb-localhost-auth-token', JSON.stringify(value)), session('aal1'));
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     if (url.origin === appUrl) return route.continue();

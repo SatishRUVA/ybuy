@@ -35,7 +35,9 @@ export interface DbBookingRow {
   daily_rate: number;
   days: number;
   subtotal: number;
+  owner_discount_amount?: number;
   service_fee_amount: number;
+  insurance_amount: number;
   deposit: number;
   total: number;
   created_at: string;
@@ -51,6 +53,23 @@ const BOOKING_SELECT = `
   owner:profiles!owner_id(id, full_name, avatar_url)
 `;
 
+export interface BookingPickup {
+  address: string;
+  city: string;
+  state: string;
+  postalCode: string;
+}
+
+export async function fetchBookingPickup(bookingId: string): Promise<BookingPickup> {
+  const { data, error } = await supabase.rpc('get_booking_pickup', { p_booking_id: bookingId });
+  if (error) throw new Error(error.message);
+  if (!data || typeof data.address !== 'string' || !data.address.trim()
+    || typeof data.city !== 'string' || typeof data.state !== 'string' || typeof data.postalCode !== 'string') {
+    throw new Error('The pickup address could not be loaded. Please contact the owner.');
+  }
+  return { address: data.address, city: data.city, state: data.state, postalCode: data.postalCode };
+}
+
 export interface UiBooking {
   id: string;
   listingId: string;
@@ -65,7 +84,9 @@ export interface UiBooking {
   dailyRate: number;
   days: number;
   subtotal: number;
+  ownerDiscountAmount: number;
   serviceFeeAmount: number;
+  insuranceAmount: number;
   deposit: number;
   total: number;
   isOwner: boolean;
@@ -92,7 +113,9 @@ export function toUiBooking(row: DbBookingRow, currentUserId: string): UiBooking
     dailyRate: row.daily_rate,
     days: row.days,
     subtotal: row.subtotal,
+    ownerDiscountAmount: Number(row.owner_discount_amount ?? 0),
     serviceFeeAmount: row.service_fee_amount,
+    insuranceAmount: Number(row.insurance_amount ?? 0),
     deposit: row.deposit,
     total: row.total,
     isOwner,
@@ -148,13 +171,18 @@ export async function createBookingRequest(params: {
   startDate: string;
   endDate: string;
   quantity?: number;
+  promotionCode?: string;
 }): Promise<DbBookingRow> {
-  return callBookingRpc('create_booking_request', {
+  const code = params.promotionCode?.trim();
+  const args = {
     p_listing_id: params.listingId,
     p_start_date: params.startDate,
     p_end_date: params.endDate,
     p_quantity: params.quantity ?? 1,
-  });
+  };
+  return code
+    ? callBookingRpc('create_booking_request_with_owner_promo', { ...args, p_code: code })
+    : callBookingRpc('create_booking_request', args);
 }
 
 export async function respondToBookingRequest(bookingId: string, approve: boolean): Promise<DbBookingRow> {

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Leaf, LockKeyhole, X } from 'lucide-react';
+import { LockKeyhole, X } from 'lucide-react';
+import { BrandLogo } from '@/components/brand-logo';
 import { useAuth } from '@/auth-context';
 import { Alert, Button } from '@/components/ui';
 import { fieldClass } from '@/components/form-classes';
 
 export function SignInDialog() {
-  const { user, error, signInOpen, authBusy, closeSignIn, authenticate } = useAuth();
+  const { user, error, signInOpen, passwordRecovery, authBusy, closeSignIn, authenticate, requestPasswordReset, finishPasswordReset, signInWithGoogle } = useAuth();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [register, setRegister] = useState(false);
   const [email, setEmail] = useState('');
@@ -13,12 +14,16 @@ export function SignInDialog() {
   const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [resetMode, setResetMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!signInOpen || !dialog) return;
     setPassword('');
     setSubmitted(false);
+    setResetMode(false);
+    setResetSent(false);
     dialog.showModal();
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -31,6 +36,15 @@ export function SignInDialog() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitted(false);
+    if (passwordRecovery) {
+      await finishPasswordReset(password);
+      setPassword('');
+      return;
+    }
+    if (resetMode) {
+      setResetSent(await requestPasswordReset(email));
+      return;
+    }
     const result = await authenticate(email, password, register ? fullName : undefined);
     setPassword('');
     if (result === 'confirmation-required') setSubmitted(true);
@@ -49,37 +63,45 @@ export function SignInDialog() {
           <X size={20} aria-hidden="true" />
         </button>
         <div className="mb-6 flex items-center gap-2.5 pr-12">
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-accent-soft text-accent"><Leaf size={20} aria-hidden="true" /></span>
-          <span className="font-display text-2xl font-extrabold tracking-tight text-main">YBuy</span>
+          <BrandLogo />
         </div>
         <h2 id="sign-in-title" className="font-display text-[1.75rem] font-bold leading-tight tracking-tight text-main sm:text-4xl">
-          {register ? 'Create your account' : user ? 'Use another account' : 'Welcome to YBuy'}
+          {passwordRecovery ? 'Choose a new password' : resetMode ? 'Reset your password' : register ? 'Create your account' : user ? 'Use another account' : 'Welcome to YBuy'}
         </h2>
         <p id="sign-in-description" className="mt-2 mb-6 text-[15px] leading-relaxed text-sec">
           {user ? `You're signed in as ${user.email}. Signing in switches accounts on this device.` : 'One account to rent items and list your own.'}
         </p>
         {error && <div role="alert" className="mb-4"><Alert tone="error">{error}</Alert></div>}
         {submitted && !error && <Alert tone="info">Check your email for a confirmation link before signing in. If you already have an account, sign in instead.</Alert>}
+        {resetSent && !error && <Alert tone="info">If an account uses that email, a reset link is on its way. Check your inbox and spam folder.</Alert>}
+        {passwordRecovery && <Alert tone="info">Enter a new password for your YBuy account.</Alert>}
+        {!passwordRecovery && !resetMode && <>
+          <Button type="button" fullWidth size="lg" variant="secondary" disabled={authBusy !== null} onClick={() => void signInWithGoogle()}>
+            Continue with Google
+          </Button>
+          <div className="my-5 flex items-center gap-3 text-xs text-sec"><span className="flex-1 border-t border-app" /><span>or use your YBuy account</span><span className="flex-1 border-t border-app" /></div>
+        </>}
         <form onSubmit={(event) => void submit(event)} className="space-y-4">
-          {register && <label className="block text-sm font-semibold">Full name
+          {register && !resetMode && !passwordRecovery && <label className="block text-sm font-semibold">Full name
             <input className={fieldClass('mt-1')} autoComplete="name" required maxLength={100} value={fullName} onChange={(event) => setFullName(event.target.value)} />
           </label>}
-          <label className="block text-sm font-semibold">Email
+          {!passwordRecovery && <label className="block text-sm font-semibold">Email
             <input className={fieldClass('mt-1')} type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
-          </label>
-          <label className="block text-sm font-semibold">Password
-            <input className={fieldClass('mt-1')} type={showPassword ? 'text' : 'password'} autoComplete={register ? 'new-password' : 'current-password'} minLength={register ? 8 : undefined} required value={password} onChange={(event) => setPassword(event.target.value)} />
-          </label>
-          <label className="flex min-h-11 items-center gap-2 text-sm text-sec">
+          </label>}
+          {!resetMode && <label className="block text-sm font-semibold">{passwordRecovery ? 'New password' : 'Password'}
+            <input className={fieldClass('mt-1')} type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} />
+          </label>}
+          {!resetMode && <label className="flex min-h-11 items-center gap-2 text-sm text-sec">
             <input type="checkbox" checked={showPassword} onChange={(event) => setShowPassword(event.target.checked)} /> Show password
-          </label>
-          {register && <p className="text-sm text-sec">Use at least 8 characters. You may need to confirm your email.</p>}
-          <Button type="submit" fullWidth size="lg" loading={authBusy === 'sign-in'} disabled={authBusy !== null} loadingLabel={register ? 'Creating account...' : 'Signing in...'}>
-            {register ? 'Create account' : 'Sign in'}
+          </label>}
+          {register && !resetMode && !passwordRecovery && <p className="text-sm text-sec">Use at least 8 characters. You may need to confirm your email.</p>}
+          <Button type="submit" fullWidth size="lg" loading={authBusy === 'sign-in'} disabled={authBusy !== null} loadingLabel={passwordRecovery ? 'Updating password...' : resetMode ? 'Sending reset link...' : register ? 'Creating account...' : 'Signing in...'}>
+            {passwordRecovery ? 'Update password' : resetMode ? 'Send reset link' : register ? 'Create account' : 'Sign in'}
           </Button>
-          <Button type="button" variant="ghost" fullWidth disabled={authBusy !== null} onClick={() => { setRegister(!register); setPassword(''); setSubmitted(false); }}>
-            {register ? 'Already have an account? Sign in' : 'New to YBuy? Create an account'}
-          </Button>
+          {!passwordRecovery && !resetMode && !register && <Button type="button" variant="ghost" fullWidth disabled={authBusy !== null} onClick={() => { setResetMode(true); setResetSent(false); }}>Forgot password?</Button>}
+          {!passwordRecovery && <Button type="button" variant="ghost" fullWidth disabled={authBusy !== null} onClick={() => { setResetMode(false); setResetSent(false); setRegister(resetMode ? false : !register); setPassword(''); setSubmitted(false); }}>
+            {resetMode ? 'Back to sign in' : register ? 'Already have an account? Sign in' : 'New to YBuy? Create an account'}
+          </Button>}
         </form>
         <p className="mt-5 flex items-start justify-center gap-2 border-t border-app pt-4 text-center text-xs leading-relaxed text-sec">
           <LockKeyhole size={16} aria-hidden="true" className="shrink-0" />

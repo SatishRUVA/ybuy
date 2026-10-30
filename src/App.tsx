@@ -10,6 +10,7 @@ import { HomePage } from '@/pages/home';
 import { OutOfScopePage } from '@/pages/out-of-scope';
 import { AccessPage } from '@/pages/access';
 import { BiddingTicker } from '@/components/bidding-ticker';
+import { VpnNotice } from '@/components/vpn-notice';
 import { SHOW_OUT_OF_SCOPE_PAGES, OUT_OF_SCOPE_ROUTES } from '@/lib/feature-flags';
 
 const SearchPage = lazy(() => import('@/pages/search').then(({ SearchPage: page }) => ({ default: page })));
@@ -34,6 +35,7 @@ const FavoritesPage = lazy(() => import('@/pages/favorites').then(({ FavoritesPa
 const ProtectionPage = lazy(() => import('@/pages/protection').then(({ ProtectionPage: page }) => ({ default: page })));
 const TrustProfilePage = lazy(() => import('@/pages/trust-profile').then(({ TrustProfilePage: page }) => ({ default: page })));
 const BiddingPage = lazy(() => import('@/pages/bidding').then(({ BiddingPage: page }) => ({ default: page })));
+const BiddingDetailPage = lazy(() => import('@/pages/bidding').then(({ BiddingDetailPage: page }) => ({ default: page })));
 const AuctionPage = lazy(() => import('@/pages/bidding').then(({ AuctionPage: page }) => ({ default: page })));
 const GuidelinesPage = lazy(() => import('@/pages/guidelines').then(({ GuidelinesPage: page }) => ({ default: page })));
 const AdminPage = lazy(() => import('@/pages/admin/admin-page').then(({ AdminPage: page }) => ({ default: page })));
@@ -97,12 +99,15 @@ function AppContent() {
     case 'notifications': page = <RequireAuth><NotificationsPage /></RequireAuth>; break;
     case 'messaging': page = <RequireAuth><MessagingPage /></RequireAuth>; break;
     case 'conversation': page = <RequireAuth><ConversationPage id={route.id} /></RequireAuth>; break;
-    case 'requests': page = <RequireAuth><RequestsPage /></RequireAuth>; break;
+    case 'requests': page = <RequireAuth><RequestsPage initialTab={route.tab ?? 'browse'} /></RequireAuth>; break;
     case 'favorites': page = <RequireAuth><FavoritesPage /></RequireAuth>; break;
-    case 'need-something': page = <RequireAuth><NeedSomethingPage /></RequireAuth>; break;
+    // Let visitors prepare a request before signing in; NeedSomethingPage opens
+    // the auth dialog on submit so the in-progress form stays mounted.
+    case 'need-something': page = <NeedSomethingPage />; break;
     case 'protection': page = <ProtectionPage />; break;
     case 'trust-profile': page = <RequireAuth><TrustProfilePage /></RequireAuth>; break;
     case 'bidding': page = <BiddingPage />; break;
+    case 'bidding-detail': page = <BiddingDetailPage key={route.id} id={route.id} />; break;
     case 'auction': page = <AuctionPage id={route.id} />; break;
     case 'guidelines': page = <GuidelinesPage />; break;
     default: page = <HomePage />; break;
@@ -131,6 +136,7 @@ function App() {
               </div>
             )}
             <AppContent />
+            <VpnNotice />
           </RouterProvider>
         </LocationProvider>
       </AuthProvider>

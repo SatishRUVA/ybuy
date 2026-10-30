@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { mockSupabaseModule } from './mock-supabase';
+import { appUrl } from './test-url';
 
-const appUrl = 'http://127.0.0.1:5174/';
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/src/lib/supabase.ts*', mockSupabaseModule);

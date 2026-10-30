@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mockSupabaseModule } from './mock-supabase';
+import { appUrl } from './test-url';
 
-const appUrl = 'http://127.0.0.1:5174';
 const categoryId = '20000000-0000-4000-8000-000000000001';
 const listingId = '30000000-0000-4000-8000-000000000001';
 
@@ -120,6 +120,19 @@ test('invalid location has a recovery message and keyboard dismissal restores fo
   await expect(trigger).toBeFocused();
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1 })).toContainText('0 items');
+});
+
+test('clearing a failed city query removes its stale error', async ({ page }) => {
+  await page.route('**/api.maptiler.com/geocoding/**', (route) => route.fulfill({ status: 503 }));
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Set your location', exact: true }).click();
+  const cityInput = page.getByRole('textbox', { name: 'Search city or ZIP' });
+  await cityInput.fill('Dallas');
+  const error = page.getByRole('status').filter({ hasText: 'City search is unavailable. Try again.' });
+  await expect(error).toBeVisible();
+  await cityInput.fill('');
+  await expect(error).toBeHidden();
+  await expect(page.getByRole('status').filter({ hasText: 'Enter a city or ZIP/postal code to search.' })).toBeVisible();
 });
 
 test('mobile hero and expandable results retain radius and expose optional dates without overflow', async ({ page }) => {

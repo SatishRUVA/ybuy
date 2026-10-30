@@ -4,6 +4,7 @@ import { useAuth } from '@/auth-context';
 import { Alert, Badge, Button, EmptyState, SectionHeader, Surface } from '@/components/ui';
 import { fieldClass, textareaClass } from '@/components/form-classes';
 import { Skeleton } from '@/components/skeleton';
+import { DatePicker } from '@/components/date-picker';
 import { addDaysIso, todayIso,findCities,locationLabel,type MarketplaceLocation } from '@/lib/geo';
 import { searchListings,toUiListing } from '@/lib/listings';
 import type { Listing } from '@/data';
@@ -11,9 +12,9 @@ import {
   closeItemRequest, createItemRequest, createMarketplaceOffer, expireMarketplaceActivity,
   fetchItemRequestResponseCounts, fetchMyItemRequests, fetchMyNegotiations, fetchMyOwnerListings,
   fetchOpenItemRequests, listRequestCategories, linkRequestOfferListing, requestImageUrl,
-  fetchRequestListingMatches,
-  respondToMarketplaceOffer, updateItemRequest, type ItemRequest, type MarketplaceNegotiation,
-  type NegotiationProposal, type OwnerListing,
+  fetchRequestListingMatches, fetchMarketplaceRequestEvents,
+  respondToMarketplaceOffer, updateItemRequest, type ItemRequest, type ItemRequestStatus, type MarketplaceNegotiation,
+  type NegotiationProposal, type OwnerListing, type MarketplaceRequestEvent,
 } from '@/lib/marketplace';
 import { getOrCreateConversation } from '@/lib/messages';
 import { useFeatureFlags, useFeatureFlag } from '@/lib/use-feature-flags';
@@ -31,6 +32,13 @@ const STATUS_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' |
   withdrawn: 'neutral', expired: 'neutral', cancelled: 'neutral', closed: 'neutral',
 };
 
+const REQUEST_STATUS_LABEL: Record<ItemRequestStatus, string> = {
+  open: 'Open', responses_received: 'Responses received', negotiating: 'Negotiating',
+  matched: 'Fulfilled', cancelled: 'Cancelled', expired: 'Expired', closed: 'Closed',
+};
+
+const requestEventLabel = (eventType: string) => eventType.replace(/_/g, ' ').replace(/^\w/, (letter) => letter.toUpperCase());
+
 const dateLabel = (start: string, end: string) => {
   const format = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   return `${format(start)} – ${format(end)}`;
@@ -43,7 +51,7 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
   const { data: flags, loading: flagsLoading, error: featureError, reload: reloadFlags } = useFeatureFlags();
   const flagsReady = !flagsLoading && !featureError;
   const enabled = flagsReady && flags?.some((flag) => flag.key === 'item_requests' && flag.enabled) === true;
-  const biddingEnabled = flagsReady && flags?.some((flag) => flag.key === 'bidding' && flag.enabled) === true;
+  const privateOffersEnabled = flagsReady && flags?.some((flag) => flag.key === 'private_offers' && flag.enabled) === true;
   const [tab, setTab] = useState<RequestTab>(initialTab);
   const [categories, setCategories] = useState<Category[]>([]);
   const [ownerListings, setOwnerListings] = useState<OwnerListing[]>([]);
@@ -66,8 +74,8 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled && biddingEnabled) setTab('offers');
-  }, [enabled, biddingEnabled]);
+    if (!enabled && privateOffersEnabled) setTab('offers');
+  }, [enabled, privateOffersEnabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,7 +85,7 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
   }, []);
 
   const reload = useCallback(async () => {
-    if (!user || (!enabled && !biddingEnabled)) return;
+    if (!user || (!enabled && !privateOffersEnabled)) return;
     setError(null);
     try {
       await expireMarketplaceActivity();
@@ -113,11 +121,11 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
       setError(reason instanceof Error ? reason.message : 'Could not load item requests.');
       if (enabled && tab === 'browse') setRequests([]);
     }
-  }, [user, enabled, biddingEnabled, tab, categoryId, locationFilter, search, startDate, endDate, maxBudget, sort, page]);
+  }, [user, enabled, privateOffersEnabled, tab, categoryId, locationFilter, search, startDate, endDate, maxBudget, sort, page]);
 
   useEffect(() => {
-    if ((enabled || biddingEnabled) && user) void reload();
-  }, [enabled, biddingEnabled, user, reload]);
+    if ((enabled || privateOffersEnabled) && user) void reload();
+  }, [enabled, privateOffersEnabled, user, reload]);
 
   const filteredNegotiations = useMemo(() => negotiations ?? [], [negotiations]);
   const visibleMine = useMemo(() => myRequests ?? [], [myRequests]);
@@ -148,19 +156,19 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
       {featureError}<Button size="sm" variant="secondary" className="mt-3" onClick={reloadFlags}>Try again</Button>
     </Alert></div>;
   }
-  if (initialTab === 'offers' && !biddingEnabled) {
+  if (initialTab === 'offers' && !enabled && !privateOffersEnabled) {
     return <div className="max-w-2xl mx-auto px-4 py-12"><EmptyState icon={<HeartHandshake size={22} />}
       title="Offers are not enabled yet"
-      description="An authorized administrator can enable the bidding feature flag after the backend migration is installed." /></div>;
+      description="An authorized administrator can enable private offers after the backend migration is installed." /></div>;
   }
-  if (!enabled && !biddingEnabled) {
+  if (!enabled && !privateOffersEnabled) {
     return <div className="max-w-2xl mx-auto px-4 py-12"><EmptyState icon={<HeartHandshake size={22} />}
       title="Item requests are not enabled yet"
       description="The request workflow is installed but remains off until an authorized administrator enables the item_requests feature flag." /></div>;
   }
   const tabs: { id: RequestTab; label: string }[] = [
     ...(enabled ? [{ id: 'browse' as const, label: 'Find requests' }, { id: 'mine' as const, label: 'My requests' }] : []),
-    ...((enabled || biddingEnabled) ? [{ id: 'offers' as const, label: 'Offers & negotiations' }] : []),
+    ...((enabled || privateOffersEnabled) ? [{ id: 'offers' as const, label: 'Offers & negotiations' }] : []),
   ];
 
   return (
@@ -200,10 +208,10 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
               <input type="number" min="0.01" step="0.01" value={maxBudget} onChange={(e) => { setPage(0); setMaxBudget(e.target.value); }} placeholder="Any budget" className={fieldClass('mt-1 !h-10')} />
             </label>
             <label className="text-xs font-semibold text-sec">Requests starting by
-              <input type="date" value={endDate} min={todayIso()} onChange={(e) => { setPage(0); setEndDate(e.target.value); }} className={fieldClass('mt-1 !h-10')} />
+              <DatePicker label="Requests starting by" value={endDate} min={todayIso()} onChange={(date) => { setPage(0); setEndDate(date); }} className="mt-1" />
             </label>
             <label className="text-xs font-semibold text-sec">Requests ending after
-              <input type="date" value={startDate} min={todayIso()} onChange={(e) => { setPage(0); setStartDate(e.target.value); }} className={fieldClass('mt-1 !h-10')} />
+              <DatePicker label="Requests ending after" value={startDate} min={todayIso()} onChange={(date) => { setPage(0); setStartDate(date); }} className="mt-1" />
             </label>
             <label className="text-xs font-semibold text-sec">Sort by
               <select value={sort} onChange={(e) => { setPage(0); setSort(e.target.value as typeof sort); }} className={fieldClass('mt-1 !h-10')}>
@@ -247,12 +255,14 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
               actionLabel="Request an item" onAction={() => navigate({ name: 'need-something' })} />
           ) : <div className="space-y-3">{visibleMine.map((request) => (
             <MyRequestCard key={request.id} request={request} responseCount={responseCounts[request.id] ?? 0}
-              matchingListings={listingMatches[request.id]??[]}
+              matchingListings={listingMatches[request.id] ?? []}
+              offers={filteredNegotiations.filter((negotiation) => negotiation.item_request_id === request.id)}
+              currentUserId={user.id} myListings={ownerListings} allowCounter={enabled}
               onRefresh={() => void reload()} />
           ))}</div>}
         </>}
 
-        {tab === 'offers' && (enabled || biddingEnabled) && <>
+        {tab === 'offers' && (enabled || privateOffersEnabled) && <>
           <div className="flex justify-end"><Button size="sm" variant="secondary" onClick={() => void reload()}>Refresh offers</Button></div>
           {!negotiations ? <RequestSkeleton /> : filteredNegotiations.length === 0 ? (
             <EmptyState icon={<MessageSquare size={21} />} title="No offers or negotiations yet"
@@ -260,7 +270,7 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
           ) : <div className="space-y-3">{filteredNegotiations.map((negotiation) => (
             <NegotiationCard key={negotiation.id} negotiation={negotiation} currentUserId={user.id}
               myListings={ownerListings} busy={busyId === negotiation.id}
-              allowCounter={biddingEnabled}
+              allowCounter={negotiation.item_request_id ? enabled : privateOffersEnabled}
               setBusy={(value) => setBusyId(value ? negotiation.id : null)}
               onRefresh={() => void reload()} onError={setError} />
           ))}</div>}
@@ -383,10 +393,10 @@ function OfferComposer({ request, listings, onSent }: {
         <input required type="number" min="0.01" max="100000" step="0.01" value={dailyRate} onChange={(event) => setDailyRate(event.target.value)} className={fieldClass('mt-1')} />
       </label>
       <label className="text-xs font-semibold text-sec">Start date
-        <input required type="date" min={todayIso()} value={startDate} onChange={(event) => setStartDate(event.target.value)} className={fieldClass('mt-1')} />
+        <DatePicker label="Start date" required min={todayIso()} value={startDate} onChange={setStartDate} className="mt-1" />
       </label>
       <label className="text-xs font-semibold text-sec">End date
-        <input required type="date" min={startDate || todayIso()} value={endDate} onChange={(event) => setEndDate(event.target.value)} className={fieldClass('mt-1')} />
+        <DatePicker label="End date" required min={addDaysIso(startDate || todayIso(), 1)} value={endDate} onChange={setEndDate} className="mt-1" />
       </label>
     </div>
     <label className="block text-xs font-semibold text-sec">Message
@@ -397,10 +407,12 @@ function OfferComposer({ request, listings, onSent }: {
   </form>;
 }
 
-function MyRequestCard({ request, responseCount, matchingListings, onRefresh }: {
-  request: ItemRequest; responseCount?: number; matchingListings:OwnerListing[]; onRefresh: () => void;
+function MyRequestCard({ request, responseCount, matchingListings, offers, currentUserId, myListings, allowCounter, onRefresh }: {
+  request: ItemRequest; responseCount?: number; matchingListings: OwnerListing[]; offers: MarketplaceNegotiation[];
+  currentUserId: string; myListings: OwnerListing[]; allowCounter: boolean; onRefresh: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const active = ['open', 'responses_received', 'negotiating'].includes(request.status) && new Date(request.expires_at) > new Date();
@@ -415,14 +427,20 @@ function MyRequestCard({ request, responseCount, matchingListings, onRefresh }: 
   return <Surface className="p-4 sm:p-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
-        <div className="flex items-center gap-2"><h2 className="text-lg font-semibold text-main">{request.title}</h2><Badge tone={STATUS_TONE[request.status]}>{request.status.replace(/_/g, ' ')}</Badge></div>
+        <div className="flex items-center gap-2"><h2 className="text-lg font-semibold text-main">{request.title}</h2><Badge tone={STATUS_TONE[request.status]}>{REQUEST_STATUS_LABEL[request.status]}</Badge></div>
         <p className="mt-2 text-sm text-sec line-clamp-3">{request.description}</p>
-        {matchingListings.length>0&&<div className="mt-2 text-sm text-sec"><p>Available nearby matches (up to 20):</p><ul>{matchingListings.map(listing=><li key={listing.id}><a className="text-accent underline" href={`/listing/${listing.id}`}>{listing.title} - ${listing.price_per_day}/day</a></li>)}</ul></div>}
+        {matchingListings.length > 0 && <p className="mt-2 text-xs font-medium text-success">{matchingListings.length} listing match{matchingListings.length === 1 ? '' : 'es'} available for your dates.</p>}
         {request.reference_image_paths.length > 0 && <RequestImages paths={request.reference_image_paths} title={request.title} />}
       </div>
-      <span className="text-xs text-sec">{responseCount ?? 0} offers</span>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-sec">{responseCount ?? 0} offers</span>
+        <Button size="sm" variant="ghost" aria-expanded={detailsOpen} aria-controls={`request-details-${request.id}`}
+          onClick={() => setDetailsOpen((value) => !value)}>{detailsOpen ? 'Hide details' : 'View details'}</Button>
+      </div>
     </div>
     <p className="mt-3 text-xs text-sec">{dateLabel(request.preferred_start_date, request.preferred_end_date)} · {request.location_label} · {money(request.max_daily_budget)}</p>
+    {detailsOpen && <MyRequestDetails request={request} matchingListings={matchingListings} offers={offers}
+      currentUserId={currentUserId} myListings={myListings} allowCounter={allowCounter} onRefresh={onRefresh} onError={setError} />}
     {error && <Alert tone="error" className="mt-3">{error}</Alert>}
     {editing && <RequestEditForm request={request} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onRefresh(); }} />}
     {!editing && active && <div className="mt-3 flex flex-wrap gap-2">
@@ -430,6 +448,82 @@ function MyRequestCard({ request, responseCount, matchingListings, onRefresh }: 
       <Button size="sm" variant="danger" loading={busy} onClick={() => void cancel()}>Cancel request</Button>
     </div>}
   </Surface>;
+}
+
+function MyRequestDetails({ request, matchingListings, offers, currentUserId, myListings, allowCounter, onRefresh, onError }: {
+  request: ItemRequest; matchingListings: OwnerListing[]; offers: MarketplaceNegotiation[];
+  currentUserId: string; myListings: OwnerListing[]; allowCounter: boolean; onRefresh: () => void; onError: (value: string | null) => void;
+}) {
+  const [events, setEvents] = useState<MarketplaceRequestEvent[] | null>(null);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [busyOfferId, setBusyOfferId] = useState<string | null>(null);
+  const rentalDays = Math.max(1, Math.round((Date.parse(`${request.preferred_end_date}T00:00:00Z`) - Date.parse(`${request.preferred_start_date}T00:00:00Z`)) / 86400000));
+
+  useEffect(() => {
+    let active = true;
+    setEventsLoading(true);
+    setEventsError(null);
+    void fetchMarketplaceRequestEvents(request.id)
+      .then((rows) => { if (active) setEvents(rows); })
+      .catch((reason: unknown) => { if (active) setEventsError(reason instanceof Error ? reason.message : 'Could not load request history.'); })
+      .finally(() => { if (active) setEventsLoading(false); });
+    return () => { active = false; };
+  }, [request.id]);
+
+  return <section id={`request-details-${request.id}`} className="mt-4 space-y-5 border-t border-app pt-4" aria-label={`Details for ${request.title}`}>
+    <dl className="grid gap-3 text-sm sm:grid-cols-2">
+      <div><dt className="text-xs text-muted">Category</dt><dd className="mt-1 text-main">{request.categories?.name ?? 'Item'}</dd></div>
+      <div><dt className="text-xs text-muted">Status</dt><dd className="mt-1 text-main">{REQUEST_STATUS_LABEL[request.status]}</dd></div>
+      <div><dt className="text-xs text-muted">Rental dates</dt><dd className="mt-1 text-main">{dateLabel(request.preferred_start_date, request.preferred_end_date)}</dd></div>
+      <div><dt className="text-xs text-muted">Requested quantity</dt><dd className="mt-1 text-main">{request.requested_quantity}</dd></div>
+      <div><dt className="text-xs text-muted">Preferred area</dt><dd className="mt-1 text-main">{request.location_label}{request.radius_miles == null ? ' · any distance' : ` · within ${request.radius_miles} miles`}</dd></div>
+      <div><dt className="text-xs text-muted">Maximum daily budget</dt><dd className="mt-1 text-main">{money(request.max_daily_budget)}</dd></div>
+      <div><dt className="text-xs text-muted">Posted</dt><dd className="mt-1 text-main">{new Date(request.created_at).toLocaleString()}</dd></div>
+      <div><dt className="text-xs text-muted">Expires</dt><dd className="mt-1 text-main">{new Date(request.expires_at).toLocaleString()}</dd></div>
+    </dl>
+    {(request.intended_use || request.specifications || request.additional_notes) && <div className="space-y-2 text-sm">
+      {request.intended_use && <div><h3 className="font-semibold text-main">Intended use</h3><p className="mt-1 whitespace-pre-wrap text-sec">{request.intended_use}</p></div>}
+      {request.specifications && <div><h3 className="font-semibold text-main">Specifications</h3><p className="mt-1 whitespace-pre-wrap text-sec">{request.specifications}</p></div>}
+      {request.additional_notes && <div><h3 className="font-semibold text-main">Additional notes</h3><p className="mt-1 whitespace-pre-wrap text-sec">{request.additional_notes}</p></div>}
+    </div>}
+    <div className="space-y-2">
+      <h3 className="font-semibold text-main">Matching listings</h3>
+      {matchingListings.length === 0 ? <p className="text-sm text-sec">No listings currently match. Your request remains {REQUEST_STATUS_LABEL[request.status].toLowerCase()}.</p>
+        : <ul className="space-y-2">{matchingListings.map((listing) => {
+          const estimatedRental = Number(listing.price_per_day) * rentalDays * request.requested_quantity;
+          return <li key={listing.id} className="rounded-card border border-app p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div><a className="font-semibold text-accent underline" href={`/listing/${listing.id}`}>{listing.title}</a>
+                <p className="mt-1 text-xs text-sec">${Number(listing.price_per_day).toFixed(2)}/day · {listing.location_label || 'Approximate area unavailable'}</p>
+                <p className="mt-1 text-xs text-sec">Estimated rental before fees and deposit: ${estimatedRental.toFixed(2)}. Availability is rechecked when you book.</p>
+                {request.max_daily_budget !== null && <p className="mt-1 text-xs text-success">Within your daily budget</p>}
+              </div>
+              <a className="inline-flex min-h-11 items-center text-sm font-semibold text-accent" href={`/listing/${listing.id}`}>View item <ArrowRight size={14} className="ml-1" /></a>
+            </div>
+          </li>;
+        })}</ul>}
+    </div>
+    <div className="space-y-2">
+      <h3 className="font-semibold text-main">Owner responses</h3>
+      {offers.length === 0 ? <p className="text-sm text-sec">No owner offers yet.</p> : <div className="space-y-2">
+        {offers.map((offer) => <NegotiationCard key={offer.id} negotiation={offer} currentUserId={currentUserId}
+          myListings={myListings} busy={busyOfferId === offer.id} allowCounter={allowCounter}
+          setBusy={(value) => setBusyOfferId(value ? offer.id : null)}
+          onRefresh={onRefresh} onError={onError} />)}
+      </div>}
+    </div>
+    <div className="space-y-2">
+      <h3 className="font-semibold text-main">Request history</h3>
+      {eventsLoading && <p role="status" className="text-sm text-sec">Loading request history…</p>}
+      {eventsError && <Alert tone="error">{eventsError}</Alert>}
+      {!eventsLoading && !eventsError && events?.length === 0 && <p className="text-sm text-sec">No status updates yet.</p>}
+      {events && events.length > 0 && <ol className="space-y-2 border-l-2 border-app pl-4">{events.map((event) => <li key={event.id}>
+        <p className="text-sm font-medium text-main">{requestEventLabel(event.event_type)}</p>
+        <time className="text-xs text-muted" dateTime={event.created_at}>{new Date(event.created_at).toLocaleString()}</time>
+      </li>)}</ol>}
+    </div>
+  </section>;
 }
 
 function RequestEditForm({ request, onCancel, onSaved }: {
@@ -470,8 +564,8 @@ function RequestEditForm({ request, onCancel, onSaved }: {
     <div className="grid sm:grid-cols-2 gap-3">
       <label className="text-xs font-semibold text-sec">Item name<input required minLength={3} maxLength={120} value={title} onChange={(e) => setTitle(e.target.value)} className={fieldClass('mt-1')} /></label>
       <label className="text-xs font-semibold text-sec">Category<select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={fieldClass('mt-1')}>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-      <label className="text-xs font-semibold text-sec">Start date<input required type="date" min={todayIso()} value={start} onChange={(e) => setStart(e.target.value)} className={fieldClass('mt-1')} /></label>
-      <label className="text-xs font-semibold text-sec">End date<input required type="date" min={start} value={end} onChange={(e) => setEnd(e.target.value)} className={fieldClass('mt-1')} /></label>
+      <label className="text-xs font-semibold text-sec">Start date<DatePicker label="Start date" required min={todayIso()} value={start} onChange={setStart} className="mt-1" /></label>
+      <label className="text-xs font-semibold text-sec">End date<DatePicker label="End date" required min={addDaysIso(start || todayIso(), 1)} value={end} onChange={setEnd} className="mt-1" /></label>
       <label className="text-xs font-semibold text-sec">Location<input required disabled={request.location_lat!=null} maxLength={200} value={location} onChange={(e) => setLocation(e.target.value)} className={fieldClass('mt-1')} />{request.location_lat!=null&&<span className="block mt-1 text-xs font-normal">For a different verified area, cancel this request and create a new one.</span>}</label>
       <label className="text-xs font-semibold text-sec">Maximum budget per day<input type="number" min="0.01" max="100000" step="0.01" value={budget} onChange={(e) => setBudget(e.target.value)} className={fieldClass('mt-1')} /></label>
       <label className="text-xs font-semibold text-sec">Quantity<input type="number" min="1" max="100" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} className={fieldClass('mt-1')} /></label>
@@ -594,8 +688,8 @@ function NegotiationCard({ negotiation, currentUserId, myListings, busy, allowCo
       <h3 className="font-semibold text-sm text-main">Counteroffer</h3>
       <div className="grid sm:grid-cols-3 gap-2">
         <label className="text-xs font-semibold text-sec">Daily price<input type="number" min="0.01" max="100000" step="0.01" value={counterPrice} onChange={(e) => setCounterPrice(e.target.value)} className={fieldClass('mt-1')} /></label>
-        <label className="text-xs font-semibold text-sec">Start<input type="date" min={todayIso()} value={counterStart} onChange={(e) => setCounterStart(e.target.value)} className={fieldClass('mt-1')} /></label>
-        <label className="text-xs font-semibold text-sec">End<input type="date" min={counterStart} value={counterEnd} onChange={(e) => setCounterEnd(e.target.value)} className={fieldClass('mt-1')} /></label>
+        <label className="text-xs font-semibold text-sec">Start<DatePicker label="Start" required min={todayIso()} value={counterStart} onChange={setCounterStart} className="mt-1" /></label>
+        <label className="text-xs font-semibold text-sec">End<DatePicker label="End" required min={addDaysIso(counterStart || todayIso(), 1)} value={counterEnd} onChange={setCounterEnd} className="mt-1" /></label>
       </div>
       <label className="text-xs font-semibold text-sec">Message<textarea rows={2} maxLength={1000} value={counterMessage} onChange={(e) => setCounterMessage(e.target.value)} className={textareaClass('mt-1')} /></label>
       <div className="flex justify-end gap-2">
@@ -665,7 +759,7 @@ export function NeedSomethingPage() {
       .then((rows) => {
         if (cancelled) return;
         setCategories(rows);
-        setCategoryId(rows[0]?.id ?? '');
+        setCategoryId('');
       })
       .catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Could not load request settings.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -674,6 +768,7 @@ export function NeedSomethingPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!selectedArea) { setError('Choose a city or postal code so nearby owners can find your request.'); return; }
     if (!user) { openSignIn(); return; }
     if (!acknowledged) { setError('Confirm that your request details will be visible to signed-in owners.'); return; }
     setBusy(true); setError(null);
@@ -688,16 +783,13 @@ export function NeedSomethingPage() {
         categoryId, title, description, intendedUse, startDate, endDate, location,
         maxDailyBudget: budget ? Number(budget) : null,
         quantity: Number(quantity), specifications, notes, images,
-        latitude:selectedArea.latitude,longitude:selectedArea.longitude,radiusMiles:radius,
+        latitude:selectedArea.latitude,longitude:selectedArea.longitude,radiusMiles:radius,country:selectedArea.country,
       }, user.id);
       setComplete(true);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not post your request.'); }
     finally { setBusy(false); }
   }
 
-  if (!user) return <div className="max-w-xl mx-auto px-4 py-16"><EmptyState title="Sign in to request an item"
-    description="Your request will be posted from your YBuy account."
-    actionLabel="Sign in" onAction={openSignIn} /></div>;
   if (flagError) return <div className="max-w-2xl mx-auto px-4 py-10"><Alert tone="error" title="Could not load request settings">
     {flagError}<Button size="sm" variant="secondary" className="mt-3" onClick={reloadFlag}>Try again</Button>
   </Alert></div>;
@@ -705,9 +797,22 @@ export function NeedSomethingPage() {
   if (error && categories.length === 0) return <div className="max-w-2xl mx-auto px-4 py-10"><Alert tone="error">{error}</Alert></div>;
   if (!enabled) return <div className="max-w-xl mx-auto px-4 py-12"><EmptyState title="Item requests are not enabled yet"
     description="An authorized administrator can enable the item_requests feature flag after the backend migration is installed." /></div>;
-  if (complete) return <div className="max-w-xl mx-auto px-4 py-16"><EmptyState icon={<Check size={22} />}
-    title="Your request is posted" description="Eligible owners can review the details and send you an offer. You can follow responses from your request dashboard."
-    actionLabel="View my requests" onAction={() => navigate({ name: 'requests' })} /></div>;
+  if (complete) return <div className="max-w-xl mx-auto px-4 py-12 sm:py-16">
+    <Surface className="p-5 sm:p-7">
+      <div className="grid place-items-center w-12 h-12 rounded-full bg-success-soft text-success"><Check size={23} /></div>
+      <h1 className="mt-5 text-2xl font-bold text-main font-display">Your request is posted</h1>
+      <p className="mt-2 text-sm text-sec">Nearby owners can review it and send you an offer. You can track replies in your requests.</p>
+      <dl className="mt-5 divide-y divide-app rounded-card-lg border border-app px-4">
+        <div className="py-3"><dt className="text-xs text-muted">Item</dt><dd className="mt-1 font-semibold text-main">{title}</dd></div>
+        <div className="py-3"><dt className="text-xs text-muted">Rental dates</dt><dd className="mt-1 text-sm text-main">{new Date(`${startDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} – {new Date(`${endDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</dd></div>
+        <div className="py-3"><dt className="text-xs text-muted">Preferred area</dt><dd className="mt-1 text-sm text-main">{location}</dd></div>
+      </dl>
+      <div className="mt-5 grid gap-2 sm:grid-cols-2">
+        <Button onClick={() => navigate({ name: 'requests', tab: 'mine' })}>View my requests</Button>
+        <Button variant="secondary" onClick={() => navigate({ name: 'search' })}>Continue exploring</Button>
+      </div>
+    </Surface>
+  </div>;
 
   return <div className="animate-fade-in pb-20 md:pb-10">
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
@@ -721,6 +826,7 @@ export function NeedSomethingPage() {
             </label>
             <label className="text-xs font-semibold text-sec">Category<span className="text-error"> *</span>
               <select required value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={fieldClass('mt-1')}>
+                <option value="" disabled>Choose a category</option>
                 {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
               </select>
             </label>
@@ -735,10 +841,10 @@ export function NeedSomethingPage() {
           </label>
           <div className="grid sm:grid-cols-2 gap-3">
             <label className="text-xs font-semibold text-sec">Rental start<span className="text-error"> *</span>
-              <input required type="date" min={addDaysIso(todayIso(), 1)} value={startDate} onChange={(e) => setStartDate(e.target.value)} className={fieldClass('mt-1')} />
+              <DatePicker label="Rental start" required min={addDaysIso(todayIso(), 1)} value={startDate} onChange={setStartDate} className="mt-1" />
             </label>
             <label className="text-xs font-semibold text-sec">Rental end<span className="text-error"> *</span>
-              <input required type="date" min={startDate} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={fieldClass('mt-1')} />
+              <DatePicker label="Rental end" required min={addDaysIso(startDate || todayIso(), 1)} value={endDate} onChange={setEndDate} className="mt-1" />
             </label>
             <label className="text-xs font-semibold text-sec">Preferred area<span className="text-error"> *</span>
               <input required maxLength={200} value={location} onChange={(e) => {setLocation(e.target.value);setSelectedArea(null);setAreaChoices([]);setReviewedMatches(false);}} placeholder="City or postal code" className={fieldClass('mt-1')} />

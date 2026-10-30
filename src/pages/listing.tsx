@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ImageGallery, ListingCard } from '@/components/listing-card';
 import { Rating, VerifiedBadge, ProtectionBadge } from '@/components/trust';
-import { Button, IconButton, Badge, Alert, SectionHeader, Surface } from '@/components/ui';
+import { Button, Badge, Alert, SectionHeader, Surface } from '@/components/ui';
 import { useRouter } from '@/router';
 import type { Listing } from '@/data';
 import { fetchListingById, toUiListing, searchListings, enrichListingsWithRatings, type DbListingRow } from '@/lib/listings';
@@ -11,15 +11,19 @@ import { fetchReviewsForUser } from '@/lib/reviews';
 import { fetchUnavailableDates } from '@/lib/availability';
 import { DateRangePicker } from '@/components/date-range-picker';
 import { useAuth } from '@/auth-context';
-import { formatFeePct, usePlatformFeePct } from '@/lib/settings';
+import { usePlatformFeePct } from '@/lib/settings';
 import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
 import { MAX_BOOKING_RANGE_DAYS, addDaysIso, todayIso } from '@/lib/geo';
 import { ListingDetailSkeleton } from '@/components/skeleton';
 import { MarketplaceOfferForm } from '@/components/marketplace-offer-form';
+import { InsuranceAmount } from '@/components/insurance-amount';
+import { insuranceAmountCents } from '@/lib/insurance-pricing';
+import { demoTaxCents } from '@/lib/demo-tax';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
+import { calculateRentalPricing } from '@/lib/rental-pricing';
 import {
-  MapPin, CheckCircle2, Truck, FileText,
-  Lock, Star, MessageSquare, Heart, Share2, ChevronRight,
+  MapPin, CheckCircle2, Truck,
+  Lock, Star, MessageSquare, Heart, Share2, ChevronRight, ShieldCheck,
 } from 'lucide-react';
 
 const tomorrowIso = () => addDaysIso(todayIso(), 1);
@@ -60,7 +64,10 @@ export function ListingPage({ id }: { id: string }) {
   const [reviewsRetry, setReviewsRetry] = useState(0);
   const [favoriteError, setFavoriteError] = useState(false);
   const [favoriteRetry, setFavoriteRetry] = useState(0);
-  const { enabled: offersEnabled, error: offersFlagError } = useFeatureFlag('bidding');
+  const { enabled: privateOffersEnabled, error: privateOffersFlagError } = useFeatureFlag('private_offers');
+  const { enabled: biddingEnabled, error: biddingFlagError } = useFeatureFlag('bidding');
+  const durationDiscounts = useFeatureFlag('duration_discounts');
+  const insuranceFlag = useFeatureFlag('insurance');
   const [offerSent, setOfferSent] = useState(false);
 
   useEffect(() => {
@@ -78,6 +85,9 @@ export function ListingPage({ id }: { id: string }) {
         if (cancelled) return;
         setListing(row ? toUiListing(row) : null);
         setCategoryId(row?.category_id ?? null);
+        const start = row?.availability_start && row.availability_start > todayIso() ? row.availability_start : todayIso();
+        setStartDate(start);
+        setEndDate(addDaysIso(start, 1));
       })
       .catch(() => { if (!cancelled) { setListingError(true); setListing(null); } });
     return () => { cancelled = true; };
@@ -186,10 +196,24 @@ export function ListingPage({ id }: { id: string }) {
   }
 
   const days = Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000));
-  const rental = listing.pricePerDay * days;
+  const rentalPricing = calculateRentalPricing(listing.pricePerDay, days, {
+    weeklyEnabled: durationDiscounts.enabled && listing.weeklyDiscountEnabled,
+    weeklyPercent: listing.weeklyDiscountPercent,
+    monthlyEnabled: durationDiscounts.enabled && listing.monthlyDiscountEnabled,
+    monthlyPercent: listing.monthlyDiscountPercent,
+  });
+  const grossRental = rentalPricing.gross;
+  const durationDiscount = rentalPricing.discountAmount;
+  const rental = rentalPricing.subtotal;
   const serviceFee = Math.round(rental * feePct * 100) / 100;
-  const total = rental + serviceFee + listing.deposit;
-  const datesValid = Boolean(startDate && endDate && startDate >= todayIso() && endDate > startDate && days <= MAX_BOOKING_RANGE_DAYS);
+  const insuranceAmount = insuranceFlag.enabled ? insuranceAmountCents(listing.declaredValue, days) / 100 : 0;
+  const isTaxDemo = import.meta.env.VITE_TEST_ENVIRONMENT === 'true';
+  const taxDemo = isTaxDemo ? demoTaxCents(rental) / 100 : 0;
+  const paymentEstimate = rental + serviceFee + insuranceAmount + listing.deposit;
+  const total = paymentEstimate + taxDemo;
+  const datesValid = Boolean(startDate && endDate && startDate >= todayIso() && endDate > startDate && days <= MAX_BOOKING_RANGE_DAYS
+    && (!listing.availabilityStart || startDate >= listing.availabilityStart)
+    && (!listing.availabilityEnd || endDate <= listing.availabilityEnd));
   const rangeUnavailable = (() => {
     for (let iso = startDate; iso && iso < endDate; iso = addDaysIso(iso, 1)) {
       if (bookedDates.has(iso) || blockedDates.has(iso)) return true;
@@ -198,6 +222,18 @@ export function ListingPage({ id }: { id: string }) {
   })();
   const isOwner = listing.owner.id === user?.id;
   const canBook = !isOwner && listing.available && datesValid && !rangeUnavailable && !availabilityLoading && !availabilityError;
+  const rentalOptions = [1, 3, 7, 30].map((optionDays) => {
+    const optionPrice = calculateRentalPricing(listing.pricePerDay, optionDays, {
+      weeklyEnabled: durationDiscounts.enabled && listing.weeklyDiscountEnabled,
+      weeklyPercent: listing.weeklyDiscountPercent,
+      monthlyEnabled: durationDiscounts.enabled && listing.monthlyDiscountEnabled,
+      monthlyPercent: listing.monthlyDiscountPercent,
+    });
+    return { days: optionDays, price: optionPrice.subtotal, discount: optionPrice.discountAmount,
+      disabled: Boolean(listing.availabilityEnd && addDaysIso(startDate, optionDays) > listing.availabilityEnd)
+        || optionDays > MAX_BOOKING_RANGE_DAYS
+        || Array.from({ length: optionDays }, (_, index) => addDaysIso(startDate, index)).some(date => bookedDates.has(date) || blockedDates.has(date)) };
+  });
 
   const handleMessageOwner = async () => {
     if (!user) { openSignIn(); return; }
@@ -223,19 +259,40 @@ export function ListingPage({ id }: { id: string }) {
           <span className="text-[32px] leading-none font-extrabold text-main font-display tnum">${listing.pricePerDay}</span>
           <span className="text-sec text-sm font-medium">per day</span>
         </p>
-        <span className="text-xs text-sec">Choose your dates</span>
+        <span className="text-xs text-sec">{isOwner ? 'Your listing · view only' : 'Choose your dates'}</span>
       </div>
 
-      <div className="mt-5">
-        <p className="block text-[13px] font-semibold text-main mb-1.5">Rental dates</p>
-        <DateRangePicker
+      <div id="listing-availability" className="mt-5 scroll-mt-24">
+        <p className="block text-[13px] font-semibold text-main mb-1.5">{isOwner ? 'Listing availability' : 'Rental dates'}</p>
+        {isOwner ? <p className="text-sm text-sec">
+          {listing.availabilityStart && listing.availabilityEnd
+            ? `${formatDateShort(listing.availabilityStart)} – ${formatDateShort(listing.availabilityEnd)} (return by)`
+            : 'No fixed availability window'}
+        </p> : <DateRangePicker
+          presentation="listing"
           startDate={startDate}
           endDate={endDate}
           bookedDates={bookedDates}
           blockedDates={blockedDates}
+          minimumDate={listing.availabilityStart}
+          maximumDate={listing.availabilityEnd}
           onChange={(nextStart, nextEnd) => { setStartDate(nextStart); setEndDate(nextEnd); }}
-        />
+        />}
       </div>
+
+      {!isOwner && <div className="mt-4" aria-label="Choose rental length">
+        <p className="mb-2 text-xs font-semibold text-sec">Rental options</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {rentalOptions.map(option => <button key={option.days} type="button" disabled={option.disabled}
+            aria-pressed={days === option.days}
+            onClick={() => setEndDate(addDaysIso(startDate, option.days))}
+            className={`min-h-[76px] rounded-card border p-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${days === option.days ? 'border-accent bg-accent-soft' : 'border-app bg-card hover:border-accent/60'} disabled:cursor-not-allowed disabled:opacity-45`}>
+            <span className="block text-xs text-sec">{option.days} {option.days === 1 ? 'day' : 'days'}</span>
+            <strong className="mt-1 block text-base text-main tnum">${formatMoney(option.price)}</strong>
+            {option.discount > 0 && <span className="block text-[11px] font-semibold text-success">Save ${formatMoney(option.discount)}</span>}
+          </button>)}
+        </div>
+      </div>}
 
       {availabilityLoading && <p className="mt-3 text-sm text-sec" role="status">Checking date availability…</p>}
       {availabilityError && (
@@ -244,10 +301,11 @@ export function ListingPage({ id }: { id: string }) {
           <Button size="sm" variant="secondary" className="mt-2" onClick={() => setAvailabilityRetry((attempt) => attempt + 1)}>Try again</Button>
         </Alert>
       )}
-      {!datesValid && (
+      {!isOwner && !datesValid && (
         <Alert tone="warning" className="mt-3">Choose future rental dates with a return after pickup, up to {MAX_BOOKING_RANGE_DAYS} days.</Alert>
       )}
-      {datesValid && rangeUnavailable && (
+      {listing.availabilityStart && listing.availabilityEnd && <p className="text-xs text-sec mt-3">Available {listing.availabilityStart} through {addDaysIso(listing.availabilityEnd, -1)}. Return by {listing.availabilityEnd}. Your rental must fit within this window.</p>}
+      {!isOwner && datesValid && rangeUnavailable && (
         <Alert tone="warning" className="mt-3">Those dates are already taken. Choose another available range.</Alert>
       )}
 
@@ -257,25 +315,60 @@ export function ListingPage({ id }: { id: string }) {
           <p className="text-xs text-sec mt-1">Approximate pickup area. Exact address after confirmation.</p></div>
       </div>}
 
-      {/* Totals re-render on every duration change; the cross-fade keeps the swap from snapping. */}
-      {datesValid && <div key={`${days}-${listing.pricePerDay}`} className="mt-5 pt-5 border-t border-app space-y-3 text-sm animate-cross-fade" aria-label="Price breakdown">
-        <PriceRow label={`$${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'}`} value={rental} />
-        <PriceRow label={`Service fee (${formatFeePct(feePct)})`} value={serviceFee} />
-        <PriceRow label="Refundable security deposit" value={listing.deposit} muted />
-        <div className="pt-2.5 border-t border-app flex justify-between font-bold text-main text-base">
-          <span>Estimated total</span>
-          <span className="tnum">${formatMoney(total)}</span>
+      <div className="mt-4 flex items-center justify-between text-xs text-sec">
+        <span>Rental quantity</span><strong className="text-main">1 unit</strong>
+      </div>
+      {datesValid && <div key={`${days}-${listing.pricePerDay}`} className="listing-rental-estimate mt-4 space-y-3 text-sm animate-cross-fade" aria-label="Price breakdown">
+        <div>
+          <h2 className="text-sm font-bold text-main">{isOwner ? '1-day price preview' : 'Estimated rental cost'}</h2>
+          <p className="text-xs text-sec mt-1">Before the refundable deposit</p>
         </div>
+        {rentalPricing.packageKind ? <>
+          <PriceRow label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} package · ${rentalPricing.packageDays} days`} value={listing.pricePerDay * rentalPricing.packageDays} />
+          {durationDiscount > 0 && <PriceRow label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} savings (${rentalPricing.discountPercent}%)`} value={-durationDiscount} />}
+          {rentalPricing.extraDays > 0 && <PriceRow label={`${rentalPricing.extraDays} extra ${rentalPricing.extraDays === 1 ? 'day' : 'days'} × $${formatMoney(listing.pricePerDay)}`} value={listing.pricePerDay * rentalPricing.extraDays} />}
+        </> : <PriceRow label={`$${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'}`} value={grossRental} />}
+        <PriceRow label="Service fee" value={serviceFee} />
+        {isOwner
+          ? <div className="flex justify-between gap-3 text-sec"><span>Insurance</span><span className="text-xs text-right">{insuranceFlag.enabled ? 'Included when rented' : 'Not included'}</span></div>
+          : <InsuranceAmount days={days} replacementValue={listing.declaredValue} />}
+        {isTaxDemo ? <PriceRow label="Tax (7% demo)" value={taxDemo} />
+          : <div className="flex justify-between gap-3 text-sec"><span>Tax</span><span className="text-xs text-right">Not yet calculated</span></div>}
+        <div className="pt-3 border-t border-app flex justify-between gap-3 font-bold text-main">
+          <span>Rental and fees</span><span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount)}</span>
+        </div>
+        <p className="text-xs text-sec leading-relaxed">{isTaxDemo ? 'Demo tax applies to discounted rental only and is not charged.' : 'Tax is not included in this estimate.'} {insuranceFlag.enabled ? 'Insurance is calculated from the owner-declared item value.' : 'Insurance is not included.'}</p>
       </div>}
-      <p className="text-xs text-sec mt-3">Tax is not calculated in this estimate. Final charges are confirmed at checkout.</p>
-      <Button fullWidth size="lg" className="mt-5" disabled={!canBook} onClick={goToCheckout}>
-        {isOwner ? 'Your listing' : 'Request to book'}
+      <div className="listing-deposit-box mt-4 flex gap-3">
+        <ShieldCheck size={26} className="shrink-0 text-accent mt-0.5" aria-hidden="true" />
+        <div>
+          <h2 className="text-sm font-bold text-main">Refundable security deposit</h2>
+          <p className="mt-1 font-bold text-accent tnum">${formatMoney(listing.deposit)}</p>
+          <p className="text-xs text-sec mt-2 leading-relaxed">{listing.deposit > 0 ? 'Paid with your rental, not held on your card. Refunded after the owner confirms the return and any disputes are resolved.' : 'No security deposit is required for this item.'}</p>
+        </div>
+      </div>
+      <div className="mt-4 flex justify-between gap-3 text-sm text-sec">
+        <span>Security hold</span><span>No card hold placed</span>
+      </div>
+      {datesValid && <div className="mt-4 flex justify-between gap-3 text-sm font-bold text-main">
+        <span>Estimated total</span><span className="tnum">${formatMoney(total)}</span>
+      </div>}
+      {isTaxDemo && <p className="text-xs text-sec mt-2">Payment estimate excluding demo tax: ${formatMoney(paymentEstimate)}.</p>}
+      <p className="text-xs text-sec mt-2">Includes rental, service fee{insuranceFlag.enabled ? ', insurance' : ''} and refundable deposit{isTaxDemo ? ', plus demo tax' : ''}. Excludes tax. Review the final amount before paying.</p>
+      {!isOwner && <><Button fullWidth size="lg" className="mt-5" disabled={!canBook} onClick={goToCheckout}>
+        {listing.instantBooking ? 'Book instantly' : 'Request to book'}
       </Button>
       <p className="text-xs text-sec text-center mt-3 flex items-center justify-center gap-1.5">
-        <Lock size={13} aria-hidden="true" /> No charge until the owner approves.
-      </p>
-      {listing.deposit > 0 && <p className="text-xs text-sec mt-3 leading-relaxed">Deposit charged at payment; refundable after owner-confirmed return when no unresolved dispute exists.</p>}
-      {listing.negotiationEnabled && !isOwner && offersEnabled && <a href="#rental-offer" className="flex justify-center items-center min-h-11 text-sm font-semibold text-accent mt-2">Make an offer <ChevronRight size={15} aria-hidden="true" /></a>}
+        <Lock size={13} aria-hidden="true" /> {listing.instantBooking ? 'Dates reserve now; payment confirms the rental.' : 'No charge until the owner approves.'}
+      </p></>}
+      {listing.negotiationEnabled && !isOwner && privateOffersEnabled && <a href="#rental-offer" className="flex justify-center items-center min-h-11 text-sm font-semibold text-accent mt-2">Make an offer <ChevronRight size={15} aria-hidden="true" /></a>}
+      {listing.auctionEnabled && biddingEnabled && (isOwner
+        ? <button type="button" onClick={() => navigate({ name: 'bidding' })} className="flex justify-center items-center min-h-11 text-sm font-semibold text-accent mt-2">Manage competitive bidding <ChevronRight size={15} aria-hidden="true" /></button>
+        : <a href={`/bidding/${listing.id}`} onClick={event => {
+          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          navigate({ name: 'bidding-detail', id: listing.id });
+        }} className="flex justify-center items-center min-h-11 text-sm font-semibold text-accent mt-2">View auction in Bidding <ChevronRight size={15} aria-hidden="true" /></a>)}
     </Surface>
   );
 
@@ -288,10 +381,11 @@ export function ListingPage({ id }: { id: string }) {
           <a href={categoryId ? `/search?category=${encodeURIComponent(categoryId)}` : '/search'} className="text-accent font-medium">{listing.category || 'Rentals'}</a>
           <ChevronRight size={12} aria-hidden="true" /><span aria-current="page" className="truncate max-w-60">{listing.title}</span>
         </nav>
-        {/* Title block - item identity first, actions second. */}
-        <div className="flex flex-col sm:flex-row items-start justify-between gap-4 mb-5">
+        <div className="listing-detail-grid">
+        <div className="listing-heading min-w-0">
+        <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-[26px] sm:text-[38px] leading-tight font-extrabold text-main font-display mt-1">
+            <h1 className="text-[26px] sm:text-[32px] leading-tight font-extrabold text-main font-display mt-1">
               {listing.title}
             </h1>
             <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 mt-2.5 text-sm">
@@ -304,12 +398,12 @@ export function ListingPage({ id }: { id: string }) {
             {shareError && <Alert tone="warning" className="mb-4">Couldn't copy the link. You can copy the address from your browser.</Alert>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <IconButton label={liked ? 'Remove from favorites' : 'Save to favorites'} onClick={() => void handleToggleFavorite()}>
-              <Heart size={18} className={liked ? 'fill-favorite text-favorite' : 'text-sec'} />
-            </IconButton>
-            <IconButton label={shared ? 'Link copied' : 'Copy link'} onClick={() => void handleShare()}>
-              {shared ? <CheckCircle2 size={18} className="text-success" /> : <Share2 size={18} className="text-sec" />}
-            </IconButton>
+            {!isOwner && <button type="button" className="listing-text-action" aria-label={liked ? 'Remove from favorites' : 'Save to favorites'} onClick={() => void handleToggleFavorite()}>
+              <Heart size={17} aria-hidden="true" className={liked ? 'fill-favorite text-favorite' : 'text-sec'} />{liked ? 'Saved' : 'Save'}
+            </button>}
+            <button type="button" className="listing-text-action" aria-label={shared ? 'Link copied' : 'Copy link'} onClick={() => void handleShare()}>
+              {shared ? <CheckCircle2 size={17} aria-hidden="true" className="text-success" /> : <Share2 size={17} aria-hidden="true" className="text-sec" />}{shared ? 'Copied!' : 'Share'}
+            </button>
           </div>
         </div>
         {favoriteError && (
@@ -318,8 +412,7 @@ export function ListingPage({ id }: { id: string }) {
             <Button size="sm" variant="secondary" className="mt-2" onClick={() => setFavoriteRetry((attempt) => attempt + 1)}>Check again</Button>
           </Alert>
         )}
-
-        <div className="listing-detail-grid">
+        </div>
           {/* Left: gallery + detail */}
           <div className="listing-gallery min-w-0">
             <ImageGallery images={listing.images} title={listing.title} />
@@ -328,10 +421,10 @@ export function ListingPage({ id }: { id: string }) {
             <div className="listing-booking-sticky">{bookingPanel}</div>
           </aside>
           <div className="listing-details min-w-0 space-y-7">
-            <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-sec">
-              <span className="inline-flex items-center gap-2"><CheckCircle2 size={16} className="text-accent" aria-hidden="true" />Owner approval required</span>
+            {listing.auctionEnabled && biddingFlagError && <Alert tone="error" title="Could not check competitive bidding">{biddingFlagError} Retrying automatically.</Alert>}
+            <div className="listing-trust-strip flex flex-wrap gap-x-5 gap-y-2 text-xs text-sec">
+              <span className="inline-flex items-center gap-2"><CheckCircle2 size={16} className="text-accent" aria-hidden="true" />{listing.instantBooking ? 'Instant booking rules apply' : 'Owner approval required'}</span>
               <span className="inline-flex items-center gap-2"><Lock size={16} className="text-accent" aria-hidden="true" />{listing.deposit > 0 ? `$${formatMoney(listing.deposit)} refundable deposit` : 'No security deposit'}</span>
-              <span className="inline-flex items-center gap-2"><FileText size={16} className="text-accent" aria-hidden="true" />{formatFeePct(feePct)} service fee</span>
               {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && (
                 <span className="inline-flex items-center px-3 py-2 rounded-card bg-accent-soft"><ProtectionBadge size="md" /></span>
               )}
@@ -342,11 +435,28 @@ export function ListingPage({ id }: { id: string }) {
               )}
             </div>
 
+            <nav aria-label="Listing sections" className="listing-section-nav">
+              <a href="#listing-overview">Overview</a>
+              <a href="#listing-specifications">Specifications</a>
+              <a href="#listing-availability">Availability</a>
+              <a href="#listing-reviews">Reviews{listing.reviewCount > 0 ? ` (${listing.reviewCount})` : ''}</a>
+              {similar.length > 0 && <a href="#listing-similar">Similar items</a>}
+            </nav>
+            <div id="listing-overview" className="scroll-mt-24">
             {listing.description && (
               <Block title="About this item">
                 <p className="text-sec leading-relaxed whitespace-pre-line">{listing.description}</p>
               </Block>
             )}
+            </div>
+            <div id="listing-specifications" className="scroll-mt-24 space-y-6">
+            {(listing.brand || listing.model || listing.additionalDetails) && <Block title="Specifications">
+              <dl className="grid grid-cols-2 gap-4 text-sm">
+                {listing.brand && <div><dt className="text-sec">Brand</dt><dd className="mt-1 font-semibold text-main break-words">{listing.brand}</dd></div>}
+                {listing.model && <div><dt className="text-sec">Model</dt><dd className="mt-1 font-semibold text-main break-words">{listing.model}</dd></div>}
+              </dl>
+              {listing.additionalDetails && <p className="mt-4 text-sm text-sec whitespace-pre-line">{listing.additionalDetails}</p>}
+            </Block>}
 
             {listing.whatsIncluded.length > 0 && (
               <Block title="What's included">
@@ -393,10 +503,11 @@ export function ListingPage({ id }: { id: string }) {
                 </div>
               </Block>
             )}
+            </div>
 
             {/* Owner trust profile */}
             <Block title="Meet the owner">
-              <div className="py-4 border-y border-app">
+              <div className="listing-owner-card">
                 <div className="flex items-center gap-4">
                   {ownerAvatarFailed
                     ? <span className="w-12 h-12 rounded-full bg-accent-soft text-accent grid place-items-center font-bold shrink-0" aria-hidden="true">{listing.owner.name.trim().slice(0, 1).toUpperCase()}</span>
@@ -411,15 +522,14 @@ export function ListingPage({ id }: { id: string }) {
                     </div>
                   </div>
                 </div>
-                <Button
+                {!isOwner && <Button
                   variant="secondary"
                   className="mt-4"
-                  disabled={isOwner}
                   icon={<MessageSquare size={16} />}
                   onClick={() => void handleMessageOwner()}
                 >
                   Message {listing.owner.name.split(' ')[0]}
-                </Button>
+                </Button>}
                 {messageError && <Alert tone="error" className="mt-3">{messageError}</Alert>}
               </div>
             </Block>
@@ -442,6 +552,7 @@ export function ListingPage({ id }: { id: string }) {
               <Block title="Cancellation"><p className="text-sm text-sec">{listing.cancellation}</p></Block>
             )}
 
+            <div id="listing-reviews" className="scroll-mt-24">
             <Block title={listing.reviewCount > 0 ? `Reviews (${listing.reviewCount})` : 'Reviews'}>
               {reviewsError ? (
                 <Alert tone="warning">
@@ -474,13 +585,14 @@ export function ListingPage({ id }: { id: string }) {
                 </div>
               )}
             </Block>
+            </div>
 
-            {listing.negotiationEnabled && listing.owner.id !== user?.id && offersFlagError && (
+            {listing.negotiationEnabled && listing.owner.id !== user?.id && privateOffersFlagError && (
               <Alert tone="error" title="Could not check offer availability">
-                {offersFlagError} Retrying automatically.
+                {privateOffersFlagError} Retrying automatically.
               </Alert>
             )}
-            {listing.negotiationEnabled && listing.owner.id !== user?.id && offersEnabled && (
+            {listing.negotiationEnabled && listing.owner.id !== user?.id && privateOffersEnabled && (
               <section id="rental-offer" className="scroll-mt-24">
                 <h2 className="text-lg font-bold text-main">Make an offer</h2>
                 {offerSent
@@ -490,6 +602,8 @@ export function ListingPage({ id }: { id: string }) {
                       listingId={listing.id}
                       advertisedPrice={listing.pricePerDay}
                       rules={listing.offerRules}
+                      bookedDates={bookedDates}
+                      blockedDates={blockedDates}
                       onSent={() => setOfferSent(true)}
                     />
                     : <Button variant="secondary" onClick={openSignIn}>Sign in to make an offer</Button>}
@@ -501,7 +615,7 @@ export function ListingPage({ id }: { id: string }) {
 
         {similarError && <Alert tone="warning" className="mt-8">Similar rentals couldn't be loaded. <Button size="sm" variant="secondary" onClick={() => setSimilarRetry(attempt => attempt + 1)}>Retry similar rentals</Button></Alert>}
         {!similarError && similar.length > 0 && (
-          <div className="mt-14">
+          <div id="listing-similar" className="mt-12 scroll-mt-24">
             <SectionHeader
               title="Similar rentals"
               subtitle={listing.category ? `More in ${listing.category}` : undefined}
@@ -519,7 +633,7 @@ export function ListingPage({ id }: { id: string }) {
       </div>
 
       {/* Mobile sticky booking bar - price stays visible while reading the page. */}
-      <div className="listing-booking-bar lg:hidden fixed bottom-[calc(4rem_+_env(safe-area-inset-bottom))] md:bottom-0 left-0 right-0 z-30 bg-card border-t border-app px-4 py-3">
+      {!isOwner && <div className="listing-booking-bar lg:hidden fixed bottom-[calc(4rem_+_env(safe-area-inset-bottom))] md:bottom-0 left-0 right-0 z-30 bg-card border-t border-app px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="min-w-0">
             <p className="flex items-baseline gap-1">
@@ -530,7 +644,7 @@ export function ListingPage({ id }: { id: string }) {
           </div>
           <a className="inline-flex items-center justify-center min-h-11 px-5 rounded-card bg-accent text-accent-text font-semibold text-sm shrink-0" href="#listing-booking">Review booking</a>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -557,10 +671,11 @@ function PassportField({ label, value }: { label: string; value: string }) {
 }
 
 function PriceRow({ label, value, muted = false }: { label: string; value: number; muted?: boolean }) {
+  const isCredit = value < 0;
   return (
-    <div className="flex justify-between text-sec">
+    <div className={`flex justify-between ${isCredit ? 'text-success' : 'text-sec'}`}>
       <span>{label}</span>
-      <span className={`font-medium tnum ${muted ? 'text-sec' : 'text-main'}`}>${formatMoney(value)}</span>
+      <span className={`font-medium tnum ${isCredit ? 'text-success' : muted ? 'text-sec' : 'text-main'}`}>{isCredit ? '-' : ''}${formatMoney(Math.abs(value))}</span>
     </div>
   );
 }

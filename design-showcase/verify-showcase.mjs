@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "@playwright/test";
 
-const baseUrl = process.env.YBUY_SHOWCASE_URL ?? "http://127.0.0.1:4173/";
+const baseUrl = process.env.YBUY_SHOWCASE_URL ?? "http://localhost:4173/";
 const captureDir = process.env.YBUY_SHOWCASE_CAPTURE_DIR;
 const pages = [
   ["index.html", "gallery"],

@@ -12,7 +12,6 @@ export const LISTING_RULES = {
   currency: 'USD',
   title: { min: 3, max: 100 },
   description: {
-    required: import.meta.env.VITE_LISTING_DESCRIPTION_REQUIRED === 'true',
     min: 10,
     max: 2000,
   },
@@ -28,13 +27,13 @@ export const LISTING_RULES = {
 
 export type ListingField = 'photos' | 'title' | 'category' | 'description' | 'pickup' | 'price' | 'deposit' | 'value' | 'condition';
 
-/** DOM id to focus for each field; `pickup` falls back to the city input while Confirm is disabled. */
+/** DOM id to focus for each field. */
 export const LISTING_FIELD_IDS: Record<ListingField, string> = {
   photos: 'listing-add-photo',
   title: 'listing-title',
   category: 'listing-category-group',
   description: 'listing-description',
-  pickup: 'pickup-confirm',
+  pickup: 'pickup-address',
   price: 'listing-price',
   deposit: 'listing-deposit',
   value: 'listing-value',
@@ -73,6 +72,7 @@ export interface ListingFormValues {
   priceText: string;
   depositText: string;
   valueText?: string;
+  maxValue?: number;
   condition?: string;
 }
 
@@ -90,19 +90,18 @@ export function validateListing(v: ListingFormValues): Partial<Record<ListingFie
 
   if (!v.categoryId) errors.category = 'Choose a category.';
   if (v.valueText !== undefined) {
-    const valueError = moneyError('Estimated replacement value',v.valueText,0.01,1000000,false);
+    const valueError = moneyError('Estimated replacement value',v.valueText,0,v.maxValue ?? 1000000,false);
     if (valueError) errors.value=valueError;
   }
   if (v.condition !== undefined && !['new','like_new','good','fair'].includes(v.condition)) errors.condition='Choose the item condition.';
 
   const descriptionText = v.description.trim();
-  if (!descriptionText) {
-    if (description.required) errors.description = 'Describe what is included and the condition it is in.';
-  } else if (descriptionText.length < description.min) errors.description = `Description must be at least ${description.min} characters.`;
+  if (!descriptionText) errors.description = 'Describe what is included and the condition it is in.';
+  else if (descriptionText.length < description.min) errors.description = `Description must be at least ${description.min} characters.`;
   else if (descriptionText.length > description.max) errors.description = `Description must be ${description.max.toLocaleString('en-US')} characters or fewer.`;
   else if (UNSAFE_TEXT.test(descriptionText)) errors.description = 'Description can only contain plain text (no HTML, scripts or hidden characters).';
 
-  if (!v.pickupConfirmed) errors.pickup = 'Choose the pickup address, then select "Confirm Location". Renters only see the approximate area until a booking is approved.';
+  if (!v.pickupConfirmed) errors.pickup = 'Choose a complete pickup address from the search results. Your exact address stays private until the booking is confirmed.';
   else {
     const unsafePickup = v.pickupFields.map((field) => plainTextError('Pickup location', field, PICKUP_TEXT_MAX)).find(Boolean);
     if (unsafePickup) errors.pickup = unsafePickup;

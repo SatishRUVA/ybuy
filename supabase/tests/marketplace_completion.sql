@@ -9,17 +9,36 @@ insert into auth.sessions(id,user_id) select
  ('92000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  ('91000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid from generate_series(1,3) n;
 insert into public.categories(id,name) values('93000000-0000-4000-8000-000000000001','Completion fixture');
-insert into public.listings(id,owner_id,category_id,title,price_per_day,deposit,status,estimated_value,item_condition,location_lat,location_lng,negotiation_enabled)
+-- These approved offer bounds exist only inside this rollback-only SQL fixture.
+update public.app_settings set value='true'::jsonb where key='listing_offers_configured';
+update public.app_settings set value='0.5'::jsonb where key in ('listing_offer_below_pct','listing_offer_above_pct');
+update public.app_settings set value='366'::jsonb where key='listing_duration_days';
+insert into public.listings(id,owner_id,category_id,title,description,price_per_day,deposit,status,estimated_value,item_condition,location_lat,location_lng,availability_start,availability_end)
 values
- ('94000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000001','93000000-0000-4000-8000-000000000001','Completion camera',10,50,'published',200,'good',0,0,true),
- ('94000000-0000-4000-8000-000000000002','91000000-0000-4000-8000-000000000001','93000000-0000-4000-8000-000000000001','Completion far camera',10,50,'published',200,'good',1,0,true);
+ ('94000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000001','93000000-0000-4000-8000-000000000001','Completion camera','A camera used for isolated marketplace completion tests.',10,50,'draft',200,'good',0,0,current_date,current_date+366),
+ ('94000000-0000-4000-8000-000000000002','91000000-0000-4000-8000-000000000001','93000000-0000-4000-8000-000000000001','Completion far camera','A second camera used for isolated marketplace completion tests.',10,50,'draft',200,'good',1,0,current_date,current_date+366);
+insert into public.listing_images(listing_id,url,sort_order) values
+ ('94000000-0000-4000-8000-000000000001','https://example.test/completion-camera.jpg',0),
+ ('94000000-0000-4000-8000-000000000002','https://example.test/completion-far-camera.jpg',0);
+insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,latitude,longitude)
+select id,owner_id,'Private test pickup','Test City','TX','75201',location_lat,location_lng from public.listings where id in
+ ('94000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000002');
+update public.listings set status='published' where id in
+ ('94000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000002');
+set local role authenticated;
+set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
+select public.owner_save_offer_preferences('94000000-0000-4000-8000-000000000002',
+ (select revision from public.listings where id='94000000-0000-4000-8000-000000000002'),
+ jsonb_build_object('negotiation_enabled',true,'offer_minimum_daily',5,'offer_maximum_daily',15,
+  'offer_target_daily',10,'offer_start_date',current_date,'offer_end_date',current_date+366,'offer_expiration_hours',72));
+reset role;
 update public.feature_flags set enabled=true where key in ('bidding','item_requests');
 
 select throws_ok($$insert into public.listings(owner_id,category_id,title,price_per_day,status)
  values('91000000-0000-4000-8000-000000000001','93000000-0000-4000-8000-000000000001','Missing value',10,'published')$$,
  '23514','Enter an owner-declared value and item condition before publishing','Publication requires declared value and condition');
 select throws_ok($$update public.listings set estimated_value='NaN' where id='94000000-0000-4000-8000-000000000001'$$,
- '23514','Estimated value must be a finite amount','Nonfinite valuation rejected');
+ '23514','Estimated replacement value must be between $0 and $5000. Items above this limit cannot be listed.','Nonfinite valuation rejected');
 select throws_ok($$update public.listings set price_per_day='NaN' where id='94000000-0000-4000-8000-000000000001'$$,
  '23514',null,'Direct writes cannot introduce nonfinite daily prices');
 select throws_ok($$update public.listings set price_per_week='NaN' where id='94000000-0000-4000-8000-000000000001'$$,
@@ -33,11 +52,12 @@ set local role authenticated;
 set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
 select throws_ok($$update public.listings set owner_verified=true where id='94000000-0000-4000-8000-000000000001'$$,
  '42501','Owner verification can only be assigned by the trusted verification service','Owners cannot self-verify through direct writes');
-select lives_ok($$select public.owner_save_listing('94000000-0000-4000-8000-000000000001',1,'{"price_per_day":12}')$$,'Owner saves against expected revision');
+select lives_ok(format('select public.owner_save_listing(%L,(select revision from public.listings where id=%L),%L)',
+ '94000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001','{"price_per_day":12}'),'Owner saves against expected revision');
 select throws_ok($$select public.owner_save_listing('94000000-0000-4000-8000-000000000001',1,'{"price_per_day":11}')$$,
  '40001','This listing changed in another session. Reload before saving.','Stale editor cannot overwrite a newer save');
 select lives_ok($$insert into public.listing_images(listing_id,url,sort_order) values('94000000-0000-4000-8000-000000000001','https://example.test/camera.jpg',0)$$,'Owner photo change succeeds before booking');
-select is((select count(*)::integer from public.listing_change_history where listing_id='94000000-0000-4000-8000-000000000001'),2,'Owner can retrieve price and photo history');
+select is((select count(*)::integer from public.listing_change_history where listing_id='94000000-0000-4000-8000-000000000001'),5,'Owner can retrieve setup, price and photo history');
 set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000003","exp":4102444800}';
 select is((select count(*)::integer from public.listing_change_history),0,'Other users cannot read listing edit history');
 select throws_ok($$select public.owner_save_listing('94000000-0000-4000-8000-000000000001',3,'{"price_per_day":1}')$$,
@@ -87,7 +107,7 @@ select lives_ok($$select public.confirm_booking_payment('95000000-0000-4000-8000
 select is((select count(*)::integer from public.payments where booking_id='95000000-0000-4000-8000-000000000001'),1,'Retry does not duplicate payment');
 
 select ok(public.listing_offer_within_rules('94000000-0000-4000-8000-000000000002',10,current_date+10,current_date+12),'Listing offer accepts allowed price/dates');
-update public.listings set offer_minimum_daily=9,offer_guardrail_pct=.3 where id='94000000-0000-4000-8000-000000000002';
+update public.listings set offer_minimum_daily=9,offer_maximum_daily=13,offer_target_daily=10,offer_guardrail_pct=.3 where id='94000000-0000-4000-8000-000000000002';
 select ok(not public.listing_offer_within_rules('94000000-0000-4000-8000-000000000002',8,current_date+10,current_date+12),'Listing minimum is authoritative');
 select ok(not public.listing_offer_within_rules('94000000-0000-4000-8000-000000000002',14,current_date+10,current_date+12),'Listing maximum guardrail is authoritative');
 select ok(not public.listing_offer_within_rules('94000000-0000-4000-8000-000000000002','NaN',current_date+10,current_date+12),'Nonfinite offers are excluded');
@@ -122,9 +142,17 @@ update public.item_requests set status='cancelled' where id='96000000-0000-4000-
 select is((select count(*)::integer from public.item_request_match_queue where request_id='96000000-0000-4000-8000-000000000001'),0,'Request closure removes queued matching');
 select is((select count(*)::integer from public.notification_email_jobs where event_key like 'request-match:96000000-0000-4000-8000-000000000001:%' and status in ('pending','retrying')),0,'Closure stops pending match emails');
 
-insert into public.listings(owner_id,category_id,title,price_per_day,status,estimated_value,item_condition,location_lat,location_lng)
+insert into public.listings(owner_id,category_id,title,description,price_per_day,status,estimated_value,item_condition,location_lat,location_lng,availability_start,availability_end)
 select '91000000-0000-4000-8000-000000000001','93000000-0000-4000-8000-000000000001',
- 'Completion batch camera '||n,10,'published',200,'good',0,0 from generate_series(1,101) n;
+ 'Completion batch camera '||n,'A published test fixture for marketplace matching and bidding.',10,'draft',200,'good',0,0,current_date,current_date+366
+from generate_series(1,101) n;
+set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
+insert into public.listing_images(listing_id,url,sort_order)
+select id,'https://example.test/'||id||'.jpg',0 from public.listings where title like 'Completion batch camera %';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,latitude,longitude)
+select id,owner_id,'Private test pickup','Test City','TX','75201',location_lat,location_lng
+from public.listings where title like 'Completion batch camera %';
+update public.listings set status='published' where title like 'Completion batch camera %';
 update public.item_requests set status='open' where id='96000000-0000-4000-8000-000000000001';
 select is(public.process_item_request_matches(),100,'Matcher processes a bounded first page of 100 additional listings');
 select ok(exists(select 1 from public.item_request_match_queue where request_id='96000000-0000-4000-8000-000000000001'),'More than 100 matches remain durably queued');
@@ -153,31 +181,51 @@ select is((select status from public.bookings where id='95000000-0000-4000-8000-
 select is((select count(*)::integer from public.checkout_payment_exceptions where booking_id='95000000-0000-4000-8000-000000000002'),1,'Financial exception is persisted');
 select lives_ok($$select public.confirm_booking_payment('95000000-0000-4000-8000-000000000002','cs_conflict','pi_conflict',72)$$,'Repeated conflicting payment does not duplicate reconciliation');
 
-update public.listings set negotiation_enabled=true,price_per_day=1000+substring(title from '[0-9]+$')::integer
+update public.listings set price_per_day=1000+substring(title from '[0-9]+$')::integer
  where title in (select 'Completion batch camera '||n from generate_series(1,7) n)
  and category_id='93000000-0000-4000-8000-000000000001';
+set local role authenticated;
+set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
+do $$ declare v_listing record; begin
+  for v_listing in select id,revision,price_per_day,availability_start,availability_end from public.listings
+    where title in (select 'Completion batch camera '||n from generate_series(1,7) n)
+      and category_id='93000000-0000-4000-8000-000000000001'
+  loop
+    perform public.owner_save_offer_preferences(v_listing.id,v_listing.revision,jsonb_build_object(
+      'negotiation_enabled',true,'offer_minimum_daily',round(v_listing.price_per_day*0.5,2),
+      'offer_maximum_daily',round(v_listing.price_per_day*1.5,2),'offer_target_daily',v_listing.price_per_day,
+      'offer_start_date',v_listing.availability_start,'offer_end_date',v_listing.availability_end,'offer_expiration_hours',72));
+  end loop;
+end $$;
+reset role;
 set local role authenticated;
 set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000002","exp":4102444800}';
 select lives_ok(format('select public.create_marketplace_offer(null,%L,current_date+20,current_date+22,%L,null,%L)',
  id,price_per_day,gen_random_uuid()),'Renter creates eligible persisted bid: '||title)
  from public.listings where category_id='93000000-0000-4000-8000-000000000001' and price_per_day>1000;
-select is(jsonb_array_length(public.get_top_listing_bids()),5,'Public ticker returns exactly five of seven eligible bids');
-select is((public.get_top_listing_bids()->0->>'daily_rate')::numeric,1007::numeric,'Ticker ranks highest persisted price first');
+select is(jsonb_array_length(public.get_top_listing_bids()),0,'Private offers never enter the public competitive-bidding ticker');
+select is((public.get_top_listing_bids()->0->>'daily_rate')::numeric,null::numeric,'Private offer rates are not disclosed publicly');
 select ok(not exists(select 1 from jsonb_array_elements(public.get_top_listing_bids()) bid
  where bid ?| array['ordering_id','proposed_by','renter_id','owner_id','negotiation_id','proposal_id']),'Public ticker omits participant and private proposal identities');
 reset role;
 update public.negotiation_proposals set expires_at=now()-interval '1 second' where daily_rate=1007 and negotiation_id in
  (select id from public.marketplace_negotiations where renter_id='91000000-0000-4000-8000-000000000002');
-select is((public.get_top_listing_bids()->0->>'daily_rate')::numeric,1006::numeric,'Expired highest bid is excluded immediately');
+select is((public.get_top_listing_bids()->0->>'daily_rate')::numeric,null::numeric,'Expired private offers stay out of public feed');
 update public.marketplace_negotiations set status='withdrawn' where id in
  (select negotiation_id from public.negotiation_proposals where daily_rate=1006);
-select is((public.get_top_listing_bids()->0->>'daily_rate')::numeric,1005::numeric,'Withdrawn negotiation is excluded');
+select is((public.get_top_listing_bids()->0->>'daily_rate')::numeric,null::numeric,'Withdrawn private negotiations stay private');
 update public.feature_flags set enabled=false where key='bidding';
 select is(jsonb_array_length(public.get_top_listing_bids()),0,'Disabling bidding clears the public feed');
 
-update public.listings set available_quantity=2,negotiation_enabled=true
+update public.listings set available_quantity=2
  where title='Completion batch camera 8' and category_id='93000000-0000-4000-8000-000000000001';
-insert into public.bookings(listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status)
+set local role authenticated;
+set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
+select public.owner_save_offer_preferences(id,revision,jsonb_build_object('negotiation_enabled',true,
+ 'offer_minimum_daily',5,'offer_maximum_daily',15,'offer_target_daily',10,
+ 'offer_start_date',availability_start,'offer_end_date',availability_end,'offer_expiration_hours',72))
+from public.listings where title='Completion batch camera 8' and category_id='93000000-0000-4000-8000-000000000001';
+reset role;
 select id,owner_id,'91000000-0000-4000-8000-000000000003',current_date+20,current_date+22,10,2,20,.1,2,0,22,'confirmed'
  from public.listings where title='Completion batch camera 8' and category_id='93000000-0000-4000-8000-000000000001';
 update public.feature_flags set enabled=true where key='bidding';
@@ -195,5 +243,78 @@ select is((select count(*)::integer from public.claim_notification_email_jobs('9
 select is((select count(*)::integer from public.notification_email_jobs
   where event_key like 'request-match:96000000-0000-4000-8000-000000000001:%' and status in ('pending','retrying')),0,
   'Send-time eligibility suppresses queued matching emails even before request closure');
+
+-- Owner-funded discounts: a promo replaces (never stacks with) a duration discount.
+update public.feature_flags set enabled=true where key in ('duration_discounts','owner_promotions');
+update public.listings set price_per_day=12 where id='94000000-0000-4000-8000-000000000001';
+update public.listings set duration_discount_min_days=3,duration_discount_percent=10
+ where id='94000000-0000-4000-8000-000000000001';
+set local role authenticated;
+set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
+select lives_ok($$select public.owner_save_promotion('94000000-0000-4000-8000-000000000001','CAMERA20',20,true)$$,
+ 'Owner configures a single listing promotion');
+select is((public.owner_quote_promotion('94000000-0000-4000-8000-000000000001','camera20',3,1)->>'discount_amount')::numeric,7.2::numeric,
+ 'Promotion quote returns the owner-funded discount');
+reset role;
+select set_config('ybuy.owner_promotion_code','CAMERA20',true);
+insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status)
+values('95000000-0000-4000-8000-000000000004','94000000-0000-4000-8000-000000000001',
+ '91000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000002',
+ current_date+140,current_date+143,12,3,36,.1,3.6,50,89.6,'pending_payment');
+select is((select owner_discount_amount from public.bookings where id='95000000-0000-4000-8000-000000000004'),7.2::numeric,
+ 'Promotion overrides the eligible long-rental discount');
+select is((select owner_discount_source from public.bookings where id='95000000-0000-4000-8000-000000000004'),'promotion',
+ 'Booking records which owner-funded discount was used');
+select is((select subtotal from public.bookings where id='95000000-0000-4000-8000-000000000004'),28.8::numeric,
+ 'Promotion reduces rental subtotal before service fee');
+select is((select total from public.bookings where id='95000000-0000-4000-8000-000000000004'),81.68::numeric,
+ 'Promotion-adjusted amount includes fee and deposit');
+select set_config('ybuy.owner_promotion_code','',true);
+insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status)
+values('95000000-0000-4000-8000-000000000005','94000000-0000-4000-8000-000000000001',
+ '91000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000002',
+ current_date+150,current_date+153,12,3,36,.1,3.6,50,89.6,'requested');
+select is((select owner_discount_amount from public.bookings where id='95000000-0000-4000-8000-000000000005'),3.6::numeric,
+ 'Eligible long rental receives the configured duration discount');
+select is((select owner_discount_source from public.bookings where id='95000000-0000-4000-8000-000000000005'),'duration',
+ 'Booking records duration as the discount source when no promo is used');
+
+-- Dummy terms require an explicit test flag and are visibly marked in immutable snapshots.
+insert into public.admin_users(user_id,role)
+values('91000000-0000-4000-8000-000000000003','super_admin');
+set local role authenticated;
+set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000003","iss":"https://xwmnfnhnnxxaarbfkqrp.supabase.co/auth/v1","exp":4102444800}';
+select throws_ok($$select public.admin_publish_test_dummy_terms('testing')$$,'55000','Test dummy terms are disabled',
+ 'Dummy rental terms cannot be published until the test-only flag is explicitly enabled');
+reset role;
+update public.feature_flags set enabled=true where key='test_dummy_legal_terms';
+set local role authenticated;
+set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000003","iss":"https://xwmnfnhnnxxaarbfkqrp.supabase.co/auth/v1","exp":4102444800}';
+select throws_ok($$select public.admin_publish_test_dummy_terms('testing')$$,'55000',
+ 'Test-only terms may only be published in the local or approved test project',
+ 'Fictional legal text cannot be published from a production Supabase project');
+set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000003","iss":"http://localhost:54321/auth/v1","exp":4102444800}';
+select lives_ok($$select public.admin_publish_test_dummy_terms('isolated end-to-end verification')$$,
+ 'Authorized test admin can publish explicitly labeled sample terms');
+reset role;
+insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status)
+values('95000000-0000-4000-8000-000000000006','94000000-0000-4000-8000-000000000001',
+ '91000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000002',
+ current_date+160,current_date+162,12,2,24,.1,2.4,50,76.4,'pending_payment');
+select is((select snapshot->>'legal_status' from public.rental_agreements where booking_id='95000000-0000-4000-8000-000000000006'),
+ 'test_dummy','Agreement snapshot identifies test-only terms without representing them as approved legal text');
+select ok((select (snapshot->>'test_only_dummy_terms')::boolean from public.rental_agreements where booking_id='95000000-0000-4000-8000-000000000006'),
+ 'Agreement snapshot explicitly marks fictional terms as test-only');
+select is((select snapshot->>'promo_code' from public.rental_agreements where booking_id='95000000-0000-4000-8000-000000000004'),
+ 'CAMERA20','Immutable agreement preserves the promotion code captured at booking time');
+set local role authenticated;
+set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000002","exp":4102444800}';
+select lives_ok($$select public.accept_rental_agreement((select id from public.rental_agreements where booking_id='95000000-0000-4000-8000-000000000006'),1)$$,
+ 'Test renter can accept clearly marked dummy terms for the isolated test flow');
+reset role;
+
 select * from finish();
 rollback;
+
+
+

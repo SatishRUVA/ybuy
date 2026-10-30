@@ -1,3 +1,5 @@
+import { countryIsAllowed, fetchMarketplaceCountries, type MarketplaceCountry } from '@/lib/marketplace-countries';
+
 export type LocationSource = 'USER_SELECTED' | 'BROWSER' | 'IP' | 'NONE';
 
 export interface MarketplaceLocation {
@@ -27,7 +29,7 @@ interface MapTilerFeature {
   context?: { id: string; text: string }[];
 }
 
-async function geocode(query: string, types: string, signal?: AbortSignal, proximity?: { latitude: number; longitude: number }): Promise<MapTilerFeature[]> {
+async function geocode(query: string, types: string, signal?: AbortSignal, proximity?: { latitude: number; longitude: number }, countries?: MarketplaceCountry[]): Promise<MapTilerFeature[]> {
   const key = import.meta.env.VITE_MAP_API_KEY;
   if (!key) throw new Error('City search is unavailable right now.');
   const url = new URL(`https://api.maptiler.com/geocoding/${encodeURIComponent(query)}.json`);
@@ -35,11 +37,17 @@ async function geocode(query: string, types: string, signal?: AbortSignal, proxi
   url.searchParams.set('types', types);
   url.searchParams.set('limit', '5');
   if (proximity) url.searchParams.set('proximity', `${proximity.longitude},${proximity.latitude}`);
-  if (/^\d{5}$/.test(query.trim())) url.searchParams.set('country', 'us');
+  const allowed = countries ?? await fetchMarketplaceCountries();
+  if (!/^-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?$/.test(query)) {
+    url.searchParams.set('country', allowed.map(country => country.code.toLowerCase()).join(','));
+  }
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error('Could not look up that location.');
   const data: { features?: MapTilerFeature[] } = await response.json();
-  return data.features ?? [];
+  return (data.features ?? []).filter(feature => {
+    const country = feature.context?.find(item => item.id.startsWith('country.'))?.text ?? '';
+    return countryIsAllowed(country, allowed);
+  });
 }
 
 function cityFromFeature(feature: MapTilerFeature): MarketplaceLocation | null {
@@ -71,9 +79,15 @@ export async function findCities(query: string, signal?: AbortSignal, proximity?
 }
 
 export async function cityForCoordinates(latitude: number, longitude: number): Promise<MarketplaceLocation | null> {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    throw new Error('Choose a valid location.');
+  }
   const results = await geocode(`${longitude},${latitude}`, 'municipality');
   const city = results.map(cityFromFeature).find((result) => result !== null);
-  return city ? { ...city, latitude, longitude, source: 'BROWSER' } : null;
+  if (!city || haversineMiles(latitude, longitude, city.latitude!, city.longitude!) > 100) {
+    throw new Error('Your location is outside the enabled marketplace countries. Choose another city.');
+  }
+  return { ...city, latitude, longitude, source: 'BROWSER' };
 }
 
 export async function estimateCityFromIp(signal?: AbortSignal): Promise<MarketplaceLocation | null> {
@@ -83,9 +97,23 @@ export async function estimateCityFromIp(signal?: AbortSignal): Promise<Marketpl
   url.searchParams.set('key', key);
   const response = await fetch(url, { signal });
   if (!response.ok) return null;
-  const data: { city?: string; region?: string; country?: string } = await response.json();
+  const data: { city?: string; region?: string; country?: string; latitude?: number; longitude?: number } = await response.json();
   if (!data.city || !data.country) return null;
-  return { city: data.city, state: data.region ?? '', country: data.country, source: 'IP' };
+  const countries = await fetchMarketplaceCountries();
+  if (!countryIsAllowed(data.country, countries)) return null;
+  let latitude = data.latitude;
+  let longitude = data.longitude;
+  let hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude)
+    && Math.abs(data.latitude!) <= 90 && Math.abs(data.longitude!) <= 180;
+  if (!hasCoordinates) {
+    const city = await geocode([data.city, data.region].filter(Boolean).join(', '), 'municipality', signal, undefined, countries);
+    const center = city.map(cityFromFeature).find((result) => result !== null);
+    if (center) { latitude = center.latitude; longitude = center.longitude; hasCoordinates = true; }
+  }
+  return {
+    city: data.city, state: data.region ?? '', country: data.country, source: 'IP',
+    ...(hasCoordinates ? { latitude, longitude } : {}),
+  };
 }
 
 /** Great-circle distance between two coordinates, in miles. */
@@ -97,9 +125,11 @@ export function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: n
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Configurable via .env.local; defaults to a 30-day booking horizon.
+// Match the server's maximum rental period; allow local deployments to choose a shorter horizon.
 const parsedMaxRange = Number(import.meta.env.VITE_MAX_BOOKING_RANGE_DAYS);
-export const MAX_BOOKING_RANGE_DAYS = Number.isFinite(parsedMaxRange) && parsedMaxRange > 0 ? parsedMaxRange : 30;
+export const MAX_BOOKING_RANGE_DAYS = Number.isFinite(parsedMaxRange) && parsedMaxRange > 0
+  ? Math.min(366, Math.floor(parsedMaxRange))
+  : 366;
 
 function toIsoLocal(date: Date): string {
   const y = date.getFullYear();

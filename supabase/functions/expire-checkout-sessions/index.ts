@@ -21,7 +21,31 @@ Deno.serve(async (request) => {
     for (const booking of bookings.data) {
       const session=await stripe.checkout.sessions.retrieve(booking.checkout_session_id);
       if (session.livemode) throw new Error('Live checkout session rejected');
-      if (session.status==='open') await stripe.checkout.sessions.expire(session.id);
+      if (session.status==='complete') {
+        if (session.currency!=='usd' || typeof session.payment_intent!=='string' || session.metadata?.booking_id!==booking.id) {
+          throw new Error('Completed checkout receipt does not match the booking');
+        }
+        const intent=await stripe.paymentIntents.retrieve(session.payment_intent);
+        if (intent.livemode || intent.currency!==session.currency) throw new Error('Checkout payment could not be verified');
+        if (session.payment_status==='paid') {
+          if (intent.status!=='succeeded' || intent.amount_received!==session.amount_total) throw new Error('Checkout payment could not be verified');
+          const confirmed=await admin.rpc('confirm_booking_payment',{
+            p_booking_id:booking.id,p_checkout_session_id:session.id,
+            p_payment_intent_id:intent.id,p_amount:intent.amount_received/100,
+          });
+          if (confirmed.error) throw new Error(confirmed.error.message);
+          continue;
+        }
+        // Keep processing payments reserved; cancel a failed intent before offering a runner-up.
+        if (intent.status!=='canceled') {
+          if (!['requires_payment_method','requires_confirmation','requires_action'].includes(intent.status)) continue;
+          const cancelled=await stripe.paymentIntents.cancel(intent.id);
+          if (cancelled.status!=='canceled') throw new Error('Checkout payment cancellation is unconfirmed');
+        }
+      } else if (session.status==='open') {
+        const result=await stripe.checkout.sessions.expire(session.id);
+        if (result.status!=='expired') throw new Error('Checkout session has not expired');
+      } else if (session.status!=='expired') throw new Error('Checkout session status is unknown');
       const recorded=await admin.from('bookings').update({ checkout_session_closed_at:new Date().toISOString() }).eq('id',booking.id);
       if (recorded.error) throw new Error(recorded.error.message);
       closed++;

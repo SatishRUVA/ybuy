@@ -1,9 +1,9 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { Session, User } from '@supabase/supabase-js';
 import { mockSupabaseModule } from './mock-supabase';
+import { appUrl } from './test-url';
 
-const appUrl = process.env.YBUY_TEST_APP_URL ?? 'http://127.0.0.1:5174';
-const apiUrl = 'http://127.0.0.1:54321';
+const apiUrl = 'http://localhost:54321';
 const renterId = '10000000-0000-4000-8000-000000000001';
 const ownerId = '10000000-0000-4000-8000-000000000002';
 const categoryId = '20000000-0000-4000-8000-000000000001';
@@ -20,6 +20,7 @@ const listing = {
   price_per_day: 25,
   price_per_week: null,
   deposit: 50,
+  estimated_value: 200,
   location_lat: 32.8,
   location_lng: -96.9,
   location_label: 'Irving, TX',
@@ -83,7 +84,7 @@ function sessionFor(id: string): Session {
 }
 
 interface Scenario {
-  listingOverrides?: Partial<typeof listing> & { negotiation_enabled?: boolean; item_condition?: string };
+  listingOverrides?: Partial<typeof listing> & { negotiation_enabled?: boolean; offer_maximum_daily?: number; item_condition?: string };
   bidding?: boolean;
   unavailableDates?: { blocked: string[]; booked: string[] };
   listingImage?: string;
@@ -115,7 +116,7 @@ async function setup(page: Page, scenario: Scenario = {}, authId?: string) {
   });
   if (authId) {
     await page.addInitScript((session) => {
-      localStorage.setItem('sb-127-auth-token', JSON.stringify(session));
+      localStorage.setItem('sb-localhost-auth-token', JSON.stringify(session));
     }, sessionFor(authId));
   }
   let checkInCalls = 0;
@@ -241,6 +242,10 @@ async function setup(page: Page, scenario: Scenario = {}, authId?: string) {
 test('category artwork stays fixed when a listing photo changes', async ({ page }) => {
   const scenario: Scenario = {};
   await setup(page, scenario);
+  await page.route('https://images.pexels.com/**', (route) => route.fulfill({
+    contentType: 'image/png',
+    body: Buffer.from(image.split(',')[1], 'base64'),
+  }));
   await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' });
   const categoryImage = page.getByRole('button', { name: 'Electronics', exact: true }).locator('img');
   const standardImage = 'https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&cs=tinysrgb&w=400&h=300&fit=crop';
@@ -261,6 +266,7 @@ test('category artwork stays fixed when a listing photo changes', async ({ page 
       toUiCategory({ id: name, name, icon: 'Package', active: true, sort_order: 1 }, new Map()).image);
   });
   expect(artwork.slice(0, 8).every((url) => url.startsWith('https://images.pexels.com/photos/'))).toBe(true);
+  expect(new Set(artwork.slice(0, 8)).size).toBe(8);
   expect(artwork[8]).toBe('');
 });
 
@@ -387,10 +393,22 @@ test('listing redesign keeps a single cost-first booking panel and responsive ac
   const request = panel.getByRole('button', { name: 'Request to book', exact: true });
   await expect(request).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Request to book', exact: true })).toHaveCount(1);
-  await expect(panel.getByLabel('Price breakdown')).toContainText('$77.50');
-  await expect(panel.getByText('Service fee (10%)')).toBeVisible();
+  await expect(panel.getByLabel('Price breakdown')).toContainText('$27.50');
+  await expect(panel.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$79.25');
+  await expect(panel.getByText('Tax (7% demo)', { exact: true }).locator('..')).toContainText('$1.75');
+  await expect(panel.getByText('Insurance (demo)', { exact: true })).toBeVisible();
+  await expect(panel.getByText('Placeholder', { exact: true })).toHaveCount(0);
+  await expect(panel.getByText('No insurance coverage is provided.', { exact: false })).toBeVisible();
+  await expect(panel.getByLabel('Insurance simulation')).toContainText('$0.40');
+  await expect(panel.getByLabel('Insurance simulation')).toContainText('Not charged · No coverage');
+  await expect(panel.getByText('In-house demo estimate for this rental.', { exact: true })).toHaveCount(0);
+  await expect(panel.getByText('For testing only.', { exact: false })).toHaveCount(0);
+  await expect(panel.getByText('Not offered', { exact: true })).toHaveCount(0);
+  await expect(panel.getByText('Service fee', { exact: true })).toBeVisible();
+  await expect(page.getByText('Service fee', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('(10%)', { exact: false })).toHaveCount(0);
   await expect(panel.getByText('Refundable security deposit', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Tax is not calculated in this estimate.', { exact: false })).toBeVisible();
+  await expect(panel.getByText('Demo tax applies to discounted rental only and is not charged.', { exact: false })).toBeVisible();
   expect((await panel.getByText('Estimated total').boundingBox())!.y).toBeLessThan((await request.boundingBox())!.y);
   await expect(page.getByText('Identity verified', { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Joined 2026/)).toHaveCount(0);
@@ -400,13 +418,22 @@ test('listing redesign keeps a single cost-first booking panel and responsive ac
   await expect(page.getByRole('img', { name: `${listing.title} - photo 2` })).toBeVisible();
   await page.getByRole('button', { name: 'Previous image', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Show image 1', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const sections = page.getByRole('navigation', { name: 'Listing sections' });
+  await expect(sections.getByRole('link', { name: 'Specifications' })).toHaveAttribute('href', '#listing-specifications');
+  await sections.getByRole('link', { name: 'Reviews', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Reviews', exact: true })).toBeInViewport();
   for (const [width, height] of [[1440, 1000], [1024, 900], [768, 1024], [375, 812], [812, 375]]) {
     await page.setViewportSize({ width, height });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const gallery = await page.locator('.listing-gallery').boundingBox();
     const bookingBox = await panel.boundingBox();
     expect(gallery!.width).toBeGreaterThan(200);
-    if (width >= 1024) expect(bookingBox!.x).toBeGreaterThan(gallery!.x + gallery!.width);
+    if (width >= 1024) {
+      expect(bookingBox!.x).toBeGreaterThan(gallery!.x + gallery!.width);
+      const thumbnails = await page.locator('.listing-image-thumbnails').boundingBox();
+      const mainImage = await page.locator('.listing-image-main').boundingBox();
+      expect(thumbnails!.x + thumbnails!.width).toBeLessThan(mainImage!.x);
+    }
     else {
       expect(bookingBox!.y).toBeGreaterThan(gallery!.y);
       await page.getByRole('link', { name: 'Review booking', exact: true }).click();
@@ -432,17 +459,35 @@ test('listing dates recalculate costs before checkout and clearing dates disable
   const panel = page.getByRole('complementary', { name: 'Book this item' });
   await expect(panel.getByRole('button', { name: 'Request to book' })).toBeEnabled({ timeout: 15000 });
   await panel.locator('.relative > button').click();
-  const calendar = page.getByRole('dialog', { name: 'Select dates' });
+  const calendar = page.getByRole('dialog', { name: 'Choose rental dates' });
+  await expect(calendar).toHaveClass(/listing-calendar-popover/);
+  await expect(calendar.getByLabel('Quick date choices')).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: /Choose a date range/ })).toContainText('Pickup');
+  await expect(panel.getByRole('button', { name: /Choose a date range/ })).toContainText('Return');
   const labels = await page.evaluate(() => [0, 3].map(offset => {
     const day = new Date(); day.setDate(day.getDate() + offset);
     return day.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   }));
   await calendar.getByRole('button', { name: new RegExp(labels[0]) }).first().click();
   await calendar.getByRole('button', { name: new RegExp(labels[1]) }).first().click();
-  await calendar.getByRole('button', { name: 'Apply', exact: true }).click();
-  await expect(panel.getByLabel('Price breakdown')).toContainText('$132.50');
+  await calendar.getByRole('button', { name: 'Use these dates', exact: true }).click();
+  await expect(panel.getByLabel('Price breakdown')).toContainText('$82.50');
+  await expect(panel.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$137.75');
+  await expect(panel.getByLabel('Insurance simulation')).toContainText('$1.20');
   await panel.getByRole('button', { name: 'Request to book' }).click();
   await expect(page.getByRole('heading', { name: 'Review and request' })).toBeVisible();
+  await expect(page.getByText('Service fee', { exact: true })).toHaveCount(1);
+  await expect(page.getByText(/Service fee \(/)).toHaveCount(0);
+  await expect(page.getByText('Tax (7% demo)', { exact: true }).locator('..')).toContainText('$5.25');
+  await expect(page.getByText('Insurance (demo)', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Insurance simulation')).toHaveCount(1);
+  await expect(page.getByLabel('Insurance simulation')).toContainText('$1.20');
+  await expect(page.getByLabel('Insurance simulation')).toContainText('Not charged · No coverage');
+  await expect(page.getByText('Not offered', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Security hold', { exact: true })).toBeVisible();
+  await expect(page.getByText('No card hold placed', { exact: true })).toBeVisible();
+  await expect(page.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$137.75');
+  await expect(page.getByText('Payment estimate excluding demo tax:', { exact: false })).toContainText('$132.50');
   expect(new URL(page.url()).searchParams.has('start')).toBe(true);
   await page.goBack();
   await panel.locator('.relative > button').click();
@@ -451,13 +496,76 @@ test('listing dates recalculate costs before checkout and clearing dates disable
   await expect(panel.getByText('Estimated total')).toHaveCount(0);
 });
 
+test('instant checkout opens payment and retries the same booking when Stripe is unavailable', async ({ page }) => {
+  test.slow();
+  await setup(page, { listingOverrides: { instant_booking: true } }, renterId);
+  let bookingCalls = 0;
+  let paymentCalls = 0;
+  await page.route('**/rest/v1/rpc/create_booking_request', async route => {
+    bookingCalls++;
+    await route.fulfill({ json: { ...booking, status: 'pending_payment' } });
+  });
+  await page.route('**/functions/v1/create-checkout-session', async route => {
+    paymentCalls++;
+    expect(route.request().postDataJSON()).toEqual({ bookingId });
+    await route.fulfill({ status: 503, json: { error: 'Stripe unavailable' } });
+  });
+  await page.goto(`${appUrl}/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Continue to payment', exact: true }).filter({ visible: true }).click();
+  await expect(page.getByText('Could not open payment', { exact: true })).toBeVisible();
+  expect(bookingCalls).toBe(1);
+  expect(paymentCalls).toBe(1);
+  await page.getByRole('button', { name: /Retry.*payment/ }).filter({ visible: true }).click();
+  await expect.poll(() => paymentCalls).toBe(2);
+  expect(bookingCalls).toBe(1);
+  await expect(page.getByRole('button', { name: 'Change', exact: true })).toBeDisabled();
+});
+
+for (const [category, expectedAmount] of [['Electronics', '$1.20'], ['Tools & Equipment', '$0.90'], ['Camping', '$0.60']]) {
+  test(`in-house insurance demo appears for ${category} checkout without increasing charges`, async ({ page }) => {
+    await setup(page, { listingOverrides: { categories: { name: category }, protection_eligible: false } }, renterId);
+    await page.goto(`${appUrl}/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Review and request' })).toBeVisible();
+    const insurance = page.getByLabel('Insurance simulation');
+    await expect(insurance).toContainText(expectedAmount);
+    await expect(insurance).toContainText('Not charged · No coverage');
+    await expect(page.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$137.75');
+    await expect(page.getByText('Payment estimate excluding demo tax:', { exact: false })).toContainText('$132.50');
+    await expect(page.getByText('Insurance (demo)', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('Not offered', { exact: true })).toHaveCount(0);
+  });
+}
+
+test('supplied listing calendar stays within the viewport and Escape restores trigger focus', async ({ page }) => {
+  test.slow();
+  await setup(page);
+  await page.goto(`${appUrl}/listing/${listingId}`, { waitUntil: 'domcontentloaded' });
+  const trigger = page.getByRole('button', { name: /Choose a date range/ });
+  await expect(trigger).toBeVisible({ timeout: 30000 });
+  for (const width of [1440, 768, 375]) {
+    await page.setViewportSize({ width, height: 812 });
+    await trigger.click();
+    const calendar = page.getByRole('dialog', { name: 'Choose rental dates' });
+    await expect(calendar).toBeVisible();
+    await expect(calendar.getByRole('button', { name: 'Use these dates' })).toBeVisible();
+    await expect.poll(async () => {
+      const box = await calendar.boundingBox();
+      return !!box && box.x >= 0 && box.y >= 0 && box.x + box.width <= width + 1 && box.y + box.height <= 813;
+    }).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`supplied-calendar-${width}.png`) });
+    await page.keyboard.press('Escape');
+    await expect(calendar).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  }
+});
+
 test('listing respects offer eligibility, owner restrictions and unavailable dates', async ({ page }) => {
-  const scenario: Scenario = { bidding: true, listingOverrides: { negotiation_enabled: true } };
+  const scenario: Scenario = { bidding: true, listingOverrides: { negotiation_enabled: true, offer_maximum_daily: 27.5 } };
   await setup(page, scenario, renterId);
   await page.goto(`${appUrl}/listing/${listingId}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('link', { name: 'Make an offer', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Make an offer', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Make a rental offer' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Private rental offer' })).toBeVisible();
   await expect(page.locator('#rental-offer')).toHaveCount(1);
   scenario.bidding = false;
   await page.reload();
@@ -472,10 +580,15 @@ test('listing respects offer eligibility, owner restrictions and unavailable dat
   await expect(page.getByText('Those dates are already taken.', { exact: false })).toBeVisible();
 });
 
-test('owners cannot book their own listing or make offers on it', async ({ page }) => {
+test('owners see a read-only listing preview without renter controls', async ({ page }) => {
   await setup(page, { bidding: true, listingOverrides: { negotiation_enabled: true } }, ownerId);
   await page.goto(`${appUrl}/listing/${listingId}`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Your listing', exact: true })).toBeDisabled();
+  await expect(page.getByText('Your listing · view only', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Choose a date range/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Your listing|Request to book|Book instantly|Save to favorites|Message Camera/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Review booking', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Copy link' })).toBeVisible();
+  await expect(page.getByLabel('Insurance simulation')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Make an offer', exact: true })).toHaveCount(0);
 });
 
@@ -589,7 +702,7 @@ for (const width of [375, 768, 1440]) {
       [`/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, 'Review and request'],
       ['/dashboard?tab=renting', 'Bookings'],
       ['/dashboard?tab=lending', 'Bookings'],
-      ['/create-listing', 'List an item'],
+      ['/create-listing', 'Create a listing'],
       ['/favorites', 'Saved items'],
       ['/messages', 'Messages'],
       ['/profile', 'Your profile'],

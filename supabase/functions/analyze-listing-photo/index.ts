@@ -86,6 +86,8 @@ interface RawAIResult {
   suggested_title?: unknown;
   suggested_description?: unknown;
   suggested_category?: unknown;
+  suggested_brand?: unknown;
+  suggested_model?: unknown;
   flags?: unknown;
   photo_quality_suggestions?: unknown;
 }
@@ -100,6 +102,8 @@ interface ValidAIResult {
   title: string;
   description: string;
   category: string;
+  brand: string | null;
+  model: string | null;
   flags: Flag[];
   photoQualitySuggestions: PhotoQualitySuggestion[];
 }
@@ -113,11 +117,15 @@ function validateAIResult(raw: unknown, validCategoryNames: string[], photoCount
   if (typeof r.suggested_category !== 'string') return null;
   const category = validCategoryNames.find((n) => n.toLowerCase() === (r.suggested_category as string).toLowerCase());
   if (!category) return null;
+  for (const value of [r.suggested_brand, r.suggested_model]) {
+    if (value !== null && (typeof value !== 'string' || !value.trim() || value.length > 80)) return null;
+  }
   if (!Array.isArray(r.flags)) return null;
   if (!Array.isArray(r.photo_quality_suggestions)) return null;
 
   const flags: Flag[] = [];
   for (const item of r.flags) {
+    if (!item || typeof item !== 'object') return null;
     const f = item as RawAIFlag;
     if (f.type !== 'prohibited_item' && f.type !== 'drug_related' && f.type !== 'other_guideline') return null;
     if (typeof f.reason !== 'string' || !f.reason.trim()) return null;
@@ -144,7 +152,10 @@ function validateAIResult(raw: unknown, validCategoryNames: string[], photoCount
     });
   }
 
-  return { title: r.suggested_title.trim(), description: r.suggested_description.trim(), category, flags, photoQualitySuggestions };
+  return { title: r.suggested_title.trim(), description: r.suggested_description.trim(), category,
+    brand: typeof r.suggested_brand === 'string' ? r.suggested_brand.trim() : null,
+    model: typeof r.suggested_model === 'string' ? r.suggested_model.trim() : null,
+    flags, photoQualitySuggestions };
 }
 
 Deno.serve(withCors(async (req) => {
@@ -212,15 +223,26 @@ Deno.serve(withCors(async (req) => {
       .select('id, name')
       .eq('active', true);
     if (categoryError || !categoryRows || categoryRows.length === 0) {
-      return json({ ok: false, error: 'No categories available' });
+      return json({ ok: false, error: 'No categories available. Please try again later.' }, 503);
     }
     const categoryNames = categoryRows.map((c: { name: string }) => c.name);
 
     // Task 2 - contextual AI check (photo + post-mask text together), one OpenRouter call.
     let aiResult: ValidAIResult | null = null;
-    const openRouterKey = Deno.env.get('OPENROUTER_API_KEY');
-    if (openRouterKey && (photoUrls.length > 0 || maskedTitle || maskedDescription)) {
-      aiResult = await runAiCheck(openRouterKey, categoryNames, maskedTitle, maskedDescription, photoUrls);
+    let aiError: string | null = null;
+    const openRouterKey = Deno.env.get('OPENROUTER_API_KEY')?.trim();
+    if (!openRouterKey) {
+      console.error('Listing AI configuration missing: OPENROUTER_API_KEY');
+      aiError = 'AI is not configured. Please contact support or enter details manually.';
+    } else if (photoUrls.length > 0 || maskedTitle || maskedDescription) {
+      try {
+        aiResult = await runAiCheck(openRouterKey, categoryNames, maskedTitle, maskedDescription, photoUrls);
+      } catch (error) {
+        aiError = error instanceof Error ? error.message : 'AI analysis failed. Please retry or enter details manually.';
+        console.error('Listing AI analysis failed:', aiError);
+      }
+    } else {
+      aiError = 'Upload a photo or enter item details before generating suggestions.';
     }
 
     const allFlags: Flag[] = [...deterministicFlags, ...(aiResult?.flags ?? [])];
@@ -232,7 +254,7 @@ Deno.serve(withCors(async (req) => {
         Deno.env.get('SUPABASE_URL')!,
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       );
-      await serviceClient.from('listing_flags').insert(
+      const { error: flagError } = await serviceClient.from('listing_flags').insert(
         allFlags.map((f) => ({
           listing_id: listingId,
           type: f.type,
@@ -242,6 +264,10 @@ Deno.serve(withCors(async (req) => {
           auto_masked: f.auto_masked,
         })),
       );
+      if (flagError) {
+        console.error('Could not persist listing flags:', flagError.code);
+        return json({ ok: false, error: 'Could not save the analysis. Please try again.' }, 503);
+      }
     }
 
     const categoryId = aiResult
@@ -251,7 +277,8 @@ Deno.serve(withCors(async (req) => {
     return json({
       ok: true,
       masked: { title: maskedTitle, description: maskedDescription, changed: deterministicFlags.some((f) => f.type === 'contact_info') },
-      suggestion: aiResult ? { title: aiResult.title, description: aiResult.description, categoryId } : null,
+      suggestion: aiResult ? { title: aiResult.title, description: aiResult.description, categoryId, brand: aiResult.brand, model: aiResult.model } : null,
+      aiError,
       flags: allFlags.map((f) => ({ type: f.type, reason: f.reason, confidence: f.confidence, source: f.source })),
       photoQualitySuggestions: aiResult?.photoQualitySuggestions ?? [],
     });
@@ -267,7 +294,7 @@ async function runAiCheck(
   title: string,
   description: string,
   photoUrls: string[],
-): Promise<ValidAIResult | null> {
+): Promise<ValidAIResult> {
   const qualityGuidelines = Deno.env.get('LISTING_PHOTO_QUALITY_GUIDELINES')?.trim().slice(0, 2000)
     || 'Prefer a sharp, well-lit photo that clearly shows the full item against a tidy, non-distracting background.';
   const systemPrompt = [
@@ -279,10 +306,14 @@ async function runAiCheck(
       'When uncertain, omit the detail. Do not describe hidden contents or claim an item is tested or verified.',
     'Respond with ONLY a single JSON object, no other text, matching exactly this shape:',
     '{"suggested_title": string, "suggested_description": string, "suggested_category": string, ' +
+      '"suggested_brand": string | null, "suggested_model": string | null, ' +
       '"flags": [{"type": "prohibited_item" | "drug_related" | "other_guideline", "reason": string, ' +
       '"confidence": "low" | "medium" | "high", "source": "photo" | "text" | "both"}], ' +
       '"photo_quality_suggestions": [{"photo_index": number, "reason": string, "recommendation": string}]}',
     `"suggested_category" MUST be exactly one of these existing categories: ${categoryNames.join(', ')}.`,
+    'Return the brand and model as separate suggested_brand and suggested_model fields, each at most 80 characters. ' +
+      'Use only clearly identifiable markings in the photos or details explicitly stated by the owner. ' +
+      'Return null for either field when unknown; never guess or use placeholders such as "Unknown" or "N/A".',
     'Add a flag if the photo or text suggests one of these prohibited items from YBuy\'s Community ' +
       `Guidelines: ${PROHIBITED_ITEMS.join('; ')}. Use "drug_related" for drugs/paraphernalia, ` +
       '"prohibited_item" for weapons/live animals/counterfeit goods/hazardous materials.',
@@ -304,46 +335,79 @@ async function runAiCheck(
   ];
   for (const photoUrl of photoUrls) content.push({ type: 'image_url', image_url: { url: photoUrl } });
 
-  try {
-    // OpenRouter's OpenAI-compatible endpoint, called directly with our own OpenRouter key -
-    // sidesteps the Gemini-key-specific auth issue found in isolated testing (that key was
-    // rejected from Supabase's Edge Runtime egress even though it worked from a local machine).
-    const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openRouterKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'openai/gpt-4o-mini',
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content },
-        ],
-        max_tokens: 1200,
-      }),
-    });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openRouterKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-4o-mini',
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content },
+          ],
+          max_tokens: 2000,
+        }),
+        signal: AbortSignal.timeout(18_000),
+      });
+    } catch (error) {
+      console.error('Listing AI transport failure:', error instanceof Error ? error.name : 'unknown');
+      if (attempt === 0) continue;
+      throw new Error('AI analysis timed out or could not connect. Please retry or enter details manually.');
+    }
 
     if (!aiResponse.ok) {
-      console.error('OpenRouter call failed:', aiResponse.status, await aiResponse.text());
-      return null;
+      console.error('Listing AI provider HTTP status:', aiResponse.status);
+      let keyLimitExceeded = false;
+      if (aiResponse.status === 403) {
+        try {
+          const failure = await aiResponse.json();
+          keyLimitExceeded = failure?.error?.metadata?.limit_source === 'openrouter_key_limit';
+        } catch {
+          console.error('Listing AI provider returned an unreadable error response');
+        }
+      } else {
+        await aiResponse.body?.cancel();
+      }
+      if (attempt === 0 && (aiResponse.status === 429 || aiResponse.status >= 500)) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
+      if (keyLimitExceeded || aiResponse.status === 402) {
+        throw new Error('AI provider credits or usage limit are exhausted. Please contact support or enter details manually.');
+      }
+      if (aiResponse.status === 401 || aiResponse.status === 403) {
+        throw new Error('AI provider authentication failed. Please contact support or enter details manually.');
+      }
+      throw new Error('AI provider is temporarily unavailable. Please retry or enter details manually.');
     }
-    const aiJson = await aiResponse.json();
+    let aiJson;
+    try {
+      aiJson = await aiResponse.json();
+    } catch {
+      throw new Error('AI returned an unreadable response. Please retry or enter details manually.');
+    }
     const responseText: unknown = aiJson?.choices?.[0]?.message?.content;
-    if (typeof responseText !== 'string' || !responseText.trim()) return null;
+    if (typeof responseText !== 'string' || !responseText.trim()) {
+      throw new Error('AI returned no suggestions. Please retry or enter details manually.');
+    }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(responseText);
     } catch {
-      return null;
+      throw new Error('AI returned incomplete suggestions. Please retry or enter details manually.');
     }
-    return validateAIResult(parsed, categoryNames, photoUrls.length);
-  } catch (err) {
-    console.error('OpenRouter call failed:', err);
-    return null;
+    const result = validateAIResult(parsed, categoryNames, photoUrls.length);
+    if (!result) throw new Error('AI returned invalid suggestions. Please retry or enter details manually.');
+    return result;
   }
+  throw new Error('AI analysis failed. Please retry or enter details manually.');
 }
 
 function storagePhotoKey(value: string, access: 'public' | 'sign'): string | null {
