@@ -10,6 +10,7 @@ node_modules
 dist
 dist-ssr
 *.local
+test-accounts.json
 
 .vscode/*
 !.vscode/extensions.json
@@ -37,3 +38,7 @@ test-results-local/
 playwright-hosted-report/
 test-results-hosted/
 test-results-settlement/
+test-results/
+test-results-private-offers/
+.tmp-auction/
+.tmp-auth/
