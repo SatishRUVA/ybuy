@@ -33,7 +33,9 @@ Renters discover by item, category, location, distance, dates, and filters; insp
 
 ## Brand Commitments
 
-The product is YBuy. Ocean Green is the brand anchor (#0E7C66), paired with premium neutral backgrounds, strong item photography, and restrained supporting accents. Airbnb, Stripe, Linear, and Apple are principle references for marketplace discovery, financial clarity, interface precision, and restraint; their visual identities are not to be copied.
+The product is YBuy. Cobalt blue is the brand anchor (#3157E1), paired with premium neutral backgrounds, strong item photography, and restrained supporting accents. Airbnb, Stripe, Linear, and Apple are principle references for marketplace discovery, financial clarity, interface precision, and restraint; their visual identities are not to be copied.
+
+The shared palette is deep charcoal-green ink (#172321), cobalt blue (#3157E1) and electric lime (#D8FF68) on warm paper (#F7F6F1) and white, with forest green (#163D34) for dark sections. Category tints: Cameras #DCE8F7, Outdoor #DCEBDC, Tools #F6E8B9, Sports #F6D8C5, Home #F5DFE4, Fashion #E7E1F2, Baby #D9EEE8, Vehicles #E5E6E2. Photography stays in natural colour. Keep semantic success, warning, and error colors where they communicate status.
 
 ## Evidence on Hand
 

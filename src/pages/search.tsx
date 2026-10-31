@@ -14,7 +14,7 @@ import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { ListingGridSkeleton, ListingCardWideSkeleton } from '@/components/skeleton';
 import { Button, Alert, EmptyState } from '@/components/ui';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/shadcn/dialog';
-import * as Icons from 'lucide-react';
+import { CategoryIcon } from '@/components/category-icon';
 import { Map as MapIcon, List, SlidersHorizontal, X, Star, Shield, Zap, CheckCircle2, Truck, MapPin, SearchX, Loader2, PackagePlus } from 'lucide-react';
 import { SEARCH_RADII, searchStateParams, saveSearchState, type SearchState, type SearchRadius } from '@/lib/search-state';
 
@@ -677,7 +677,6 @@ function FilterPanel(props: {
             All categories
           </button>
           {props.categories.map((cat) => {
-            const Icon = (Icons as unknown as Record<string, typeof Icons.Camera>)[cat.icon] ?? Icons.Box;
             const active = props.activeCategory === cat.id;
             return (
               <button
@@ -685,7 +684,7 @@ function FilterPanel(props: {
                 onClick={() => props.setActiveCategory(active ? null : cat.id)}
                 className={`w-full flex items-center gap-2.5 px-3 h-10 rounded-card text-sm transition-colors duration-fast ${active ? 'bg-accent-soft text-accent font-semibold' : 'text-sec hover:bg-subtle'}`}
               >
-                <Icon size={15} className="shrink-0" />
+                <CategoryIcon category={cat} size={15} className="shrink-0" />
                 <span className="flex-1 text-left truncate">{cat.name}</span>
                 <span className="text-xs text-muted tnum">{cat.count.toLocaleString()}</span>
               </button>

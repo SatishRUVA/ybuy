@@ -1,5 +1,25 @@
 # ybuy
 
+## Isolated design previews
+
+`/preview-1` is the new clickable design direction: marketplace discovery,
+regular booking and competitive bidding, renter/owner workspaces, messaging,
+requests, and admin screens. Use **All screens** in its preview bar to explore.
+`/preview` retains the earlier design independently.
+
+Both use sample data only. Preview actions are held in memory and reset on
+reload; they do not authenticate users, contact the backend, send messages or
+emails, or move money. Owner availability is limited to 30 inclusive calendar
+days, with blocked days and confirmed rental dates protected. Owner approval
+and demo payment confirmation are separate steps.
+
+Preview 1 dropdowns reuse the installed Radix select primitives, with scoped
+menu styling, keyboard navigation, typeahead and focus return. The live app's
+dropdown appearance is unchanged.
+
+Run the existing Vite development server and open `/preview-1`. Focused checks:
+`pnpm run typecheck` and `pnpm exec playwright test 'preview-1.spec.ts'`.
+
 ## Brand assets
 
 The shared `BrandLogo` uses the latest supplied transparent wordmark and a

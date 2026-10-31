@@ -186,7 +186,7 @@ test('live ticker counts down automatically and removes offers at their bidding 
   await expect(ticker.locator('time')).toHaveCount(0);
 });
 
-test('Top Offers news ribbon stays 100px tall with heartbeat, whole-dollar prices and accessible motion', async ({ page }) => {
+test('Top Offers news ribbon stays 72px tall with heartbeat, whole-dollar prices and accessible motion', async ({ page }) => {
   test.slow(true, 'Checks scrolling, keyboard links and responsive layout on two routes.');
   await setup(page, { item_requests: false, bidding: true });
   const rows = Array.from({ length: 5 }, (_, index) => ({
@@ -226,10 +226,10 @@ test('Top Offers news ribbon stays 100px tall with heartbeat, whole-dollar price
   }));
   for (const card of geometry) {
     expect({ ...card, width: Math.round(card.width) }).toEqual({ ...geometry[0], width: Math.round(geometry[0].width) });
-    expect(card.height).toBe(84);
-    expect(card.border).toBe('1px');
-    expect(card.imageWidth).toBe(48);
-    expect(card.imageHeight).toBe(48);
+    expect(card.height).toBe(56);
+    expect(card.border).toBe('0px');
+    expect(card.imageWidth).toBe(40);
+    expect(card.imageHeight).toBe(40);
     expect(card.bottom).toBeLessThanOrEqual(card.height - 6);
   }
   const toggle = ticker.getByRole('button', { name: /bidding ribbon motion/ });
@@ -253,11 +253,11 @@ test('Top Offers news ribbon stays 100px tall with heartbeat, whole-dollar price
   for (const [width, height] of [[2000, 900], [1440, 900], [1024, 900], [768, 900], [812, 375], [375, 812]]) {
     await page.setViewportSize({ width, height });
     const bounds = (await ticker.boundingBox())!;
-    expect(bounds.height).toBe(100);
+    expect(bounds.height).toBe(72);
     expect(bounds.x).toBe(0);
     expect(bounds.width).toBe(width);
     await expect(ticker).toHaveCSS('margin', '0px');
-    await expect(ticker.locator('.bid-card-title').first()).toHaveCSS('font-size', '12px');
+    await expect(ticker.locator('.bid-card-title').first()).toHaveCSS('font-size', '13px');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`top-offers-${width}.png`) });
   }
@@ -285,8 +285,8 @@ test('Top Offers news ribbon stays 100px tall with heartbeat, whole-dollar price
   await expect(track).toHaveCSS('animation-name', 'none');
   await expect(ticker.locator('.bid-banner-live > span')).toHaveCSS('animation-name', 'none');
   await page.evaluate(() => document.documentElement.classList.add('dark'));
-  await expect(ticker.locator('.bid-card-title').first()).toHaveCSS('color', 'rgb(12, 25, 44)');
-  await expect(ticker.locator('.bid-card').first()).toHaveCSS('background-color', 'rgba(255, 255, 255, 0.96)');
+  await expect(ticker.locator('.bid-card-title').first()).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(ticker.locator('.bid-card').first()).toHaveCSS('background-color', 'rgba(255, 255, 255, 0.1)');
   await page.screenshot({ path: test.info().outputPath('top-offers-dark-mobile.png') });
   await page.goto(`${appUrl}/search`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('region', { name: 'Top rental offers' }).getByRole('link')).toHaveCount(6);
@@ -329,7 +329,7 @@ test('bidding sleeve minimizes and expands with keyboard on desktop and phone', 
     await page.keyboard.press('Space');
     await expect(minimize).toBeFocused();
     await expect(minimize).toHaveAttribute('aria-expanded', 'true');
-    await expect(ticker).toHaveCSS('height', '100px');
+    await expect(ticker).toHaveCSS('height', '72px');
     await expect(ticker.getByRole('heading', { name: 'Top Offers', exact: true })).toBeVisible();
     const resume = ticker.getByRole('button', { name: 'Resume bidding ribbon motion' });
     await expect(resume).toHaveAttribute('aria-pressed', 'true');

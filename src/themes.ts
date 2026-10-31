@@ -4,7 +4,7 @@ export type ThemeId =
   | 'ocean'
   | 'slate'
   | 'sunset'
-  | 'mono'
+  | 'ybuy'
   | 'sand'
   | 'berry'
   | 'midnight'
@@ -21,16 +21,16 @@ export interface Theme {
 }
 
 const baseVars = {
-  '--radius-sm': '0.5rem',
-  '--radius': '0.625rem',
-  '--radius-lg': '0.875rem',
-  '--radius-xl': '1.25rem',
-  '--shadow-xs': '0 1px 2px rgba(16,24,40,0.05)',
-  '--shadow-card': '0 1px 2px rgba(16,24,40,0.04), 0 2px 6px -2px rgba(16,24,40,0.06)',
-  '--shadow-hover': '0 2px 4px -2px rgba(16,24,40,0.06), 0 12px 28px -8px rgba(16,24,40,0.14)',
-  '--shadow-pop': '0 4px 8px -4px rgba(16,24,40,0.08), 0 24px 56px -16px rgba(16,24,40,0.24)',
-  '--font-sans': "'Inter', system-ui, -apple-system, sans-serif",
-  '--font-display': "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif",
+  '--radius-sm': '0.25rem',
+  '--radius': '0.375rem',
+  '--radius-lg': '0.5rem',
+  '--radius-xl': '0.75rem',
+  '--shadow-xs': 'none',
+  '--shadow-card': 'none',
+  '--shadow-hover': '0 2px 6px rgba(17,17,17,0.08)',
+  '--shadow-pop': '0 8px 24px rgba(0,0,0,0.16)',
+  '--font-sans': "'DM Sans', system-ui, -apple-system, sans-serif",
+  '--font-display': "'Manrope', 'DM Sans', system-ui, sans-serif",
 };
 
 function makeTheme(
@@ -189,32 +189,33 @@ export const themes: Theme[] = [
     },
   ),
   makeTheme(
-    'mono',
-    'Mono',
-    'Pure white + black, Apple-minimal',
+    'ybuy',
+    'YBuy',
+    'Cobalt blue and electric lime on warm paper',
     false,
     {
-      '--bg': '#FFFFFF',
-      '--bg-subtle': '#F5F5F5',
+      '--bg': '#F7F6F1',
+      '--bg-subtle': '#EEEAE0',
       '--bg-card': '#FFFFFF',
-      '--text': '#111111',
-      '--text-secondary': '#555555',
-      '--text-muted': '#6F6F6F',
-      '--border': '#EAEAEA',
-      '--border-strong': '#D4D4D4',
-      '--accent': '#111111',
-      '--accent-hover': '#333333',
-      '--accent-soft': '#F0F0F0',
+      '--text': '#172321',
+      '--text-secondary': '#4F5C59',
+      '--text-muted': '#62706D',
+      '--border': '#DCDED7',
+      '--border-strong': '#C5C8BF',
+      '--accent': '#3157E1',
+      '--accent-hover': '#2444C0',
+      '--accent-soft': '#EDF0FF',
       '--accent-text': '#FFFFFF',
-      '--success': '#2E8B57',
-      '--success-soft': '#E2F3EA',
-      '--warning': '#C9831E',
-      '--warning-soft': '#FBF0DC',
-      '--error': '#D14430',
+      '--success': '#178455',
+      '--success-soft': '#DFF2E8',
+      '--warning': '#8A6110',
+      '--warning-soft': '#FFF1CF',
+      '--error': '#B93A27',
       '--error-soft': '#FCE9E6',
-      '--star': '#E8A53A',
+      '--star': '#F5A623',
+      '--favorite': '#E5334B',
+      '--shadow-hover': '0 6px 18px rgba(15,31,28,0.10)',
     },
-    { '--font-display': "'Georgia', 'Times New Roman', serif" },
   ),
   makeTheme(
     'sand',
@@ -331,4 +332,4 @@ export const themes: Theme[] = [
   ),
 ];
 
-export const defaultTheme: ThemeId = 'ocean';
+export const defaultTheme: ThemeId = 'ybuy';

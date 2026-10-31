@@ -4,17 +4,19 @@ import { useAuth } from '@/auth-context';
 import { checkInSteps, checkOutSteps } from '@/data';
 import { fetchBookingById, completeBookingReturn, markBookingActive, type UiBooking } from '@/lib/bookings';
 import { fetchListingById, toUiListing } from '@/lib/listings';
-import * as Icons from 'lucide-react';
 import { Button, Alert } from '@/components/ui';
 import { Skeleton } from '@/components/skeleton';
 import { SuccessIndicator } from '@/components/success-feedback';
 import { RentalSettlement } from '@/components/rental-settlement';
 import { BookingPickup } from '@/components/booking-pickup';
-import { ArrowLeft, Check, Camera, ArrowRight, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Check, Camera, ArrowRight, AlertTriangle, CheckSquare, ClipboardCheck, Handshake, Hash, PackageCheck } from 'lucide-react';
 
 // Cosmetic checklist for the return-inspection wizard - not tied to any real per-item component
 // data (Part 1 doesn't collect that), so it's a generic list rather than fabricated specifics.
 const GENERIC_RETURN_CHECKLIST = ['Item', 'Accessories', 'Cables / charger'];
+const STEP_ICONS: Record<string, typeof Camera> = {
+  Camera, CheckSquare, ClipboardCheck, Handshake, Hash, PackageCheck,
+};
 
 function WizardSkeleton() {
   return (
@@ -151,7 +153,7 @@ export function CheckInPage({ id }: { id: string }) {
   if (!listing) return <WizardMissing message="This booking isn't ready for check-in." />;
 
   const stepData = checkInSteps[step];
-  const StepIcon = (Icons as unknown as Record<string, typeof Camera>)[stepData.icon] ?? Camera;
+  const StepIcon = STEP_ICONS[stepData.icon] ?? Camera;
   const isLast = step === checkInSteps.length - 1;
 
   return (
@@ -314,7 +316,7 @@ export function CheckOutPage({ id }: { id: string }) {
   }
 
   const stepData = checkOutSteps[step];
-  const StepIcon = (Icons as unknown as Record<string, typeof Camera>)[stepData.icon] ?? Camera;
+  const StepIcon = STEP_ICONS[stepData.icon] ?? Camera;
   const isLast = step === checkOutSteps.length - 1;
   const returnedCount = GENERIC_RETURN_CHECKLIST.length - (missingComponent !== null ? 1 : 0);
 

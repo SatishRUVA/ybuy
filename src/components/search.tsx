@@ -425,7 +425,7 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
         )}
         </AnimatePresence>
       </div>
-      <p role={initialLocationStatus === 'locating' ? 'status' : undefined} className={`mt-2 text-xs ${variant === 'compact' && !mobileExpanded ? 'hidden sm:block' : ''} ${variant === 'hero' ? 'text-white/90' : 'text-sec'}`}>
+      <p role={initialLocationStatus === 'locating' ? 'status' : undefined} className={`mt-2 text-xs ${variant === 'compact' && !mobileExpanded ? 'hidden sm:block' : ''} text-sec`}>
         {initialLocationStatus === 'locating' && location.source === 'NONE'
           ? 'Finding your area… You can still search while we check.'
           : location.source === 'IP'

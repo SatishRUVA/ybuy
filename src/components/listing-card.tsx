@@ -7,7 +7,7 @@ import { ProtectionBadge } from '@/components/trust';
 import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
 
 /** Shared heart control: same hit area, same pop, wherever a listing can be saved. */
-function FavoriteButton({
+export function FavoriteButton({
   liked, onToggle, className = '',
 }: { liked: boolean; onToggle: () => void; className?: string }) {
   const [popKey, setPopKey] = useState(0);

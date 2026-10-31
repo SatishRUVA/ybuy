@@ -88,7 +88,7 @@ async function switchAccount(page: Page, id: string) {
 test('protected navigation preserves destination and offers YBuy and Google authentication', async ({ page }) => {
   await setup(page);
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('navigation', { name: 'Main', exact: true }).getByRole('button', { name: 'Bookings' }).click();
+  await page.goto(`${appUrl}/dashboard`, { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(`${appUrl}/dashboard`);
   await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible();
   await page.goto(`${appUrl}/dashboard?tab=lending#section`, { waitUntil: 'domcontentloaded' });
@@ -145,11 +145,11 @@ test('YBuy email and password sign-in still authenticates on the requested page'
 test('password reset request returns enumeration-safe confirmation', async ({ page }) => {
   await setup(page);
   let resetEmail = '';
-  await page.route('**/auth/v1/recover', async (route) => {
+  await page.route('**/auth/v1/recover**', async (route) => {
     resetEmail = route.request().postDataJSON().email;
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
-  await page.goto(appUrl);
+  await page.goto(`${appUrl}/dashboard`);
   await page.getByRole('button', { name: 'Sign in or create an account' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Email', { exact: true }).fill('alice@example.test');

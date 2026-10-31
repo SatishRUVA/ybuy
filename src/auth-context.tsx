@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { AUTH_PROVIDER_LABELS, type AuthProviderId } from '@/lib/auth-providers';
 
 export interface Profile {
   id: string;
@@ -29,7 +30,7 @@ interface AuthContextValue {
   authenticate: (email: string, password: string, fullName?: string) => Promise<'authenticated' | 'confirmation-required' | 'error'>;
   requestPasswordReset: (email: string) => Promise<boolean>;
   finishPasswordReset: (password: string) => Promise<boolean>;
-  signInWithGoogle: () => Promise<void>;
+  signInWithProvider: (provider: AuthProviderId) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -205,26 +206,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return url.href;
   }
 
-  const signInWithGoogle = async () => {
+  const signInWithProvider = async (provider: AuthProviderId) => {
     if (authBusy) return;
+    const label = AUTH_PROVIDER_LABELS[provider];
     setAuthBusy('sign-in');
     setError(null);
     try {
       await clearLocalSession();
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
+        provider,
         options: {
           redirectTo: authReturnUrl(),
-          queryParams: { prompt: 'select_account' },
+          ...(provider === 'google' ? { queryParams: { prompt: 'select_account' } } : {}),
           skipBrowserRedirect: true,
         },
       });
       if (oauthError) throw oauthError;
-      if (!data.url) throw new Error('Google sign-in did not return an authorization URL.');
+      if (!data.url) throw new Error(`${label} sign-in did not return an authorization URL.`);
       window.location.assign(data.url);
     } catch (error) {
-      console.error('Google sign-in failed:', error instanceof Error ? error.message : 'Unknown error');
-      setError('Could not start Google sign-in. Please try again or use your YBuy email and password.');
+      console.error(`${label} sign-in failed:`, error instanceof Error ? error.message : 'Unknown error');
+      setError(`Could not start ${label} sign-in. Please try again or use your YBuy email and password.`);
     } finally {
       signingOut.current = false;
       setAuthBusy(null);
@@ -322,7 +324,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: error ?? sessionError ?? profileError, signInOpen, passwordRecovery, authBusy,
         openSignIn: () => setSignInOpen(true),
         closeSignIn: () => setSignInOpen(false),
-        authenticate, requestPasswordReset, finishPasswordReset, signInWithGoogle, signOut,
+        authenticate, requestPasswordReset, finishPasswordReset, signInWithProvider, signOut,
       }}
     >
       {children}

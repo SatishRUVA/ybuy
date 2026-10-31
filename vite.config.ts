@@ -55,8 +55,5 @@ export default defineConfig(({ mode }) => {
         ignored: ['**/node_modules/**', '**/test-results*/**', '**/playwright-report*/**'],
       },
     },
-    optimizeDeps: {
-      exclude: ['lucide-react'],
-    },
   };
 });

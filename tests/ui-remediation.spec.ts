@@ -143,6 +143,19 @@ async function setup(page: Page, scenario: Scenario = {}, authId?: string) {
     let body: unknown = [];
     if (url.pathname === '/auth/v1/user') body = authId ? sessionFor(authId).user : null;
     else if (url.pathname === '/rest/v1/rpc/has_active_session') body = Boolean(authId);
+    else if (url.pathname === '/rest/v1/rpc/get_listing_flow_policy') body = {
+      listing_duration_days: 30,
+      max_quantity: 3,
+      max_photos: 6,
+      max_photo_bytes: 10485760,
+      min_photo_dimension: 320,
+      max_delivery_fee: 99,
+      offer_below_pct: 0.2,
+      offer_above_pct: 0.1,
+      high_value_threshold: 1000,
+      max_estimated_value: 5000,
+      deposit_rules: [],
+    };
     else if (url.pathname === '/rest/v1/rpc/get_listing_unavailable_dates') {
       body = scenario.unavailableDates ?? { blocked: [], booked: [] };
       if (scenario.failAvailability) {
@@ -316,7 +329,7 @@ test('listing cards are keyboard links and favorites do not navigate', async ({ 
   await expect(page).toHaveURL(new RegExp(`/listing/${listingId}$`));
   await page.goBack();
   await page.getByRole('button', { name: 'Save to favorites' }).first().click();
-  await expect(page).toHaveURL(new RegExp(`${appUrl}/search$`));
+  await expect(page).toHaveURL(new RegExp(`${appUrl}/search(\\?radius=5)?$`));
 });
 
 test('mobile filter dialog traps focus, closes on Escape, and preserves filters at responsive sizes', async ({ page }) => {
@@ -355,7 +368,7 @@ test('mobile filter dialog traps focus, closes on Escape, and preserves filters 
 test('calendar controls expose full dates and selected range state', async ({ page }) => {
   await setup(page, { emptyCatalog: true });
   await page.goto(`${appUrl}/search`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Add dates', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose a date range', exact: true }).click();
   const todayLabel = await page.evaluate(() => new Date().toLocaleDateString(undefined, {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   }));
@@ -671,7 +684,7 @@ async function expectPageFits(page: Page) {
       .filter((element) => {
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0 && !element.closest('[role=region][aria-label="Scrollable data table"]')
-          && !element.closest('.overflow-x-auto');
+          && !element.closest('.overflow-x-auto') && !element.closest('[data-marquee]');
       })
       .filter((element) => {
         const rect = element.getBoundingClientRect();
@@ -687,16 +700,31 @@ async function visit(page: Page, path: string) {
   }, path);
 }
 
+test('sign-in dialog uses the shared YBuy theme', async ({ page }) => {
+  test.setTimeout(90000);
+  await setup(page);
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Sign in / Join' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Welcome to YBuy' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Sign in', exact: true })).toHaveCSS('background-color', 'rgb(49, 87, 225)');
+  for (const provider of ['Google', 'Apple', 'Facebook']) {
+    await expect(dialog.getByRole('button', { name: `Continue with ${provider}`, exact: true })).toBeVisible();
+  }
+  expect(await dialog.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
+});
+
 for (const width of [375, 768, 1440]) {
-  test(`marketplace page families fit ${width}px with consistent Ocean Green controls`, async ({ page }, testInfo) => {
+  test(`marketplace page families fit ${width}px with YBuy design tokens`, async ({ page }, testInfo) => {
     test.setTimeout(180000);
     page.on('pageerror', (error) => { throw error; });
     await page.setViewportSize({ width, height: 900 });
     await setup(page, {}, renterId);
     await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'What do you need to rent?' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Don’t buy it. Rent it.' })).toBeVisible();
     const routes: [string, string | RegExp][] = [
-      ['/', 'What do you need to rent?'],
+      ['/', 'Don’t buy it. Rent it.'],
       ['/search', '1 item'],
       [`/listing/${listingId}`, listing.title],
       [`/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, 'Review and request'],
@@ -718,7 +746,17 @@ for (const width of [375, 768, 1440]) {
       await visit(page, path);
       await expect(page.getByRole('heading', { name: heading, exact: true }).first()).toBeVisible();
       await expectPageFits(page);
-      expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())).toBe('#0E7C66');
+      expect(await page.evaluate(() => ({
+        theme: document.documentElement.dataset.theme,
+        accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+        background: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),
+        font: getComputedStyle(document.documentElement).getPropertyValue('--font-sans').trim(),
+      }))).toEqual({
+        theme: 'ybuy',
+        accent: '#3157E1',
+        background: '#F7F6F1',
+        font: "'DM Sans', system-ui, -apple-system, sans-serif",
+      });
     }
     await visit(page, '/profile');
     await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
@@ -802,7 +840,7 @@ test('long forms stay reachable in a short landscape viewport', async ({ page },
 test('semantic feedback text meets normal-text contrast without replacing brand colors', async ({ page }) => {
   await setup(page);
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'What do you need to rent?' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Don’t buy it. Rent it.' })).toBeVisible();
   const ratios = await page.evaluate(() => {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 1;

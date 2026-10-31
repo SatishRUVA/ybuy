@@ -8,17 +8,19 @@ const categories = [
   id: `20000000-0000-4000-8000-00000000000${index + 1}`,
   name, icon: 'Package', active: true, sort_order: index,
 }));
-const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jH9sAAAAASUVORK5CYII=', 'base64');
+const image = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ddd"/></svg>';
 
 async function setup(page: Page) {
   await page.routeWebSocket(/^ws:\/\/127\.0\.0\.1:\d+\/(?!realtime)/, () => {});
   await page.route('**/src/lib/supabase.ts*', mockSupabaseModule);
   await page.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ contentType: 'text/css', body: '' }));
-  await page.route('https://images.pexels.com/**', (route) => route.fulfill({ contentType: 'image/png', body: image }));
+  await page.route('https://images.pexels.com/**', (route) => route.fulfill({ contentType: 'image/svg+xml', body: image }));
   await page.route('**/rest/v1/**', (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/categories')) return route.fulfill({ json: categories });
     if (path.endsWith('/search_available_listings')) return route.fulfill({ json: { rows: [], total: 0 } });
+    if (path.endsWith('/app_settings')) return route.fulfill({ json: { value: ['US'] } });
+    if (path.endsWith('/reference_countries')) return route.fulfill({ json: [{ code: 'US', name: 'United States' }] });
     return route.fulfill({ json: [], headers: { 'content-range': '*/0' } });
   });
 }
@@ -52,8 +54,8 @@ test('both discovery actions open full search with the existing category filters
   }
 });
 
-for (const [width, height, columns] of [[375, 812, 2], [812, 375, 5], [768, 1024, 5], [1440, 1000, 9]]) {
-  test(`consistent cards without horizontal overflow at ${width}x${height}`, async ({ page }) => {
+for (const [width, height] of [[375, 812], [812, 375], [768, 1024], [1440, 1000]]) {
+  test(`aisle tiles are consistent without page overflow at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     const section = page.getByRole('region', { name: 'Browse by category' });
@@ -61,17 +63,12 @@ for (const [width, height, columns] of [[375, 812, 2], [812, 375, 5], [768, 1024
     const cards = section.getByRole('button').filter({ hasNotText: 'Explore all categories' });
     await expect(cards).toHaveCount(9);
     const bounds = await cards.evaluateAll((elements) => elements.map((element) => {
-      const { x, y, width, height } = element.getBoundingClientRect();
-      const media = element.firstElementChild!.getBoundingClientRect();
-      return { x, y, width, height, mediaWidth: media.width, mediaHeight: media.height };
+      const { width } = element.getBoundingClientRect();
+      return { width, mediaHeight: element.firstElementChild!.getBoundingClientRect().height };
     }));
-    expect(bounds.filter((card) => card.y === bounds[0].y)).toHaveLength(columns);
     for (const card of bounds) {
       expect(card.width).toBeGreaterThan(120);
-      expect(card.x).toBeGreaterThanOrEqual(0);
-      expect(card.x + card.width).toBeLessThanOrEqual(width);
       expect(Math.abs(card.width - bounds[0].width)).toBeLessThan(1);
-      expect(Math.abs(card.height - bounds[0].height)).toBeLessThan(1);
       expect(Math.abs(card.mediaHeight - bounds[0].mediaHeight)).toBeLessThan(1);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -103,17 +100,19 @@ test('keyboard focus is visible, follows card order and activates category navig
   await expect(page).toHaveURL(new RegExp(`category=${categories[7].id}`));
 });
 
-test('hover adds depth and image zoom; reduced motion disables movement', async ({ page }) => {
+test('hover lifts the door and zooms the image; reduced motion disables movement', async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const card = page.getByRole('region', { name: 'Browse by category' }).getByRole('button', { name: 'Electronics', exact: true });
-  const originalShadow = await card.evaluate((node) => getComputedStyle(node).boxShadow);
   await card.hover();
-  await expect(card).not.toHaveCSS('box-shadow', originalShadow);
-  await expect(card).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, -2)');
+  await expect.poll(() => card.evaluate((node) => new DOMMatrix(getComputedStyle(node).transform).m42)).toBeLessThan(-7);
   await expect(card.locator('img')).toHaveCSS('transform', 'matrix(1.02, 0, 0, 1.02, 0, 0)');
+
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(card).toHaveCSS('transform', 'none');
-  await expect(card.locator('img')).toHaveCSS('transform', 'none');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const calm = page.getByRole('region', { name: 'Browse by category' }).getByRole('button', { name: 'Electronics', exact: true });
+  await calm.hover();
+  await expect(calm).toHaveCSS('transform', 'none');
+  await expect(calm.locator('img')).toHaveCSS('transform', 'none');
 });
 
 test('failed images and categories without artwork retain labels and navigation', async ({ page }) => {

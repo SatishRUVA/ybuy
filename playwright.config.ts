@@ -12,13 +12,13 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: `pnpm run dev -- --host localhost --port ${appPort} --strictPort --mode e2e`,
+    command: `pnpm exec vite --host localhost --port ${appPort} --strictPort --mode e2e`,
     url: appUrl,
     reuseExistingServer: !process.env.CI,
     env: {
       VITE_SUPABASE_URL: 'http://localhost:54321',
       VITE_SUPABASE_ANON_KEY: 'playwright-not-a-valid-key',
-      VITE_AUTH_PROVIDERS: 'google',
+      VITE_AUTH_PROVIDERS: 'google,apple,facebook',
       VITE_GOOGLE_CLIENT_ID: '',
       VITE_GOOGLE_MAPS_API_KEY: '',
       VITE_MAP_API_KEY: '',

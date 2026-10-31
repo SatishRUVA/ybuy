@@ -6,7 +6,7 @@ export const AUTH_PROVIDER_LABELS: Record<AuthProviderId, string> = {
   apple: 'Apple',
 };
 
-const KNOWN: AuthProviderId[] = ['google', 'facebook', 'apple'];
+const KNOWN: AuthProviderId[] = ['google', 'apple', 'facebook'];
 
 // Google is always offered. Facebook and Apple appear only when listed in VITE_AUTH_PROVIDERS
 // (e.g. "google,facebook,apple") - set it after enabling that provider in Supabase, otherwise
