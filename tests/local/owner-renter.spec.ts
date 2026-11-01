@@ -71,6 +71,7 @@ async function signIn(page: Page, actor: Actor) {
 
 async function establishSession(page: Page, session: { access_token: string; refresh_token: string }) {
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'Sign in or create an account' })).toBeVisible({ timeout: 30_000 });
   await page.evaluate(async (tokens) => {
     const { supabase } = await import('/src/lib/supabase.ts');
     const { error } = await supabase.auth.setSession(tokens);
@@ -84,9 +85,41 @@ for (const actor of actors) {
     await signIn(page, actor);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('tab', { name: /^Renting(?: \d+)?$/ })).toBeVisible();
+    await expect(page.locator('main .skeleton')).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByRole('navigation', { name: 'Main navigation' })).toContainText('Explore');
+    await expect(page.getByRole('navigation', { name: 'Main navigation' })).toContainText('Live bidding');
+    await expect(page.getByRole('navigation', { name: 'Workspace navigation' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'My rentals' })).toHaveAttribute('aria-current', 'page');
     await page.screenshot({ path: test.info().outputPath('signed-in.png') });
+    await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'Owner overview' }).click();
+    await expect(page.locator('.workspace-owner-metrics > .workspace-metric')).toHaveCount(3);
+    await expect(page.getByRole('heading', { name: 'The next handoffs' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Gear with a second job' })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('owner-dashboard.png') });
+    await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'My listings' }).click();
+    await expect(page).toHaveURL(/\/dashboard\/listings$/);
+    await expect(page.getByRole('heading', { name: 'Your gear, working for you.' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Your inventory' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'The next handoffs' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Edit listing' }).first()).toBeVisible();
+    await expect(page.locator('.workspace-owner-metrics')).toHaveCount(0);
+    await expect(page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'My listings' })).toHaveAttribute('aria-current', 'page');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Your gear, working for you.' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Edit listing' }).first()).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('owner-listings.png') });
+    await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'Owner overview' }).click();
+    await expect(page.locator('.workspace-owner-metrics > .workspace-metric')).toHaveCount(3);
     await page.setViewportSize({ width: 375, height: 812 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath('owner-dashboard-mobile.png') });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'My rentals' }).click();
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(page.getByRole('navigation', { name: 'Workspace navigation' })).toBeHidden();
     await page.getByRole('button', { name: 'Open menu' }).click();
+    await expect(page.getByRole('button', { name: 'Owner workspace' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'My listings' })).toBeVisible();
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible();
   });
@@ -153,9 +186,12 @@ test(`pair ${pair}: ${pair === 5 ? 'instant booking' : 'owner approval'} flow re
       });
     }
     await renterPage.goto(`/checkout/${listingId}?start=${start}&end=${end}`, { waitUntil: 'domcontentloaded' });
+    await renterPage.getByRole('button', { name: 'Continue', exact: true }).click();
+    await renterPage.getByRole('button', { name: 'Continue', exact: true }).click();
+    await renterPage.getByRole('checkbox', { name: 'I have reviewed the dates, estimated cost, and rental terms.' }).check();
     const submitLabel = pair === 5 ? 'Continue to payment' : 'Send booking request';
     await renterPage.getByRole('button', { name: submitLabel, exact: true }).filter({ visible: true }).first().click();
-    if (pair !== 5) await expect(renterPage.getByRole('heading', { name: 'Request sent', exact: true })).toBeVisible();
+    if (pair !== 5) await expect(renterPage.getByRole('heading', { name: 'Good plans are on their way.', exact: true })).toBeVisible();
     let instantBookingId: string | undefined;
     if (pair === 5) {
       await expect.poll(async () => {
@@ -185,9 +221,12 @@ test(`pair ${pair}: ${pair === 5 ? 'instant booking' : 'owner approval'} flow re
     expect(unauthorized.error).not.toBeNull();
     if (pair !== 5) {
       await ownerPage.goto('/dashboard?tab=lending', { waitUntil: 'domcontentloaded' });
-      await ownerPage.getByRole('heading', { name: /Incoming requests/ }).locator('xpath=..')
-        .getByText(listingTitle, { exact: true }).locator('xpath=ancestor::div[contains(@class, "p-4")][1]')
-        .getByRole('button', { name: 'Accept request', exact: true }).click();
+      const queue = ownerPage.getByRole('region', { name: /^Waiting on you/ });
+      const card = queue.locator('div.p-4').filter({ hasText: listingTitle })
+        .filter({ has: ownerPage.getByRole('button', { name: 'Accept request', exact: true }) });
+      await expect(card).toHaveCount(1);
+      await card.getByRole('button', { name: 'Accept request', exact: true }).click();
+      await expect(card).toHaveCount(0);
     }
     await expect.poll(async () => {
       const result = await renterApi.from('bookings').select('status').eq('id', bookingId).single();
@@ -196,7 +235,8 @@ test(`pair ${pair}: ${pair === 5 ? 'instant booking' : 'owner approval'} flow re
     }).toBe('pending_payment');
     if (pair !== 5) {
       await renterPage.reload({ waitUntil: 'domcontentloaded' });
-      await expect(renterPage.getByText('Payment is not confirmed yet', { exact: true })).toBeVisible();
+      await expect(renterPage.getByRole('heading', { name: 'Your booking', exact: true })).toBeVisible();
+      await expect(renterPage.getByText('Booking confirmed', { exact: true })).toHaveCount(0);
     }
     await renterPage.screenshot({ path: test.info().outputPath('renter-approved-awaiting-payment.png') });
     const renterNotification = await renterApi.from('notifications').select('id,title').eq('event_key', `booking:${bookingId}:pending_payment:${renter.id}`).single();
@@ -217,7 +257,7 @@ test(`pair ${pair}: ${pair === 5 ? 'instant booking' : 'owner approval'} flow re
       expect(decline.error).toBeNull();
       expect(decline.data.status).toBe('rejected');
     }
-    test.info().annotations.push({ type: 'blocked', description: 'Real Stripe sandbox payment/webhook not configured; pickup, return and completed-review lifecycle not claimed.' });
+    test.info().annotations.push({ type: 'coverage', description: 'Checkout session is mocked in this test. Real Stripe payment/webhook, pickup, return and completed-review lifecycle are not covered.' });
   } finally {
     const fixtureBookings = await admin.from('bookings').select('id').eq('listing_id', listingId);
     expect(fixtureBookings.error).toBeNull();

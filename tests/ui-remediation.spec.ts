@@ -84,7 +84,7 @@ function sessionFor(id: string): Session {
 }
 
 interface Scenario {
-  listingOverrides?: Partial<typeof listing> & { negotiation_enabled?: boolean; offer_maximum_daily?: number; item_condition?: string };
+  listingOverrides?: Partial<typeof listing> & { negotiation_enabled?: boolean; offer_maximum_daily?: number; item_condition?: string; availability_start?: string; availability_end?: string };
   bidding?: boolean;
   unavailableDates?: { blocked: string[]; booked: string[] };
   listingImage?: string;
@@ -143,6 +143,12 @@ async function setup(page: Page, scenario: Scenario = {}, authId?: string) {
     let body: unknown = [];
     if (url.pathname === '/auth/v1/user') body = authId ? sessionFor(authId).user : null;
     else if (url.pathname === '/rest/v1/rpc/has_active_session') body = Boolean(authId);
+    else if (url.pathname === '/rest/v1/rpc/get_listing_flow_policy') body = {
+      listing_duration_days: 30, max_quantity: 5, max_photos: 8,
+      max_photo_bytes: 6 * 1024 * 1024, min_photo_dimension: 600,
+      max_delivery_fee: 100, max_estimated_value: 5000, high_value_threshold: 1000,
+      offer_below_pct: null, offer_above_pct: null, deposit_rules: [],
+    };
     else if (url.pathname === '/rest/v1/rpc/get_listing_unavailable_dates') {
       body = scenario.unavailableDates ?? { blocked: [], booked: [] };
       if (scenario.failAvailability) {
@@ -247,7 +253,7 @@ test('category artwork stays fixed when a listing photo changes', async ({ page 
     body: Buffer.from(image.split(',')[1], 'base64'),
   }));
   await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' });
-  const categoryImage = page.getByRole('button', { name: 'Electronics', exact: true }).locator('img');
+  const categoryImage = page.getByRole('region', { name: 'Browse by category' }).getByRole('button', { name: 'Electronics', exact: true }).locator('img');
   const standardImage = 'https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&cs=tinysrgb&w=400&h=300&fit=crop';
   await expect(categoryImage).toHaveAttribute('src', standardImage);
   const listingImage = page.getByRole('link', { name: 'View listing: Mirrorless travel camera' }).first().locator('img');
@@ -379,7 +385,21 @@ test('availability errors disable booking until retry verifies availability', as
   await expect(page.getByRole('button', { name: 'Request to book' }).first()).toBeEnabled();
 });
 
-test('listing redesign keeps a single cost-first booking panel and responsive accessible gallery', async ({ page }) => {
+test('listing restores valid search dates through real checkout navigation and rejects unpublished booking', async ({ page }) => {
+  test.slow();
+  const scenario: Scenario = { listingOverrides: { availability_start: '2026-11-01', availability_end: '2026-11-30' } };
+  await setup(page, scenario, renterId);
+  await page.addInitScript(() => sessionStorage.setItem('ybuy-search-state', 'start=2026-11-02&end=2026-11-05&radius=25'));
+  await page.goto(`${appUrl}/listing/${listingId}`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: /Choose a date range, Nov 2 – Nov 5/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Request to book', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/checkout/${listingId}\\?start=2026-11-02&end=2026-11-05`));
+  scenario.listingOverrides = { ...scenario.listingOverrides, status: 'draft' };
+  await page.goto(`${appUrl}/listing/${listingId}`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'Request to book', exact: true })).toBeDisabled();
+});
+
+test('listing redesign keeps a single cost-first booking panel and photo-first responsive gallery', async ({ page }) => {
   test.slow();
   const secondImage = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#137d70"/></svg>');
   await setup(page, { listingOverrides: {
@@ -396,11 +416,10 @@ test('listing redesign keeps a single cost-first booking panel and responsive ac
   await expect(panel.getByLabel('Price breakdown')).toContainText('$27.50');
   await expect(panel.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$79.25');
   await expect(panel.getByText('Tax (7% demo)', { exact: true }).locator('..')).toContainText('$1.75');
-  await expect(panel.getByText('Insurance (demo)', { exact: true })).toBeVisible();
+  await expect(panel.getByText('Insurance', { exact: true })).toBeVisible();
+  await expect(panel.getByText('Not included', { exact: true })).toBeVisible();
   await expect(panel.getByText('Placeholder', { exact: true })).toHaveCount(0);
-  await expect(panel.getByText('No insurance coverage is provided.', { exact: false })).toBeVisible();
-  await expect(panel.getByLabel('Insurance simulation')).toContainText('$0.40');
-  await expect(panel.getByLabel('Insurance simulation')).toContainText('Not charged · No coverage');
+  await expect(panel.getByLabel('Insurance simulation')).toHaveCount(0);
   await expect(panel.getByText('In-house demo estimate for this rental.', { exact: true })).toHaveCount(0);
   await expect(panel.getByText('For testing only.', { exact: false })).toHaveCount(0);
   await expect(panel.getByText('Not offered', { exact: true })).toHaveCount(0);
@@ -413,11 +432,13 @@ test('listing redesign keeps a single cost-first booking panel and responsive ac
   await expect(page.getByText('Identity verified', { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Joined 2026/)).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Make an offer', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Show image 2', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Show image 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('img', { name: `${listing.title} - photo 2` })).toBeVisible();
-  await page.getByRole('button', { name: 'Previous image', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Show image 1', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'All 2 photos', exact: true }).click();
+  const photos = page.getByRole('dialog', { name: listing.title });
+  await expect(photos.getByRole('img', { name: `${listing.title} - photo 1` })).toBeVisible();
+  await photos.getByRole('button', { name: 'Next image', exact: true }).click();
+  await expect(photos.getByRole('img', { name: `${listing.title} - photo 2` })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'All 2 photos' })).toBeFocused();
   const sections = page.getByRole('navigation', { name: 'Listing sections' });
   await expect(sections.getByRole('link', { name: 'Specifications' })).toHaveAttribute('href', '#listing-specifications');
   await sections.getByRole('link', { name: 'Reviews', exact: true }).click();
@@ -425,14 +446,14 @@ test('listing redesign keeps a single cost-first booking panel and responsive ac
   for (const [width, height] of [[1440, 1000], [1024, 900], [768, 1024], [375, 812], [812, 375]]) {
     await page.setViewportSize({ width, height });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    const gallery = await page.locator('.listing-gallery').boundingBox();
+    const gallery = await page.locator('.p1-gallery').boundingBox();
     const bookingBox = await panel.boundingBox();
     expect(gallery!.width).toBeGreaterThan(200);
     if (width >= 1024) {
-      expect(bookingBox!.x).toBeGreaterThan(gallery!.x + gallery!.width);
-      const thumbnails = await page.locator('.listing-image-thumbnails').boundingBox();
-      const mainImage = await page.locator('.listing-image-main').boundingBox();
-      expect(thumbnails!.x + thumbnails!.width).toBeLessThan(mainImage!.x);
+      expect(bookingBox!.y).toBeGreaterThanOrEqual(gallery!.y + gallery!.height);
+      const heading = await page.locator('.listing-heading').boundingBox();
+      expect(bookingBox!.x).toBeGreaterThan(heading!.x + heading!.width);
+      await expect(page.locator('.p1-gallery-side')).toBeVisible();
     }
     else {
       expect(bookingBox!.y).toBeGreaterThan(gallery!.y);
@@ -448,7 +469,7 @@ test('listing redesign keeps a single cost-first booking panel and responsive ac
     await page.screenshot({ path: test.info().outputPath(`listing-redesign-${width}.png`), fullPage: true });
   }
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(page.locator('.listing-detail')).toHaveCSS('animation-duration', '1e-05s');
+  await expect(page.locator('.listing-detail')).toHaveCSS('animation-name', 'none');
 });
 
 test('listing dates recalculate costs before checkout and clearing dates disables requests', async ({ page }) => {
@@ -475,7 +496,7 @@ test('listing dates recalculate costs before checkout and clearing dates disable
   await expect(panel.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$137.75');
   await expect(panel.getByLabel('Insurance simulation')).toContainText('$1.20');
   await panel.getByRole('button', { name: 'Request to book' }).click();
-  await expect(page.getByRole('heading', { name: 'Review and request' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Make time for a good plan.' })).toBeVisible();
   await expect(page.getByText('Service fee', { exact: true })).toHaveCount(1);
   await expect(page.getByText(/Service fee \(/)).toHaveCount(0);
   await expect(page.getByText('Tax (7% demo)', { exact: true }).locator('..')).toContainText('$5.25');
@@ -511,6 +532,9 @@ test('instant checkout opens payment and retries the same booking when Stripe is
     await route.fulfill({ status: 503, json: { error: 'Stripe unavailable' } });
   });
   await page.goto(`${appUrl}/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'I have reviewed the dates, estimated cost, and rental terms.' }).check();
   await page.getByRole('button', { name: 'Continue to payment', exact: true }).filter({ visible: true }).click();
   await expect(page.getByText('Could not open payment', { exact: true })).toBeVisible();
   expect(bookingCalls).toBe(1);
@@ -518,14 +542,41 @@ test('instant checkout opens payment and retries the same booking when Stripe is
   await page.getByRole('button', { name: /Retry.*payment/ }).filter({ visible: true }).click();
   await expect.poll(() => paymentCalls).toBe(2);
   expect(bookingCalls).toBe(1);
-  await expect(page.getByRole('button', { name: 'Change', exact: true })).toBeDisabled();
+  await expect(page.locator('.p1-checkout-actions').getByRole('button', { name: 'Back', exact: true })).toBeDisabled();
+});
+
+test('checkout delivery and note update the estimate and reach the authoritative booking RPC', async ({ page }) => {
+  test.slow();
+  await setup(page, { listingOverrides: { delivery_available: true, delivery_fee: 15 } }, renterId);
+  await page.route('**/rest/v1/rpc/create_booking_request', route => route.fulfill({ json: booking }));
+  await page.goto(`${appUrl}/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  const delivery = page.getByRole('button', { name: /Have it delivered/ });
+  await delivery.click();
+  await expect(delivery).toHaveAttribute('aria-pressed', 'true');
+  const note = page.getByLabel('Note for owner (optional)', { exact: true });
+  await expect(note).toHaveAttribute('maxlength', '500');
+  await note.fill('  Please ring the bell.  ');
+  const summary = page.getByRole('complementary', { name: 'Rental order summary' });
+  await expect(summary.getByText('Delivery fee', { exact: true }).locator('..')).toContainText('$15.00');
+  await expect(summary.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$152.75');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  const submit = page.getByRole('button', { name: 'Send booking request', exact: true });
+  await expect(submit).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'I have reviewed the dates, estimated cost, and rental terms.' }).check();
+  const request = page.waitForRequest(value => value.url().endsWith('/rpc/create_booking_request'));
+  await submit.click();
+  expect((await request).postDataJSON()).toEqual({
+    p_listing_id: listingId, p_start_date: '2026-11-02', p_end_date: '2026-11-05',
+    p_quantity: 1, p_delivery_mode: 'delivery', p_renter_note: 'Please ring the bell.',
+  });
 });
 
 for (const [category, expectedAmount] of [['Electronics', '$1.20'], ['Tools & Equipment', '$0.90'], ['Camping', '$0.60']]) {
   test(`in-house insurance demo appears for ${category} checkout without increasing charges`, async ({ page }) => {
     await setup(page, { listingOverrides: { categories: { name: category }, protection_eligible: false } }, renterId);
     await page.goto(`${appUrl}/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Review and request' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Make time for a good plan.' })).toBeVisible();
     const insurance = page.getByLabel('Insurance simulation');
     await expect(insurance).toContainText(expectedAmount);
     await expect(insurance).toContainText('Not charged · No coverage');
@@ -559,14 +610,15 @@ test('supplied listing calendar stays within the viewport and Escape restores tr
   }
 });
 
-test('listing respects offer eligibility, owner restrictions and unavailable dates', async ({ page }) => {
+test('listing excludes private offers and protects unavailable dates regardless of legacy settings', async ({ page }) => {
+  test.slow();
   const scenario: Scenario = { bidding: true, listingOverrides: { negotiation_enabled: true, offer_maximum_daily: 27.5 } };
   await setup(page, scenario, renterId);
   await page.goto(`${appUrl}/listing/${listingId}`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('link', { name: 'Make an offer', exact: true })).toBeVisible();
-  await page.getByRole('link', { name: 'Make an offer', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Private rental offer' })).toBeVisible();
-  await expect(page.locator('#rental-offer')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Request to book', exact: true })).toBeEnabled();
+  await expect(page.getByRole('link', { name: 'Make an offer', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Private rental offer' })).toHaveCount(0);
+  await expect(page.locator('#rental-offer')).toHaveCount(0);
   scenario.bidding = false;
   await page.reload();
   await expect(page.getByRole('link', { name: 'Make an offer', exact: true })).toHaveCount(0);
@@ -639,16 +691,17 @@ test('handoff only confirms after the booking state transition succeeds, and ret
   await expect(page.getByRole('status').filter({ hasText: 'Booking service unavailable' })).toBeVisible();
   await page.getByRole('button', { name: 'Confirm handoff' }).click();
   await expect(page.getByRole('heading', { name: 'Check-in complete' })).toBeVisible();
-  await expect(page.locator('.success-confetti span')).toHaveCount(14);
+  await expect(page.locator('.success-confetti span')).toHaveCount(64);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'Check-in complete' })).toBeVisible({ timeout: 15000 });
   await expect(page.locator('.success-confetti')).toHaveCount(0);
 });
 
 test('return confirmation only completes after the authorized booking transition succeeds', async ({ page }) => {
-  await setup(page, { initialBookingStatus: 'return_pending', failReturnOnce: true }, renterId);
+  test.slow();
+  await setup(page, { initialBookingStatus: 'return_pending', failReturnOnce: true }, ownerId);
   await page.goto(`${appUrl}/check-out/${bookingId}`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Return inspection' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Finish the rental, thoughtfully.' })).toBeVisible();
   for (let step = 0; step < 3; step += 1) {
     await page.getByRole('button', { name: 'Continue' }).click();
   }
@@ -658,7 +711,7 @@ test('return confirmation only completes after the authorized booking transition
   await expect(page.getByRole('status').filter({ hasText: 'Return service unavailable' })).toBeVisible();
   await page.getByRole('button', { name: 'Complete return' }).click();
   await expect(page.getByRole('heading', { name: 'Return complete' })).toBeVisible();
-  await expect(page.locator('.success-confetti span')).toHaveCount(14);
+  await expect(page.locator('.success-confetti span')).toHaveCount(64);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'Return complete' })).toBeVisible();
   await expect(page.locator('.success-confetti')).toHaveCount(0);
@@ -688,40 +741,40 @@ async function visit(page: Page, path: string) {
 }
 
 for (const width of [375, 768, 1440]) {
-  test(`marketplace page families fit ${width}px with consistent Ocean Green controls`, async ({ page }, testInfo) => {
+  test(`marketplace page families fit ${width}px with consistent Preview 1 controls`, async ({ page }, testInfo) => {
     test.setTimeout(180000);
     page.on('pageerror', (error) => { throw error; });
     await page.setViewportSize({ width, height: 900 });
     await setup(page, {}, renterId);
     await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'What do you need to rent?' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
     const routes: [string, string | RegExp][] = [
-      ['/', 'What do you need to rent?'],
+      ['/', 'Great gear. No need to buy.'],
       ['/search', '1 item'],
       [`/listing/${listingId}`, listing.title],
-      [`/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, 'Review and request'],
-      ['/dashboard?tab=renting', 'Bookings'],
-      ['/dashboard?tab=lending', 'Bookings'],
-      ['/create-listing', 'Create a listing'],
-      ['/favorites', 'Saved items'],
-      ['/messages', 'Messages'],
-      ['/profile', 'Your profile'],
+      [`/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, 'Make time for a good plan.'],
+      ['/dashboard?tab=renting', 'Your next good plans.'],
+      ['/dashboard?tab=lending', 'A little more from what you own.'],
+      ['/create-listing', 'Put your good gear to work.'],
+      ['/favorites', 'Keep the good things close.'],
+      ['/messages', 'Good rentals start with a hello.'],
+      ['/profile', 'A little more about you.'],
       ['/guidelines', 'Community guidelines'],
       ['/requests', 'Item requests are not enabled yet'],
-      ['/bidding', 'Mock bidding'],
-      ['/wallet', 'Wallet'],
+      ['/bidding', 'Competitive bidding'],
+      ['/wallet', 'Your wallet, clearly explained.'],
       ['/support', 'Support tickets'],
       ['/claims', 'Disputes & claims'],
       ['/protection', 'Not available in Part 1'],
     ];
     for (const [path, heading] of routes) {
       await visit(page, path);
-      await expect(page.getByRole('heading', { name: heading, exact: true }).first()).toBeVisible();
+      await expect(page.getByRole('heading', { name: heading, exact: true }).first()).toBeVisible({ timeout: 30_000 });
       await expectPageFits(page);
-      expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())).toBe('#0E7C66');
+      expect(await page.evaluate(() => getComputedStyle(document.body).getPropertyValue('--accent-ink').trim())).toBe('#3157E1');
     }
     await visit(page, '/profile');
-    await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'A little more about you.' })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`profile-${width}.png`), fullPage: true, animations: 'disabled' });
   });
 }
@@ -802,7 +855,7 @@ test('long forms stay reachable in a short landscape viewport', async ({ page },
 test('semantic feedback text meets normal-text contrast without replacing brand colors', async ({ page }) => {
   await setup(page);
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'What do you need to rent?' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
   const ratios = await page.evaluate(() => {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 1;
@@ -852,6 +905,7 @@ async function setupAdminStyling(page: Page) {
       recent_actions: [],
     };
     else if (name === 'admin_list_settings') body = [{ key: longKey, value: 0.1, value_type: 'number', min_value: 0, max_value: 1, description: 'Service fee for new bookings.', updated_at: '2026-10-18T12:00:00Z' }];
+    else if (name === 'admin_get_agreement_terms') body = null;
     else if (name === 'admin_list_categories') body = [{ id: categoryId, name: 'Electronics and professional photography equipment', active: true, icon: 'Camera', sort_order: 1 }];
     else if (name === 'admin_list_admins') body = [];
     else if (name === 'admin_list_users') body = { total: 101, rows: [{

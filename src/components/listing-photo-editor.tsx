@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowLeft, ArrowRight, Check, ImagePlus, Plus, RotateCcw, Trash2, UploadCloud } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ImagePlus, Plus, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { Button, IconButton } from '@/components/ui';
 import { Skeleton } from '@/components/skeleton';
 
-export function ListingPhotoEditor({ photos, maximum, disabled, warnings, uploadProgress, preventLastPhotoRemoval = false, onAdd, onDrop, onReplace, onRemove, onReorder, error }: {
+export function ListingPhotoEditor({ photos, maximum, maximumBytes, disabled, warnings, uploadProgress, preventLastPhotoRemoval = false, onAdd, onDrop, onReplace, onRemove, onReorder, error }: {
   photos: string[];
   maximum: number;
+  maximumBytes: number;
   disabled: boolean;
   warnings: Record<string, string>;
   uploadProgress?: { done: number; total: number; text: string } | null;
@@ -31,15 +32,14 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, upload
       <button id="listing-add-photo" type="button" disabled={disabled || photos.length >= maximum} onClick={onAdd}
         aria-label={photos.length === 0 ? 'Add your cover photo' : 'Upload listing photos'}
         aria-describedby={error ? 'listing-photos-error' : 'listing-photo-help'}
-        className={`owner-photo-drop flex w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed px-4 py-7 text-center transition-colors disabled:opacity-50 ${dragging ? 'border-accent bg-accent-soft' : 'border-strong bg-subtle hover:border-accent'}`}>
+        className={`p1-upload owner-photo-drop w-full ${dragging ? 'outline outline-2 outline-[var(--p1-blue)]' : ''}`}>
         <motion.span animate={uploadProgress && !reducedMotion ? { y: [0, -4, 0] } : undefined} transition={{ duration: 1.1, repeat: Infinity }}>
-          <UploadCloud size={32} strokeWidth={1.6} aria-hidden="true" className="text-accent" />
+          <Upload size={24} aria-hidden="true" className="text-main" />
         </motion.span>
-        <span className="text-sm font-semibold text-main">{photos.length ? 'Add more item photos' : 'Add photos of your item'}</span>
-        <span className="text-xs text-sec">or click to upload</span>
-        <span id="listing-photo-help" className="text-[11px] text-sec mt-1">JPEG, PNG or WebP &middot; Choose several photos at once</span>
+        <b>{uploadProgress ? 'Saving photos...' : 'Choose photos'}</b>
+        <span id="listing-photo-help">JPEG, PNG or WebP &middot; up to {Math.round(maximumBytes / 1048576)} MB each</span>
       </button>
-      <div className="mt-3 flex gap-2 overflow-x-auto py-1">
+      {(photos.length > 0 || uploadProgress) && <div className="mt-3 flex gap-2 overflow-x-auto py-1">
         <AnimatePresence initial={false}>
         {photos.map((photo, index) => <motion.button key={photo} type="button" disabled={disabled} onClick={() => setSelected(index)}
           aria-label={index === 0 ? 'Select cover photo' : `Select photo ${index + 1}${warnings[photo] ? ', quality suggestion' : ''}`}
@@ -58,7 +58,7 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, upload
           <Plus size={18} aria-hidden="true" /><span className="text-[11px] font-semibold">Add more</span>
           <span className="text-[10px] text-sec">{photos.length}/{maximum} photos</span>
         </button>}
-      </div>
+      </div>}
       {photos.length > 0 && <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-sec">Photo {active + 1} of {photos.length}</span>
         <div className="flex">

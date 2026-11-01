@@ -51,7 +51,15 @@ export async function fetchBankPayoutStatus(): Promise<{ connected: boolean; pay
   const { data, error } = await supabase.functions.invoke<{ error?: string; connected?: boolean; payouts?: BankPayoutStatus[] }>(
     'owner-payout-status', { body: {} },
   );
-  if (error) throw new Error(error.message);
+  if (error) {
+    if ('context' in error && error.context instanceof Response) {
+      const details: unknown = await error.context.json().catch(() => null);
+      if (details && typeof details === 'object' && 'error' in details && typeof details.error === 'string') {
+        throw new Error(details.error);
+      }
+    }
+    throw new Error(error.message);
+  }
   if (data?.error) throw new Error(data.error);
   if (typeof data?.connected !== 'boolean' || !Array.isArray(data.payouts)) throw new Error('Invalid Stripe payout status response.');
   return { connected: data.connected, payouts: data.payouts };

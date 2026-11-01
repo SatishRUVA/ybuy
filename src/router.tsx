@@ -4,6 +4,8 @@ import { readSearchState, searchStateParams, type SearchState } from '@/lib/sear
 export type Route =
   | { name: 'home' }
   | { name: 'dashboard'; tab?: 'renting' | 'lending' }
+  | { name: 'owner-listings' }
+  | { name: 'owner-payouts' }
   | ({ name: 'search'; lat?: number; lng?: number; locationLabel?: string } & Partial<SearchState>)
   | { name: 'listing'; id: string }
   | { name: 'checkout'; id: string; startDate?: string; endDate?: string; quantity?: number }
@@ -47,6 +49,8 @@ function routeToPath(route: Route): string {
   switch (route.name) {
     case 'home': return '/';
     case 'dashboard': return route.tab ? `/dashboard?tab=${route.tab}` : '/dashboard';
+    case 'owner-listings': return '/dashboard/listings';
+    case 'owner-payouts': return '/payouts';
     case 'search': {
       const params = searchStateParams(route);
       if (route.lat != null && route.lng != null) {
@@ -129,6 +133,7 @@ function pathToRoute(pathname: string, search: string): Route {
     case 'confirmation': return second ? { name: 'confirmation', id: second } : { name: 'home' };
     case 'dashboard': {
       const params = new URLSearchParams(search);
+      if (second === 'listings') return { name: 'owner-listings' };
       if (second === 'owner') return { name: 'dashboard', tab: 'lending' };
       if (second === 'renter') return { name: 'dashboard', tab: 'renting' };
       return { name: 'dashboard', tab: params.get('tab') === 'lending' ? 'lending' : 'renting' };
@@ -140,6 +145,7 @@ function pathToRoute(pathname: string, search: string): Route {
     case 'claims': return second ? { name: 'claim-detail', id: second } : { name: 'claims' };
     case 'support': return { name: 'support', id: second };
     case 'wallet': return { name: 'wallet' };
+    case 'payouts': return { name: 'owner-payouts' };
     case 'profile': return { name: 'trust-profile' };
     case 'messages': return second ? { name: 'conversation', id: second } : { name: 'messaging' };
     case 'requests': {

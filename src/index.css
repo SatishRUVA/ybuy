@@ -8,15 +8,15 @@
   /* Radius scale - 4 steps, nothing in between. Controls, cards, panels, sheets. */
   --radius-sm: 0.5rem;   /* chips, small controls */
   --radius: 0.625rem;    /* buttons, inputs */
-  --radius-lg: 0.875rem; /* cards */
-  --radius-xl: 1.25rem;  /* panels, sheets, hero surfaces */
+  --radius-lg: 0.75rem;  /* cards */
+  --radius-xl: 0.875rem; /* panels, sheets, hero surfaces */
   /* Elevation scale - 4 steps. Borders carry structure; shadows only carry depth. */
   --shadow-xs: 0 1px 2px rgba(16,24,40,0.05);
   --shadow-card: 0 1px 2px rgba(16,24,40,0.04), 0 2px 6px -2px rgba(16,24,40,0.06);
   --shadow-hover: 0 2px 4px -2px rgba(16,24,40,0.06), 0 12px 28px -8px rgba(16,24,40,0.14);
   --shadow-pop: 0 4px 8px -4px rgba(16,24,40,0.08), 0 24px 56px -16px rgba(16,24,40,0.24);
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'Manrope', system-ui, sans-serif;
   --favorite: #C83E4D;
   --accent-ink: color-mix(in srgb, var(--accent) 90%, var(--text));
   --warning-ink: color-mix(in srgb, var(--warning) 75%, var(--text));

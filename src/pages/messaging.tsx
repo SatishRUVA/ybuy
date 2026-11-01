@@ -4,9 +4,10 @@ import { useAuth } from '@/auth-context';
 import { fetchConversations, fetchMessages, sendMessage, subscribeToMessages, MESSAGE_MAX_LENGTH, type UiConversation, type UiMessage } from '@/lib/messages';
 import { InputValidationError } from '@/lib/text-safety';
 import { ConversationListSkeleton } from '@/components/skeleton';
-import { Alert, EmptyState, SectionHeader, IconButton } from '@/components/ui';
-import { fieldClass } from '@/components/form-classes';
-import { ArrowLeft, Send, ShieldAlert, ChevronRight, MessageSquare, User, Loader2 } from 'lucide-react';
+import { Alert, EmptyState, IconButton, Button } from '@/components/ui';
+import { WorkspaceHeader } from '@/components/account-workspace';
+import { ListingPhoto } from '@/components/listing-card';
+import { ArrowLeft, Send, Search, ShieldAlert, ChevronRight, MessageSquare, User, Loader2 } from 'lucide-react';
 
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -23,6 +24,8 @@ export function MessagingPage({ selectedConversationId }: { selectedConversation
   const { user } = useAuth();
   const [conversations, setConversations] = useState<UiConversation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -32,27 +35,28 @@ export function MessagingPage({ selectedConversationId }: { selectedConversation
       .then((rows) => { if (!cancelled) setConversations(rows); })
       .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load conversations.'); });
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, attempt]);
 
   if (!user) return null;
   const desktopConversationId = selectedConversationId ?? conversations?.[0]?.id;
+  const visibleConversations = conversations?.filter(conversation =>
+    `${conversation.counterpartName} ${conversation.listingTitle ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   return (
-    <div className="animate-fade-in pb-20 md:pb-10">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
-        {selectedConversationId && <button onClick={() => navigate({ name: 'messaging' })} className="md:hidden inline-flex items-center gap-2 min-h-11 text-sm font-medium text-sec hover:text-main mb-2"><ArrowLeft size={18} /> Messages</button>}
-        <SectionHeader
-          as="h1"
-          title="Messages"
-          className={`mb-5 ${selectedConversationId ? 'hidden md:flex' : ''}`}
-        />
-        <div className={`grid ${conversations?.length ? 'md:grid-cols-[320px_minmax(0,1fr)]' : 'md:grid-cols-1'} gap-0 md:gap-4 ${conversations?.length ? 'md:h-[min(38rem,calc(100dvh_-_10rem))] md:min-h-[22rem]' : ''} ${selectedConversationId ? 'h-[calc(100dvh_-_12.5rem_-_env(safe-area-inset-bottom))] min-h-[20rem]' : ''}`}>
-          {/* Conversation list */}
-          <div className={`${selectedConversationId ? 'hidden md:block' : ''} md:overflow-y-auto no-scrollbar`}>
-            {error && <Alert tone="warning">{error}</Alert>}
+    <div className="p1-work-page p1-messages-page p1-account">
+      <div>
+        <WorkspaceHeader title="Good rentals start with a hello." description="Make the handoff feel easy. Keep pickup plans, questions and returns attached to their rental."
+          action={<Button variant="secondary" onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>View my rentals</Button>} />
+        <div className={`p1-inbox ${selectedConversationId ? 'show-thread' : ''} ${!conversations?.length && !selectedConversationId ? 'account-inbox-empty' : ''}`}>
+          <aside aria-label="Conversations" className="p1-thread-list">
+            <label className="p1-query"><Search size={17} aria-hidden="true" />
+              <input id="conversation-search" aria-label="Search conversations" placeholder="Search conversations" value={query} maxLength={100} onChange={event => setQuery(event.target.value)} />
+            </label>
+            {error && <Alert tone="warning">{error}<Button variant="secondary" size="sm" className="mt-2" onClick={() => setAttempt(value => value + 1)}>Try again</Button></Alert>}
             {!error && conversations === null && <ConversationListSkeleton count={5} />}
             {!error && conversations?.length === 0 && (
               <EmptyState
+                className="p1-empty account-empty"
                 icon={<MessageSquare size={20} />}
                 title="No conversations yet"
                 description="Messaging opens up when you request a rental or contact an owner from a listing."
@@ -60,32 +64,25 @@ export function MessagingPage({ selectedConversationId }: { selectedConversation
                 onAction={() => navigate({ name: 'search' })}
               />
             )}
-            <div className="divide-y divide-[var(--border)] border-y border-app animate-cross-fade">
-              {conversations?.map((conv) => (
+              {visibleConversations?.map((conv) => (
                 <button
                   key={conv.id}
                   onClick={() => navigate({ name: 'conversation', id: conv.id })}
-                  className={`w-full flex items-center gap-3 min-h-20 px-2 py-3 text-left transition-colors duration-fast ${
-                    (selectedConversationId ?? conversations[0]?.id) === conv.id ? 'bg-subtle' : 'hover:bg-subtle'
-                  }`}
-                  aria-current={(selectedConversationId ?? conversations[0]?.id) === conv.id ? 'true' : undefined}
+                  type="button"
+                  aria-pressed={desktopConversationId === conv.id}
                 >
                   <Avatar src={conv.counterpartAvatar} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-sm text-main truncate">{conv.counterpartName}</span>
-                      <span className="text-xs text-muted shrink-0">{timeAgo(conv.lastMessageAt)}</span>
-                    </div>
-                    {conv.listingTitle && <p className="text-xs text-sec truncate mt-0.5">{conv.listingTitle}</p>}
-                    <p className="text-xs text-muted truncate mt-0.5">{conv.lastMessage || 'No messages yet'}</p>
-                  </div>
+                  <span><b>{conv.counterpartName}</b>
+                    {conv.listingTitle && <small>{conv.listingTitle}</small>}
+                    <span>{conv.lastMessage || 'No messages yet'}</span>
+                  </span>
+                  <small>{timeAgo(conv.lastMessageAt)}</small>
                 </button>
               ))}
-            </div>
-          </div>
+            {query && visibleConversations?.length === 0 && <div className="py-6"><p className="text-sm text-sec">No conversations match that search.</p><Button size="sm" variant="secondary" className="mt-3" onClick={() => setQuery('')}>Clear search</Button></div>}
+          </aside>
 
-          {/* Chat area - desktop */}
-          <div className={`${selectedConversationId ? 'flex' : conversations?.length ? 'hidden md:flex' : 'hidden'} min-h-0 flex-col bg-card md:border border-app md:rounded-card-lg overflow-hidden`}>
+          <section aria-label="Selected conversation" className={`p1-thread ${!desktopConversationId ? 'account-thread-empty' : ''}`}>
             {desktopConversationId ? <ChatView convId={desktopConversationId} /> : (
               <div className="flex-1 grid place-items-center text-center px-8">
                 <div>
@@ -97,7 +94,7 @@ export function MessagingPage({ selectedConversationId }: { selectedConversation
                 </div>
               </div>
             )}
-          </div>
+          </section>
         </div>
       </div>
     </div>
@@ -110,8 +107,8 @@ export function ConversationPage({ id }: { id: string }) {
 
 function Avatar({ src }: { src: string | null }) {
   return src
-    ? <img src={src} alt="" className="w-11 h-11 rounded-full object-cover shrink-0" />
-    : <span className="grid place-items-center w-11 h-11 rounded-full bg-subtle text-sec shrink-0" aria-hidden="true"><User size={19} /></span>;
+    ? <img src={src} alt="" className="p1-avatar" />
+    : <span className="p1-avatar account-chat-avatar" aria-hidden="true"><User size={19} /></span>;
 }
 
 function ChatView({ convId }: { convId: string }) {
@@ -150,7 +147,7 @@ function ChatView({ convId }: { convId: string }) {
   }, [convId, user]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }, [messages]);
 
   if (!user) return null;
@@ -176,29 +173,30 @@ function ChatView({ convId }: { convId: string }) {
 
   return (
     <>
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-app">
+      <header>
+        <button type="button" className="p1-icon p1-mobile-only" aria-label="Back to conversations" onClick={() => navigate({ name: 'messaging' })}><ArrowLeft size={20} aria-hidden="true" /></button>
         <Avatar src={conv.counterpartAvatar} />
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-main truncate">{conv.counterpartName}</p>
-          <p className="text-xs text-sec truncate">{conv.listingTitle}</p>
+          <h2 className="truncate">{conv.counterpartName}</h2>
+          <p className="truncate">{conv.listingTitle}</p>
         </div>
-      </div>
+      </header>
 
       {/* Booking context */}
       {conv.listingId && (
         <button
           onClick={() => navigate({ name: 'listing', id: conv.listingId! })}
-          className="flex items-center gap-3 px-4 py-2.5 bg-subtle border-b border-app text-left hover:bg-[var(--border)] transition-colors duration-fast"
+          type="button"
+          className="p1-thread-item account-thread-item"
         >
-          {conv.listingImage && <img src={conv.listingImage} alt="" className="w-9 h-9 rounded-card object-cover shrink-0" />}
-          <p className="flex-1 min-w-0 text-xs font-semibold text-main truncate">{conv.listingTitle}</p>
+          {conv.listingImage && <span className="account-thread-photo"><ListingPhoto src={conv.listingImage} alt="" /></span>}
+          <span className="flex-1 min-w-0 truncate">{conv.listingTitle}</span>
           <ChevronRight size={16} className="text-muted" />
         </button>
       )}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2.5">
+      <div ref={scrollRef} role="log" aria-label="Conversation messages" aria-live="polite" className="p1-message-history">
         {messages.length === 0 && (
           <p className="text-center text-sm text-sec py-8">
             No messages yet. Say hello and agree on a pickup time.
@@ -207,15 +205,9 @@ function ChatView({ convId }: { convId: string }) {
         {messages.map((msg) => {
           const isMe = msg.senderId === user.id;
           return (
-            <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-              <div className={`min-w-0 max-w-[85%] sm:max-w-[78%] px-3.5 py-2.5 ${
-                isMe
-                  ? 'bg-accent text-accent-text rounded-card-lg rounded-br-sm'
-                  : 'bg-subtle text-main rounded-card-lg rounded-bl-sm'
-              }`}>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{msg.body}</p>
-                <p className={`text-[10px] mt-1 ${isMe ? 'opacity-75' : 'text-muted'}`}>{timeAgo(msg.createdAt)}</p>
-              </div>
+            <div key={msg.id} className={`p1-message p1-message-${isMe ? 'me' : 'them'}`}>
+                <p className="whitespace-pre-wrap">{msg.body}</p>
+                <small><time dateTime={msg.createdAt} title={new Date(msg.createdAt).toLocaleString()}>{timeAgo(msg.createdAt)}</time></small>
             </div>
           );
         })}
@@ -230,23 +222,21 @@ function ChatView({ convId }: { convId: string }) {
       </div>
 
       {/* Composer */}
-      <div className="shrink-0 p-3 border-t border-app">
+      <div>
         {chatError && <Alert tone="error" className="mb-2">{chatError}</Alert>}
-        <div className="flex items-center gap-2">
+        <form className="p1-message-compose" onSubmit={event => { event.preventDefault(); void send(); }}>
           <label htmlFor="message-input" className="sr-only">Write a message</label>
           <input
             id="message-input"
             value={input}
             maxLength={MESSAGE_MAX_LENGTH}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && send()}
             placeholder="Write a message"
-            className={fieldClass('flex-1')}
           />
-          <IconButton label="Send message" variant="primary" onClick={send} disabled={!input.trim() || sending}>
+          <IconButton label="Send message" variant="primary" type="submit" disabled={!input.trim() || sending}>
             {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
           </IconButton>
-        </div>
+        </form>
       </div>
     </>
   );

@@ -4,26 +4,27 @@ import { auctions } from '@/data';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
-import { Alert, Badge, Button, EmptyState, Surface } from '@/components/ui';
+import { Alert, Badge, Button, EmptyState } from '@/components/ui';
 import { fieldClass } from '@/components/form-classes';
-import { ArrowUpRight, CalendarDays, Clock3, Gavel, Package, RefreshCw } from 'lucide-react';
-import { BIDDING_SAMPLES } from '@/lib/bidding-samples';
+import { ArrowUpRight, CalendarDays, Clock3, Gavel, Package, RefreshCw, ShieldCheck } from 'lucide-react';
 import { getListingAuction, getListingAuctionFeed, selectListingAuctionWinner, type AuctionFeed, type ListingAuction } from '@/lib/listing-auctions';
-import { CategoryIcon } from '@/components/category-icon';
 import { ListingGridSkeleton } from '@/components/skeleton';
 import { fetchListingById, fetchListingsByOwner, toUiListing } from '@/lib/listings';
 import { ListingAuctionPanel } from '@/components/listing-auction-panel';
+import { ListingPhoto } from '@/components/listing-card';
 import { UUID_RE } from '@/lib/text-safety';
 import { auctionCountdown } from '@/lib/auction-countdown';
 import type { Listing } from '@/data';
+import './marketplace.css';
+import './production-workflows.css';
 
 const rentalDate = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const dollars = (amount: number) => amount.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 
 function AuctionImage({ url }: { url: string | null }) {
   const [failed, setFailed] = useState(false);
-  return <div className="aspect-[5/3] bg-subtle grid place-items-center overflow-hidden rounded-card-lg">
-    {url && !failed ? <img src={url} alt="" loading="lazy" onError={() => setFailed(true)} className="h-full w-full object-contain" />
+  return <div className="h-full bg-subtle grid place-items-center overflow-hidden">
+    {url && !failed ? <img src={url} alt="" loading="lazy" onError={() => setFailed(true)} className="h-full w-full object-cover" />
       : <Package size={40} strokeWidth={1.5} className="text-muted" aria-hidden="true" />}
   </div>;
 }
@@ -94,13 +95,11 @@ function OwnerBiddingDashboard({
   ];
   const filteredAuctions = ownerAuctions.filter(({ auction }) => matchesAuctionFilter(auction, filter));
 
-  return <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-    <header className="flex flex-wrap items-start justify-between gap-4 mb-6">
+  return <main className="p1-container p1-page p1-work-page">
+    <header className="p1-page-head">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold font-display text-main flex items-center gap-3">
-          <Gavel className="text-accent" aria-hidden="true" />Owner — Bidding
-        </h1>
-        <p className="mt-2 text-sm text-sec max-w-prose">Manage your auctions, review anonymous bids, and track rental status.</p>
+        <h1>Your gear. Their next good bid.</h1>
+        <p>Manage your auctions, review anonymous bids, and track rental status.</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" disabled={loading} icon={<RefreshCw size={16} aria-hidden="true" />} onClick={onRefresh}>Refresh auctions</Button>
@@ -109,11 +108,10 @@ function OwnerBiddingDashboard({
     </header>
 
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-app mb-5">
-      <nav className="flex flex-wrap gap-x-5 gap-y-1" aria-label="Auction status filters">
+      <nav className="p1-tabs p1-space-bottom" aria-label="Auction status filters">
         {filters.map(({ id, label }) => {
           const count = ownerAuctions.filter(({ auction }) => matchesAuctionFilter(auction, id)).length;
-          return <button key={id} type="button" aria-pressed={filter === id} onClick={() => setFilter(id)}
-            className={`min-h-11 border-b-2 px-1 text-sm font-semibold transition-colors ${filter === id ? 'border-accent text-accent' : 'border-transparent text-sec hover:text-main'}`}>
+          return <button key={id} type="button" aria-pressed={filter === id} onClick={() => setFilter(id)}>
             {label} <span className="tnum text-xs">({count})</span>
           </button>;
         })}
@@ -130,39 +128,30 @@ function OwnerBiddingDashboard({
           const status = auctionStatus(auction);
           const deadline = auctionDeadline(auction);
           const canSelectWinner = auction.status === 'open' || auction.status === 'owner_selection';
-          return <Surface key={auction.id} className="p-4 sm:p-5">
-            <div className="grid md:grid-cols-[minmax(15rem,0.85fr)_minmax(0,1.4fr)] gap-5">
-              <div className="min-w-0">
-                <div className="flex items-start gap-3">
-                  <img src={listing.images[0]} alt="" loading="lazy" className="h-20 w-24 rounded-card object-cover bg-subtle shrink-0" />
+          return <article key={auction.id} className="p1-production-bidding-owner">
+                <header className="p1-bid-room-head">
+                  <div className="p1-production-bid-head-photo"><ListingPhoto src={listing.images[0]} alt="" /></div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={status.tone}>{status.label}</Badge>
                       <span className="text-xs text-sec">{listing.category || 'Rental'}</span>
                     </div>
-                    <h2 className="mt-2 font-semibold text-main break-words">{listing.title}</h2>
-                    <p className="mt-1 text-sm font-semibold text-accent tnum">${listing.pricePerDay}/day</p>
+                    <h2>{listing.title}</h2>
+                    <p>{rentalDate(auction.start_date)} – {rentalDate(auction.end_date)} · ${listing.pricePerDay}/day listed rate</p>
+                    <Button size="sm" variant="secondary" onClick={() => navigate({ name: 'listing', id: listing.id })}>View listing</Button>
                   </div>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-sec">
-                  <span className="inline-flex items-center gap-1.5"><CalendarDays size={14} aria-hidden="true" />{rentalDate(auction.start_date)} – {rentalDate(auction.end_date)}</span>
-                  {deadline && <span className="inline-flex items-center gap-1.5">
-                    <Clock3 size={14} aria-hidden="true" />
-                    {isAuctionLive(auction) || auction.status === 'scheduled'
-                      ? `${auction.status === 'scheduled' ? 'Opens' : 'Closes'} ${auctionCountdown(deadline, now)}`
-                      : new Date(deadline).toLocaleString()}
-                  </span>}
-                </div>
-                <Button size="sm" variant="secondary" className="mt-4" onClick={() => navigate({ name: 'listing', id: listing.id })}>View listing</Button>
-              </div>
-
-              <div className="min-w-0">
+                  {deadline && <div><small>{auction.status === 'scheduled' ? 'Bidding opens' : 'Current deadline'}</small>
+                    <span className="p1-countdown">{isAuctionLive(auction) || auction.status === 'scheduled' ? auctionCountdown(deadline, now) : new Date(deadline).toLocaleString()}</span>
+                  </div>}
+                </header>
+            <div className="p1-bid-room-layout">
+              <section className="p1-bid-panel min-w-0">
                 <h3 className="text-sm font-semibold text-main mb-2">Top bids <span className="font-normal text-sec">(anonymous)</span></h3>
                 {auction.top_bids.length === 0 ? (
                   <p className="rounded-card bg-subtle px-3 py-4 text-sm text-sec">No bids yet. The opening bid is {dollars(auction.minimum_next_bid)} per day.</p>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
+                    <table className="p1-production-bid-table w-full text-left text-sm">
                       <thead><tr className="border-b border-app text-xs text-sec">
                         <th scope="col" className="py-2 pr-3 font-medium">Rank</th>
                         <th scope="col" className="py-2 pr-3 font-medium">Bid per day</th>
@@ -191,9 +180,14 @@ function OwnerBiddingDashboard({
                     </table>
                   </div>
                 )}
-              </div>
+              </section>
+              <aside className="p1-bid-rules">
+                <h2>A bid is not a booking.</h2>
+                <div className="p1-info"><ShieldCheck size={20} aria-hidden="true" /><p>Choose an eligible anonymous bid when selection is available. Selecting closes bidding; payment verification is still required before a rental is confirmed.</p></div>
+                <p className="p1-muted">The auction controls and deadlines reflect its current backend status. No bidder identities are shown.</p>
+              </aside>
             </div>
-          </Surface>;
+          </article>;
         })}
       </div>
     ) : !error && !loading ? (
@@ -205,7 +199,7 @@ function OwnerBiddingDashboard({
     <div className="mt-6 text-center">
       <Button variant="ghost" onClick={onExplore} trailingIcon={<ArrowUpRight size={16} aria-hidden="true" />}>Explore auctions to bid on</Button>
     </div>
-  </div>;
+  </main>;
 }
 
 function LiveBidding() {
@@ -272,9 +266,9 @@ function LiveBidding() {
 
   if (user && view === 'owner') return <>
     <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-5">
-      <nav aria-label="Bidding sections" className="flex gap-5 border-b border-app">
-        <button type="button" aria-current="page" className="min-h-11 border-b-2 border-accent px-1 text-sm font-semibold text-accent">My auctions</button>
-        <button type="button" onClick={() => setView('explore')} className="min-h-11 border-b-2 border-transparent px-1 text-sm font-semibold text-sec hover:text-main">Explore auctions</button>
+      <nav aria-label="Bidding sections" className="p1-tabs">
+        <button type="button" aria-pressed="true">My auctions</button>
+        <button type="button" aria-pressed="false" onClick={() => setView('explore')}>Explore auctions</button>
       </nav>
     </div>
     <OwnerBiddingDashboard
@@ -303,11 +297,11 @@ function LiveBidding() {
 
   return <>
     {user && <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-5">
-      <nav aria-label="Bidding sections" className="flex gap-5 border-b border-app">
-        <button type="button" onClick={() => setView('owner')} className="min-h-11 border-b-2 border-transparent px-1 text-sm font-semibold text-sec hover:text-main">
+      <nav aria-label="Bidding sections" className="p1-tabs">
+        <button type="button" aria-pressed="false" onClick={() => setView('owner')}>
           My auctions{ownerAuctions.length > 0 ? ` (${ownerAuctions.length})` : ''}
         </button>
-        <button type="button" aria-current="page" className="min-h-11 border-b-2 border-accent px-1 text-sm font-semibold text-accent">Explore auctions</button>
+        <button type="button" aria-pressed="true">Explore auctions</button>
       </nav>
     </div>}
     {user && ownerError && <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4"><Alert tone="warning" title="Your auctions could not be loaded">{ownerError}</Alert></div>}
@@ -320,7 +314,6 @@ function LiveBiddingDirectory() {
   const reducedMotion = useReducedMotion();
   const [feed, setFeed] = useState<AuctionFeed | null>(null);
   const [category, setCategory] = useState<string | null>(null);
-  const [sampleCategory, setSampleCategory] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -351,84 +344,66 @@ function LiveBiddingDirectory() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const sampleMode = import.meta.env.VITE_TEST_ENVIRONMENT === 'true' && feed !== null
-    && feed.categories.length === 0 && feed.total === 0 && category === null && !error;
-  const categories = sampleMode
-    ? [...new Set(BIDDING_SAMPLES.map(item => item.category))].map(name => ({
-      id: name, name, count: BIDDING_SAMPLES.filter(item => item.category === name).length,
-    }))
-    : feed?.categories ?? [];
-  const selected = sampleMode ? sampleCategory : category;
-  const samples = BIDDING_SAMPLES.filter(item => !sampleCategory || item.category === sampleCategory);
+  const categories = feed?.categories ?? [];
+  const selected = category;
   const items = feed?.items.filter(item => Date.parse(item.expires_at) > now) ?? [];
-  const total = sampleMode ? samples.length : feed?.total ?? 0;
+  const total = feed?.total ?? 0;
   const allCount = categories.reduce((sum, item) => sum + item.count, 0);
 
   function filter(id: string | null) {
-    if (sampleMode) { setSampleCategory(id); return; }
     if (id === category) return;
     setCategory(id); setOffset(0); setFeed(null); setLoading(true); setError(null);
   }
 
-  return <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-    <header className="flex flex-wrap items-start justify-between gap-4 mb-7">
+  return <main className="p1-container p1-page">
+    <header className="p1-page-head">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold font-display text-main flex items-center gap-3"><Gavel className="text-accent" aria-hidden="true" />Live bidding</h1>
-        <p className="mt-2 text-sm text-sec max-w-prose">Find your next rental. Browse open auctions by category, then review the dates and place your bid.</p>
+        <h1>Great gear. Your bid.</h1>
+        <p>Live bidding is a second way to rent. Review the dates, choose your daily price and follow the next step.</p>
       </div>
-      <Button variant="secondary" disabled={loading} icon={<RefreshCw size={16} aria-hidden="true" />}
-        onClick={() => { setOffset(0); setLoading(true); setRetry(value => value + 1); }}>Refresh auctions</Button>
+        <Button variant="secondary" disabled={loading} icon={<RefreshCw size={16} aria-hidden="true" />}
+          onClick={() => { setOffset(0); setLoading(true); setRetry(value => value + 1); }}>Refresh auctions</Button>
     </header>
-    {sampleMode && <div className="rounded-card-lg bg-warning-soft text-warning p-4 mb-6">
-      <p className="text-sm font-semibold">TEST DATA · 10 sample auctions</p>
-      <p className="text-sm mt-1">Preview the browsing experience. These items are not available to bid on; no bookings or payments are created.</p>
-    </div>}
+    <div className="p1-bid-intro"><Gavel size={26} aria-hidden="true" />
+      <p><b>A bid is not a booking.</b>The owner chooses an eligible bid. Selection comes before checkout; your rental is confirmed only after payment is verified. Bid limits, next eligible price and deadlines appear on each auction. Bidder identities stay private.</p>
+      <ShieldCheck size={25} aria-hidden="true" />
+    </div>
     <fieldset className="mb-6">
-      <legend className="text-sm font-semibold text-main mb-3">Filter by category</legend>
-      <div className="flex flex-wrap gap-2">
+      <legend className="sr-only">Filter by category</legend>
+      <div className="p1-tabs p1-space-bottom">
         {[{ id: null, name: 'All categories', count: allCount }, ...categories].map(option =>
           <button type="button" key={option.id ?? 'all'} aria-pressed={selected === option.id} disabled={loading}
-            onClick={() => filter(option.id)}
-            className={`min-h-11 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:opacity-60 ${selected === option.id ? 'bg-accent text-accent-text border-transparent' : 'bg-card text-sec border-app hover:bg-subtle'}`}>
-            {option.id && <CategoryIcon category={{ id: option.id, name: option.name, icon: 'Package' }} size={16} />}
+            onClick={() => filter(option.id)}>
             {option.name}<span className="text-xs tnum">({option.count})</span>
           </button>)}
       </div>
     </fieldset>
     <p role="status" aria-live="polite" className="text-sm text-sec mb-4">
-      {loading ? 'Loading auctions...' : error ? 'Auctions could not be refreshed.' : `${total} ${sampleMode ? 'sample' : 'open'} ${total === 1 ? 'auction' : 'auctions'}${selected ? ` in ${categories.find(item => item.id === selected)?.name ?? 'this category'}` : ''}`}
+      {loading ? 'Loading auctions...' : error ? 'Auctions could not be refreshed.' : `${total} open ${total === 1 ? 'auction' : 'auctions'}${selected ? ` in ${categories.find(item => item.id === selected)?.name ?? 'this category'}` : ''}`}
     </p>
     {error && <Alert tone="error" title="Live bidding unavailable"><p>{error}</p>
       <Button variant="secondary" onClick={() => { setLoading(true); setRetry(value => value + 1); }}>Retry auctions</Button>
     </Alert>}
     <div aria-busy={loading}>
-      {loading && !feed ? <ListingGridSkeleton /> : sampleMode ? (
-        <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" aria-label="Sample auctions">
-          {samples.map(item => <motion.li key={item.listing_id} layout={!reducedMotion} transition={{ duration: reducedMotion ? 0 : 0.2 }}
-            className="rounded-card-xl border border-app bg-card p-4">
-            <AuctionImage url={item.image_url} />
-            <div className="flex justify-between gap-3 mt-4 text-xs text-sec"><span>{item.category}</span><span className="font-semibold text-warning">SAMPLE</span></div>
-            <h2 className="font-semibold text-main mt-2 break-words">{item.title}</h2>
-            <p className="text-sm text-sec mt-3">Illustrative daily bid</p>
-            <p className="font-bold text-lg text-accent tnum">{dollars(item.daily_rate)}<span className="text-xs font-normal text-sec"> / day</span></p>
-            <p className="text-xs text-sec mt-3">Sample only · Bidding unavailable</p>
-          </motion.li>)}
-        </ul>
-      ) : items.length ? (
+      {loading && !feed ? <ListingGridSkeleton /> : items.length ? (
         <>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" aria-label="Open auctions">
-            {items.map(item => <motion.li key={item.listing_id} layout={!reducedMotion} transition={{ duration: reducedMotion ? 0 : 0.2 }}>
-              <a href={`/bidding/${item.listing_id}`}
-                className="block h-full rounded-card-xl border border-app bg-card p-4 hover:border-[var(--accent)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
+          <ul className="p1-auction-grid" aria-label="Open auctions">
+            {items.map(item => <motion.li key={item.listing_id} layout={!reducedMotion} transition={{ duration: reducedMotion ? 0 : 0.2 }} className="p1-auction-card">
+              <a href={`/bidding/${item.listing_id}`} aria-label={`See bidding for ${item.title}`}
+                className="p1-auction-photo p1-production-auction-photo">
                 <AuctionImage key={item.image_url} url={item.image_url} />
-                <p className="text-xs text-sec mt-4">{item.category_name}</p>
-                <h2 className="font-semibold text-main mt-2 break-words">{item.title}</h2>
-                <p className="inline-flex items-center gap-2 text-xs text-sec mt-3"><CalendarDays size={15} aria-hidden="true" />{rentalDate(item.start_date)} – {rentalDate(item.end_date)}</p>
-                <p className="text-sm text-sec mt-3">{item.has_bids ? 'Highest daily bid' : 'Starting daily bid'}</p>
-                <p className="font-bold text-lg text-accent tnum">{dollars(item.daily_rate)}<span className="text-xs font-normal text-sec"> / day</span></p>
-                <time dateTime={item.expires_at} className="block text-xs text-sec mt-2">Bidding closes {new Date(item.expires_at).toLocaleString()}</time>
-                <span className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent mt-2">View auction<ArrowUpRight size={16} aria-hidden="true" /></span>
+                <span><Clock3 size={14} aria-hidden="true" /><span className="p1-countdown">{auctionCountdown(item.expires_at, now)}</span></span>
               </a>
+              <div>
+                <div className="p1-section-head"><span className="p1-muted">{item.category_name}</span><span className="p1-tag p1-tag-lime">Live bidding</span></div>
+                <h2><a href={`/bidding/${item.listing_id}`}>{item.title}</a></h2>
+                <p className="p1-auction-owner"><CalendarDays size={14} aria-hidden="true" /><span>{rentalDate(item.start_date)} – {rentalDate(item.end_date)}</span></p>
+                <div className="p1-auction-price">
+                  <p><small>{item.has_bids ? 'Top bid per day' : 'Starting bid per day'}</small><strong className="tnum">{dollars(item.daily_rate)}</strong></p>
+                  <Button variant="secondary" onClick={() => navigate({ name: 'bidding-detail', id: item.listing_id })}>See bidding<ArrowUpRight size={16} aria-hidden="true" /></Button>
+                </div>
+                <time dateTime={item.expires_at} className="block text-xs text-sec mt-3">Closes {new Date(item.expires_at).toLocaleString()}</time>
+              </div>
             </motion.li>)}
           </ul>
           {feed && feed.items.length < feed.total && <div className="mt-6 text-center">
@@ -439,7 +414,7 @@ function LiveBiddingDirectory() {
         description={category ? 'Try another category or return to all categories.' : 'Check back soon for new rental auctions, or browse available listings.'}
         actionLabel={category ? 'Clear category filter' : 'Browse listings'} onAction={() => category ? filter(null) : navigate({ name: 'search' })} />}
     </div>
-  </div>;
+  </main>;
 }
 
 function MockBiddingGate({ children }: { children: ReactNode }) {
@@ -466,10 +441,57 @@ function MockBiddingGate({ children }: { children: ReactNode }) {
 }
 
 export function BiddingPage() {
+  const { navigate } = useRouter();
   const { enabled, loading, error, reload } = useFeatureFlag('bidding');
+  const [sampleAuctionId, setSampleAuctionId] = useState<string | null>(null);
   if (loading) return <div className="max-w-6xl mx-auto p-6"><ListingGridSkeleton /></div>;
   if (error) return <div className="max-w-6xl mx-auto p-6"><Alert tone="error" title="Could not check bidding availability">{error}<Button onClick={() => void reload()}>Retry bidding</Button></Alert></div>;
-  return enabled ? <LiveBidding /> : <MockBiddingPage />;
+  if (enabled) return <LiveBidding />;
+  return <div className="marketplace-bidding max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
+    <header>
+      <h1 className="text-3xl font-bold font-display text-main">Competitive bidding</h1>
+      <p className="mt-3 max-w-prose text-sm text-sec">Explore a sample bidding flow while live auctions are unavailable.</p>
+    </header>
+    <Alert tone="info" title="Sample bidding only">
+      Live auctions are currently unavailable. Try a simulated auction below; demo bids stay in this browser and never affect real listings, bookings, or payments.
+    </Alert>
+    <div>
+      <Button variant="secondary" trailingIcon={<ArrowUpRight size={16} aria-hidden="true" />} onClick={() => navigate({ name: 'search' })}>
+        Browse available rentals
+      </Button>
+    </div>
+    <section aria-labelledby="sample-auctions-heading">
+      <div className="mb-4">
+        <h2 id="sample-auctions-heading" className="text-xl font-semibold text-main">Try a sample auction</h2>
+        <p className="mt-1 text-sm text-sec">Place a demo bid and see how it appears in the sample bid history.</p>
+      </div>
+      {sampleAuctionId ? <DemoAuction key={sampleAuctionId} id={sampleAuctionId} onBack={() => setSampleAuctionId(null)} />
+        : <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {auctions.map(sample => (
+            <li key={sample.id}>
+              <button type="button" aria-label={`Try sample auction: ${sample.title}`}
+                onClick={() => setSampleAuctionId(sample.id)}
+                className="block h-full w-full rounded-card-xl border border-app bg-card p-4 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
+                <AuctionImage url={sample.image} />
+                <div className="mt-4 flex items-center justify-between gap-2">
+                  <p className="text-xs text-sec">{sample.category}</p>
+                  <Badge tone="neutral">SAMPLE</Badge>
+                </div>
+                <h3 className="mt-2 break-words font-semibold text-main">{sample.title}</h3>
+                <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-app pt-3">
+                  <div>
+                    <p className="text-xs text-sec">Example top bid</p>
+                    <p className="mt-1 font-bold text-lg text-accent tnum">{dollars(sample.currentBid)}<span className="text-xs font-normal text-sec"> / day</span></p>
+                  </div>
+                  <p className="text-xs text-sec">{sample.bids.length} sample bids · {sample.rentalDays} days</p>
+                </div>
+                <span className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent">Try sample bidding<ArrowUpRight size={16} aria-hidden="true" /></span>
+              </button>
+            </li>
+          ))}
+        </ul>}
+    </section>
+  </div>;
 }
 
 export function BiddingDetailPage({ id }: { id: string }) {
@@ -507,59 +529,36 @@ function RentalAuctionDetail({ id }: { id: string }) {
     return () => { active = false; };
   }, [id, retry, user?.id]);
 
-  return <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-6">
-    <Button variant="secondary" onClick={() => navigate({ name: 'bidding' })}>Back to Bidding</Button>
+  return <main className="p1-container p1-page">
+    <div className="p1-bid-navigation"><Button variant="ghost" onClick={() => navigate({ name: 'bidding' })}>Back to Bidding</Button></div>
     {loading ? <ListingGridSkeleton /> : error ? <Alert tone="error" title="Auction could not be loaded">
       <p>{error}</p><Button variant="secondary" onClick={() => setRetry(value => value + 1)}>Retry auction</Button>
     </Alert> : !listing ? <EmptyState icon={<Gavel size={24} />} title="Auction not found"
       description="This rental is unavailable or does not have competitive bidding enabled."
       actionLabel="Explore auctions" onAction={() => navigate({ name: 'bidding' })} /> : <>
-      <header className="grid gap-5 sm:grid-cols-[12rem_minmax(0,1fr)] items-center">
-        <AuctionImage url={listing.images[0] ?? null} />
+      <header className="p1-bid-room-head">
+        <div className="p1-production-bid-head-photo"><AuctionImage url={listing.images[0] ?? null} /></div>
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-display text-main break-words">{listing.title}</h1>
+          <h1>{listing.title}</h1>
           <p className="text-sm text-sec mt-2">{listing.category}</p>
           <p className="text-sm text-sec mt-2">Bid on this rental here. Regular listing details and booking stay separate.</p>
           <Button variant="secondary" className="mt-4" onClick={() => navigate({ name: 'listing', id })}>View listing details</Button>
         </div>
       </header>
-      {listing.owner.id === user?.id ? <Surface className="p-5 space-y-3">
+      {listing.owner.id === user?.id ? <section className="p1-bid-panel space-y-3">
         <h2 className="text-lg font-semibold text-main">Manage your auction</h2>
         <p className="text-sm text-sec">Review anonymous bids, select a winner, and track payment from your owner dashboard.</p>
         <Button onClick={() => navigate({ name: 'bidding' })}>Manage my auctions</Button>
-      </Surface> : <ListingAuctionPanel key={`${id}:${user?.id ?? 'anonymous'}`} listingId={id} />}
+      </section> : <div className="p1-production-auction-panel"><ListingAuctionPanel key={`${id}:${user?.id ?? 'anonymous'}`} listingId={id} /></div>}
     </>}
-  </div>;
-}
-
-function MockBiddingPage() {
-  const { navigate } = useRouter();
-  return (
-    <MockBiddingGate>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {auctions.map((auction) => (
-          <button
-            key={auction.id}
-            onClick={() => navigate({ name: 'auction', id: auction.id })}
-            className="group text-left p-4 rounded-card-xl bg-card border border-app shadow-card card-hover"
-          >
-            <img src={auction.image} alt="" loading="lazy" className="aspect-[5/3] w-full object-cover rounded-card-lg mb-3" />
-            <h2 className="font-semibold text-main">{auction.title}</h2>
-            <p className="text-sm text-sec">{auction.rentalDays}-day demo rental</p>
-            <p className="mt-3 font-bold text-accent">Current demo bid: ${auction.currentBid}</p>
-            <span className="text-sm text-sec">View demo auction</span>
-          </button>
-        ))}
-      </div>
-    </MockBiddingGate>
-  );
+  </main>;
 }
 
 export function AuctionPage({ id }: { id: string }) {
   return <MockBiddingGate><DemoAuction key={id} id={id} /></MockBiddingGate>;
 }
 
-function DemoAuction({ id }: { id: string }) {
+function DemoAuction({ id, onBack }: { id: string; onBack?: () => void }) {
   const { navigate } = useRouter();
   const auction = auctions.find((row) => row.id === id);
   const [bids, setBids] = useState(() => auction?.bids ?? []);
@@ -586,7 +585,9 @@ function DemoAuction({ id }: { id: string }) {
 
   return (
     <div className="space-y-5">
-      <Button variant="secondary" onClick={() => navigate({ name: 'bidding' })}>Back to demo auctions</Button>
+      <Button variant="secondary" onClick={() => onBack ? onBack() : navigate({ name: 'bidding' })}>
+        {onBack ? 'Back to sample auctions' : 'Back to demo auctions'}
+      </Button>
       {!auction ? <EmptyState icon={<Gavel size={20} />} title="Demo auction not found" description="Choose an auction from the demo list." />
         : <div className="grid sm:grid-cols-2 gap-6">
           <div>

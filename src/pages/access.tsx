@@ -3,6 +3,9 @@ import { ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { BrandLogo } from '@/components/brand-logo';
 
+const localDevelopment = import.meta.env.DEV
+  && ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+
 function getRedirectTarget(): string {
   const params = new URLSearchParams(window.location.search);
   const target = params.get('redirect');
@@ -22,12 +25,20 @@ export function AccessPage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (localDevelopment) {
+      const target = new URL(getRedirectTarget(), window.location.origin);
+      window.location.replace(target.origin === window.location.origin && target.pathname !== '/access'
+        ? `${target.pathname}${target.search}${target.hash}` : '/');
+      return;
+    }
     inputRef.current?.focus();
     const params = new URLSearchParams(window.location.search);
     if (params.get('expired') === '1') {
       setError('Your security session has expired. Enter a new code to continue.');
     }
   }, []);
+
+  if (localDevelopment) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

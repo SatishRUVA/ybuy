@@ -36,6 +36,9 @@ export interface DbBookingRow {
   days: number;
   subtotal: number;
   owner_discount_amount?: number;
+  delivery_mode?: 'pickup' | 'delivery';
+  delivery_fee_amount?: number;
+  renter_note?: string | null;
   service_fee_amount: number;
   insurance_amount: number;
   deposit: number;
@@ -85,6 +88,9 @@ export interface UiBooking {
   days: number;
   subtotal: number;
   ownerDiscountAmount: number;
+  deliveryMode: 'pickup' | 'delivery';
+  deliveryFeeAmount: number;
+  renterNote: string | null;
   serviceFeeAmount: number;
   insuranceAmount: number;
   deposit: number;
@@ -114,6 +120,9 @@ export function toUiBooking(row: DbBookingRow, currentUserId: string): UiBooking
     days: row.days,
     subtotal: row.subtotal,
     ownerDiscountAmount: Number(row.owner_discount_amount ?? 0),
+    deliveryMode: row.delivery_mode === 'delivery' ? 'delivery' : 'pickup',
+    deliveryFeeAmount: Number(row.delivery_fee_amount ?? 0),
+    renterNote: row.renter_note ?? null,
     serviceFeeAmount: row.service_fee_amount,
     insuranceAmount: Number(row.insurance_amount ?? 0),
     deposit: row.deposit,
@@ -172,13 +181,18 @@ export async function createBookingRequest(params: {
   endDate: string;
   quantity?: number;
   promotionCode?: string;
+  deliveryMode?: 'pickup' | 'delivery';
+  renterNote?: string;
 }): Promise<DbBookingRow> {
   const code = params.promotionCode?.trim();
+  const note = params.renterNote?.trim();
   const args = {
     p_listing_id: params.listingId,
     p_start_date: params.startDate,
     p_end_date: params.endDate,
     p_quantity: params.quantity ?? 1,
+    p_delivery_mode: params.deliveryMode ?? 'pickup',
+    p_renter_note: note ? note : null,
   };
   return code
     ? callBookingRpc('create_booking_request_with_owner_promo', { ...args, p_code: code })

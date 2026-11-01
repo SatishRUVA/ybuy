@@ -1,14 +1,12 @@
-import { useState } from 'react';
+import { useRouter } from '@/router';
 import {
-  Activity, ArrowLeft, BarChart3, Banknote, CalendarCheck, CreditCard, Flag, Gavel, Gift, LayoutDashboard,
-  LifeBuoy, Lock, Menu, Package, ScrollText, Search, Shield, ShieldCheck, SlidersHorizontal, Star, Tags, Users,
+  Activity, BarChart3, Banknote, CalendarCheck, CreditCard, Flag, Gavel, Gift, LayoutDashboard,
+  LifeBuoy, Lock, Package, ScrollText, Search, Shield, ShieldCheck, SlidersHorizontal, Star, Tags, Users,
   type LucideIcon,
 } from 'lucide-react';
-import { useRouter } from '@/router';
-import { Badge, EmptyState, IconButton } from '@/components/ui';
+import { EmptyState } from '@/components/ui';
 import { Skeleton } from '@/components/skeleton';
 import { useAdminAccess, type AdminAccess, type AdminPermission } from '@/lib/admin';
-import { Dialog, DialogDescription, DialogTitle, SheetContent } from '@/components/shadcn/dialog';
 import { cn } from '@/lib/utils';
 import { OverviewSection } from './overview';
 import { BookingsSection, ListingsSection, PaymentsSection, PayoutsSection, ReviewsSection, UsersSection } from './resources';
@@ -20,37 +18,42 @@ import { PromotionsSection } from './promotions';
 import { RefundsSection } from './refunds';
 import { ItemRequestsSection } from './marketplace';
 import { CustomerInvestigationsSection } from './investigations';
+import './admin-page.css';
 
 type Icon = LucideIcon;
 interface NavItem { id: string; label: string; icon: Icon; permission?: AdminPermission; anyPermission?: AdminPermission[]; superOnly?: boolean; pending?: string }
 
 const GROUPS: { title: string; items: NavItem[] }[] = [
-  { title: 'Operations', items: [
+  { title: 'Overview', items: [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard, permission: 'analytics.view' },
-    { id: 'users', label: 'Users', icon: Users, permission: 'users.manage' },
-    { id: 'investigations', label: 'Customer investigations', icon: ShieldCheck, permission: 'fraud.investigate' },
+  ] },
+  { title: 'Moderation', items: [
     { id: 'listings', label: 'Listings', icon: Package, permission: 'listings.moderate' },
     { id: 'requests', label: 'Item requests', icon: Search, permission: 'listings.moderate' },
-    { id: 'bookings', label: 'Bookings', icon: CalendarCheck, permission: 'bookings.view' },
+    { id: 'reviews', label: 'Reviews', icon: Star, permission: 'reviews.moderate' },
+  ] },
+  { title: 'Members', items: [
+    { id: 'users', label: 'Users', icon: Users, permission: 'users.manage' },
+    { id: 'investigations', label: 'Customer investigations', icon: ShieldCheck, permission: 'fraud.investigate' },
+  ] },
+  { title: 'Disputes', items: [
     { id: 'disputes', label: 'Disputes & claims', icon: Gavel, permission: 'disputes.manage' },
     { id: 'support', label: 'Support tickets', icon: LifeBuoy, permission: 'support.manage' },
-    { id: 'promotions', label: 'Promotions & rewards', icon: Gift, anyPermission: ['promotions.manage', 'credits.manage'] },
-    { id: 'reviews', label: 'Reviews', icon: Star, permission: 'reviews.moderate' },
-    { id: 'categories', label: 'Categories', icon: Tags, permission: 'categories.manage' },
   ] },
-  { title: 'Finance', items: [
+  { title: 'Reporting', items: [
+    { id: 'bookings', label: 'Bookings', icon: CalendarCheck, permission: 'bookings.view' },
     { id: 'payments', label: 'Payments', icon: CreditCard, permission: 'payments.view' },
     { id: 'payouts', label: 'Payouts', icon: Banknote, permission: 'payouts.view' },
     { id: 'refunds', label: 'Refund requests', icon: CreditCard, anyPermission: ['refunds.issue', 'refunds.approve', 'refunds.senior'] },
   ] },
-  { title: 'Super admin', items: [
+  { title: 'Settings', items: [
+    { id: 'promotions', label: 'Promotions & rewards', icon: Gift, anyPermission: ['promotions.manage', 'credits.manage'] },
+    { id: 'categories', label: 'Categories', icon: Tags, permission: 'categories.manage' },
     { id: 'settings', label: 'Global settings', icon: SlidersHorizontal, permission: 'config.manage' },
     { id: 'flags', label: 'Feature flags', icon: Flag, permission: 'flags.manage' },
     { id: 'integrations', label: 'Integrations & health', icon: Activity, permission: 'integrations.view' },
     { id: 'audit', label: 'Audit log', icon: ScrollText, permission: 'audit.view' },
     { id: 'admins', label: 'Administrators', icon: ShieldCheck, permission: 'admins.manage' },
-  ] },
-  { title: 'Coming with their modules', items: [
     { id: 'insurance', label: 'Insurance & protection', icon: Shield, pending: 'Insurance and protection options' },
     { id: 'analytics', label: 'Analytics & exports', icon: BarChart3, pending: 'Reports and CSV exports beyond the overview' },
   ] },
@@ -62,34 +65,36 @@ const can = (access: AdminAccess, item: NavItem) => item.superOnly ? access.role
   : !item.permission || access.permissions.includes(item.permission);
 
 function Nav({ access, active, onSelect }: { access: AdminAccess; active: string; onSelect: (id: string) => void }) {
+  const activeGroup = GROUPS.find((group) => group.items.some((item) => item.id === active));
   return (
-    <nav aria-label="Admin" className="p-3 space-y-5">
-      {GROUPS.map((g) => {
-        const items = g.items.filter((i) => can(access, i));
-        if (items.length === 0) return null;
-        return (
-          <div key={g.title}>
-            <p className="px-3 mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">{g.title}</p>
-            <ul className="space-y-0.5">
-              {items.map((i) => (
+    <nav aria-label="Admin" className="admin-console__nav">
+      <div className="p1-tabs p1-space-bottom" aria-label="Admin sections">
+        {GROUPS.map((group) => {
+          const items = group.items.filter((item) => can(access, item));
+          if (!items.length) return null;
+          return <button key={group.title} type="button"
+            aria-pressed={activeGroup === group}
+            onClick={() => onSelect(items[0].id)}>{group.title}</button>;
+        })}
+      </div>
+      <ul className="admin-console__nav-list" aria-label="Administrator tools">
+              {ALL_ITEMS.filter((item) => can(access, item)).map((i) => (
                 <li key={i.id}>
                   <button
+                    type="button"
                     onClick={() => onSelect(i.id)} aria-current={active === i.id ? 'page' : undefined}
                     className={cn(
-                      'w-full flex items-center gap-2.5 rounded-card px-3 py-2 text-sm font-medium text-left transition-colors duration-fast',
+                      'admin-console__nav-item',
                       active === i.id ? 'bg-accent-soft text-accent' : 'text-sec hover:bg-subtle hover:text-main',
                     )}
                   >
-                    <i.icon size={16} className="shrink-0" />
+                    <i.icon size={16} aria-hidden="true" className="shrink-0" />
                     <span className="truncate">{i.label}</span>
-                    {i.pending && <span className="ml-auto text-[10px] font-semibold uppercase text-muted">Soon</span>}
+                    {i.pending && <span className="ml-auto text-xs font-medium text-muted">Soon</span>}
                   </button>
                 </li>
               ))}
             </ul>
-          </div>
-        );
-      })}
     </nav>
   );
 }
@@ -130,7 +135,6 @@ function Section({ id }: { id: string }) {
 export function AdminPage({ section }: { section?: string }) {
   const { navigate } = useRouter();
   const { access, loading, error, retry } = useAdminAccess();
-  const [menuOpen, setMenuOpen] = useState(false);
 
   if (loading) {
     return <div className="max-w-5xl mx-auto px-4 py-10 space-y-4" aria-busy="true"><Skeleton className="h-8 w-48" /><Skeleton className="h-64 w-full" rounded="rounded-card-lg" /></div>;
@@ -159,33 +163,26 @@ export function AdminPage({ section }: { section?: string }) {
       </div>
     );
   }
-  const select = (id: string) => { setMenuOpen(false); navigate({ name: 'admin', section: id }); };
+  const select = (id: string) => navigate({ name: 'admin', section: id });
+  const group = GROUPS.find((item) => item.items.some((entry) => entry.id === active.id))?.title;
+  const headline = group === 'Moderation' ? 'Good listings start here.'
+    : group === 'Members' ? 'The people behind the gear.'
+    : group === 'Disputes' ? 'Make room for a fair outcome.'
+    : group === 'Reporting' ? 'A clear view of the marketplace.'
+    : group === 'Settings' ? 'Platform settings, thoughtfully.'
+    : 'Keep the good plans running.';
 
   return (
-    <div className="min-h-screen bg-app">
-      <header className="sticky top-0 z-40 h-14 flex items-center gap-3 px-4 bg-card border-b border-app">
-        <IconButton label="Open admin menu" variant="ghost" size="sm" className="lg:hidden" onClick={() => setMenuOpen(true)}><Menu size={18} /></IconButton>
-        <button onClick={() => navigate({ name: 'home' })} className="inline-flex items-center gap-1.5 text-sm font-semibold text-sec hover:text-main transition-colors duration-fast">
-          <ArrowLeft size={15} /> Back to YBuy
-        </button>
-        <h1 className="font-display font-bold text-main ml-2 hidden sm:block">Admin console</h1>
-        <Badge tone="accent" className="ml-auto">{access.role.replace('_', ' ')}</Badge>
+    <main className="admin-console p1-work-page">
+      <header className="p1-page-head">
+        <div><h1>{headline}</h1><p>Review live marketplace activity. Access and actions are limited to your administrator permissions.</p></div>
       </header>
-      <div className="lg:grid lg:grid-cols-[16rem_1fr]">
-        <aside className="hidden lg:block sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto bg-card border-r border-app">
-          <Nav access={access} active={active.id} onSelect={select} />
-        </aside>
-        <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
-          <SheetContent>
-            <DialogTitle className="sr-only">Admin navigation</DialogTitle>
-            <DialogDescription className="sr-only">Choose an admin section</DialogDescription>
-            <div className="pt-10"><Nav access={access} active={active.id} onSelect={select} /></div>
-          </SheetContent>
-        </Dialog>
-        <main className="min-w-0 px-4 sm:px-6 py-6 max-w-[1200px] w-full">
+      <div className="admin-console__layout">
+        <Nav access={access} active={active.id} onSelect={select} />
+        <section className={`admin-console__main admin-console__main--${active.id}`} aria-label={active.label}>
           <Section key={active.id} id={active.id} />
-        </main>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

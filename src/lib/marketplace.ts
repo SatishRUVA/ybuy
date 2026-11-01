@@ -215,6 +215,15 @@ export async function fetchRequestListingMatches(requestIds:string[]):Promise<Re
   return result;
 }
 
+export async function linkItemRequestListing(requestId: string, listingId: string): Promise<void> {
+  assertUuid(requestId, 'request id');
+  assertUuid(listingId, 'listing id');
+  const { error } = await supabase.rpc('link_item_request_listing', {
+    p_request_id: requestId, p_listing_id: listingId,
+  });
+  if (error) throw new Error(error.message);
+}
+
 async function getValidatedImageExtension(file: File): Promise<string> {
   if (!file.size || file.size > 5 * 1024 * 1024) throw new Error('Each reference image must be no larger than 5 MB.');
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {

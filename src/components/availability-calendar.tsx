@@ -10,15 +10,23 @@ const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
  * between available/blocked by clicking it.
  */
 export function AvailabilityCalendar({
-  bookedDates, blockedDates, editable = false, onToggleDate, monthsAhead = 6,
+  bookedDates, blockedDates, editable = false, onToggleDate, monthsAhead = 6, minDate, maxDate,
 }: {
   bookedDates: Set<string>;
   blockedDates: Set<string>;
   editable?: boolean;
   onToggleDate?: (date: string) => void;
   monthsAhead?: number;
+  minDate?: string;
+  /** Exclusive end of the owner's selected availability window. */
+  maxDate?: string;
 }) {
-  const [monthOffset, setMonthOffset] = useState(0);
+  const [monthOffset, setMonthOffset] = useState(() => {
+    if (!minDate) return 0;
+    const start = new Date(`${minDate}T12:00:00`);
+    const now = new Date();
+    return Math.max(0, (start.getFullYear() - now.getFullYear()) * 12 + start.getMonth() - now.getMonth());
+  });
   const today = new Date();
   const viewMonth = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
   const monthLabel = viewMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -63,10 +71,11 @@ export function AvailabilityCalendar({
           const isPast = date < todayStr;
           const isBooked = bookedDates.has(date);
           const isBlocked = blockedDates.has(date);
-          const canClick = editable && !isPast && !isBooked;
+          const outsideWindow = Boolean((minDate && date < minDate) || (maxDate && date >= maxDate));
+          const canClick = editable && !isPast && !isBooked && !outsideWindow;
           const dayNum = Number(date.slice(-2));
           let tone = 'text-main hover:bg-subtle';
-          if (isPast) tone = 'text-muted opacity-40';
+          if (isPast || outsideWindow) tone = 'text-muted opacity-40';
           else if (isBooked) tone = 'bg-accent-soft text-accent font-semibold cursor-default';
           else if (isBlocked) tone = 'bg-warning-soft text-warning font-semibold';
           return (
@@ -74,7 +83,7 @@ export function AvailabilityCalendar({
               key={date}
               type="button"
               disabled={!canClick}
-              aria-label={`${new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}, ${isBooked ? 'booked' : isBlocked ? 'blocked' : 'available'}`}
+              aria-label={`${new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}, ${outsideWindow ? 'outside availability window' : isBooked ? 'booked' : isBlocked ? 'blocked' : 'available'}`}
               aria-pressed={isBlocked}
               aria-current={date === todayStr ? 'date' : undefined}
               onClick={() => canClick && onToggleDate?.(date)}

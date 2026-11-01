@@ -2,6 +2,7 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 import { checkVpn, isVpnDetectionEnabled } from './api/_lib/vpn-check.js';
+import { isLocalSupabase, localProfileLogin } from './dev/local-profile-login';
 
 function localVpnCheck({ apiKey, supabaseUrl, anonKey }: {
   apiKey: string | undefined;
@@ -36,8 +37,14 @@ function localVpnCheck({ apiKey, supabaseUrl, anonKey }: {
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  const profileLoginEnabled = mode !== 'e2e' && isLocalSupabase(env.VITE_SUPABASE_URL)
+    && Boolean(env.SUPABASE_SERVICE_ROLE_KEY);
   return {
-    plugins: [react(), localVpnCheck({
+    define: {
+      'import.meta.env.VITE_LOCAL_PROFILE_LOGIN': JSON.stringify(profileLoginEnabled),
+    },
+    plugins: [react(), ...(profileLoginEnabled
+      ? [localProfileLogin(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)] : []), localVpnCheck({
       apiKey: env.IPAPI_IS_KEY,
       supabaseUrl: env.SUPABASE_URL || env.VITE_SUPABASE_URL,
       anonKey: env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY,
@@ -49,7 +56,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: 'localhost',
-      port: 5174,
+      port: Number(process.env.YBUY_TEST_PORT ?? 5174),
       strictPort: true,
       watch: {
         ignored: ['**/node_modules/**', '**/test-results*/**', '**/playwright-report*/**'],

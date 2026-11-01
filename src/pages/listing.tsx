@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ImageGallery, ListingCard } from '@/components/listing-card';
+import { ListingCard } from '@/components/listing-card';
+import { MarketplaceGallery } from '@/components/marketplace-gallery';
 import { Rating, VerifiedBadge, ProtectionBadge } from '@/components/trust';
 import { Button, Badge, Alert, SectionHeader, Surface } from '@/components/ui';
 import { useRouter } from '@/router';
@@ -15,12 +16,14 @@ import { usePlatformFeePct } from '@/lib/settings';
 import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
 import { MAX_BOOKING_RANGE_DAYS, addDaysIso, todayIso } from '@/lib/geo';
 import { ListingDetailSkeleton } from '@/components/skeleton';
-import { MarketplaceOfferForm } from '@/components/marketplace-offer-form';
 import { InsuranceAmount } from '@/components/insurance-amount';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
 import { demoTaxCents } from '@/lib/demo-tax';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { calculateRentalPricing } from '@/lib/rental-pricing';
+import { savedSearchState, saveSearchState } from '@/lib/search-state';
+import { listingAvailabilityError } from '@/lib/listing-availability';
+import './marketplace.css';
 import {
   MapPin, CheckCircle2, Truck,
   Lock, Star, MessageSquare, Heart, Share2, ChevronRight, ShieldCheck,
@@ -49,6 +52,9 @@ export function ListingPage({ id }: { id: string }) {
   const [startDate, setStartDate] = useState(todayIso());
   const [endDate, setEndDate] = useState(tomorrowIso());
   const [liked, setLiked] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
+  const [favoriteBusyIds, setFavoriteBusyIds] = useState<Set<string>>(new Set());
   const [shared, setShared] = useState(false);
   const [ownerAvatarFailed, setOwnerAvatarFailed] = useState(false);
   const [shareError, setShareError] = useState(false);
@@ -64,17 +70,15 @@ export function ListingPage({ id }: { id: string }) {
   const [reviewsRetry, setReviewsRetry] = useState(0);
   const [favoriteError, setFavoriteError] = useState(false);
   const [favoriteRetry, setFavoriteRetry] = useState(0);
-  const { enabled: privateOffersEnabled, error: privateOffersFlagError } = useFeatureFlag('private_offers');
   const { enabled: biddingEnabled, error: biddingFlagError } = useFeatureFlag('bidding');
   const durationDiscounts = useFeatureFlag('duration_discounts');
   const insuranceFlag = useFeatureFlag('insurance');
-  const [offerSent, setOfferSent] = useState(false);
+  const loadedListingId = listing?.id;
 
   useEffect(() => {
     let cancelled = false;
     setListing(undefined);
     setListingError(false);
-    setOfferSent(false);
     setSimilar([]);
     setCategoryId(null);
     setOwnerAvatarFailed(false);
@@ -86,8 +90,11 @@ export function ListingPage({ id }: { id: string }) {
         setListing(row ? toUiListing(row) : null);
         setCategoryId(row?.category_id ?? null);
         const start = row?.availability_start && row.availability_start > todayIso() ? row.availability_start : todayIso();
-        setStartDate(start);
-        setEndDate(addDaysIso(start, 1));
+        const saved = savedSearchState();
+        const keepDates = !listingAvailabilityError(saved.start, saved.end) && saved.start >= start
+          && (!row?.availability_end || saved.end <= row.availability_end);
+        setStartDate(keepDates ? saved.start : start);
+        setEndDate(keepDates ? saved.end : addDaysIso(start, 1));
       })
       .catch(() => { if (!cancelled) { setListingError(true); setListing(null); } });
     return () => { cancelled = true; };
@@ -114,21 +121,23 @@ export function ListingPage({ id }: { id: string }) {
   }, [listing?.id, listing?.owner.id, reviewsRetry]);
 
   useEffect(() => {
-    if (!user || !listing) { setLiked(false); setFavoriteError(false); return; }
+    if (!user || !loadedListingId) { setLiked(false); setFavoriteIds(new Set()); setFavoritesLoading(false); setFavoriteError(false); return; }
     let cancelled = false;
+    setFavoritesLoading(true);
     setFavoriteError(false);
     fetchFavoriteListingIds(user.id)
-      .then((ids) => { if (!cancelled) setLiked(ids.has(listing.id)); })
-      .catch(() => { if (!cancelled) setFavoriteError(true); });
+      .then((ids) => { if (!cancelled) { setLiked(ids.has(loadedListingId)); setFavoriteIds(ids); } })
+      .catch(() => { if (!cancelled) setFavoriteError(true); })
+      .finally(() => { if (!cancelled) setFavoritesLoading(false); });
     return () => { cancelled = true; };
-  }, [user, listing?.id, favoriteRetry]);
+  }, [user, loadedListingId, favoriteRetry]);
 
   useEffect(() => {
-    if (!listing) return;
+    if (!loadedListingId) return;
     let cancelled = false;
     setAvailabilityLoading(true);
     setAvailabilityError(false);
-    fetchUnavailableDates(listing.id)
+    fetchUnavailableDates(loadedListingId)
       .then(({ blocked, booked }) => {
         if (cancelled) return;
         setBlockedDates(blocked);
@@ -137,7 +146,7 @@ export function ListingPage({ id }: { id: string }) {
       .catch(() => { if (!cancelled) setAvailabilityError(true); })
       .finally(() => { if (!cancelled) setAvailabilityLoading(false); });
     return () => { cancelled = true; };
-  }, [listing?.id, availabilityRetry]);
+  }, [loadedListingId, availabilityRetry]);
 
   // "Similar rentals" is a real query against the same category, minus this listing.
   useEffect(() => {
@@ -151,17 +160,20 @@ export function ListingPage({ id }: { id: string }) {
     return () => { cancelled = true; };
   }, [categoryId, id, similarRetry]);
 
-  async function handleToggleFavorite() {
+  async function handleToggleFavorite(listingId = listing?.id) {
     if (!user) { openSignIn(); return; }
-    if (!listing) return;
-    const next = !liked;
-    setLiked(next);
+    if (!listingId || favoritesLoading || favoriteError || favoriteBusyIds.has(listingId)) return;
+    const next = !favoriteIds.has(listingId);
+    setFavoriteBusyIds(previous => new Set(previous).add(listingId));
     setFavoriteError(false);
     try {
-      if (next) await addFavorite(user.id, listing.id); else await removeFavorite(user.id, listing.id);
+      if (next) await addFavorite(user.id, listingId); else await removeFavorite(user.id, listingId);
+      setFavoriteIds(previous => { const ids = new Set(previous); if (next) ids.add(listingId); else ids.delete(listingId); return ids; });
+      if (listingId === listing?.id) setLiked(next);
     } catch {
-      setLiked(!next);
       setFavoriteError(true);
+    } finally {
+      setFavoriteBusyIds(previous => { const ids = new Set(previous); ids.delete(listingId); return ids; });
     }
   }
 
@@ -221,7 +233,7 @@ export function ListingPage({ id }: { id: string }) {
     return false;
   })();
   const isOwner = listing.owner.id === user?.id;
-  const canBook = !isOwner && listing.available && datesValid && !rangeUnavailable && !availabilityLoading && !availabilityError;
+  const canBook = !isOwner && listing.listingStatus === 'published' && listing.available && datesValid && !rangeUnavailable && !availabilityLoading && !availabilityError;
   const rentalOptions = [1, 3, 7, 30].map((optionDays) => {
     const optionPrice = calculateRentalPricing(listing.pricePerDay, optionDays, {
       weeklyEnabled: durationDiscounts.enabled && listing.weeklyDiscountEnabled,
@@ -250,10 +262,14 @@ export function ListingPage({ id }: { id: string }) {
     }
   };
 
-  const goToCheckout = () => { if (canBook) navigate({ name: 'checkout', id: listing.id, startDate, endDate }); };
+  const goToCheckout = () => {
+    if (!canBook) return;
+    saveSearchState({ ...savedSearchState(), start: startDate, end: endDate });
+    navigate({ name: 'checkout', id: listing.id, startDate, endDate });
+  };
 
   const bookingPanel = (
-    <Surface id="listing-booking" className="listing-booking-panel p-5 sm:p-6">
+    <section id="listing-booking" className="p1-booking-panel">
       <div className="flex items-end justify-between gap-3">
         <p className="flex items-baseline gap-1.5">
           <span className="text-[32px] leading-none font-extrabold text-main font-display tnum">${listing.pricePerDay}</span>
@@ -361,7 +377,6 @@ export function ListingPage({ id }: { id: string }) {
       <p className="text-xs text-sec text-center mt-3 flex items-center justify-center gap-1.5">
         <Lock size={13} aria-hidden="true" /> {listing.instantBooking ? 'Dates reserve now; payment confirms the rental.' : 'No charge until the owner approves.'}
       </p></>}
-      {listing.negotiationEnabled && !isOwner && privateOffersEnabled && <a href="#rental-offer" className="flex justify-center items-center min-h-11 text-sm font-semibold text-accent mt-2">Make an offer <ChevronRight size={15} aria-hidden="true" /></a>}
       {listing.auctionEnabled && biddingEnabled && (isOwner
         ? <button type="button" onClick={() => navigate({ name: 'bidding' })} className="flex justify-center items-center min-h-11 text-sm font-semibold text-accent mt-2">Manage competitive bidding <ChevronRight size={15} aria-hidden="true" /></button>
         : <a href={`/bidding/${listing.id}`} onClick={event => {
@@ -369,36 +384,38 @@ export function ListingPage({ id }: { id: string }) {
           event.preventDefault();
           navigate({ name: 'bidding-detail', id: listing.id });
         }} className="flex justify-center items-center min-h-11 text-sm font-semibold text-accent mt-2">View auction in Bidding <ChevronRight size={15} aria-hidden="true" /></a>)}
-    </Surface>
+    </section>
   );
 
   return (
-    <div className="listing-detail animate-fade-in">
+    <div className="listing-detail marketplace-listing">
 
-      <div className="max-w-[1280px] mx-auto px-4 sm:px-6 py-5 sm:py-8">
-        <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-xs text-sec mb-5">
+      <div className="p1-container p1-page p1-details">
+        <nav aria-label="Breadcrumb" className="p1-breadcrumb">
           <a href="/" className="hover:text-accent">Home</a><ChevronRight size={12} aria-hidden="true" />
           <a href={categoryId ? `/search?category=${encodeURIComponent(categoryId)}` : '/search'} className="text-accent font-medium">{listing.category || 'Rentals'}</a>
           <ChevronRight size={12} aria-hidden="true" /><span aria-current="page" className="truncate max-w-60">{listing.title}</span>
         </nav>
-        <div className="listing-detail-grid">
+        <MarketplaceGallery images={listing.images} title={listing.title} />
+        <div className="p1-detail-layout">
+        <div className="p1-detail-content min-w-0">
         <div className="listing-heading min-w-0">
         <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-[26px] sm:text-[32px] leading-tight font-extrabold text-main font-display mt-1">
+            <h1>
               {listing.title}
             </h1>
-            <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 mt-2.5 text-sm">
+            <div className="p1-detail-meta">
               <span className="inline-flex items-center gap-1.5"><Rating value={listing.rating} count={listing.reviewCount} size="md" />{listing.reviewCount > 0 && <span className="text-sec">owner reviews</span>}</span>
               {listing.pickup && (
                 <span className="flex items-center gap-1 text-sec"><MapPin size={14} />{listing.pickup}</span>
               )}
-              {listing.verifiedOwner && <VerifiedBadge />}
             </div>
             {shareError && <Alert tone="warning" className="mb-4">Couldn't copy the link. You can copy the address from your browser.</Alert>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {!isOwner && <button type="button" className="listing-text-action" aria-label={liked ? 'Remove from favorites' : 'Save to favorites'} onClick={() => void handleToggleFavorite()}>
+            {!isOwner && <button type="button" className="listing-text-action" disabled={!!user && (favoritesLoading || favoriteError || favoriteBusyIds.has(listing.id))}
+              aria-busy={favoriteBusyIds.has(listing.id)} aria-label={liked ? 'Remove from favorites' : 'Save to favorites'} onClick={() => void handleToggleFavorite()}>
               <Heart size={17} aria-hidden="true" className={liked ? 'fill-favorite text-favorite' : 'text-sec'} />{liked ? 'Saved' : 'Save'}
             </button>}
             <button type="button" className="listing-text-action" aria-label={shared ? 'Link copied' : 'Copy link'} onClick={() => void handleShare()}>
@@ -413,14 +430,17 @@ export function ListingPage({ id }: { id: string }) {
           </Alert>
         )}
         </div>
-          {/* Left: gallery + detail */}
-          <div className="listing-gallery min-w-0">
-            <ImageGallery images={listing.images} title={listing.title} />
-          </div>
-          <aside className="listing-booking min-w-0" aria-label="Book this item">
-            <div className="listing-booking-sticky">{bookingPanel}</div>
-          </aside>
-          <div className="listing-details min-w-0 space-y-7">
+          <div className="listing-details min-w-0">
+            <section className="p1-detail-owner" aria-label="Rental owner">
+              {ownerAvatarFailed || !listing.owner.avatar
+                ? <span className="w-12 h-12 rounded-full bg-accent-soft text-accent grid place-items-center font-bold shrink-0" aria-hidden="true">{listing.owner.name.trim().slice(0, 1).toUpperCase()}</span>
+                : <img src={listing.owner.avatar} alt="" onError={() => setOwnerAvatarFailed(true)} className="w-12 h-12 rounded-full object-cover shrink-0" />}
+              <div><p className="text-sm text-sec">Rent from</p><p className="flex items-center gap-2 font-semibold text-main">{listing.owner.name}
+                {listing.verifiedOwner && <VerifiedBadge />}</p><p className="text-xs text-sec mt-1">{listing.reviewCount ? `${listing.reviewCount} owner reviews` : 'No owner reviews yet'}</p></div>
+              {!isOwner && <Button variant="secondary" icon={<MessageSquare size={16} aria-hidden="true" />} onClick={() => void handleMessageOwner()}>Message owner</Button>}
+              {isOwner && <Button variant="secondary" onClick={() => navigate({ name: 'edit-listing', id: listing.id })}>Edit your listing</Button>}
+              {messageError && <Alert tone="error" className="w-full">{messageError}</Alert>}
+            </section>
             {listing.auctionEnabled && biddingFlagError && <Alert tone="error" title="Could not check competitive bidding">{biddingFlagError} Retrying automatically.</Alert>}
             <div className="listing-trust-strip flex flex-wrap gap-x-5 gap-y-2 text-xs text-sec">
               <span className="inline-flex items-center gap-2"><CheckCircle2 size={16} className="text-accent" aria-hidden="true" />{listing.instantBooking ? 'Instant booking rules apply' : 'Owner approval required'}</span>
@@ -460,7 +480,7 @@ export function ListingPage({ id }: { id: string }) {
 
             {listing.whatsIncluded.length > 0 && (
               <Block title="What's included">
-                <ul className="grid sm:grid-cols-2 gap-2.5">
+                <ul className="p1-included">
                   {listing.whatsIncluded.map((item) => (
                     <li key={item} className="flex items-center gap-2 text-sm text-sec">
                       <CheckCircle2 size={16} className="text-success shrink-0" />
@@ -505,35 +525,6 @@ export function ListingPage({ id }: { id: string }) {
             )}
             </div>
 
-            {/* Owner trust profile */}
-            <Block title="Meet the owner">
-              <div className="listing-owner-card">
-                <div className="flex items-center gap-4">
-                  {ownerAvatarFailed
-                    ? <span className="w-12 h-12 rounded-full bg-accent-soft text-accent grid place-items-center font-bold shrink-0" aria-hidden="true">{listing.owner.name.trim().slice(0, 1).toUpperCase()}</span>
-                    : <img src={listing.owner.avatar} alt="" onError={() => setOwnerAvatarFailed(true)} className="w-12 h-12 rounded-full object-cover shrink-0" />}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold text-main text-lg font-display">{listing.owner.name}</h3>
-                      {listing.owner.verified && <VerifiedBadge label="Identity verified" size="xs" />}
-                    </div>
-                    <div className="flex items-center gap-4 mt-1">
-                      <Rating value={listing.owner.rating} count={listing.owner.rentals} size="sm" />
-                    </div>
-                  </div>
-                </div>
-                {!isOwner && <Button
-                  variant="secondary"
-                  className="mt-4"
-                  icon={<MessageSquare size={16} />}
-                  onClick={() => void handleMessageOwner()}
-                >
-                  Message {listing.owner.name.split(' ')[0]}
-                </Button>}
-                {messageError && <Alert tone="error" className="mt-3">{messageError}</Alert>}
-              </div>
-            </Block>
-
             {(listing.pickup || listing.delivery) && (
               <Block title="Pickup and delivery">
                 <ul className="space-y-2.5 text-sm text-sec">
@@ -564,7 +555,7 @@ export function ListingPage({ id }: { id: string }) {
                   No reviews for this owner yet. Reviews appear here once a rental is completed.
                 </p>
               ) : (
-                <div className="grid sm:grid-cols-2 gap-3">
+                <div className="p1-reviews">
                   {listing.reviews.map((review) => (
                     <Surface key={review.id} className="p-4">
                       <div className="flex items-center gap-3">
@@ -586,31 +577,9 @@ export function ListingPage({ id }: { id: string }) {
               )}
             </Block>
             </div>
-
-            {listing.negotiationEnabled && listing.owner.id !== user?.id && privateOffersFlagError && (
-              <Alert tone="error" title="Could not check offer availability">
-                {privateOffersFlagError} Retrying automatically.
-              </Alert>
-            )}
-            {listing.negotiationEnabled && listing.owner.id !== user?.id && privateOffersEnabled && (
-              <section id="rental-offer" className="scroll-mt-24">
-                <h2 className="text-lg font-bold text-main">Make an offer</h2>
-                {offerSent
-                  ? <Alert tone="success">Your offer was sent. You can follow the negotiation from Requests &amp; offers.</Alert>
-                  : user
-                    ? <MarketplaceOfferForm
-                      listingId={listing.id}
-                      advertisedPrice={listing.pricePerDay}
-                      rules={listing.offerRules}
-                      bookedDates={bookedDates}
-                      blockedDates={blockedDates}
-                      onSent={() => setOfferSent(true)}
-                    />
-                    : <Button variant="secondary" onClick={openSignIn}>Sign in to make an offer</Button>}
-              </section>
-            )}
           </div>
-
+        </div>
+          <aside className="min-w-0" aria-label="Book this item">{bookingPanel}</aside>
         </div>
 
         {similarError && <Alert tone="warning" className="mt-8">Similar rentals couldn't be loaded. <Button size="sm" variant="secondary" onClick={() => setSimilarRetry(attempt => attempt + 1)}>Retry similar rentals</Button></Alert>}
@@ -623,9 +592,11 @@ export function ListingPage({ id }: { id: string }) {
               onAction={() => navigate({ name: 'search', category: categoryId ?? undefined })}
               className="mb-5"
             />
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="p1-item-grid">
               {similar.map((item) => (
-                <ListingCard key={item.id} listing={item} onClick={() => navigate({ name: 'listing', id: item.id })} />
+                <ListingCard key={item.id} listing={item} onClick={() => navigate({ name: 'listing', id: item.id })}
+                  favorited={favoriteIds.has(item.id)} favoriteBusy={!!user && (favoritesLoading || favoriteError || favoriteBusyIds.has(item.id))}
+                  onToggleFavorite={() => void handleToggleFavorite(item.id)} />
               ))}
             </div>
           </div>

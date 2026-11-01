@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { MonthGrid } from '@/components/date-range-picker';
 import { IconButton } from '@/components/ui';
 import { addDaysIso, todayIso } from '@/lib/geo';
-import { LISTING_SCHEDULING_DAYS, listingAvailabilityError } from '@/lib/listing-availability';
+import { LISTING_MAX_AVAILABLE_DAYS, LISTING_SCHEDULING_DAYS, listingAvailabilityError } from '@/lib/listing-availability';
 
 const NO_DATES = new Set<string>();
 const label = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -22,7 +22,8 @@ export function ListingAvailabilityPicker({ start, end, onChange, error }: {
   const [selectionError, setSelectionError] = useState<string>();
   const reducedMotion = useReducedMotion();
   const minimum = choosingEnd ? addDaysIso(start, 1) : today;
-  const maximum = choosingEnd ? horizon : lastStart;
+  const rangeEnd = start ? addDaysIso(start, LISTING_MAX_AVAILABLE_DAYS) : horizon;
+  const maximum = choosingEnd ? (rangeEnd < horizon ? rangeEnd : horizon) : lastStart;
   const nextMonth = new Date(month.getFullYear(), month.getMonth() + 1, 1);
   const firstMonth = new Date(`${minimum}T12:00:00`);
   const lastMonth = new Date(`${maximum}T12:00:00`);
@@ -44,6 +45,7 @@ export function ListingAvailabilityPicker({ start, end, onChange, error }: {
   }
 
   return <section id="listing-availability" tabIndex={-1} aria-label="Listing availability" aria-describedby={currentError ? 'listing-availability-error' : undefined} className="space-y-4">
+    <p className="text-sm text-sec">Choose up to 30 calendar days, then block the days your item is not available. The return date is not charged.</p>
     <div className="grid grid-cols-2 gap-3" aria-label="Selected availability dates">
       <button type="button" aria-pressed={!choosingEnd} onClick={() => { setChoosingEnd(false); const date = new Date(`${start || today}T12:00:00`); setMonth(new Date(date.getFullYear(), date.getMonth(), 1)); }}
         className={`rounded-card-lg border p-3 text-left transition ${!choosingEnd ? 'border-accent bg-accent-soft ring-1 ring-accent/20' : 'border-app bg-card hover:border-accent/50'}`}>

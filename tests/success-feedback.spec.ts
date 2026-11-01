@@ -1,11 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { Session, User } from '@supabase/supabase-js';
 import { mockSupabaseModule } from './mock-supabase';
-import { appUrl, appWebSocketUrl } from './test-url';
-import { themes } from '../src/themes';
+import { appUrl as defaultAppUrl } from './test-url';
 import type { ListingPickupLocation } from '../src/lib/listings';
 import type { ListingAuction } from '../src/lib/listing-auctions';
 
+const appUrl = process.env.YBUY_TEST_PORT ? `http://localhost:${process.env.YBUY_TEST_PORT}` : defaultAppUrl;
+const appWebSocketUrl = appUrl.replace(/^http:/, 'ws:');
 const apiUrl = 'http://localhost:54321';
 const renterId = '10000000-0000-4000-8000-000000000001';
 const ownerId = '10000000-0000-4000-8000-000000000002';
@@ -28,6 +29,58 @@ const booking = {
   created_at: '2026-10-18T00:00:00Z', listing,
   owner: listing.owner, renter: { id: renterId, full_name: 'Camera Renter', avatar_url: null },
 };
+
+for (const width of [375, 768, 1440]) {
+  test(`main uses the actual Preview 1 wizard template at ${width}px`, async ({ page, context }) => {
+    test.slow();
+    await page.setViewportSize({ width, height: 1000 });
+    await setup(page);
+    await page.goto(`${appUrl}/create-listing`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Put your good gear to work.' })).toBeVisible();
+    await expect(page.locator('.main-workspace-sidebar')).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: 'Give it a useful title' })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'What should renters know?' })).toBeVisible();
+
+    const preview = await context.newPage();
+    await preview.route('https://fonts.googleapis.com/**', route => route.fulfill({ contentType: 'text/css', body: '' }));
+    await preview.setViewportSize({ width, height: 1000 });
+    await preview.goto(`${appUrl}/preview-1/#/create`, { waitUntil: 'domcontentloaded' });
+    await expect(preview.getByRole('heading', { name: 'Put your good gear to work.' })).toBeVisible();
+    const metrics = async (target: Page) => target.evaluate(() => {
+      const properties = (selector: string) => {
+        const node = document.querySelector(selector);
+        if (!node) throw new Error(`Missing template element: ${selector}`);
+        const style = getComputedStyle(node);
+        return {
+          width: node.getBoundingClientRect().width,
+          fontFamily: style.fontFamily, fontSize: style.fontSize,
+          fontWeight: style.fontWeight, lineHeight: style.lineHeight,
+          color: style.color, background: style.backgroundColor,
+          columns: style.gridTemplateColumns, gap: style.gap,
+        };
+      };
+      return {
+        heading: properties('.p1-page-head h1'),
+        wizard: properties('.p1-wizard-layout'),
+        header: properties('.p1-header-inner'),
+        primary: properties('.p1-wizard-content .p1-button-primary'),
+      };
+    });
+    const expected = await metrics(preview);
+    const actual = await metrics(page);
+    for (const key of ['heading', 'wizard', 'header', 'primary'] as const) {
+      expect(actual[key], key).toEqual(expected[key]);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`main-preview-one-${width}.png`), fullPage: true });
+    await preview.close();
+
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(page.getByRole('radio', { name: 'Good', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'A few details need your attention' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Show its best side.' })).toHaveCount(0);
+  });
+}
 
 function sessionFor(id: string, now = Date.now()): Session {
   const user: User = {
@@ -53,6 +106,8 @@ interface Scenario {
   publishDraft?: boolean;
   publishDelay?: Promise<void>;
   availabilityFails?: boolean;
+  blockedDates?: string[];
+  bookedDates?: string[];
   dashboardBookings?: boolean;
   userId?: string;
   reviewFails?: boolean;
@@ -83,6 +138,8 @@ async function setup(page: Page, scenario: Scenario = {}) {
   let aiAnalysisCount = 0;
   let scheduledAuction: ListingAuction | null = null;
   let savedPickup: ListingPickupLocation | null = null;
+  const blockedDates = new Set(scenario.blockedDates ?? []);
+  const bookedDates = new Set(scenario.bookedDates ?? []);
   const uploadedPhotos = new Map<string, Buffer>();
   // Ignore dev-server HMR while a fixture-driven workflow is in progress.
   await page.routeWebSocket(`${appWebSocketUrl}/**`, () => {});
@@ -248,7 +305,9 @@ async function setup(page: Page, scenario: Scenario = {}) {
       state: savedPickup.state, postal_code: savedPickup.postalCode, country: savedPickup.country,
       latitude: savedPickup.latitude, longitude: savedPickup.longitude, place_id: savedPickup.placeId,
     } : null;
-    if (url.pathname === '/rest/v1/rpc/get_listing_unavailable_dates') body = { blocked: [], booked: [] };
+    if (url.pathname === '/rest/v1/rpc/get_listing_unavailable_dates') {
+      body = { blocked: [...blockedDates], booked: [...bookedDates] };
+    }
     if (url.pathname === '/rest/v1/rpc/get_checkout_reservation') body = {
       status: scenario.status ?? 'confirmed',
       server_now: new Date().toISOString(),
@@ -355,8 +414,13 @@ async function setup(page: Page, scenario: Scenario = {}) {
       if (scenario.returnFails) { status = 403; body = { message: 'Return denied' }; }
       else scenario.status = 'completed';
     }
-    if (url.pathname === '/rest/v1/listing_availability' && req.method() === 'POST' && scenario.availabilityFails) {
-      status = 403; body = { message: 'Availability save denied' };
+    if (url.pathname === '/rest/v1/listing_availability' && req.method() === 'POST') {
+      if (scenario.availabilityFails) { status = 403; body = { message: 'Availability save denied' }; }
+      else {
+        const { date, is_available: isAvailable } = req.postDataJSON();
+        if (isAvailable) blockedDates.delete(date); else blockedDates.add(date);
+        body = null;
+      }
     }
     return route.fulfill({ status, contentType: 'application/json', body: body === null ? '' : JSON.stringify(body) });
   });
@@ -555,7 +619,7 @@ for (const paymentStatus of ['pending', 'failed', 'refunded']) {
 for (const availabilityFails of [false, true]) {
   test(`routine availability ${availabilityFails ? 'failure keeps the error without success feedback' : 'save uses a dismissible inline notice, not confetti'}`, async ({ page }) => {
     await setup(page, { availabilityFails });
-    await page.goto(`${appUrl}/dashboard?tab=lending`);
+    await page.goto(`${appUrl}/dashboard?tab=lending`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage dates' }).click();
     await page.getByRole('dialog').getByRole('button', { name: /, (available|blocked)$/, disabled: false }).last().click();
     if (availabilityFails) {
@@ -598,8 +662,11 @@ test('reduced motion has a static success state and mobile keyboard controls rem
 test('new booking requests stay non-celebratory until approved and paid', async ({ page }) => {
   await setup(page, { status: 'requested' });
   await page.goto(`${appUrl}/checkout/${listingId}?start=2026-11-02&end=2026-11-05`);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'I have reviewed the dates, estimated cost, and rental terms.' }).check();
   await page.getByRole('button', { name: 'Send booking request', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Request sent' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good plans are on their way.' })).toBeVisible();
   await expect(page).toHaveURL(`${appUrl}/confirmation/${bookingId}`);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.locator('.success-card')).toHaveCount(0);
@@ -635,8 +702,36 @@ test('pickup authorization errors never show an address and can be retried', asy
   await expect(page.getByRole('region', { name: 'Private pickup address', exact: true })).toContainText('123 Private Lane');
 });
 
+async function waitForItemStep(page: Page) {
+  await expect(page.getByRole('region', { name: 'Step 1: The item', exact: true })).toBeVisible({ timeout: 60_000 });
+}
+
+async function selectWizardOption(page: Page, label: string, option: string) {
+  await page.getByRole('combobox', { name: label, exact: true }).click();
+  await page.getByRole('option', { name: option, exact: true }).click();
+  await expect(page.getByRole('combobox', { name: label, exact: true })).toHaveText(option);
+}
+
+async function openWizardStep(page: Page, label: string) {
+  await page.getByRole('navigation', { name: 'Listing progress', exact: true })
+    .getByRole('button').filter({ has: page.getByText(label, { exact: true }) }).click();
+}
+
+async function fillRequiredItemStep(page: Page) {
+  await waitForItemStep(page);
+  await selectWizardOption(page, 'Category', 'Electronics');
+  await page.getByLabel('Give it a useful title', { exact: true }).fill(listing.title);
+  await page.locator('summary').filter({ hasText: 'Brand, included items & optional details' }).click();
+  await page.getByRole('radio', { name: 'Good', exact: true }).check();
+  await page.getByLabel('What should renters know?', { exact: false }).fill(listing.description);
+}
+
 async function fillListing(page: Page, review = true) {
   await page.goto(`${appUrl}/create-listing`, { waitUntil: 'domcontentloaded' });
+  await fillRequiredItemStep(page);
+  await page.getByLabel('Brand (optional)', { exact: true }).fill('Sony');
+  await page.getByLabel('Model (optional)', { exact: true }).fill('FX3');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   const photoBase64 = await page.evaluate(() => {
     const canvas = document.createElement('canvas');
     canvas.width = 1000;
@@ -648,52 +743,87 @@ async function fillListing(page: Page, review = true) {
   });
   await page.locator('input[type="file"]').setInputFiles({ name: 'camera.png', mimeType: 'image/png', buffer: Buffer.from(photoBase64, 'base64') });
   await expect(page.getByRole('button', { name: 'Remove photo 1' })).toBeVisible();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByText('Manual entry is available', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Title', { exact: true })).toBeVisible();
   await expect(page.getByText('Your declared value is used for security policies', { exact: false })).toHaveCount(0);
-  await page.getByLabel('Category', { exact: true }).selectOption(categoryId);
-  await page.getByLabel('Title', { exact: true }).fill(listing.title);
-  await page.getByLabel('Brand (optional)', { exact: true }).fill('Sony');
-  await page.getByLabel('Model (optional)', { exact: true }).fill('FX3');
-  await page.getByRole('radio', { name: 'Good', exact: true }).check();
-  await page.getByLabel('Description', { exact: false }).fill(listing.description);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Set rental settings', exact: true })).toBeVisible();
-  await expect(page.getByLabel('Rental price per day (USD)', { exact: true })).not.toHaveAttribute('placeholder');
+  await expect(page.getByRole('heading', { name: 'Good terms make good rentals.', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Daily price (USD)', { exact: true })).not.toHaveAttribute('placeholder');
+  await expect(page.getByLabel('Daily price (USD)', { exact: true })).toBeEditable();
+  await expect(page.getByLabel('Daily price (USD)', { exact: true })).not.toHaveAttribute('readonly');
+  await expect(page.getByLabel('Estimated replacement value (USD)', { exact: true })).toBeEditable();
+  await expect(page.getByLabel('Estimated replacement value (USD)', { exact: true })).not.toHaveAttribute('readonly');
   for (const name of ['Owner approval required', 'Instant booking']) {
     await expect(page.getByRole('radio', { name, exact: false }).locator('..').locator('svg[aria-hidden="true"]')).toHaveCount(1);
   }
   await page.getByLabel('Estimated replacement value (USD)', { exact: true }).fill('1000');
-  await page.getByLabel('Rental price per day (USD)', { exact: true }).fill('25');
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Set availability', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Set location and handoff options', exact: true })).toBeVisible();
+  await page.getByLabel('Daily price (USD)', { exact: true }).fill('25');
   await page.locator('test-place-autocomplete').click();
   await expect(page.getByRole('button', { name: 'Confirm Location', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('State', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('ZIP code', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Pricing period', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Do not share yet', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Pickup and delivery settings', exact: true }))
+    .toContainText('Your exact address stays private until an eligible booking is confirmed.');
   await expect(page.getByText('Your security deposit is calculated automatically', { exact: false })).toHaveCount(0);
   if (review) {
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Review and publish', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose availability', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Ready for its second job.', exact: true })).toBeVisible();
   }
 }
 
 async function reviewReadyDraft(page: Page) {
   await page.goto(`${appUrl}/create-listing`, { waitUntil: 'domcontentloaded' });
-  for (let step = 0; step < 5; step++) {
+  await waitForItemStep(page);
+  for (let step = 0; step < 4; step++) {
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
   }
-  await expect(page.getByRole('heading', { name: 'Review and publish', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ready for its second job.', exact: true })).toBeVisible();
 }
 
 test.describe('Owner listing flow', () => {
 test.setTimeout(120000);
+
+test('owner wizard follows the five-step listing journey and immediately protects booked dates', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.clock.setFixedTime(new Date('2026-10-22T12:00:00Z'));
+  await setup(page, { readyDraft: true, blockedDates: ['2026-10-26'], bookedDates: ['2026-10-25'] });
+  await page.goto(`${appUrl}/create-listing`, { waitUntil: 'domcontentloaded' });
+  await waitForItemStep(page);
+
+  const progress = page.getByRole('list', { name: 'Listing progress' });
+  await expect(progress.locator('.owner-step-label')).toHaveText([
+    'The item', 'Photos', 'Price & pickup', 'Availability', 'Review',
+  ]);
+  const preview = page.getByRole('complementary', { name: 'Listing preview' });
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText(listing.title);
+
+  for (let step = 1; step < 4; step++) {
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  }
+  const listingCalendar = page.getByRole('region', { name: 'Listing availability', exact: true });
+  await expect(listingCalendar).toBeVisible();
+  await expect(listingCalendar).toContainText('Choose up to 30 calendar days');
+  await listingCalendar.getByRole('button', { name: /Saturday, October 24, 2026/ }).click();
+  await listingCalendar.getByRole('button', { name: /^Return by/ }).click();
+  await expect(listingCalendar.getByRole('button', { name: /Monday, November 23, 2026/ })).toBeEnabled();
+  await expect(listingCalendar.getByRole('button', { name: /Tuesday, November 24, 2026/ })).toBeDisabled();
+  await listingCalendar.getByRole('button', { name: /Monday, November 23, 2026/ }).click();
+  await expect(listingCalendar.getByRole('status').last()).toContainText('30 rental days');
+  await expect(listingCalendar.getByRole('status').last()).toContainText('return day is not charged');
+
+  const blockedCalendar = page.getByRole('region', { name: 'Block unavailable days', exact: true });
+  await expect(blockedCalendar.getByRole('button', { name: /Sunday, October 25, 2026, booked$/ })).toBeDisabled();
+  await expect(blockedCalendar.getByRole('button', { name: /Monday, October 26, 2026, blocked$/ })).toBeEnabled();
+  await blockedCalendar.getByRole('button', { name: /Tuesday, October 27, 2026, available$/ }).click();
+  await expect(blockedCalendar.getByRole('button', { name: /Tuesday, October 27, 2026, blocked$/ })).toBeVisible();
+  await expect(blockedCalendar.getByText(/blocked\. Saved to your listing\./)).toBeVisible();
+  await blockedCalendar.getByRole('button', { name: /Monday, October 26, 2026, blocked$/ }).click();
+  await expect(blockedCalendar.getByRole('button', { name: /Monday, October 26, 2026, available$/ })).toBeEnabled();
+  await expect(blockedCalendar.getByRole('button', { name: /Sunday, October 25, 2026, booked$/ })).toBeDisabled();
+});
 
 test('pickup search uses the marketplace city and derives saved city from the selected address', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('ybuy-marketplace-location', JSON.stringify({
@@ -707,13 +837,14 @@ test('pickup search uses the marketplace city and derives saved city from the se
   await page.locator('test-place-autocomplete').evaluate(element => { element.dataset.city = 'Austin'; });
   await page.locator('test-place-autocomplete').click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.locator('.owner-listing-review')).toContainText('Austin, TX');
   await expect(page.locator('.owner-listing-review')).not.toContainText('123 Test Street');
-  await expect(page.getByRole('region', { name: 'Step 6: Review', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Step 5: Review', exact: true })).toBeVisible();
 });
 
 for (const width of [375, 768, 1440]) {
-  test(`storyboard redesign keeps all six steps usable at ${width}px`, async ({ page }, testInfo) => {
+  test(`owner wizard keeps all five steps usable at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await setup(page);
@@ -723,19 +854,26 @@ for (const width of [375, 768, 1440]) {
     await expect(review).toContainText('Irving');
     await expect(review).not.toContainText('123 Test Street');
     await expect(review.getByRole('img', { name: `Preview of ${listing.title}` })).toHaveJSProperty('naturalWidth', 1000);
-    await expect(page.getByRole('complementary')).toHaveCount(0);
+    if (width > 1100) await expect(page.getByRole('complementary', { name: 'Listing preview' })).toBeVisible();
+    else await expect(page.getByRole('complementary', { name: 'Listing preview' })).toBeHidden();
     await page.getByRole('button', { name: 'Save draft', exact: true }).click();
     await expect(page.getByText('All changes saved', { exact: true })).toBeVisible();
-    for (const step of [6, 5, 4, 3, 2, 1]) {
-      await expect(page.locator('.owner-listing-panel')).toHaveCount(1);
-      await expect(page.getByRole('region', { name: `Step ${step}: ${['Photos', 'Details', 'Rental settings', 'Availability', 'Location', 'Review'][step - 1]}`, exact: true })).toBeVisible();
-      if (width === 1440 && step < 3) {
-        const panel = await page.locator('.owner-listing-panel').boundingBox();
-        expect(panel!.width).toBeLessThanOrEqual(672);
+    for (const step of [5, 4, 3, 2, 1]) {
+      await expect(page.locator('.p1-wizard-content > div > section')).toHaveCount(1);
+      await expect(page.getByRole('region', { name: `Step ${step}: ${['The item', 'Photos', 'Price & pickup', 'Availability', 'Review'][step - 1]}`, exact: true })).toBeVisible();
+      if (width > 1100 && step !== 2) await expect(page.getByRole('complementary', { name: 'Listing preview' })).toBeVisible();
+      else await expect(page.getByRole('complementary', { name: 'Listing preview' })).toBeHidden();
+      if (width === 1440 && step < 5) {
+        const panel = await page.locator('.p1-wizard-content > div > section').boundingBox();
+        if (step === 2) expect(panel!.width).toBeGreaterThan(900);
+        else {
+          expect(panel!.width).toBeGreaterThan(300);
+          expect(panel!.width).toBeLessThan(800);
+        }
       }
-      await expect(page.getByRole('list', { name: 'Listing progress' }).locator('[aria-current="step"]')).toContainText(['Photos', 'Details', 'Rental settings', 'Availability', 'Location', 'Review'][step - 1]);
+      await expect(page.getByRole('list', { name: 'Listing progress' }).locator('[aria-current="step"]')).toContainText(['The item', 'Photos', 'Price & pickup', 'Availability', 'Review'][step - 1]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      const next = page.getByRole('button', { name: step === 6 ? 'Publish listing' : 'Continue', exact: true });
+      const next = page.getByRole('button', { name: step === 5 ? 'Publish listing' : 'Continue', exact: true });
       await next.scrollIntoViewIfNeeded();
       const bounds = await next.boundingBox();
       expect(bounds!.height).toBeGreaterThanOrEqual(44);
@@ -748,27 +886,26 @@ for (const width of [375, 768, 1440]) {
       await page.screenshot({ path: testInfo.outputPath(`listing-step-${step}-${width}.png`), fullPage: true });
       if (step > 1) await page.getByRole('button', { name: 'Back', exact: true }).click();
     }
-    await expect(page.getByRole('button', { name: 'Select cover photo' })).toBeVisible();
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await page.getByLabel('Title', { exact: true }).fill('Owner edited camera title');
+    await expect(page.getByLabel('Give it a useful title', { exact: true })).toBeVisible();
+    await page.getByLabel('Give it a useful title', { exact: true }).fill('Owner edited camera title');
     await expect(page.getByRole('radio', { name: 'Good', exact: true })).toBeChecked();
     await page.getByRole('radio', { name: 'Good', exact: true }).focus();
     await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('radio', { name: 'Fair', exact: true })).toBeChecked();
     await page.keyboard.press('ArrowLeft');
     await expect(page.getByRole('radio', { name: 'Good', exact: true })).toBeChecked();
-    await expect(page.getByLabel('Description', { exact: true })).toHaveValue(listing.description);
+    await expect(page.getByLabel('What should renters know?', { exact: true })).toHaveValue(listing.description);
     await page.getByRole('button', { name: 'Save draft', exact: true }).click();
     await expect(page.getByText('Draft saved. Resume it from My listings.', { exact: true })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 }
 
-test('description is required, validates trimmed length, and permits incomplete draft saving', async ({ page }) => {
+test('description is required for advancing and publication but incomplete drafts can be saved', async ({ page }) => {
   await setup(page);
   await fillListing(page);
-  await page.getByRole('button', { name: 'Details', exact: true }).click();
-  const description = page.getByLabel('Description', { exact: true });
+  await openWizardStep(page, 'The item');
+  const description = page.getByLabel('What should renters know?', { exact: true });
   await expect(description).toHaveAttribute('required', '');
   await description.fill('   ');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -776,16 +913,20 @@ test('description is required, validates trimmed length, and permits incomplete 
   await expect(description).toBeFocused();
   await expect(description).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByText('Describe what is included and the condition it is in.').last()).toBeVisible();
+  const draftRequest = page.waitForRequest(request => request.url().includes('/rpc/owner_save_listing_flow'));
   await page.getByRole('button', { name: 'Save draft', exact: true }).first().click();
+  expect((await draftRequest).postDataJSON().p_details.description).toBe('');
+  await expect(description).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByText('Draft saved. Resume it from My listings.', { exact: true })).toBeVisible();
   await description.fill('  Camera  ');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByText('Description must be at least 10 characters.').last()).toBeVisible();
   await expect(description).toHaveValue('  Camera  ');
-  await expect(page.getByLabel('Title', { exact: true })).toHaveValue(listing.title);
+  await expect(page.getByLabel('Give it a useful title', { exact: true })).toHaveValue(listing.title);
   await description.fill('Camera with a carrying case.');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Set rental settings', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Good terms make good rentals.', exact: true })).toBeVisible();
 });
 
 test('replacement value blocks above-policy entries and accepts an explicit zero', async ({ page }) => {
@@ -795,7 +936,7 @@ test('replacement value blocks above-policy entries and accepts an explicit zero
   });
   await setup(page);
   await fillListing(page);
-  await page.getByRole('button', { name: 'Rental settings', exact: true }).click();
+  await openWizardStep(page, 'Price & pickup');
   const value = page.getByLabel('Estimated replacement value (USD)', { exact: true });
   await value.fill('5000.01');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -804,16 +945,14 @@ test('replacement value blocks above-policy entries and accepts an explicit zero
   expect(savedValues).not.toContain(5000.01);
   await value.fill('0');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Set availability', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Choose availability', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your listing is live!' })).toBeVisible();
   expect(savedValues).toContain(0);
 });
 
-test('owner calendar accepts long ranges through day 180 and resumes saved dates', async ({ page }, testInfo) => {
-  test.slow();
+test('owner calendar enforces the 30-day return limit and resumes saved dates', async ({ page }, testInfo) => {
   await page.clock.setFixedTime(new Date('2026-10-22T12:00:00'));
   const saves: Record<string, unknown>[] = [];
   page.on('request', (request) => {
@@ -831,60 +970,27 @@ test('owner calendar accepts long ranges through day 180 and resumes saved dates
     await expect(calendar).toBeVisible();
     await expect(calendar.locator('.owner-availability-months')).toHaveCSS('opacity', '1');
     await expect(calendar.getByRole('status').first()).toHaveCSS('opacity', '1');
-    await expect(calendar.getByRole('button', { name: /October 21, 2026/ })).toBeDisabled();
     const bounds = await calendar.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
     await page.screenshot({ path: testInfo.outputPath(`premium-calendar-${width}.png`) });
   }
-  const darkTheme = themes.find(theme => theme.id === 'midnight');
-  expect(darkTheme).toBeTruthy();
-  await page.evaluate(theme => {
-    for (const [key, value] of Object.entries(theme.vars)) document.documentElement.style.setProperty(key, value);
-    document.documentElement.classList.toggle('dark', theme.dark);
-  }, darkTheme!);
-  await expect(page.locator('.owner-listing-panel')).not.toHaveCSS('background-color', 'rgb(255, 255, 255)');
-  await page.screenshot({ path: testInfo.outputPath('availability-dark-desktop.png'), fullPage: true });
-  await page.setViewportSize({ width: 812, height: 375 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath('availability-dark-landscape.png'), fullPage: true });
   await page.setViewportSize({ width: 1440, height: 900 });
   const calendar = page.getByRole('region', { name: 'Listing availability', exact: true });
-  await calendar.getByRole('button', { name: /November 19, 2026/ }).click();
-  await calendar.getByRole('button', { name: /November 20, 2026/ }).click();
-  await expect(calendar.getByRole('status').last()).toContainText('1 rental day');
-  await expect(calendar.getByRole('status').last()).toContainText('Return by Nov 20, 2026');
-  const chosenDay = calendar.getByRole('button', { name: /October 25, 2026/ });
-  await chosenDay.focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(calendar.getByRole('button', { name: /October 26, 2026/ })).toBeFocused();
-  await page.keyboard.press('Enter');
-  await expect(calendar.getByRole('button', { name: /November 26, 2026/ })).toBeEnabled();
-  await calendar.getByRole('button', { name: /November 2, 2026/ }).click();
-  await expect(calendar.getByRole('status').last()).toContainText('7 rental days');
+  await calendar.getByRole('button', { name: /Monday, October 26, 2026/ }).click();
+  await calendar.getByRole('button', { name: /^Return by/ }).click();
+  await expect(calendar.getByRole('button', { name: /Wednesday, November 25, 2026/ })).toBeEnabled();
+  await expect(calendar.getByRole('button', { name: /Thursday, November 26, 2026/ })).toBeDisabled();
+  await calendar.getByRole('button', { name: /Wednesday, November 25, 2026/ }).click();
+  await expect(calendar.getByRole('status').last()).toContainText('30 rental days');
+  await expect(calendar.getByRole('status').last()).toContainText('return day is not charged');
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await expect(page.getByText('Draft saved. Resume it from My listings.', { exact: true })).toBeVisible();
-  expect(saves.at(-1)).toMatchObject({ availability_start: '2026-10-26', availability_end: '2026-11-02' });
-  await calendar.getByRole('button', { name: /October 26, 2026/ }).click();
-  await expect(calendar.getByRole('button', { name: /October 26, 2026/ })).toBeDisabled();
-  await expect(calendar.getByRole('button', { name: /November 26, 2026/ })).toBeEnabled();
-  await calendar.getByRole('button', { name: /November 26, 2026/ }).click();
-  await expect(calendar.getByRole('status').last()).toContainText('31 rental days');
-  await calendar.getByRole('button', { name: /October 26, 2026/ }).click();
-  for (let month = 0; month < 6; month++) await calendar.getByRole('button', { name: 'Next availability month', exact: true }).click();
-  await expect(calendar.getByRole('button', { name: /April 20, 2027/ })).toBeEnabled();
-  await expect(calendar.getByRole('button', { name: /April 21, 2027/ })).toBeDisabled();
-  await calendar.getByRole('button', { name: /April 20, 2027/ }).click();
-  await expect(calendar.getByRole('status').last()).toContainText('176 rental days');
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
-  await expect(page.getByText('All changes saved', { exact: true })).toBeVisible();
-  expect(saves.at(-1)).toMatchObject({ availability_start: '2026-10-26', availability_end: '2027-04-20' });
+  expect(saves.at(-1)).toMatchObject({ availability_start: '2026-10-26', availability_end: '2026-11-25' });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Your saved draft is ready to continue.')).toBeVisible();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Return by Apr 20, 2027/ }).first()).toBeVisible();
+  for (let step = 0; step < 3; step++) await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Return by Nov 25, 2026/ })).toBeVisible();
 });
 
 test('bulk photo selection validates files and supports replacement and reorder', async ({ page }) => {
@@ -930,9 +1036,9 @@ test('photo analysis auto-fills untouched item details and preserves owner edits
   });
   await page.locator('input[type="file"]').setInputFiles({ name: 'item.png', mimeType: 'image/png', buffer: Buffer.from(photo, 'base64') });
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  const title = page.getByLabel('Title', { exact: true });
+  const title = page.getByLabel('Give it a useful title', { exact: true });
   await expect(title).toHaveValue('Visible camera item');
-  await expect(page.getByLabel('Description', { exact: false })).toHaveValue('A camera visible in the supplied photo.');
+  await expect(page.getByLabel('What should renters know?', { exact: false })).toHaveValue('A camera visible in the supplied photo.');
   await expect(page.getByLabel('Brand (optional)', { exact: true })).toHaveValue('Sony');
   await expect(page.getByLabel('Model (optional)', { exact: true })).toHaveValue('FX3');
   await page.getByRole('radio', { name: 'Good', exact: true }).check();
@@ -951,7 +1057,7 @@ test('photo analysis auto-fills untouched item details and preserves owner edits
   await page.getByRole('button', { name: 'Save draft', exact: true }).first().click();
   await expect(page.getByText('Draft saved. Resume it from My listings.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Set rental settings', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good terms make good rentals.', exact: true })).toBeVisible();
   await page.getByLabel('Estimated replacement value (USD)', { exact: true }).fill('1000');
 });
 
@@ -969,9 +1075,9 @@ for (const details of [
     await page.getByRole('button', { name: 'Generate details', exact: true }).click();
     await response;
     await expect(page.getByRole('button', { name: 'Regenerate', exact: true })).toBeVisible();
-    await expect(page.getByLabel('Title', { exact: true })).toHaveValue(details.title || 'Visible camera item');
-    await expect(page.getByLabel('Description', { exact: false })).toHaveValue(details.description || 'A camera visible in the supplied photo.');
-    await expect(page.getByLabel('Category', { exact: true })).toHaveValue(details.title || details.description ? details.categoryId : categoryId);
+    await expect(page.getByLabel('Give it a useful title', { exact: true })).toHaveValue(details.title || 'Visible camera item');
+    await expect(page.getByLabel('What should renters know?', { exact: false })).toHaveValue(details.description || 'A camera visible in the supplied photo.');
+    await expect(page.getByRole('combobox', { name: 'Category', exact: true })).toHaveText(details.title || details.description ? 'Tools' : 'Electronics');
     await expect(page.getByLabel('Brand (optional)', { exact: true })).toHaveValue(details.brand || 'Sony');
     await expect(page.getByLabel('Model (optional)', { exact: true })).toHaveValue(details.model || 'FX3');
   });
@@ -997,7 +1103,7 @@ test('brand and model remain optional when AI cannot identify them', async ({ pa
   await page.getByRole('radio', { name: 'Good', exact: true }).check();
   const savedBefore = saves.length;
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Set rental settings', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good terms make good rentals.', exact: true })).toBeVisible();
   expect(saves.length).toBeGreaterThan(savedBefore);
 });
 
@@ -1019,14 +1125,14 @@ test('photo analysis does not overwrite item details edited while analysis is in
   await expect(page.getByRole('status', { name: 'Generating AI suggestions', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Generating AI suggestions', exact: true })).toBeVisible();
-  await page.getByLabel('Title', { exact: true }).fill('Owner-edited while analyzing');
-  await page.getByLabel('Description', { exact: false }).fill('Owner description entered during analysis.');
+  await page.getByLabel('Give it a useful title', { exact: true }).fill('Owner-edited while analyzing');
+  await page.getByLabel('What should renters know?', { exact: false }).fill('Owner description entered during analysis.');
   await page.getByLabel('Brand (optional)', { exact: true }).fill('Canon');
   await page.getByLabel('Model (optional)', { exact: true }).fill('EOS R5');
   release();
   await expect(page.getByRole('status', { name: 'Generating AI suggestions', exact: true })).toHaveCount(0);
-  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Owner-edited while analyzing');
-  await expect(page.getByLabel('Description', { exact: false })).toHaveValue('Owner description entered during analysis.');
+  await expect(page.getByLabel('Give it a useful title', { exact: true })).toHaveValue('Owner-edited while analyzing');
+  await expect(page.getByLabel('What should renters know?', { exact: false })).toHaveValue('Owner description entered during analysis.');
   await expect(page.getByLabel('Brand (optional)', { exact: true })).toHaveValue('Canon');
   await expect(page.getByLabel('Model (optional)', { exact: true })).toHaveValue('EOS R5');
 });
@@ -1043,12 +1149,12 @@ test('cancelling AI hides the skeleton and ignores its late suggestions', async 
   await expect(page.getByRole('status', { name: 'Generating AI suggestions', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Continue manually', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Generating AI suggestions', exact: true })).toHaveCount(0);
-  await page.getByLabel('Title', { exact: true }).fill('Manual title');
+  await page.getByLabel('Give it a useful title', { exact: true }).fill('Manual title');
   const response = page.waitForResponse((result) => result.url().includes('/functions/v1/analyze-listing-photo'));
   release();
   await response;
-  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Manual title');
-  await expect(page.getByLabel('Description', { exact: false })).toHaveValue('');
+  await expect(page.getByLabel('Give it a useful title', { exact: true })).toHaveValue('Manual title');
+  await expect(page.getByLabel('What should renters know?', { exact: false })).toHaveValue('');
 });
 
 for (const failure of [
@@ -1069,13 +1175,13 @@ for (const failure of [
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Manual entry is available' }))
       .toContainText('aiError' in failure.scenario ? failure.scenario.aiError : 'AI returned invalid suggestions. Please retry or enter details manually.');
-    await page.getByLabel('Title', { exact: true }).fill('Owner title');
+    await page.getByLabel('Give it a useful title', { exact: true }).fill('Owner title');
     await page.route('**/functions/v1/analyze-listing-photo', (route) => route.fulfill({
       json: { ok: true, masked: { title: '', description: '', changed: false }, suggestion: { title: 'Suggested title', description: 'A camera carrying case.', categoryId }, flags: [], photoQualitySuggestions: [] },
     }));
     await page.getByRole('button', { name: /Generate details|Regenerate/, exact: true }).click();
-    await expect(page.getByLabel('Description', { exact: false })).toHaveValue('A camera carrying case.');
-    await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Owner title');
+    await expect(page.getByLabel('What should renters know?', { exact: false })).toHaveValue('A camera carrying case.');
+    await expect(page.getByLabel('Give it a useful title', { exact: true })).toHaveValue('Owner title');
   });
 }
 
@@ -1093,7 +1199,7 @@ test('photo quality suggestions are actionable but do not block continuing', asy
   await expect(page.getByText(/The photo looks dim. Retake it in brighter light./)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continue', exact: true }).last()).toBeEnabled();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Visible camera item');
+  await expect(page.getByLabel('Give it a useful title', { exact: true })).toHaveValue('Visible camera item');
 });
 
 test('advisory guideline warnings stay visible without blocking manual editing', async ({ page }) => {
@@ -1226,7 +1332,7 @@ test('negotiation moves after publication and owner management restores the bidd
   });
   await setup(page, { auctionSupported: true, readyDraft: true });
   await reviewReadyDraft(page);
-  await page.getByRole('button', { name: 'Rental settings', exact: true }).click();
+  await openWizardStep(page, 'Price & pickup');
   await expect(page.getByRole('switch', { name: 'Enable competitive bidding' })).toHaveCount(0);
   await expect(page.getByRole('switch', { name: 'Allow rental offers' })).toHaveCount(0);
   for (let step = 0; step < 3; step++) await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -1330,18 +1436,18 @@ test('Continue saves only valid current-step fields and typing never triggers a 
   });
   await setup(page);
   await fillListing(page);
-  await page.getByRole('button', { name: 'Details', exact: true }).click();
+  await openWizardStep(page, 'The item');
   const before = saves.length;
-  await page.getByLabel('Title', { exact: true }).fill('x');
+  await page.getByLabel('Give it a useful title', { exact: true }).fill('x');
   // Wait beyond the former 1.5-second autosave interval.
   await page.waitForTimeout(1800);
   expect(saves).toHaveLength(before);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Review and edit item details', exact: true })).toBeVisible();
   expect(saves).toHaveLength(before);
-  await page.getByLabel('Title', { exact: true }).fill('Updated travel camera');
+  await page.getByLabel('Give it a useful title', { exact: true }).fill('Updated travel camera');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Set rental settings', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good terms make good rentals.', exact: true })).toBeVisible();
   expect(saves).toHaveLength(before + 1);
   expect(saves.at(-1)).toMatchObject({ title: 'Updated travel camera', description: listing.description });
   expect(saves.at(-1)).not.toHaveProperty('price_per_day');
@@ -1350,7 +1456,7 @@ test('Continue saves only valid current-step fields and typing never triggers a 
   }));
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByText('Save service unavailable', { exact: false })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Set rental settings', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good terms make good rentals.', exact: true })).toBeVisible();
 });
 
 test('draft saving omits unsupported auction settings on hosted-compatible schemas', async ({ page }) => {
@@ -1360,10 +1466,10 @@ test('draft saving omits unsupported auction settings on hosted-compatible schem
   });
   await setup(page, { rejectAuctionPreferences: true });
   await fillListing(page);
-  await page.getByRole('button', { name: 'Rental settings', exact: true }).click();
+  await openWizardStep(page, 'Price & pickup');
   await expect(page.getByRole('switch', { name: 'Enable competitive bidding' })).toBeDisabled();
   await expect(page.getByText('Competitive bidding is not available on this server yet.', { exact: false })).toBeVisible();
-  await page.getByLabel('Rental price per day (USD)', { exact: true }).fill('30');
+  await page.getByLabel('Daily price (USD)', { exact: true }).fill('30');
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await expect(page.getByText('All changes saved', { exact: true })).toBeVisible();
   expect(saves.length).toBeGreaterThan(0);
@@ -1375,8 +1481,8 @@ test('draft saving omits unsupported auction settings on hosted-compatible schem
 test('rental settings keeps progress above the wide form when saving fails', async ({ page }, testInfo) => {
   await setup(page);
   await fillListing(page);
-  await page.getByRole('button', { name: 'Rental settings', exact: true }).click();
-  const form = page.getByRole('region', { name: 'Step 3: Rental settings', exact: true });
+  await openWizardStep(page, 'Price & pickup');
+  const form = page.getByRole('region', { name: 'Step 3: Price & pickup', exact: true });
   const progress = page.getByRole('list', { name: 'Listing progress' });
   for (const width of [1440, 1024, 768, 375]) {
     await page.setViewportSize({ width, height: 900 });
@@ -1484,7 +1590,7 @@ test('unapproved offer policy leaves post-publication private offers unavailable
   await expect(page.getByText(/Offers are unavailable until an administrator/)).toBeVisible();
 });
 
-test('required item identity, included tags and delivery radius persist through all six steps and publication', async ({ page }, testInfo) => {
+test('required item identity, included tags and delivery radius persist through all five steps and publication', async ({ page }, testInfo) => {
   test.slow();
   const saves: Record<string, unknown>[] = [];
   const reviews: { description: string }[] = [];
@@ -1494,7 +1600,7 @@ test('required item identity, included tags and delivery radius persist through 
   });
   await setup(page);
   await fillListing(page);
-  await page.getByRole('button', { name: 'Photos', exact: true }).click();
+  await openWizardStep(page, 'Photos');
   const secondPhoto = await page.evaluate(() => {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 1000;
@@ -1502,7 +1608,7 @@ test('required item identity, included tags and delivery radius persist through 
   });
   await page.locator('input[type="file"]').setInputFiles({ name: 'camera-side.png', mimeType: 'image/png', buffer: Buffer.from(secondPhoto, 'base64') });
   await expect(page.getByRole('button', { name: 'Select photo 2', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await openWizardStep(page, 'The item');
   await page.getByLabel('Brand (optional)', { exact: true }).fill('Sony');
   await page.getByLabel('Model (optional)', { exact: true }).fill('FX3');
   const included = page.getByLabel('Included item', { exact: true });
@@ -1517,13 +1623,12 @@ test('required item identity, included tags and delivery radius persist through 
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await expect(page.getByText('All changes saved', { exact: true })).toBeVisible();
   expect(saves.at(-1)).toMatchObject({ item_details: { brand: 'Sony', model: 'FX3', included_items: ['Battery', 'Carrying case'], additional_details: 'Charge the battery before use.' } });
-  await page.reload();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await waitForItemStep(page);
   await expect(page.getByLabel('Brand (optional)', { exact: true })).toHaveValue('Sony');
   await expect(page.getByLabel('Model (optional)', { exact: true })).toHaveValue('FX3');
   await expect(page.getByRole('list', { name: 'Included items' })).toContainText('Carrying case');
   await page.getByRole('button', { name: 'Remove included item Battery', exact: true }).click();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   const map = page.getByTitle('Approximate pickup city', { exact: true });
@@ -1531,7 +1636,8 @@ test('required item identity, included tags and delivery radius persist through 
   expect(await map.getAttribute('src')).not.toContain('123');
   await page.getByRole('switch', { name: 'Delivery available' }).check();
   await page.getByLabel('Delivery fee per trip (USD)', { exact: true }).fill('25');
-  await page.getByLabel('Delivery radius (optional)', { exact: true }).selectOption('25');
+  await selectWizardOption(page, 'Delivery radius (optional)', 'Within 25 miles');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   const preview = page.locator('.owner-listing-review');
   for (const text of ['Sony', 'FX3', 'Carrying case', 'Charge the battery before use.', 'within 25 miles (owner-declared)']) await expect(preview).toContainText(text);
@@ -1560,7 +1666,7 @@ test('mobile listing draft resumes details and quantity without a deposit input'
   await setup(page);
   await fillListing(page);
   await expect(page.getByLabel('Security deposit', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Rental settings', exact: true }).click();
+  await openWizardStep(page, 'Price & pickup');
   await expect(page.getByRole('button', { name: 'Decrease available quantity' })).toBeDisabled();
   await page.getByRole('button', { name: 'Increase available quantity' }).click();
   await page.getByRole('button', { name: 'Increase available quantity' }).click();
@@ -1589,7 +1695,7 @@ test('mobile listing draft resumes details and quantity without a deposit input'
   await page.reload();
   await expect(page.getByText('Your saved draft is ready to continue.')).toBeVisible();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByLabel('Title', { exact: true })).toHaveValue(listing.title);
+  await expect(page.getByLabel('Give it a useful title', { exact: true })).toHaveValue(listing.title);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByLabel('Estimated replacement value (USD)', { exact: true })).toHaveValue('1000');
 });

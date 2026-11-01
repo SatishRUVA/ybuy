@@ -1,0 +1,28 @@
+/* App's production shell uses the Preview 1 workspace geometry. */
+.main-workspace-layout {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+  width: min(1280px, calc(100% - 64px));
+  min-height: calc(100vh - 76px);
+  margin-inline: auto;
+  padding-top: 26px;
+}
+.main-workspace-content { min-width: 0; }
+.account-workspace-identity { width: 100%; padding: 0; border: 0; background: transparent; text-align: left; }
+.account-workspace-identity > .p1-avatar { width: 35px; height: 35px; flex: 0 0 35px; }
+.account-workspace-identity > div { min-width: 0; }
+.account-workspace-identity strong { overflow: hidden; text-overflow: ellipsis; }
+.account-workspace-avatar { display: grid !important; place-items: center; background: var(--p1-paper); }
+.account-workspace-discovery { width: 100%; border: 0; text-align: left; }
+.account-workspace-discovery > span { flex: 1; }
+@media (max-width: 1100px) {
+  .main-workspace-layout { grid-template-columns: 195px minmax(0, 1fr); gap: 24px; }
+}
+@media (max-width: 800px) {
+  .main-workspace-layout { grid-template-columns: minmax(0, 1fr); padding-top: 28px; }
+}
+@media (max-width: 639px) {
+  .main-workspace-layout { width: calc(100% - 32px); padding-top: 24px; }
+}

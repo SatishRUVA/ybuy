@@ -152,8 +152,9 @@ test('auction notification inbox shows event icons and opens the real auction on
 test('real bidding flag does not enable the mock demo', async ({ page }) => {
   await setup(page, { item_requests: false, bidding: true });
   await page.goto(`${appUrl}/bidding`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Live bidding', exact: true })).toBeVisible({ timeout: 60000 });
-  await expect(page.getByText('TEST DATA · 10 sample auctions')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Great gear. Your bid.', exact: true })).toBeVisible({ timeout: 60000 });
+  await expect(page.getByRole('heading', { name: 'No open auctions right now' })).toBeVisible();
+  await expect(page.getByText('TEST DATA · 10 sample auctions')).toHaveCount(0);
   await expect(page.getByLabel('Your demo bid')).toHaveCount(0);
 });
 
@@ -380,16 +381,18 @@ test('ticker rejects an oversized feed and retry excludes expired offers', async
   await expect(ticker.getByRole('link', { name: /Expired fixture/ })).toHaveCount(0);
 });
 
-test('mock auctions accept demo bids without real mutations and react immediately to the mock flag', async ({ page }) => {
-  const live = await setup(page, { item_requests: false, bidding: false, mock_bidding: true });
+test('sample auctions accept demo bids without real mutations while live bidding is off', async ({ page }) => {
+  await setup(page, { item_requests: false, bidding: false, mock_bidding: false });
+  await page.setViewportSize({ width: 390, height: 844 });
   const mutations: string[] = [];
   page.on('request', (request) => {
     if (request.url().includes('/rest/v1/') && request.method() !== 'GET') mutations.push(request.url());
   });
   await page.goto(`${appUrl}/bidding`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: /Sony A7 IV Mirrorless Camera/ }).click();
-  await expect(page).toHaveURL(`${appUrl}/auction/a1`);
-  await expect(page.getByText('Demo only', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Try sample auction: Sony A7 IV Mirrorless Camera' }).click();
+  await expect(page).toHaveURL(`${appUrl}/bidding`);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(page.getByText('Sample bidding only', { exact: true })).toBeVisible();
   await page.getByLabel('Your demo bid').fill('82');
   await page.getByRole('button', { name: 'Place demo bid' }).click();
   await expect(page.getByRole('alert')).toContainText('Enter a bid above $82');
@@ -399,39 +402,35 @@ test('mock auctions accept demo bids without real mutations and react immediatel
   await expect(page.getByText('Current demo bid: $82.01')).toBeVisible();
   expect(mutations).toEqual([]);
 
-  live.update('mock_bidding', false);
-  await expect(page.getByText('Mock bidding is offline')).toBeVisible();
+  await page.getByRole('button', { name: 'Back to sample auctions' }).click();
+  await expect(page.getByRole('button', { name: 'Try sample auction: Sony A7 IV Mirrorless Camera' })).toBeVisible();
   await expect(page.getByLabel('Your demo bid')).toHaveCount(0);
-  live.update('mock_bidding', true);
-  await expect(page.getByLabel('Your demo bid')).toBeVisible();
-  await expect(page.getByText('Current demo bid: $82', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Back to demo auctions' }).click();
-  await expect(page.getByRole('button', { name: /Sony A7 IV Mirrorless Camera/ })).toBeVisible();
 });
 
-test('home exposes demo auctions only while mock_bidding is enabled', async ({ page }) => {
+test('home never substitutes simulated auctions for marketplace inventory', async ({ page }) => {
   const live = await setup(page, { item_requests: false, bidding: false, mock_bidding: false });
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'Browse by category' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Mock bidding', exact: true })).toHaveCount(0);
   live.update('mock_bidding', true);
-  await expect(page.getByRole('heading', { name: 'Mock bidding', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Mock bidding', exact: true })).toHaveCount(0);
   live.update('mock_bidding', false);
   await expect(page.getByRole('heading', { name: 'Mock bidding', exact: true })).toHaveCount(0);
 });
 
-test('private offers remain available when bidding and item requests are disabled', async ({ page }) => {
+test('legacy private-offer flags do not re-enable private pricing creation', async ({ page }) => {
   await setup(page, { item_requests: false, bidding: false, private_offers: true });
   await signIn(page, '/requests');
-  await expect(page.getByRole('heading', { name: 'Item requests', exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Offers & negotiations' })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByText('No offers or negotiations yet')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Item requests are not enabled yet', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Offers & negotiations' })).toHaveCount(0);
 });
 
-test('bidding route stays unavailable when its feature flag is off', async ({ page }) => {
+test('bidding route offers sample auctions when live bidding is off', async ({ page }) => {
   await setup(page, { item_requests: true, bidding: false });
   await signIn(page, '/bidding');
-  await expect(page.getByText('Mock bidding is offline')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Try a sample auction' })).toBeVisible();
+  await expect(page.getByText('Sample bidding only')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try sample auction: Sony A7 IV Mirrorless Camera' })).toBeVisible();
   await expect(page.getByLabel('Your demo bid')).toHaveCount(0);
 });
 

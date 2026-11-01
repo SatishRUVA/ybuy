@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { SearchBar, SearchRadiusSelect, type SearchParams } from '@/components/search';
-import { ListingCard, ListingCardWide } from '@/components/listing-card';
+import { ListingCard, ListingCardWide, ListingPhoto } from '@/components/listing-card';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import type { Listing, Category } from '@/data';
@@ -14,9 +14,10 @@ import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { ListingGridSkeleton, ListingCardWideSkeleton } from '@/components/skeleton';
 import { Button, Alert, EmptyState } from '@/components/ui';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/shadcn/dialog';
-import * as Icons from 'lucide-react';
-import { Map as MapIcon, List, SlidersHorizontal, X, Star, Shield, Zap, CheckCircle2, Truck, MapPin, SearchX, Loader2, PackagePlus } from 'lucide-react';
+import { Dropdown } from '@/components/shadcn/select';
+import { Map as MapIcon, List, LayoutGrid, SlidersHorizontal, X, Star, Shield, Zap, CheckCircle2, Truck, MapPin, SearchX, Loader2, PackagePlus } from 'lucide-react';
 import { SEARCH_RADII, searchStateParams, saveSearchState, type SearchState, type SearchRadius } from '@/lib/search-state';
+import './marketplace.css';
 
 // The price slider's top stop is labelled "$200+", so it must mean "no upper limit", not "$200".
 const PRICE_FILTER_MAX = 200;
@@ -64,10 +65,10 @@ export function SearchPage({
   const [listPreviewId, setListPreviewId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [view, setView] = useState<'list' | 'map'>('list');
-  const [showFilters, setShowFilters] = useState(false);
+  const [view, setView] = useState<'grid' | 'list' | 'map'>('grid');
+  const [showFilters, setShowFilters] = useState(true);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [isMobileFilters, setIsMobileFilters] = useState(() => window.matchMedia('(max-width: 1023px)').matches);
+  const [isMobileFilters, setIsMobileFilters] = useState(() => window.matchMedia('(max-width: 800px)').matches);
   const mobileFilterTriggerRef = useRef<HTMLButtonElement>(null);
   const [keyword, setKeyword] = useState(initialQuery ?? '');
   const [dateRange, setDateRange] = useState({ start: initialStartDate ?? '', end: initialEndDate ?? '' });
@@ -86,11 +87,15 @@ export function SearchPage({
   const [deliveryOnly, setDeliveryOnly] = useState(initialFilters.deliveryOnly ?? false);
   const [sortBy, setSortBy] = useState<SearchState['sortBy']>(initialFilters.sortBy ?? 'recommended');
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
+  const [favoritesLoaded, setFavoritesLoaded] = useState(false);
+  const [favoriteRetry, setFavoriteRetry] = useState(0);
+  const [favoriteWrites, setFavoriteWrites] = useState<Set<string>>(new Set());
   const preciseLocation = location.source !== 'NONE'
     && Number.isFinite(location.latitude) && Number.isFinite(location.longitude);
 
   useEffect(() => {
-    const media = window.matchMedia('(max-width: 1023px)');
+    const media = window.matchMedia('(max-width: 800px)');
     const update = () => {
       setIsMobileFilters(media.matches);
       if (!media.matches) setMobileFiltersOpen(false);
@@ -161,7 +166,7 @@ export function SearchPage({
   }, [initialLocationLabel, initialCoords, location, selectCity]);
 
   useEffect(() => {
-    if (!categoriesLoaded || !routeLocationReady) return;
+    if (!categoriesLoaded || !routeLocationReady || window.location.pathname !== '/search') return;
     const state: SearchState = {
       q: keyword, category: activeCategory ?? undefined, start: dateRange.start, end: dateRange.end,
       radius: maxDistance, maxPrice, minRating, verifiedOnly, instantOnly, protectionOnly, deliveryOnly, sortBy,
@@ -177,26 +182,33 @@ export function SearchPage({
   }, [categoriesLoaded, routeLocationReady, keyword, activeCategory, dateRange.start, dateRange.end, maxDistance, maxPrice, minRating, verifiedOnly, instantOnly, protectionOnly, deliveryOnly, sortBy, location, preciseLocation]);
 
   useEffect(() => {
-    if (!user) { setFavoriteIds(new Set()); return; }
-    fetchFavoriteListingIds(user.id).then(setFavoriteIds).catch(() => {});
-  }, [user]);
+    let active = true;
+    setFavoriteIds(new Set()); setFavoriteError(null); setFavoritesLoaded(false);
+    if (user) void fetchFavoriteListingIds(user.id).then((ids) => {
+      if (active) { setFavoriteIds(ids); setFavoritesLoaded(true); }
+    }).catch((reason: unknown) => {
+      if (active) setFavoriteError(reason instanceof Error ? reason.message : 'Could not load saved items. Try again.');
+    });
+    return () => { active = false; };
+  }, [user, favoriteRetry]);
 
   async function handleToggleFavorite(listingId: string) {
     if (!user) { openSignIn(); return; }
+    if (!favoritesLoaded || favoriteWrites.has(listingId)) return;
     const isFav = favoriteIds.has(listingId);
-    setFavoriteIds((prev) => {
-      const next = new Set(prev);
-      if (isFav) next.delete(listingId); else next.add(listingId);
-      return next;
-    });
+    setFavoriteWrites(previous => new Set(previous).add(listingId));
+    setFavoriteError(null);
     try {
       if (isFav) await removeFavorite(user.id, listingId); else await addFavorite(user.id, listingId);
-    } catch {
       setFavoriteIds((prev) => {
         const next = new Set(prev);
-        if (isFav) next.add(listingId); else next.delete(listingId);
+        if (isFav) next.delete(listingId); else next.add(listingId);
         return next;
       });
+    } catch (reason) {
+      setFavoriteError(reason instanceof Error ? reason.message : 'Could not update saved items. Try again.');
+    } finally {
+      setFavoriteWrites(previous => { const next = new Set(previous); next.delete(listingId); return next; });
     }
   }
 
@@ -214,7 +226,7 @@ export function SearchPage({
         setCategoriesLoaded(true);
         void fetchCategoryCounts()
           .then((counts) => { if (!cancelled) setCategories(rows.map((c) => toUiCategory(c, counts))); })
-          .catch(() => {});
+          .catch((reason: unknown) => { console.warn('Category counts could not be loaded.', reason); });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -391,26 +403,17 @@ export function SearchPage({
     protectionOnly, setProtectionOnly, deliveryOnly, setDeliveryOnly,
   };
 
-  return (
-    <div className="animate-fade-in min-h-screen pb-20 md:pb-8">
-      {/* Sticky search + controls */}
-      <div className="sticky top-16 z-[140] glass-surface border-b border-app">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 space-y-2.5">
-          <SearchBar
-            onSearch={handleSearchBarSearch}
-            onLocationChange={() => { setLocationError(null); setRouteLocationReady(true); }}
-            variant="compact"
-            defaultValue={keyword}
-            initialStartDate={dateRange.start}
-            initialEndDate={dateRange.end}
-            radius={maxDistance}
-            onRadiusChange={setMaxDistance}
-          />
-          <div className="flex items-center justify-between gap-2">
+  const resultToolbar = (
+          <div className="p1-results-toolbar flex-wrap">
             <div className="flex items-center gap-2 min-w-0 overflow-x-auto no-scrollbar">
               <button
                 ref={mobileFilterTriggerRef}
-                onClick={() => isMobileFilters ? setMobileFiltersOpen(true) : setShowFilters(!showFilters)}
+                onClick={() => {
+                  const mobile = window.matchMedia('(max-width: 800px)').matches;
+                  setIsMobileFilters(mobile);
+                  if (mobile) setMobileFiltersOpen(true);
+                  else setShowFilters(value => !value);
+                }}
                 aria-expanded={isMobileFilters ? mobileFiltersOpen : showFilters}
                 aria-haspopup={isMobileFilters ? 'dialog' : undefined}
                 className={`shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full border text-sm font-semibold transition-colors duration-fast ${
@@ -428,19 +431,20 @@ export function SearchPage({
                 )}
               </button>
               <label className="sr-only" htmlFor="sort-by">Sort results</label>
-              <select
+              <Dropdown
                 id="sort-by"
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="shrink-0 h-9 px-3 rounded-full border border-app bg-card text-sm font-semibold text-main cursor-pointer"
-              >
-                <option value="recommended">Recommended</option>
-                <option value="newest">Newest</option>
-                <option value="price-low">Lowest price</option>
-                <option value="price-high">Highest price</option>
-                {preciseLocation && <option value="distance">Nearest first</option>}
-                <option value="rating">Top rated</option>
-              </select>
+                onChange={setSortBy}
+                className="!w-auto shrink-0 h-9 rounded-full text-sm font-semibold"
+                options={[
+                  { value: 'recommended', label: 'Recommended' },
+                  { value: 'newest', label: 'Newest' },
+                  { value: 'price-low', label: 'Lowest price' },
+                  { value: 'price-high', label: 'Highest price' },
+                  ...(preciseLocation ? [{ value: 'distance' as const, label: 'Nearest first' }] : []),
+                  { value: 'rating', label: 'Top rated' },
+                ]}
+              />
               {appliedChips.map((chip) => (
                 <button
                   key={chip.key}
@@ -457,41 +461,60 @@ export function SearchPage({
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-0.5 p-0.5 rounded-full bg-subtle shrink-0" role="group" aria-label="Result view">
-              {([['list', List, 'List'], ['map', MapIcon, 'Map']] as const).map(([value, Icon, label]) => (
+            <div className="p1-tabs p1-view-tabs shrink-0" role="group" aria-label="Result view">
+              {([['grid', LayoutGrid, 'Grid'], ['list', List, 'List'], ['map', MapIcon, 'Map']] as const).map(([value, Icon, label]) => (
                 <button
                   key={value}
                   onClick={() => setView(value)}
                   aria-pressed={view === value}
                   aria-label={`${label} view`}
                   title={`${label} view`}
-                  className={`inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-full text-xs font-semibold transition-colors duration-fast ${
-                    view === value ? 'bg-card text-main shadow-xs' : 'text-sec'
-                  }`}
                 >
                   <Icon size={14} /> <span className="hidden sm:inline">{label}</span>
                 </button>
               ))}
             </div>
           </div>
-        </div>
-      </div>
+  );
 
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-5">
-        <div className="flex gap-8">
+  return (
+    <div className="marketplace-search">
+      <div className="p1-container p1-page">
+        <SearchBar
+          onSearch={handleSearchBarSearch}
+          onLocationChange={() => { setLocationError(null); setRouteLocationReady(true); }}
+          variant="compact"
+          defaultValue={keyword}
+          initialStartDate={dateRange.start}
+          initialEndDate={dateRange.end}
+          radius={maxDistance}
+          onRadiusChange={setMaxDistance}
+        />
+        <header className="p1-page-head marketplace-search-heading">
+          <div><h2 className="marketplace-search-title">
+            {keyword ? `Find "${keyword}" nearby` : location.source !== 'NONE' ? `Good gear near ${location.city}` : 'Find your next thing'}
+          </h2>
+          <p className="mt-2 text-sm text-sec">{dateRange.start && dateRange.end
+            ? `Rentals for ${dateRange.start} through ${dateRange.end}. Return on the last date.`
+            : 'Add dates to find gear that fits your plans. Get to know the owner before booking.'}</p></div>
+        </header>
+        <div className={showFilters && !isMobileFilters ? 'p1-browse-layout' : ''}>
           {/* Filters sidebar */}
           {showFilters && !isMobileFilters && (
-            <aside id="desktop-search-filters" className="hidden lg:block w-64 shrink-0">
-              <div className="sticky top-[188px] max-h-[calc(100vh-208px)] overflow-y-auto no-scrollbar pr-1">
+            <aside id="desktop-search-filters" aria-label="Refine your search" className="p1-filters">
+              <div className="p1-filter-body">
+                <div className="p1-section-head"><h3>Refine your search</h3>
+                  <button onClick={clearAllFilters} className="p1-text-link">Reset</button></div>
                 <FilterPanel {...filterPanelProps} />
               </div>
             </aside>
           )}
 
           {/* Results */}
-          <div className="flex-1 min-w-0">
+          <div className="p1-results min-w-0">
+            {resultToolbar}
             <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3 mb-4">
-              <h1 className="text-lg font-bold text-main font-display" aria-live="polite" aria-atomic="true">
+              <h1 className="marketplace-result-count" aria-live="polite" aria-atomic="true">
                 {error ? 'Could not load results' : loading ? 'Searching…' : (
                   <>
                     <span>
@@ -509,6 +532,8 @@ export function SearchPage({
 
             {categoryNotice && !error && <Alert tone="info" className="mb-4">{categoryNotice}</Alert>}
             {locationError && <Alert tone="error" className="mb-4">{locationError}</Alert>}
+            {favoriteError && <Alert tone="error" className="mb-4">{favoriteError}
+              <Button variant="secondary" size="sm" className="mt-2" onClick={() => setFavoriteRetry(value => value + 1)}>Reload saved items</Button></Alert>}
             {error && (
               <Alert tone="error" title="We couldn't load these items" className="mb-4">
                 <p>{error}</p>
@@ -517,23 +542,25 @@ export function SearchPage({
             )}
 
             {!error && loading && (
-              view === 'list'
-                ? <ListingGridSkeleton count={12} className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4" />
+              view !== 'map'
+                ? <ListingGridSkeleton count={12} className="p1-item-grid p1-results-grid" />
                 : <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <ListingCardWideSkeleton key={i} />)}</div>
             )}
 
-            {loading ? null : view === 'list' ? (
+            {loading ? null : view !== 'map' ? (
               <>
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 animate-cross-fade">
-                  {filtered.map((listing) => (
-                    <ListingCard
+                <div className={`p1-item-grid p1-results-grid ${view === 'list' ? 'p1-list-view marketplace-results-list' : 'marketplace-results-grid'}`}>
+                  {filtered.map((listing) => {
+                    const Card = view === 'list' ? ListingCardWide : ListingCard;
+                    return <Card
                       key={listing.id}
                       listing={listing}
                       onClick={() => navigate({ name: 'listing', id: listing.id })}
                       favorited={favoriteIds.has(listing.id)}
+                      favoriteBusy={favoriteWrites.has(listing.id) || (!!user && !favoritesLoaded)}
                       onToggleFavorite={() => void handleToggleFavorite(listing.id)}
-                    />
-                  ))}
+                    />;
+                  })}
                 </div>
                 {hasMore && <div ref={loadMoreSentinelRef} className="flex h-12 items-center justify-center mt-5" aria-live="polite">
                   {loadingMore && <span className="flex items-center gap-2 text-sm text-sec" role="status"><Loader2 size={16} className="animate-spin" />Loading more rentals</span>}
@@ -564,6 +591,7 @@ export function SearchPage({
                         listing={listing}
                         onClick={() => navigate({ name: 'listing', id: listing.id })}
                         favorited={favoriteIds.has(listing.id)}
+                        favoriteBusy={favoriteWrites.has(listing.id) || (!!user && !favoritesLoaded)}
                         onToggleFavorite={() => void handleToggleFavorite(listing.id)}
                       />
                     </div>
@@ -666,32 +694,11 @@ function FilterPanel(props: {
   setDeliveryOnly: (v: boolean) => void;
 }) {
   return (
-    <div className="space-y-7">
-      <div>
-        <h3 className="text-[13px] font-bold text-main mb-2">Category</h3>
-        <div className="space-y-0.5">
-          <button
-            onClick={() => props.setActiveCategory(null)}
-            className={`w-full text-left px-3 h-10 rounded-card text-sm transition-colors duration-fast ${!props.activeCategory ? 'bg-accent-soft text-accent font-semibold' : 'text-sec hover:bg-subtle'}`}
-          >
-            All categories
-          </button>
-          {props.categories.map((cat) => {
-            const Icon = (Icons as unknown as Record<string, typeof Icons.Camera>)[cat.icon] ?? Icons.Box;
-            const active = props.activeCategory === cat.id;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => props.setActiveCategory(active ? null : cat.id)}
-                className={`w-full flex items-center gap-2.5 px-3 h-10 rounded-card text-sm transition-colors duration-fast ${active ? 'bg-accent-soft text-accent font-semibold' : 'text-sec hover:bg-subtle'}`}
-              >
-                <Icon size={15} className="shrink-0" />
-                <span className="flex-1 text-left truncate">{cat.name}</span>
-                <span className="text-xs text-muted tnum">{cat.count.toLocaleString()}</span>
-              </button>
-            );
-          })}
-        </div>
+    <div className="p1-filter-body">
+      <div className="p1-field">
+        <label htmlFor="filter-category">Category</label>
+        <Dropdown id="filter-category" aria-label="Category" value={props.activeCategory ?? 'all'} onChange={value => props.setActiveCategory(value === 'all' ? null : value)}
+          options={[{ value: 'all', label: 'All categories' }, ...props.categories.map(category => ({ value: category.id, label: `${category.name} (${category.count.toLocaleString()})` }))]} />
       </div>
 
       <div>
@@ -718,7 +725,8 @@ function FilterPanel(props: {
             <button
               key={r}
               onClick={() => props.setMinRating(r)}
-              className={`h-9 rounded-card text-xs font-semibold border transition-colors duration-fast ${props.minRating === r ? 'border-accent text-accent bg-accent-soft' : 'border-app text-sec hover:bg-subtle'}`}
+              aria-pressed={props.minRating === r}
+              className={`min-h-11 rounded-card text-xs font-semibold border transition-colors duration-fast ${props.minRating === r ? 'border-accent text-accent bg-accent-soft' : 'border-app text-sec hover:bg-subtle'}`}
             >
               {r === 0 ? 'Any' : `${r}+`}
             </button>
@@ -931,7 +939,7 @@ function MapView({ listings, onSelect, listPreviewId, onPreviewChange }: {
           }}
         >
           <div className="flex gap-3">
-            <img src={previewListing.images[0]} alt="" className="w-16 h-16 rounded-card object-cover shrink-0" />
+            <div className="w-16 h-16 rounded-card overflow-hidden shrink-0"><ListingPhoto src={previewListing.images[0]} alt="" /></div>
             <div className="flex-1 min-w-0">
               <h4 className="font-semibold text-sm text-main line-clamp-1">{previewListing.title}</h4>
               <div className="flex items-center gap-1 text-xs text-sec mt-1">

@@ -1,24 +1,22 @@
-import { lazy, Suspense } from 'react';
+import { Fragment, lazy, Suspense } from 'react';
 import { ThemeProvider } from '@/theme-context';
 import { AuthProvider, useAuth } from '@/auth-context';
 import { LocationProvider } from '@/location-context';
 import { RequireAuth } from '@/components/require-auth';
 import { SignInDialog } from '@/components/sign-in-dialog';
 import { RouterProvider, useRouter } from '@/router';
-import { Header, BottomNav } from '@/components/nav';
-import { HomePage } from '@/pages/home';
+import { ProductionPreviewHeader as Header, ProductionPreviewFooter as Footer, ProductionPreviewSidebar as WorkspaceSidebar } from '@/components/preview-navigation';
+import { PreviewMarketplace } from '@/components/preview-marketplace';
 import { OutOfScopePage } from '@/pages/out-of-scope';
 import { AccessPage } from '@/pages/access';
-import { BiddingTicker } from '@/components/bidding-ticker';
 import { VpnNotice } from '@/components/vpn-notice';
 import { SHOW_OUT_OF_SCOPE_PAGES, OUT_OF_SCOPE_ROUTES } from '@/lib/feature-flags';
 
-const SearchPage = lazy(() => import('@/pages/search').then(({ SearchPage: page }) => ({ default: page })));
-const ListingPage = lazy(() => import('@/pages/listing').then(({ ListingPage: page }) => ({ default: page })));
-const CheckoutPage = lazy(() => import('@/pages/checkout').then(({ CheckoutPage: page }) => ({ default: page })));
 const ConfirmationPage = lazy(() => import('@/pages/checkout').then(({ ConfirmationPage: page }) => ({ default: page })));
-const BookingsPage = lazy(() => import('@/pages/dashboards').then(({ BookingsPage: page }) => ({ default: page })));
-const CreateListingPage = lazy(() => import('@/pages/create-listing').then(({ CreateListingPage: page }) => ({ default: page })));
+const PreviewRentals = lazy(() => import('@/components/preview-rentals').then(({ PreviewRentals: page }) => ({ default: page })));
+const PreviewOwner = lazy(() => import('@/components/preview-owning').then(({ PreviewOwner: page }) => ({ default: page })));
+const PreviewPayouts = lazy(() => import('@/components/preview-owning').then(({ PreviewPayouts: page }) => ({ default: page })));
+const PreviewListingWizard = lazy(() => import('@/components/preview-owning').then(({ PreviewListingWizard: page }) => ({ default: page })));
 const CheckInPage = lazy(() => import('@/pages/check-in-out').then(({ CheckInPage: page }) => ({ default: page })));
 const CheckOutPage = lazy(() => import('@/pages/check-in-out').then(({ CheckOutPage: page }) => ({ default: page })));
 const ItemPassportPage = lazy(() => import('@/pages/passport').then(({ ItemPassportPage: page }) => ({ default: page })));
@@ -26,41 +24,40 @@ const ClaimsPage = lazy(() => import('@/pages/claims').then(({ ClaimsPage: page 
 const ClaimDetailPage = lazy(() => import('@/pages/claims').then(({ ClaimDetailPage: page }) => ({ default: page })));
 const SupportPage = lazy(() => import('@/pages/support').then(({ SupportPage: page }) => ({ default: page })));
 const WalletPage = lazy(() => import('@/pages/wallet').then(({ WalletPage: page }) => ({ default: page })));
-const NotificationsPage = lazy(() => import('@/pages/notifications').then(({ NotificationsPage: page }) => ({ default: page })));
-const MessagingPage = lazy(() => import('@/pages/messaging').then(({ MessagingPage: page }) => ({ default: page })));
-const ConversationPage = lazy(() => import('@/pages/messaging').then(({ ConversationPage: page }) => ({ default: page })));
-const RequestsPage = lazy(() => import('@/pages/requests').then(({ RequestsPage: page }) => ({ default: page })));
-const NeedSomethingPage = lazy(() => import('@/pages/requests').then(({ NeedSomethingPage: page }) => ({ default: page })));
-const FavoritesPage = lazy(() => import('@/pages/favorites').then(({ FavoritesPage: page }) => ({ default: page })));
+const PreviewNotifications = lazy(() => import('@/components/preview-account').then(({ PreviewNotifications: page }) => ({ default: page })));
+const PreviewMessages = lazy(() => import('@/components/preview-account').then(({ PreviewMessages: page }) => ({ default: page })));
+const PreviewRequests = lazy(() => import('@/components/preview-account').then(({ PreviewRequests: page }) => ({ default: page })));
+const PreviewNeedSomething = lazy(() => import('@/components/preview-account').then(({ PreviewNeedSomething: page }) => ({ default: page })));
 const ProtectionPage = lazy(() => import('@/pages/protection').then(({ ProtectionPage: page }) => ({ default: page })));
-const TrustProfilePage = lazy(() => import('@/pages/trust-profile').then(({ TrustProfilePage: page }) => ({ default: page })));
-const BiddingPage = lazy(() => import('@/pages/bidding').then(({ BiddingPage: page }) => ({ default: page })));
-const BiddingDetailPage = lazy(() => import('@/pages/bidding').then(({ BiddingDetailPage: page }) => ({ default: page })));
-const AuctionPage = lazy(() => import('@/pages/bidding').then(({ AuctionPage: page }) => ({ default: page })));
+const PreviewProfile = lazy(() => import('@/components/preview-account').then(({ PreviewProfile: page }) => ({ default: page })));
+const PreviewBidding = lazy(() => import('@/components/preview-bidding').then(({ PreviewBidding: page }) => ({ default: page })));
+const PreviewBidRoom = lazy(() => import('@/components/preview-bidding').then(({ PreviewBidRoom: page }) => ({ default: page })));
 const GuidelinesPage = lazy(() => import('@/pages/guidelines').then(({ GuidelinesPage: page }) => ({ default: page })));
-const AdminPage = lazy(() => import('@/pages/admin/admin-page').then(({ AdminPage: page }) => ({ default: page })));
+const PreviewAdmin = lazy(() => import('@/components/preview-administration').then(({ PreviewAdmin: page }) => ({ default: page })));
+
+function isWorkspaceRoute(route: ReturnType<typeof useRouter>['route']) {
+  return ['dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts', 'check-in', 'check-out',
+    'item-passport', 'claims', 'claim-detail', 'support', 'wallet', 'trust-profile', 'messaging', 'conversation',
+    'notifications', 'admin'].includes(route.name);
+}
 
 function AppContent() {
   const { route } = useRouter();
   const { user } = useAuth();
+  const directTemplate = ['home', 'search', 'listing', 'favorites', 'checkout', 'confirmation', 'dashboard',
+    'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts', 'create-listing', 'edit-listing',
+    'notifications', 'messaging', 'conversation', 'requests', 'need-something', 'trust-profile', 'bidding',
+    'bidding-detail', 'auction', 'admin'].includes(route.name);
+  const PageContainer = directTemplate ? 'div' : 'main';
+  const workspace = Boolean(user) && isWorkspaceRoute(route);
 
   if (route.name === 'access') return <AccessPage />;
 
-  if (route.name === 'admin') {
-    return (
-      <>
-        <RequireAuth><Suspense fallback={<div className="min-h-[50vh]" />}><AdminPage section={route.section} /></Suspense></RequireAuth>
-        <SignInDialog />
-      </>
-    );
-  }
-
   if (OUT_OF_SCOPE_ROUTES.has(route.name) && !SHOW_OUT_OF_SCOPE_PAGES) {
     return (
-      <div className="min-h-screen bg-app">
+      <div className="p1">
         <Header />
-        <main className="pb-[calc(4rem_+_env(safe-area-inset-bottom))] md:pb-0"><OutOfScopePage /></main>
-        <BottomNav />
+        <main><OutOfScopePage /></main>
         <SignInDialog />
       </div>
     );
@@ -68,27 +65,18 @@ function AppContent() {
 
   let page: React.ReactNode;
   switch (route.name) {
-    case 'home': page = <HomePage />; break;
-    case 'search': page = (
-      <SearchPage
-        key={JSON.stringify(route)}
-        initialFilters={route}
-        initialCategory={route.category}
-        initialQuery={route.q}
-        initialCoords={route.lat != null && route.lng != null ? { lat: route.lat, lng: route.lng } : undefined}
-        initialLocationLabel={route.locationLabel}
-        initialStartDate={route.start}
-        initialEndDate={route.end}
-      />
-    ); break;
-    case 'listing': page = <ListingPage id={route.id} />; break;
-    case 'checkout': page = <RequireAuth><CheckoutPage id={route.id} startDate={route.startDate} endDate={route.endDate} /></RequireAuth>; break;
+    case 'home':
+    case 'search':
+    case 'listing': page = <PreviewMarketplace key={JSON.stringify(route)} />; break;
+    case 'checkout': page = <RequireAuth><PreviewMarketplace key={JSON.stringify(route)} /></RequireAuth>; break;
     case 'confirmation': page = <RequireAuth><ConfirmationPage id={route.id} /></RequireAuth>; break;
-    case 'dashboard': page = <RequireAuth><BookingsPage initialTab={route.tab ?? 'renting'} /></RequireAuth>; break;
-    case 'renter-dashboard': page = <RequireAuth><BookingsPage initialTab="renting" /></RequireAuth>; break;
-    case 'owner-dashboard': page = <RequireAuth><BookingsPage initialTab="lending" /></RequireAuth>; break;
-    case 'create-listing': page = <RequireAuth><CreateListingPage /></RequireAuth>; break;
-    case 'edit-listing': page = <RequireAuth><CreateListingPage key={route.id} editId={route.id} /></RequireAuth>; break;
+    case 'dashboard': page = <RequireAuth>{route.tab === 'lending' ? <PreviewOwner /> : <PreviewRentals />}</RequireAuth>; break;
+    case 'renter-dashboard': page = <RequireAuth><PreviewRentals /></RequireAuth>; break;
+    case 'owner-dashboard': page = <RequireAuth><PreviewOwner /></RequireAuth>; break;
+    case 'owner-listings': page = <RequireAuth><PreviewOwner listingView /></RequireAuth>; break;
+    case 'owner-payouts': page = <RequireAuth><PreviewPayouts /></RequireAuth>; break;
+    case 'create-listing': page = <RequireAuth><PreviewListingWizard /></RequireAuth>; break;
+    case 'edit-listing': page = <RequireAuth><PreviewListingWizard key={route.id} editId={route.id} /></RequireAuth>; break;
     case 'check-in': page = <RequireAuth><CheckInPage id={route.id} /></RequireAuth>; break;
     case 'check-out': page = <RequireAuth><CheckOutPage id={route.id} /></RequireAuth>; break;
     case 'item-passport': page = <RequireAuth><ItemPassportPage id={route.id} /></RequireAuth>; break;
@@ -96,29 +84,36 @@ function AppContent() {
     case 'claim-detail': page = <RequireAuth><ClaimDetailPage id={route.id} /></RequireAuth>; break;
     case 'support': page = <RequireAuth><SupportPage id={route.id} /></RequireAuth>; break;
     case 'wallet': page = <RequireAuth><WalletPage /></RequireAuth>; break;
-    case 'notifications': page = <RequireAuth><NotificationsPage /></RequireAuth>; break;
-    case 'messaging': page = <RequireAuth><MessagingPage /></RequireAuth>; break;
-    case 'conversation': page = <RequireAuth><ConversationPage id={route.id} /></RequireAuth>; break;
-    case 'requests': page = <RequireAuth><RequestsPage initialTab={route.tab ?? 'browse'} /></RequireAuth>; break;
-    case 'favorites': page = <RequireAuth><FavoritesPage /></RequireAuth>; break;
-    // Let visitors prepare a request before signing in; NeedSomethingPage opens
-    // the auth dialog on submit so the in-progress form stays mounted.
-    case 'need-something': page = <NeedSomethingPage />; break;
+    case 'notifications': page = <RequireAuth><PreviewNotifications /></RequireAuth>; break;
+    case 'messaging': page = <RequireAuth><PreviewMessages /></RequireAuth>; break;
+    case 'conversation': page = <RequireAuth><PreviewMessages key={route.id} id={route.id} /></RequireAuth>; break;
+    case 'requests': page = <RequireAuth><PreviewRequests initialTab={route.tab ?? 'browse'} /></RequireAuth>; break;
+    case 'favorites': page = <RequireAuth><PreviewMarketplace /></RequireAuth>; break;
+    case 'need-something': page = <PreviewNeedSomething />; break;
     case 'protection': page = <ProtectionPage />; break;
-    case 'trust-profile': page = <RequireAuth><TrustProfilePage /></RequireAuth>; break;
-    case 'bidding': page = <BiddingPage />; break;
-    case 'bidding-detail': page = <BiddingDetailPage key={route.id} id={route.id} />; break;
-    case 'auction': page = <AuctionPage id={route.id} />; break;
+    case 'trust-profile': page = <RequireAuth><PreviewProfile /></RequireAuth>; break;
+    case 'bidding': page = <PreviewBidding />; break;
+    case 'bidding-detail':
+    case 'auction': page = <PreviewBidRoom key={route.id} id={route.id} />; break;
+    case 'admin': page = <RequireAuth><PreviewAdmin section={route.section} /></RequireAuth>; break;
     case 'guidelines': page = <GuidelinesPage />; break;
-    default: page = <HomePage />; break;
+    default: page = <PreviewMarketplace />; break;
   }
 
   return (
-    <div className="min-h-screen bg-app">
+    <div className="p1">
+      <a href="#p1-main" className="p1-skip">Skip to content</a>
       <Header />
-      <BiddingTicker />
-      <main className="pb-[calc(4rem_+_env(safe-area-inset-bottom))] md:pb-0"><Suspense fallback={<div className="min-h-[50vh]" />}>{<div key={`${user?.id ?? 'anonymous'}:${route.name}`} className="animate-page-fade">{page}</div>}</Suspense></main>
-      <BottomNav />
+      <PageContainer id="p1-main" tabIndex={-1} className={workspace ? 'p1-workspace p1-container' : undefined}>
+        {workspace && <WorkspaceSidebar />}
+        <div className={workspace ? 'p1-work-canvas' : undefined}>
+          <Suspense fallback={<div role="status" className="min-h-[50vh] p-8 text-sec">Loading page...</div>}>
+            {directTemplate ? <Fragment key={`${user?.id ?? 'anonymous'}:${route.name}`}>{page}</Fragment>
+              : <div key={`${user?.id ?? 'anonymous'}:${route.name}`} className="animate-page-fade">{page}</div>}
+          </Suspense>
+        </div>
+      </PageContainer>
+      {!isWorkspaceRoute(route) && <Footer />}
       <SignInDialog />
     </div>
   );
@@ -132,7 +127,7 @@ function App() {
           <RouterProvider>
             {import.meta.env.VITE_TEST_ENVIRONMENT === 'true' && (
               <div role="status" className="bg-warning-soft text-warning px-4 py-2 text-center text-sm font-semibold">
-                Test environment - synthetic accounts and sandbox payments only. Test emails go to the designated test inbox.
+                Test environment - synthetic accounts and sandbox payments only. Notification email delivery is disabled.
               </div>
             )}
             <AppContent />

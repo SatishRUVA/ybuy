@@ -5,7 +5,7 @@ const appUrl = `http://localhost:${appPort}`;
 
 export default defineConfig({
   testDir: './tests',
-  testIgnore: '**/local/**',
+  testIgnore: ['**/local/**', '**/staging/**', '**/profiles/**'],
   use: {
     baseURL: appUrl,
     trace: 'retain-on-failure',

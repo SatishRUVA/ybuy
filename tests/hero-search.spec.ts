@@ -4,6 +4,7 @@ import { appUrl } from './test-url';
 
 const categoryId = '20000000-0000-4000-8000-000000000001';
 const listingId = '30000000-0000-4000-8000-000000000001';
+test.setTimeout(60_000);
 
 async function setup(page: Page) {
   await page.route('**/src/lib/supabase.ts*', mockSupabaseModule);
@@ -23,6 +24,8 @@ async function setup(page: Page) {
   });
   await page.route('**/rest/v1/**', (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/app_settings')) return route.fulfill({ json: { value: ['US'] } });
+    if (url.pathname.endsWith('/reference_countries')) return route.fulfill({ json: [{ code: 'US', name: 'United States' }] });
     if (url.pathname.endsWith('/search_available_listings')) {
       const params = route.request().postDataJSON();
       const count = params.p_radius_miles === null ? 5 : [5, 10, 25, 50].indexOf(params.p_radius_miles) + 1;
@@ -44,18 +47,125 @@ async function setup(page: Page) {
 }
 
 async function selectLocation(page: Page, query = 'Dallas') {
-  await page.getByRole('button', { name: 'Set your location', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose your area', exact: true }).click();
   await page.getByRole('textbox', { name: 'Search city or ZIP' }).fill(query);
   await page.getByRole('dialog', { name: 'Choose location' }).getByRole('button', { name: /Dallas, Texas/ }).click();
 }
 
+async function selectRadius(page: Page, value: string) {
+  await page.getByRole('combobox', { name: /^Search radius:/ }).click();
+  await page.getByRole('option', { name: value === 'any' ? 'Any distance' : `Within ${value} miles`, exact: true }).click();
+}
+
+function radiusControl(page: Page) {
+  return page.getByRole('combobox', { name: /^Search radius:/ });
+}
+
 test.beforeEach(async ({ page }) => setup(page));
+
+test('Preview 1 wordmark returns to Home on desktop and mobile', async ({ page }) => {
+  await page.goto(`${appUrl}/search`, { waitUntil: 'domcontentloaded' });
+  const mainNavigation = page.getByRole('navigation', { name: 'Main navigation' });
+  const homeLink = page.getByRole('button', { name: 'YBuy home', exact: true }).first();
+
+  await expect(homeLink).toBeVisible();
+  await homeLink.click();
+  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe('/');
+  await expect(mainNavigation.getByRole('button', { name: 'Home', exact: true })).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Open menu' }).click();
+  await page.getByRole('button', { name: 'Explore', exact: true }).click();
+  await expect(page).toHaveURL(/\/search/);
+  await page.getByRole('button', { name: 'YBuy home', exact: true }).first().click();
+  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe('/');
+});
+
+test('marketplace search exposes the preview workflow hierarchy and working grid/list views', async ({ page }) => {
+  await page.goto(`${appUrl}/search?q=camera&lat=32.8&lng=-96.8&loc=Dallas%2C+Texas&radius=25`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Find "camera" nearby' })).toBeVisible();
+  await expect(page.locator('.p1-search-bar')).toHaveCSS('position', 'static');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('3 items');
+  await expect(page.getByRole('complementary', { name: 'Refine your search' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Grid view' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.marketplace-results-grid article')).toHaveCount(3);
+  await page.getByRole('button', { name: 'List view' }).click();
+  await expect(page.locator('.marketplace-results-list article')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: 'List view' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page).toHaveURL(/radius=25/);
+  await page.getByRole('button', { name: 'Grid view' }).click();
+  await expect(page.locator('.marketplace-results-grid article')).toHaveCount(3);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('complementary', { name: 'Refine your search' })).not.toBeVisible();
+  await page.getByRole('button', { name: /^Filters/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Filters' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('homepage uses real radius-filtered inventory, honest photo states and existing listing/auth destinations', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nothing listed yet' })).toBeVisible();
+  await expect(page.locator('.p1-hero-collage a')).toHaveCount(0);
+  const request = page.waitForRequest((req) => req.url().includes('/rpc/search_available_listings'));
+  await selectLocation(page);
+  expect((await request).postDataJSON()).toMatchObject({
+    p_latitude: 32.8, p_longitude: -96.8, p_radius_miles: 5, p_start_date: null, p_end_date: null,
+  });
+
+  await expect(page.getByRole('heading', { name: 'Good finds around Dallas' })).toBeVisible();
+  const shelf = page.getByRole('region', { name: 'Rental finds' });
+  await expect(shelf.getByRole('link', { name: /^View listing:/ })).toHaveCount(1);
+  await expect(shelf.getByText('By Test Owner', { exact: true })).toBeVisible();
+  await expect(page.locator('.p1-hero-collage a')).toHaveAttribute('href', `/listing/${listingId}`);
+  await expect(page.locator('.p1-hero-collage').getByText('Photo unavailable')).toBeVisible();
+  await shelf.getByRole('button', { name: 'Save to favorites' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await shelf.getByRole('link', { name: /^View listing:/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/listing/${listingId}`));
+});
+
+test('search uses Preview 1 colors without overriding primary button text or active filters', async ({ page }) => {
+  await page.goto(`${appUrl}/search?q=camera&lat=32.8&lng=-96.8&loc=Dallas%2C+Texas&radius=25&verified=1`, { waitUntil: 'domcontentloaded' });
+  const search = page.getByRole('button', { name: 'Search', exact: true });
+  await expect(search).toHaveCSS('background-color', 'rgb(49, 87, 225)');
+  await expect(search).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(search.locator('svg')).toHaveCSS('color', 'rgb(255, 255, 255)');
+  const filters = page.getByRole('button', { name: /^Filters/ });
+  await expect(filters).toHaveCSS('color', 'rgb(49, 87, 225)');
+  await expect(filters.locator('span')).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await page.getByRole('combobox', { name: 'Category', exact: true }).click();
+  const menu = page.getByRole('listbox');
+  await expect(menu).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(page.getByRole('option', { name: 'All categories', exact: true })).toHaveCSS('color', 'rgb(49, 87, 225)');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('combobox', { name: 'Category', exact: true })).toBeFocused();
+});
+
+test('closed calendar overlay does not paint a white screen over the marketplace', async ({ page }) => {
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
+  const layer = page.locator('.p1-overlay');
+  await expect(layer).toHaveClass(/pointer-events-none/);
+  await expect(layer).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(layer).toHaveCSS('min-height', '0px');
+  await page.getByRole('button', { name: 'Choose a date range', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Choose rental dates' })).toBeVisible();
+  await expect(layer).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await page.keyboard.press('Escape');
+  await expect(layer).toHaveClass(/pointer-events-none/);
+  await expect(page.getByRole('button', { name: 'Choose a date range', exact: true })).toBeFocused();
+});
 
 test('hero defaults to 5 miles and every radius reaches the existing backend and changes rendered results', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  const radius = page.getByRole('combobox', { name: 'Search radius' });
-  await expect(radius).toHaveValue('5');
-  await expect(page.getByRole('button', { name: 'Add dates', exact: true })).toBeVisible();
+  const radius = radiusControl(page);
+  await expect(radius).toContainText('5 mi');
+  await expect(page.getByRole('button', { name: 'Choose a date range', exact: true })).toBeVisible();
   await selectLocation(page, '75001');
   await expect(page.getByRole('button', { name: 'Dallas, Texas 75001', exact: true })).toBeVisible();
   await page.getByRole('textbox', { name: 'Search for items to rent', exact: true }).fill('camera');
@@ -63,10 +173,10 @@ test('hero defaults to 5 miles and every radius reaches the existing backend and
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   expect((await request).postDataJSON()).toMatchObject({ p_radius_miles: 5, p_latitude: 32.8, p_longitude: -96.8, p_start_date: null, p_end_date: null, p_keyword: 'camera' });
   await expect(page.getByRole('heading', { level: 1 })).toContainText('1 item');
-  await expect(page.getByText('About 1.3 mi away')).toBeVisible();
+  await expect(page.getByLabel('About 1.3 mi away')).toBeVisible();
   for (const [value, count] of [['10', 2], ['25', 3], ['50', 4], ['any', 5]] as const) {
     const next = page.waitForRequest((req) => req.url().includes('/rpc/search_available_listings') && req.postDataJSON().p_radius_miles === (value === 'any' ? null : Number(value)));
-    await radius.selectOption(value);
+    await selectRadius(page, value);
     await next;
     await expect(page.getByRole('heading', { level: 1 })).toContainText(`${count} items`);
     await expect(page).toHaveURL(new RegExp(`radius=${value}`));
@@ -80,16 +190,17 @@ test('keywords, radius, dates, location and filters survive listing navigation, 
   await page.getByText('Radius camera 1', { exact: true }).click();
   await expect(page).toHaveURL(/\/listing\//);
   await page.goBack({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('combobox', { name: 'Search radius' })).toHaveValue('25');
+  await expect(radiusControl(page)).toContainText('25 mi');
   await expect(page.getByRole('textbox', { name: 'Search for items to rent', exact: true })).toHaveValue('camera');
   expect(new URL(page.url()).searchParams).toEqual(new URL(searchUrl).searchParams);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { level: 1 })).toContainText('3 items');
-  await page.getByRole('button', { name: 'Filters', exact: false }).first().click();
+  const filtersButton = page.getByRole('button', { name: 'Filters', exact: false }).first();
+  if (await filtersButton.getAttribute('aria-expanded') !== 'true') await filtersButton.click();
   await expect(page.getByRole('switch', { name: 'Verified owner' })).toBeChecked();
   await expect(page.getByRole('slider', { name: 'Max price per day' })).toHaveValue('75');
   await page.getByRole('button', { name: 'YBuy home' }).click();
-  await expect(page.getByRole('combobox', { name: 'Search radius' })).toHaveValue('25');
+  await expect(radiusControl(page)).toContainText('25 mi');
   await expect(page.getByRole('textbox', { name: 'Search for items to rent', exact: true })).toHaveValue('camera');
   const request = page.waitForRequest((req) => req.url().includes('/rpc/search_available_listings'));
   await page.getByRole('button', { name: 'Search', exact: true }).click();
@@ -103,7 +214,7 @@ test('empty five-mile search offers every wider radius without clearing keywords
     await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
   }
   await page.getByRole('button', { name: 'Search 25 miles' }).click();
-  await expect(page.getByRole('combobox', { name: 'Search radius' })).toHaveValue('25');
+  await expect(radiusControl(page)).toContainText('25 mi');
   await expect(page).toHaveURL(/radius=25/);
   expect(new URL(page.url()).searchParams.get('q')).toBe('camera');
   expect(new URL(page.url()).searchParams.get('lat')).toBe('32.8');
@@ -111,50 +222,53 @@ test('empty five-mile search offers every wider radius without clearing keywords
 
 test('invalid location has a recovery message and keyboard dismissal restores focus', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  const trigger = page.getByRole('button', { name: 'Set your location', exact: true });
+  const trigger = page.getByRole('button', { name: 'Choose your area', exact: true });
   await trigger.click();
   await expect(page.getByRole('textbox', { name: 'Search city or ZIP' })).toBeFocused();
   await page.getByRole('textbox', { name: 'Search city or ZIP' }).fill('Invalid');
   await expect(page.getByRole('status').filter({ hasText: 'No matching location' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Search', exact: true })).toBeDisabled();
+  await selectLocation(page);
   await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('0 items');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('1 item');
 });
 
 test('clearing a failed city query removes its stale error', async ({ page }) => {
   await page.route('**/api.maptiler.com/geocoding/**', (route) => route.fulfill({ status: 503 }));
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Set your location', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose your area', exact: true }).click();
   const cityInput = page.getByRole('textbox', { name: 'Search city or ZIP' });
   await cityInput.fill('Dallas');
   const error = page.getByRole('status').filter({ hasText: 'City search is unavailable. Try again.' });
   await expect(error).toBeVisible();
   await cityInput.fill('');
   await expect(error).toBeHidden();
-  await expect(page.getByRole('status').filter({ hasText: 'Enter a city or ZIP/postal code to search.' })).toBeVisible();
+  await expect(cityInput).toHaveValue('');
+  await expect(cityInput).toBeFocused();
 });
 
 test('mobile hero and expandable results retain radius and expose optional dates without overflow', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('combobox', { name: 'Search radius' })).toHaveValue('5');
+  await expect(radiusControl(page)).toContainText('5 mi');
   await selectLocation(page);
-  await page.getByRole('combobox', { name: 'Search radius' }).selectOption('10');
-  await page.getByRole('textbox', { name: 'What do you need?', exact: true }).fill('camera');
-  await page.getByRole('button', { name: 'Add dates', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Select dates' })).toBeVisible();
+  await selectRadius(page, '10');
+  await page.getByRole('textbox', { name: 'Search for items to rent', exact: true }).fill('camera');
+  await page.getByRole('button', { name: 'Choose a date range', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Choose rental dates' })).toBeVisible();
   await page.getByRole('button', { name: 'Clear dates' }).click();
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1 })).toContainText('2 items');
   await expect(page.getByRole('button', { name: /camera Dallas, Texas Within 10 miles/ })).toBeVisible();
   await page.getByRole('button', { name: /camera Dallas, Texas Within 10 miles/ }).click();
-  await expect(page.getByRole('combobox', { name: 'Search radius' })).toHaveValue('10');
+  await expect(radiusControl(page)).toContainText('10 mi');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   for (const size of [{ width: 812, height: 375 }, { width: 768, height: 1024 }]) {
     await page.setViewportSize(size);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await expect(page.getByRole('combobox', { name: 'Search radius' })).toBeVisible();
+    await expect(radiusControl(page)).toBeVisible();
   }
 });

@@ -4,7 +4,8 @@ import { useAuth } from '@/auth-context';
 import { Alert, Button } from '@/components/ui';
 import { Card, CardContent } from '@/components/shadcn/card';
 import { Skeleton } from '@/components/skeleton';
-import { fieldClass } from '@/components/form-classes';
+import { Dropdown } from '@/components/shadcn/select';
+import { WorkspaceHeader } from '@/components/account-workspace';
 import {
   getNotificationPreferences,
   listNotifications,
@@ -63,7 +64,7 @@ function NotificationIcon({ notification }: { notification: AppNotification }) {
   const style = styles[event ?? '']
     ?? { icon: notification.title === 'Booking confirmed' ? CheckCircle2 : Bell, tone: 'text-accent bg-accent-soft' };
   const Icon = style.icon;
-  return <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${style.tone}`}>
+  return <span className={`flex h-10 w-10 shrink-0 items-center justify-center ${style.tone.split(' ')[0]}`}>
     <Icon size={20} aria-hidden="true" />
   </span>;
 }
@@ -132,7 +133,7 @@ function MarketplaceUpdates({ enabled }: { enabled: boolean }) {
         setRows((current) => current.map((item) => item.id === notification.id
           ? { ...item, read_at: new Date().toISOString() } : item));
       }
-      navigate({ name: 'requests', tab: notification.negotiation_id ? 'offers' : 'mine' });
+      navigate({ name: 'requests', tab: 'mine' });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not open this request update.');
     } finally {
@@ -158,7 +159,7 @@ function MarketplaceUpdates({ enabled }: { enabled: boolean }) {
   const unread = rows.filter((row) => !row.read_at).length;
   return <section aria-labelledby="marketplace-updates-title" className="space-y-3">
     <header className="flex flex-wrap items-center justify-between gap-2">
-      <div><h2 id="marketplace-updates-title" className="text-lg font-semibold text-main">Request and offer updates</h2>
+      <div><h2 id="marketplace-updates-title" className="text-lg font-semibold text-main">Community request updates</h2>
         <p className="text-xs text-sec">{unread} unread update{unread === 1 ? '' : 's'}</p></div>
       <div className="flex gap-2">
         <Button size="sm" variant="ghost" onClick={() => void load()}>Refresh</Button>
@@ -167,7 +168,7 @@ function MarketplaceUpdates({ enabled }: { enabled: boolean }) {
     </header>
     {error && <Alert tone="error" title="Request updates unavailable">{error}</Alert>}
     {loading ? <div className="space-y-3" aria-busy="true">{[0, 1].map((index) => <Skeleton key={index} className="h-24 w-full" />)}</div>
-      : rows.length === 0 ? <Card><CardContent className="p-5 text-sm text-sec">No request or offer updates yet.</CardContent></Card>
+      : rows.length === 0 ? <Card><CardContent className="p-5 text-sm text-sec">No community request updates yet.</CardContent></Card>
         : <div className="space-y-3">{rows.map((notification) => <Card key={notification.id}>
           <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0"><div className="flex flex-wrap items-center gap-2">
@@ -203,6 +204,7 @@ export function NotificationsPage() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [processingEmails, setProcessingEmails] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [section, setSection] = useState<'updates' | 'preferences'>('updates');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -337,16 +339,8 @@ export function NotificationsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 font-display text-2xl font-bold text-main">
-            <Bell size={22} aria-hidden="true" /> Notifications
-          </h1>
-          <p className="mt-1 text-sm text-sec" role="status" aria-live="polite" aria-atomic="true">
-            {unreadCount} unread notification{unreadCount === 1 ? '' : 's'}
-          </p>
-        </div>
+    <div className="p1-work-page p1-account"><div>
+      <WorkspaceHeader title="The useful updates." description="Your rentals, requests and messages. The things worth knowing." action={
         <Button
           size="sm"
           variant="secondary"
@@ -357,44 +351,51 @@ export function NotificationsPage() {
         >
           Mark all read
         </Button>
-      </header>
+      } />
+      <p className="text-sm text-sec mb-5" role="status" aria-live="polite" aria-atomic="true">{unreadCount} unread notification{unreadCount === 1 ? '' : 's'}</p>
+      <div className="p1-tabs p1-space-bottom" aria-label="Notification sections">
+        <button type="button" aria-pressed={section === 'updates' && readFilter === 'all'} onClick={() => { setSection('updates'); setReadFilter('all'); }}>All updates</button>
+        <button type="button" aria-pressed={section === 'updates' && readFilter === 'unread'} onClick={() => { setSection('updates'); setReadFilter('unread'); }}>Unread ({unreadCount})</button>
+        <button type="button" aria-pressed={section === 'preferences'} onClick={() => setSection('preferences')}>Preferences & email</button>
+      </div>
 
       {error && <Alert tone="error" title="Notifications unavailable">
         <p>{error}</p>
         <Button size="sm" variant="secondary" className="mt-2" onClick={() => void load()}>Try again</Button>
       </Alert>}
 
-      <section aria-label="Notification history" className="space-y-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="space-y-1 text-sm font-medium text-main">
+      <div hidden={section !== 'updates'} className="space-y-6">
+      <details>
+        <summary>Filter updates</summary>
+        <div className="p1-form-two">
+          <label className="p1-field">
             Category
-            <select className={fieldClass()} value={category} onChange={(event) => setCategory(event.target.value as NotificationCategory | 'all')}>
-              <option value="all">All categories</option>
-              {NOTIFICATION_CATEGORIES.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-            </select>
+            <Dropdown aria-label="Category" value={category} onChange={setCategory} options={[
+              { value: 'all', label: 'All categories' },
+              ...NOTIFICATION_CATEGORIES.map((item) => ({ value: item.key, label: item.label })),
+            ]} />
           </label>
-          <label className="space-y-1 text-sm font-medium text-main">
+          <label className="p1-field">
             Read status
-            <select className={fieldClass()} value={readFilter} onChange={(event) => setReadFilter(event.target.value as typeof readFilter)}>
-              <option value="all">All notifications</option>
-              <option value="unread">Unread</option>
-              <option value="read">Read</option>
-            </select>
+            <Dropdown aria-label="Read status" value={readFilter} onChange={setReadFilter} options={[
+              { value: 'all', label: 'All notifications' }, { value: 'unread', label: 'Unread' }, { value: 'read', label: 'Read' },
+            ]} />
           </label>
         </div>
+      </details>
 
+      <section aria-label="Notification history" className="space-y-3">
         {loading ? <div className="space-y-3" aria-busy="true" aria-label="Loading notifications">
           {Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-28 w-full" />)}
-        </div> : rows.length === 0 ? <Card><CardContent className="flex flex-col items-center gap-2 p-8 text-center">
+        </div> : rows.length === 0 ? <div className="p1-empty">
           <Bell size={24} className="text-muted" aria-hidden="true" />
-          <p className="font-semibold text-main">No notifications yet</p>
-          <p className="text-sm text-sec">Auction, booking, message, request, and case updates will appear here.</p>
-        </CardContent></Card> : <div className="space-y-3">
-          {rows.map((notification) => <Card key={notification.id}>
-            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex min-w-0 gap-3">
+          <h2>{readFilter === 'unread' ? 'All caught up. Nice.' : 'No notifications yet'}</h2>
+          <p>Auction, booking, message, request, and case updates will appear here.</p>
+          <Button variant="secondary" onClick={() => navigate({ name: 'search' })}>Find your next plan</Button>
+        </div> : <div className="p1-notice-list">
+          {rows.map((notification) => <article key={notification.id} className={notification.read_at ? '' : 'is-unread'}>
                 <NotificationIcon notification={notification} />
-                <div className="min-w-0">
+                <div className="account-notice-body">
                   <div className="flex flex-wrap items-center gap-2">
                     {!notification.read_at && <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden="true" />}
                     <h2 className="font-semibold text-main">{notification.title}</h2>
@@ -405,7 +406,6 @@ export function NotificationsPage() {
                     {relativeTime(notification.created_at)}
                   </time>
                 </div>
-              </div>
               <Button
                 size="sm"
                 variant="secondary"
@@ -415,8 +415,7 @@ export function NotificationsPage() {
               >
                 View update
               </Button>
-            </CardContent>
-          </Card>)}
+          </article>)}
           {rows.length < total && <div className="flex justify-center">
             <Button variant="secondary" loading={loadingMore} onClick={() => void loadMore()}>Load more</Button>
           </div>}
@@ -424,8 +423,10 @@ export function NotificationsPage() {
       </section>
 
       <MarketplaceUpdates enabled={preferences?.requests_in_app === true} />
+      </div>
 
-      <section aria-labelledby="notification-preferences-title" className="space-y-3">
+      <div hidden={section !== 'preferences'} className="space-y-6">
+      <section aria-labelledby="notification-preferences-title" className="p1-panel account-panel space-y-3">
         <div>
           <h2 id="notification-preferences-title" className="flex items-center gap-2 text-lg font-semibold text-main">
             <Settings size={18} aria-hidden="true" /> Notification preferences
@@ -435,7 +436,7 @@ export function NotificationsPage() {
         {preferencesError && <Alert tone="error" title="Could not load or save preferences">{preferencesError}</Alert>}
         {!preferences ? <Skeleton className="h-40 w-full" /> : <Card>
           <CardContent className="divide-y divide-app p-0">
-            <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem] sm:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] gap-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sec">
+            <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem] sm:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] gap-2 px-4 py-3 text-xs font-semibold text-sec">
               <span>Updates</span><span className="text-center">In app</span><span className="text-center">Email</span>
             </div>
             {NOTIFICATION_CATEGORIES.map((item) => <div key={item.key} className="grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem] sm:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] items-center gap-2 px-4 py-3">
@@ -460,7 +461,7 @@ export function NotificationsPage() {
         </Card>}
       </section>
 
-      <section aria-labelledby="email-delivery-title" className="space-y-2">
+      <section aria-labelledby="email-delivery-title" className="p1-panel account-panel space-y-2">
         <h2 id="email-delivery-title" className="flex items-center gap-2 text-lg font-semibold text-main">
           <Mail size={18} aria-hidden="true" /> Email delivery
         </h2>
@@ -476,6 +477,7 @@ export function NotificationsPage() {
           Process pending email
         </Button>}
       </section>
-    </div>
+      </div>
+    </div></div>
   );
 }

@@ -1,0 +1,134 @@
+.admin-console {
+  min-width: 0;
+  background: transparent;
+}
+
+.admin-console__layout {
+  min-width: 0;
+}
+
+.admin-console__nav {
+  margin-bottom: 28px;
+}
+
+.admin-console__nav-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-console__nav-item {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--p1-muted);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.admin-console__nav-item[aria-current='page'] {
+  font-weight: 650;
+  background: var(--p1-info);
+  color: var(--p1-blue);
+}
+
+.admin-console__main {
+  min-width: 0;
+}
+
+.admin-console__main > :first-child {
+  margin-bottom: 24px;
+}
+
+.admin-console__main table {
+  font-size: 13px;
+  background: var(--p1-white);
+}
+
+.admin-console__main thead {
+  background: var(--p1-paper);
+}
+
+.admin-console__main :is(th, td) {
+  padding: 16px;
+  border-color: var(--p1-border);
+}
+
+.admin-console__main th {
+  color: var(--p1-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.admin-console__main tbody tr:hover {
+  background: var(--p1-paper);
+}
+
+.admin-console__main--overview section[aria-label='Marketplace'] {
+  gap: 24px;
+}
+
+.admin-console__main--overview section[aria-label='Marketplace'] > div {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.admin-console__main--overview section[aria-label='Marketplace'] > div > div {
+  padding: 10px 0;
+}
+
+.admin-console__main--overview section[aria-label='Marketplace'] .tnum {
+  font-family: 'Manrope', sans-serif;
+  font-size: 36px;
+  letter-spacing: -.05em;
+}
+
+.p1-production-operation .p1-settings-form {
+  padding: 0;
+  background: transparent;
+}
+
+.p1-production-operation fieldset {
+  min-width: 0;
+}
+
+.admin-console__nav-item:hover {
+  background: var(--p1-paper);
+}
+
+.admin-console__nav-item:focus-visible {
+  outline: 2px solid var(--p1-blue);
+  outline-offset: 3px;
+}
+
+@media (max-width: 639px) {
+  .admin-console__nav {
+    gap: 0.75rem 0.75rem;
+    padding-bottom: 1rem;
+  }
+
+  .admin-console__nav-item {
+    min-height: 2.75rem;
+  }
+
+  .admin-console__main {
+    padding-top: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-console__nav-item {
+    transition: none;
+  }
+}

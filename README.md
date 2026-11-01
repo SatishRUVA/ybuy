@@ -1,5 +1,271 @@
 # ybuy
 
+## Preview 1 production integration
+
+### Local city inventory
+
+Run `node dev\seed-local-marketplace.mjs` to insert the same ten existing rental
+templates in Dallas, Irving and Omaha (30 listings total). This command only
+targets the isolated `supabase_db_YBuy` container and requires the local profile
+picker accounts. It is transactional and idempotent: reruns leave existing seed
+IDs unchanged. Existing listings, bookings and accounts are not replaced.
+Availability starts on the insertion date and spans 30 days; enabled delivery
+costs $15. Existing preview image URLs are reused, so image loading still depends
+on the image host. Seeded listings do not invent ratings or owner verification.
+
+The shared marketplace cards use the supplied card design: rounded photo/cards,
+lime instant-booking badges, actual photo counts, owner avatars, handoff badges,
+daily price and a working View Details link. Favorites retain their real mutation.
+
+The current application defaults to Preview 1's cobalt/lime palette, not Ocean
+Green. The live app and local preview share `src/styles/preview-one.css`.
+Home, browse/search, listing details, favorites and checkout now render the actual
+`src/preview-1` components through `MarketplaceProvider`, with real listings,
+availability, favorites, messages and booking/payment commands. Confirmation
+shares the original ticket template with the existing authoritative booking
+loader. Header, sidebar and footer are also shared components, not lookalikes.
+The main routes never mount the demo `PreviewProvider` as their backend.
+
+Renter and owner dashboards, inventory, listing creation/editing, payouts,
+messages, notifications, requests and profile/settings now use the native
+Preview templates with typed live-data adapters. Bidding cards, bidding-room
+layout/rules and the administrator page/tab layout are also shared between the
+preview and production. Creating/editing keeps the original standalone wizard,
+without the account-workspace sidebar. Real workflow tools that have no Preview
+screen remain in separate dialogs or detail pages rather than replacing it.
+
+| Preview screen | Main route |
+| --- | --- |
+| Home / browse / details | `/`, `/search`, `/listing/:id` |
+| Bidding / bidding room | `/bidding`, `/auction/:id` |
+| Requests | `/requests` |
+| Booking / result | `/checkout/:id`, `/confirmation/:id` |
+| Rentals / saved items | `/dashboard?tab=renting`, `/favorites` |
+| Owner / inventory | `/dashboard?tab=lending`, `/dashboard/listings` |
+| Listing wizard / earnings | `/create-listing`, `/edit-listing/:id`, `/payouts` |
+| Messages / notifications / profile | `/messages`, `/messages/:id`, `/notifications`, `/profile` |
+| Admin and its six sections | `/admin`, `/admin/:section` |
+
+The interface-state gallery, sample role switches, fake payments, demo maintenance
+controls and screen index stay preview-only. Main routes show real loading,
+empty, failure and success states instead of installing simulated controls.
+Administrator deep links retain their protected tool destinations and individual
+permissions. Owners link published rentals to requests at the advertised price;
+the new UI does not create private offers or counteroffers.
+
+Real listing validation, uploads, draft saving, publication review, authentication
+and booking/payment verification remain authoritative. Listing creation keeps
+Preview 1's shared layout and stylesheet, with one validated production wizard
+instead of a second wizard inside a modal. Required condition, pricing and private
+pickup controls are available inline; AI assistance and optional item fields use
+a details disclosure. Blocked-day failures offer a reload and prevent continuing
+until availability can be verified. No sample photos,
+fake publication success or demo payments are added to the main app.
+The Photos step follows the supplied Preview 1 upload layout: a full-width
+neutral upload area, no preview sidebar, and secondary Back / primary Continue
+actions. The preview-only sample-photo button is replaced by real draft saving.
+Uploaded photos retain cover selection, ordering, replacement and removal.
+
+Earlier staging verification below describes the previous Ocean Green rollout;
+it is not evidence of complete pixel parity for the current redesign.
+Sharing tokens alone is not
+pixel-level proof. Shared CSS resets have deliberately low specificity so they
+cannot replace primary-button text, selected-filter colors or semantic feedback
+with inherited ink. Preview typography still takes precedence over browser
+heading defaults. Dialogs and dropdown portals share the same presentation scope.
+Shared overlay roots explicitly stay transparent with no page minimum height:
+a closed calendar must not inherit the page's white background and cover the app.
+Incomplete descriptions can be saved privately as drafts; advancing and publishing
+still enforce validation.
+
+Earlier, pre-direct-integration local verification included a successful build and typecheck,
+17 route layouts at 375/768/1440px, wizard template geometry/typography/colors at
+those sizes, calendar and modal focus/viewport checks, exact primary/filter colors,
+owner approval-before-payment, renter status routing, payment retry on the same
+booking, and delivery/note RPC payloads and estimates. Account regressions also
+cover favorites, notifications, handoff retry and return confirmation. The build
+still reports its existing large-chunk warning.
+
+The direct integration has focused regressions in `tests/preview-backend.spec.ts`
+for original tag/class hierarchy, exact hero-copy screenshot equality at
+375/768/1440px, empty real catalogs, authoritative search filters and errors,
+favorite mutation failures, checkout state/delivery/note persistence, exclusive
+return dates, same-booking payment retry and exact receipt amount/currency checks.
+The old main-site page fade is not applied to these routes: its compositing
+changed text rendering even with matching markup and colors.
+All 13 focused browser regressions passed after the direct integration.
+Application typecheck, targeted lint and production build also passed; lint
+reports nine Fast Refresh export warnings and the build retains its large-chunk
+warning. The unmocked local homepage returned HTTP 200 with no page errors or
+alerts; the nearby catalog was empty. These checks did not create live bookings,
+charge cards, transfer payouts or send notification emails.
+
+This is not a claim of all-page screenshot identity. Extra admin subsection,
+case/evidence and wallet controls retain real production features in separate
+tools. Real listings, authentication state, location lookup and missing local
+fixture photos differ from the preview's sample content; unavailable photos are
+reported rather than replaced with misleading demo listing images. Hosted
+deployment and live provider transactions have not been validated by these checks.
+
+Native checkout creates a booking once before starting Stripe, then retries
+payment against that same returned ID. It cannot simulate card success or a
+decline on a main route. Owner approval is not payment confirmation; a confirmed
+ticket requires the webhook-written receipt to match the booking amount in cents
+and USD currency. Promo codes, booking agreements, pickup/reservation/settlement,
+wallet/support/claims and sign-out remain accessible in separate dialogs.
+Rental occupancy is `[pickup, return)`: a booked return day is allowed when the
+occupied days are clear, but cannot be selected as pickup.
+
+### Current validation and deployment
+
+The essential TypeScript check and production build pass. The local Vite server
+responds at `http://localhost:5174`. All 24 Preview views (including six admin
+sections and the state gallery) rendered without JavaScript errors. The main
+route render check also found no JavaScript crashes; this is not full workflow QA.
+
+These additional migrations are applied locally, not to the hosted database:
+
+- `20261101000001_atomic_owner_availability.sql`: one owner-only transaction for
+  availability and blocked days, with revision and booking guards.
+- `20261101000002_public_request_listing_links.sql`: links an owner's matching
+  published listing using existing matching rules and notification deduplication.
+- `20261101000003_profile_bio.sql`: restores the Preview's About you field with
+  owner-scoped profile persistence, length and database plain-text validation.
+
+Local `item_requests` and `bidding` feature flags remain disabled. The local
+`owner-payout-status` function returns 503 because Stripe settlement is not
+configured; that failure is surfaced, not replaced by simulated payout data.
+Hosted migration deployment and authorized provider configuration remain needed
+before those workflows can be used there. Do not enable private offers.
+
+Deferred QA: full owner/renter workflow regression; mutation failures and retries;
+all-screen pixel, mobile/tablet and accessibility checks; hosted Stripe checkout,
+webhooks, settlement and bank-payout verification. No new automated tests or
+full regression suites were executed in this minimal-validation phase.
+
+### Checkout delivery and notes
+
+The local database has applied `20261031000002_checkout_delivery_notes.sql`.
+Only this exact, successfully applied version was recorded using local migration
+repair; unrelated historical drift was not marked as applied or reset. The hosted
+database has not been changed.
+
+Pickup/delivery, the listing's delivery fee and the renter's optional
+500-character note are frozen on booking creation. The fee is calculated during
+the insert, before instant bookings capture their immutable rental agreement;
+that agreement therefore includes the correct total and handoff details. Owner
+settlement includes the frozen delivery fee, but excludes platform fees, insurance
+and deposit. Promotions do not discount delivery. Availability, active-session
+checks, RLS and exact verified payment remain authoritative.
+
+`supabase/tests/checkout_delivery_notes.sql` exercises 23 local SQL assertions:
+pickup and delivery amounts, note bounds/persistence, capacity, direct-write RLS,
+immutable agreement totals, promotion/insurance combinations, verified payment
+and owner-only return/settlement. Fixtures and synthetic payment receipts are
+rolled back; no provider charge, refund, transfer or email is sent by these tests.
+
+## Main v1 staging
+
+`existing/main-v1` starts from the `redesign` application's real workflows and
+retains the Ocean Green theme. The separate Vercel project is
+`ybuy-redesign-v1`; its authorized backend is the existing `ybuy-e2e-test`
+Supabase project. This backend is shared with other test deployments, not
+production. Do not reset it or import production customer data.
+
+This section describes the earlier staging rollout, not the current direct
+Preview integration. The current build includes the Preview source directories
+because main routes import shared templates from them; `.vercelignore` no longer
+excludes those sources. The isolated demo route remains separate from live data
+and action providers. Remaining financial release gates are recorded below.
+
+Use Stripe test mode only. Set `NOTIFICATION_DELIVERY_DISABLED=true` on the test
+backend before booking tests: `NOTIFICATION_LIVE_DELIVERY=false` alone still
+allows redirected test emails. The delivery-disabled switch leaves jobs queued
+and returns an explicit disabled response before claiming jobs or calling Resend.
+
+Run `pnpm exec playwright test --config playwright.staging.config.ts` for the
+deployed baseline smoke checks: real listing data at three viewport sizes,
+Ocean Green, listing navigation, persisted sign-in and the no-email guard.
+The staging suite also verifies real owner block/unblock persistence and renter
+RLS denial, plus real UI instant checkout through Stripe sandbox card payment,
+the signed webhook's persisted payment receipt, check-in, return initiation and
+owner-only completion. It rejects live checkout sessions before entering payment
+details and does not enroll test actors in Link. Synthetic payment/agreement
+records are retained for audit; their listings are returned to draft.
+
+Owner availability spans at most 30 calendar days, including blocked days.
+The stored end date remains exclusive: November 1 through December 1 makes
+November 1-30 available, before blocking. The existing 180-day advance scheduling
+horizon is unchanged. Retained historical windows are not rewritten; the guard
+checks new windows, changed dates and draft publication without bypassing
+reservation protection. Validate it without persistent fixture writes using
+`pnpm exec supabase db query --linked --project-ref jzyjmsixfuwzfnntewqn --file tests\staging\listing-window.sql`.
+
+### Workflow component rollout
+
+The application reuses its Radix select primitive for shared dropdowns, search
+sorting, listing category/delivery radius, dashboard availability selection,
+notification filters and admin operation forms. Menu selection uses Ocean Green
+tokens, keyboard/typeahead navigation and right-aligned checkmarks; named admin
+controls still participate in `FormData`.
+
+Both listing-card variants show the actual owner's name, the backend verification
+badge beside that name, and distance when available. Reviews never grant a
+verification badge. Ratings remain independent of owner identity.
+
+The creation/edit wizard now includes immediate owner-blocked-date management
+within its availability step, reusing the same API and booked-date protection as
+the dashboard. Blocking errors require reloading authoritative dates before retry;
+the UI does not claim an unsaved change succeeded.
+
+### Page workflow migration
+
+The earlier adapted-page rollout translated the approved Preview 1 page hierarchy and
+interactions, not its private theme or simulated data:
+
+- Marketplace: persistent search filters, grid/list/map results, uploaded-photo
+  listing galleries, owner contact, date continuity and authoritative favorites.
+- Renting: stepped checkout, task-led bookings, pickup/return, messages,
+  notifications, saved items, item requests and account/trust pages.
+- Owning: inventory and incoming approvals, a five-step listing wizard,
+  real draft/publish controls, availability and blocked-date management.
+- Administration: permission-filtered task groups for queues, people, cases,
+  bookings/money, marketplace configuration and platform controls; existing
+  operation forms retain audit reasons and named form values.
+
+That earlier rollout retained Ocean Green and the existing backend APIs. Private pricing and
+counteroffer creation are not part of the new navigation/workflows; historical
+records remain available where required. Booking approval and checkout redirects
+never count as verified payment. Provider webhook confirmation remains
+authoritative. The public bidding directory displays real auctions or a real
+empty/offline state, never automatic sample auctions or a mock fallback.
+
+Focused workflow regressions are in `account-workspace.spec.ts`,
+`admin-console.spec.ts`, `success-feedback.spec.ts`, `workflow-components.spec.ts`,
+`hero-search.spec.ts` and `ui-remediation.spec.ts`. Browser tests using mock data
+are separate from the real-backend staging checks.
+
+### Main v1 verification and remaining gates
+
+- Application typecheck and production build pass. Focused source lint has no
+  errors; the existing search-map dependency warning and bundle-size warning
+  remain.
+- Page-family layout checks pass at 375, 768 and 1440 pixels. Owner wizard,
+  admin navigation/dialogs, galleries, dropdowns, date bounds, bidding privacy,
+  checkout and handoff/return failure recovery have focused passing regressions.
+- The deployed baseline and real owner availability/RLS checks pass. Real
+  owner-approval UI independently reaches payment-pending, rejects unauthorized
+  approval/premature handoff and verifies cancellation releases the dates.
+- Real staged UI checkout, sandbox charge, signed payment webhook, exact
+  persisted amount/currency and authorized rental lifecycle pass. An approval
+  or a successful redirect alone is never reported as paid.
+
+Deposit-refund and owner-payout provider receipts have not been verified in this
+rollout. Privileged admin writes are covered by frontend/API fixtures, not
+hosted financial/configuration mutations. Check-in photo/evidence capture remains
+explicitly unavailable; the checklist does not pretend to save images or file a
+claim. These are release/feature gaps, not success-shaped substitutes.
+
 ## Brand assets
 
 The shared `BrandLogo` uses the latest supplied transparent wordmark and a
@@ -47,9 +313,24 @@ separates verified local behavior, unresolved failures and hosted release gates.
 
 ## Homepage category discovery
 
+The homepage translates Preview 1's split hero, inventory collage, prominent
+search, image-led categories, four-item discovery shelf, outdoor story and
+renter/owner entry points into Ocean Green. It uses real inventory only; empty
+or failed catalog loads never substitute preview listings. The outdoor story
+appears only when its category and a real outdoor listing are available.
+When coordinates are selected, discovery uses the server's radius-filtered
+search rather than claiming nearby results from a global 24-item sample.
+Saved-item failures are visible, and hearts are disabled during initial loading
+and writes. The homepage and remaining page families have been migrated and
+checked; the verification section distinguishes frontend checks from provider
+and real-backend evidence.
+Listings without uploaded photos no longer receive an unrelated stock photo.
+Cards and rental thumbnails share an explicit photo-unavailable fallback; the
+existing detail gallery already handles an empty photo collection.
+
 Browse by category uses the active database categories in their configured order
 and fixed, distinct category artwork (never user listing uploads). Cards form a
-two-column phone grid, expanding to nine columns on wide desktops, with full-card
+two-column phone grid, expanding to four columns on tablets and eight on desktops, with full-card
 navigation, visible keyboard focus and reduced-motion-aware hover feedback.
 Missing or failed photos retain the category icon and destination. Loading
 skeletons, empty categories and catalog errors remain distinct states.
@@ -169,6 +450,48 @@ approval, bank payouts and the complete paid browser journey remain separate
 acceptance gates. A successful build does not establish any of these.
 
 ## Local lifecycle test accounts
+
+### Password-free local profile selection
+
+Start Docker Desktop, then run:
+
+```powershell
+pnpm exec supabase start
+pnpm exec supabase migration up --local
+pnpm dev:local
+```
+
+Click **Login**, then select a named profile from the **Profile** dropdown:
+ten Owners, ten Renters, Grace Mitchell (Admin), or Daniel Lawson (Super Admin).
+There is no password prompt and no automatic login. The selected profile persists
+across reloads. Click the current name in the header to switch profiles; the
+existing mobile menu also offers Switch account and Sign out.
+Loopback development skips the hosted `/access` security-code screen and returns
+to its requested destination. Production and hosted site-access verification
+remain unchanged.
+
+This mode configures the ignored `.env.local-profiles.local` file from the running
+local Supabase CLI. Existing hosted environment files and lifecycle test accounts
+are unchanged. The dev-only endpoint provisions its own marked synthetic accounts
+and issues a one-use local Auth token; no password or service-role key is sent to
+the browser. Profile/session validation, RLS, actual database admin permissions,
+and additional sensitive-action MFA requirements remain enforced. Owners and
+Renters are personas, not exclusive permission roles.
+
+The picker is unavailable in production builds, hosted-backend modes, and the
+existing `e2e` mode. Its endpoint only accepts loopback clients and same-origin
+selection requests. Anyone with access to this development machine can select
+these local staff accounts; never expose the local server or database publicly.
+Local mode clears inherited payment/email provider credentials rather than
+sending real payments or emails.
+
+Verify the 22 real account sessions, Owner/Renter versus staff permissions,
+profile switching, reload persistence, mobile layout, sign-out, and rejected
+invalid/cross-origin requests with:
+
+```powershell
+pnpm exec playwright test --config playwright.profiles.config.ts
+```
 
 The sign-in dialog offers Supabase email/password sign-in and registration alongside
 Google sign-in (including Gmail accounts). It preserves the destination route and existing session/RLS

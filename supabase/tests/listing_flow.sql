@@ -48,9 +48,9 @@ select lives_ok($$update public.listings set title='Preserved legacy window' whe
 select is((select availability_end-availability_start from public.listings where id='a4000000-0000-4000-8000-000000000002'),60,
  'Existing saved dates are not shortened');
 select throws_ok($$update public.listings set availability_end=current_date+61 where id='a4000000-0000-4000-8000-000000000002'$$,
- '23514','Availability exceeds the configured listing duration','Changed windows must obey the new duration');
+ '23514','Choose no more than 30 consecutive available days. Blocked days do not extend this window.','Changed windows must obey the 30-day cap');
 select throws_ok($$update public.listings set availability_start=current_date+1,availability_end=current_date+32 where id='a4000000-0000-4000-8000-000000000002'$$,
- '23514','Availability exceeds the configured listing duration','A future start cannot exceed 30 days');
+ '23514','Choose no more than 30 consecutive available days. Blocked days do not extend this window.','A future start cannot exceed 30 days');
 select lives_ok($$update public.listings set availability_start=current_date+1,availability_end=current_date+31 where id='a4000000-0000-4000-8000-000000000002'$$,
  'Future-start 30-day window accepted');
 select lives_ok($$update public.listings set availability_start=current_date+150,availability_end=current_date+180 where id='a4000000-0000-4000-8000-000000000002'$$,
@@ -62,8 +62,8 @@ select throws_ok($$update public.listings set availability_start=current_date+18
 select throws_ok($$update public.listings set availability_start=current_date-1,availability_end=current_date+1 where id='a4000000-0000-4000-8000-000000000002'$$,
  '23514','Choose dates from today through 180 days from today','Changed availability cannot start in the past');
 update public.app_settings set value='366'::jsonb where key='listing_duration_days';
-select lives_ok($$update public.listings set availability_start=current_date,availability_end=current_date+180 where id='a4000000-0000-4000-8000-000000000002'$$,
- 'Full 180-day window is accepted');
+select throws_ok($$update public.listings set availability_start=current_date,availability_end=current_date+31 where id='a4000000-0000-4000-8000-000000000002'$$,
+ '23514','Choose no more than 30 consecutive available days. Blocked days do not extend this window.','The hard 30-day cap cannot be raised through platform settings');
 update public.app_settings set value='30'::jsonb where key='listing_duration_days';
 
 set local role authenticated;

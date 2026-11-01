@@ -18,7 +18,7 @@ export async function setDateAvailability(listingId: string, date: string, isAva
   const { error } = await supabase
     .from('listing_availability')
     .upsert({ listing_id: listingId, date, is_available: isAvailable }, { onConflict: 'listing_id,date' });
-  if (error) throw error;
+  if (error) throw new Error(error.message);
 }
 
 /**

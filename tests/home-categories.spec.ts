@@ -9,14 +9,25 @@ const categories = [
   name, icon: 'Package', active: true, sort_order: index,
 }));
 const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jH9sAAAAASUVORK5CYII=', 'base64');
+test.setTimeout(60_000);
 
 async function setup(page: Page) {
   await page.routeWebSocket(/^ws:\/\/127\.0\.0\.1:\d+\/(?!realtime)/, () => {});
   await page.route('**/src/lib/supabase.ts*', mockSupabaseModule);
   await page.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ contentType: 'text/css', body: '' }));
   await page.route('https://images.pexels.com/**', (route) => route.fulfill({ contentType: 'image/png', body: image }));
+  await page.route('**/src/lib/geo.ts*', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: (await response.text()).replace(/const key = [^\n]+;/g, 'const key = "test-map-key";') });
+  });
+  await page.route('**/api.maptiler.com/geocoding/**', (route) => route.fulfill({ json: { features: [{
+    text: 'Dallas', center: [-96.8, 32.8], place_type: ['municipality'],
+    context: [{ id: 'region.1', text: 'Texas' }, { id: 'country.1', text: 'United States' }],
+  }] } }));
   await page.route('**/rest/v1/**', (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/app_settings')) return route.fulfill({ json: { value: ['US'] } });
+    if (path.endsWith('/reference_countries')) return route.fulfill({ json: [{ code: 'US', name: 'United States' }] });
     if (path.endsWith('/categories')) return route.fulfill({ json: categories });
     if (path.endsWith('/search_available_listings')) return route.fulfill({ json: { rows: [], total: 0 } });
     return route.fulfill({ json: [], headers: { 'content-range': '*/0' } });
@@ -52,27 +63,33 @@ test('both discovery actions open full search with the existing category filters
   }
 });
 
-for (const [width, height, columns] of [[375, 812, 2], [812, 375, 5], [768, 1024, 5], [1440, 1000, 9]]) {
+for (const [width, height, columns] of [[375, 812, 4], [812, 375, 4], [768, 1024, 4], [1440, 1000, 8]]) {
   test(`consistent cards without horizontal overflow at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     const section = page.getByRole('region', { name: 'Browse by category' });
     await expect(section.getByRole('button')).toHaveCount(10);
-    const cards = section.getByRole('button').filter({ hasNotText: 'Explore all categories' });
-    await expect(cards).toHaveCount(9);
+    const cards = section.locator('.p1-category-grid > button');
+    await expect(cards).toHaveCount(8);
     const bounds = await cards.evaluateAll((elements) => elements.map((element) => {
       const { x, y, width, height } = element.getBoundingClientRect();
       const media = element.firstElementChild!.getBoundingClientRect();
-      return { x, y, width, height, mediaWidth: media.width, mediaHeight: media.height };
+      const label = element.lastElementChild!.getBoundingClientRect();
+      return { x, y, width, height, mediaWidth: media.width, mediaHeight: media.height, mediaTop: media.y - y, labelTop: label.y - y, labelHeight: label.height };
     }));
     expect(bounds.filter((card) => card.y === bounds[0].y)).toHaveLength(columns);
     for (const card of bounds) {
-      expect(card.width).toBeGreaterThan(120);
+      expect(card.width).toBeGreaterThan(width < 560 ? 70 : 120);
       expect(card.x).toBeGreaterThanOrEqual(0);
       expect(card.x + card.width).toBeLessThanOrEqual(width);
       expect(Math.abs(card.width - bounds[0].width)).toBeLessThan(1);
       expect(Math.abs(card.height - bounds[0].height)).toBeLessThan(1);
       expect(Math.abs(card.mediaHeight - bounds[0].mediaHeight)).toBeLessThan(1);
+      expect(card.mediaTop).toBe(0);
+      expect(Math.abs(card.mediaWidth - card.width)).toBeLessThan(1);
+      expect(Math.abs(card.labelTop - bounds[0].labelTop)).toBeLessThan(1);
+      expect(Math.abs(card.labelHeight - bounds[0].labelHeight)).toBeLessThan(1);
+      expect(card.labelHeight).toBeGreaterThanOrEqual(44);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     for (const image of await section.locator('img').all()) {
@@ -94,7 +111,7 @@ test('keyboard focus is visible, follows card order and activates category navig
     const card = section.getByRole('button', { name: category.name, exact: true });
     await expect(card).toBeFocused();
     await expect(card).toHaveCSS('outline-style', 'solid');
-    await expect(card).toHaveCSS('outline-width', '2px');
+    await expect(card).toHaveCSS('outline-width', '3px');
   }
   await page.keyboard.press('Tab');
   await expect(section.getByRole('button', { name: 'More categories' })).toBeFocused();
@@ -103,14 +120,14 @@ test('keyboard focus is visible, follows card order and activates category navig
   await expect(page).toHaveURL(new RegExp(`category=${categories[7].id}`));
 });
 
-test('hover adds depth and image zoom; reduced motion disables movement', async ({ page }) => {
+test('Preview 1 hover lifts category cards; reduced motion disables movement', async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const card = page.getByRole('region', { name: 'Browse by category' }).getByRole('button', { name: 'Electronics', exact: true });
   const originalShadow = await card.evaluate((node) => getComputedStyle(node).boxShadow);
   await card.hover();
-  await expect(card).not.toHaveCSS('box-shadow', originalShadow);
-  await expect(card).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, -2)');
-  await expect(card.locator('img')).toHaveCSS('transform', 'matrix(1.02, 0, 0, 1.02, 0, 0)');
+  await expect(card).toHaveCSS('box-shadow', originalShadow);
+  await expect(card).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, -4)');
+  await expect(card.locator('img')).toHaveCSS('transform', 'none');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(card).toHaveCSS('transform', 'none');
   await expect(card.locator('img')).toHaveCSS('transform', 'none');

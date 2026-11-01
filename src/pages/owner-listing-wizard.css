@@ -1,0 +1,337 @@
+.owner-listing.owner-wizard-v1 {
+  background: var(--bg);
+  font-family: var(--font-sans);
+}
+
+.owner-wizard-shell {
+  width: min(100%, 1600px);
+  padding: 32px clamp(16px, 4vw, 48px) 48px;
+}
+
+.owner-wizard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.owner-wizard-header > div:first-child {
+  min-width: 0;
+}
+
+.owner-wizard-header .owner-listing-toolbar {
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.owner-wizard-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.72fr) minmax(0, 2.2fr) minmax(230px, 0.92fr);
+  align-items: start;
+  gap: 32px;
+}
+
+.owner-wizard-step-nav {
+  position: sticky;
+  top: 24px;
+}
+
+.owner-listing-progress {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.owner-listing-progress > li {
+  min-width: 0;
+}
+
+.owner-listing.owner-wizard-v1 .owner-listing-progress > li::after {
+  display: none;
+}
+
+.owner-listing-progress .owner-step-button {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-height: 48px;
+  padding: 7px 4px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  touch-action: manipulation;
+}
+
+.owner-listing-progress .owner-step-button:disabled {
+  opacity: 0.68;
+}
+
+.owner-listing-progress .owner-step-number {
+  width: 28px;
+  height: 28px;
+  border-width: 0;
+}
+
+.owner-listing-progress [aria-current='step'] .owner-step-number {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.owner-listing-progress .owner-step-copy {
+  min-width: 0;
+  padding-top: 2px;
+  line-height: 1.35;
+}
+
+.owner-listing-progress .owner-step-label {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.owner-listing-progress [aria-current='step'] .owner-step-label {
+  color: var(--accent);
+}
+
+.owner-listing-progress .owner-step-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.owner-listing-progress .owner-step-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius);
+}
+
+.owner-wizard-content,
+.owner-listing-workspace {
+  min-width: 0;
+}
+
+.owner-listing.owner-wizard-v1 .owner-listing-panel {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: none;
+}
+
+.owner-listing.owner-wizard-v1 .owner-listing-fields {
+  gap: 20px;
+  font-size: 16px;
+}
+
+.owner-listing.owner-wizard-v1 .owner-rental-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+
+.owner-listing.owner-wizard-v1 .owner-listing-actions {
+  border-color: var(--border);
+  background: var(--bg-card);
+  padding: 16px 24px;
+}
+
+.owner-wizard-preview {
+  position: sticky;
+  top: 24px;
+  min-width: 0;
+}
+
+.owner-wizard-preview-card {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.owner-wizard-preview-image {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  margin-top: 18px;
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+
+.owner-wizard-preview-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.owner-wizard-preview-image > div {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.owner-wizard-preview-status {
+  display: inline-flex;
+  margin-top: 14px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.owner-wizard-preview-price {
+  margin-top: 14px;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.owner-wizard-preview-price span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.owner-wizard-preview-details {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.owner-wizard-preview-details > div {
+  display: grid;
+  gap: 3px;
+}
+
+.owner-wizard-preview-details dt {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.owner-wizard-preview-details dd {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.owner-wizard-preview-note {
+  margin-top: 18px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.owner-listing-mobile-step {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .owner-wizard-layout {
+    grid-template-columns: minmax(145px, 0.5fr) minmax(0, 1.8fr);
+    gap: 24px;
+  }
+
+  .owner-wizard-preview {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .owner-wizard-shell {
+    padding: 20px 16px 32px;
+  }
+
+  .owner-wizard-header {
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .owner-wizard-header .owner-listing-toolbar {
+    justify-content: flex-start;
+  }
+
+  .owner-wizard-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .owner-wizard-step-nav {
+    position: static;
+  }
+
+  .owner-listing-progress {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .owner-listing-progress .owner-step-button {
+    display: flex;
+    min-height: 62px;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 1px;
+    text-align: center;
+  }
+
+  .owner-listing-progress .owner-step-number {
+    width: 26px;
+    height: 26px;
+  }
+
+  .owner-listing-progress .owner-step-copy {
+    padding-top: 0;
+  }
+
+  .owner-listing-progress .owner-step-label {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+    border: 0;
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
+  .owner-listing-progress .owner-step-hint {
+    display: none;
+  }
+
+  .owner-listing-mobile-step {
+    display: block;
+  }
+
+  .owner-listing.owner-wizard-v1 .owner-listing-actions {
+    padding-inline: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owner-listing.owner-wizard-v1 *,
+  .owner-listing.owner-wizard-v1 *::before,
+  .owner-listing.owner-wizard-v1 *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

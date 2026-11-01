@@ -1,0 +1,38 @@
+.marketplace-search { background: var(--bg-card); }
+.marketplace-search [aria-label="Result view"] button { min-height: 44px; }
+.marketplace-search .p1-search-compact { margin-bottom: 0; }
+.marketplace-search-title { font-size: clamp(29px, 3.1vw, 44px); font-weight: 800; line-height: 1.15; }
+.marketplace-search .marketplace-result-count { font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
+.marketplace-results-grid article { box-shadow: none; border: 0; }
+.marketplace-results-grid article:hover { box-shadow: none; transform: none; }
+.marketplace-results-grid article > a > div:last-child { padding-inline: 0; }
+.marketplace-results-list article { box-shadow: none; }
+.marketplace-listing { background: var(--bg-card); }
+.marketplace-listing .listing-owner-intro { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; padding-block: 20px; border-block: 1px solid var(--border); }
+.marketplace-listing .listing-owner-intro > div { flex: 1; min-width: 140px; }
+.marketplace-photo-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 12px; position: relative; }
+.p1-gallery.marketplace-photo-layout-single { grid-template-columns: 1fr; }
+.marketplace-photo-main { height: 430px; border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-subtle); }
+.marketplace-photo-side { display: grid; gap: 12px; grid-auto-rows: minmax(0, 1fr); min-height: 0; }
+.marketplace-photo-side button { overflow: hidden; border-radius: var(--radius-lg); background: var(--bg-subtle); }
+.marketplace-photo-all { position: absolute; right: 16px; bottom: 16px; z-index: 1; }
+.marketplace-photo-layout button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.marketplace-listing .listing-reviews article { border-radius: 0; box-shadow: none; border-width: 0 0 1px; padding-inline: 0; }
+.marketplace-listing .listing-section-nav { flex-wrap: wrap; }
+.marketplace-bidding { background: var(--bg-card); }
+.marketplace-bidding-intro { display: grid; grid-template-columns: 1fr; gap: 24px; margin-bottom: 32px; }
+.marketplace-bidding-intro > div:last-child { padding: 20px; background: var(--accent-soft); border-radius: var(--radius-lg); font-size: 14px; line-height: 1.6; }
+.marketplace-bidding li > a { border: 0; padding: 0; box-shadow: none; }
+@media (min-width: 1024px) {
+  .marketplace-bidding-intro { grid-template-columns: 1.3fr 1fr; align-items: center; gap: 48px; }
+}
+@media (max-width: 767px) {
+  .marketplace-photo-main { height: 280px; }
+  .marketplace-photo-layout { grid-template-columns: 1fr; }
+  .marketplace-photo-side { display: none; }
+  .marketplace-listing .listing-owner-intro > button { width: 100%; }
+  .marketplace-search-heading { margin-block: 8px 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marketplace-search *, .marketplace-listing *, .marketplace-bidding * { scroll-behavior: auto; }
+}

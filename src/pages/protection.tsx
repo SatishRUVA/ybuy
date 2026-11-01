@@ -1,42 +1,35 @@
 import { useRouter } from '@/router';
 import { Shield, Lock, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { WorkspaceHeader } from '@/components/account-workspace';
 
 export function ProtectionPage() {
   const { back } = useRouter();
   return (
-    <div className="animate-fade-in pb-20 md:pb-8">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
-        <button onClick={back} className="flex items-center gap-1.5 text-sm text-sec mb-4 hover:text-main transition-colors">
+    <div className="p1-container p1-page p1-account">
+      <div>
+        <button onClick={back} className="p1-back">
           <ArrowLeft size={18} /> Back
         </button>
 
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-full bg-accent-soft flex items-center justify-center mx-auto mb-4">
-            <Shield size={36} className="text-accent" />
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-main font-display">Rental Protection</h1>
-          <p className="text-sec text-sm mt-2 max-w-md mx-auto">
-            You don't have to trust a stranger. We verify, document, protect, and provide a fair process for every rental.
-          </p>
-        </div>
+        <WorkspaceHeader title="A little clarity. A better rental." description="Understand deposits, protection terms and the real process for reporting an issue before you book." />
 
         {/* Three pillars */}
-        <div className="grid sm:grid-cols-3 gap-4 mb-8">
-          <div className="p-5 rounded-card-xl bg-card border border-app">
+        <div className="p1-owner-metrics account-protection-pillars">
+          <div>
             <Lock size={24} className="text-warning mb-3" />
             <h3 className="font-semibold text-main text-sm mb-1">Security Deposit</h3>
             <p className="text-xs text-sec leading-relaxed">
               A refundable charge at checkout, not a rental fee. Refunded after owner-confirmed return when no unresolved dispute exists.
             </p>
           </div>
-          <div className="p-5 rounded-card-xl bg-card border border-app">
+          <div className="p1-metric-accent">
             <Shield size={24} className="text-accent mb-3" />
             <h3 className="font-semibold text-main text-sm mb-1">Rental Protection</h3>
             <p className="text-xs text-sec leading-relaxed">
-              Covers damage, theft, and missing components during your rental. Subject to terms.
+              Protection eligibility and any applicable coverage depend on the listing, checkout and policy terms. Eligibility is not an insurance guarantee.
             </p>
           </div>
-          <div className="p-5 rounded-card-xl bg-card border border-app">
+          <div>
             <CheckCircle2 size={24} className="text-success mb-3" />
             <h3 className="font-semibold text-main text-sm mb-1">Insurance fee</h3>
             <p className="text-xs text-sec leading-relaxed">
@@ -46,7 +39,7 @@ export function ProtectionPage() {
         </div>
 
         {/* Security hold explanation */}
-        <div className="p-5 rounded-card-xl bg-card border border-app mb-4">
+        <section className="p1-panel account-panel p1-space-bottom">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-card-lg bg-warning-soft flex items-center justify-center shrink-0">
               <Lock size={20} className="text-warning" />
@@ -65,11 +58,12 @@ export function ProtectionPage() {
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* What's covered */}
-        <div className="p-5 rounded-card-xl bg-card border border-app mb-4">
-          <h3 className="font-semibold text-main mb-3">What's covered by Rental Protection</h3>
+        <section className="p1-panel account-panel p1-space-bottom">
+          <h3 className="font-semibold text-main mb-3">Issues to check against your protection terms</h3>
+          <p className="p1-muted">These are examples, not a coverage promise. Check the applicable policy and report the facts through a claim.</p>
           <div className="space-y-2">
             {[
               'Accidental damage during the rental period',
@@ -83,11 +77,11 @@ export function ProtectionPage() {
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
         {/* What's not covered */}
-        <div className="p-5 rounded-card-xl bg-card border border-app mb-4">
-          <h3 className="font-semibold text-main mb-3">Not covered</h3>
+        <section className="p1-panel account-panel p1-space-bottom">
+          <h3 className="font-semibold text-main mb-3">Common exclusions to review</h3>
           <div className="space-y-2">
             {[
               'Normal wear and tear from intended use',
@@ -101,15 +95,15 @@ export function ProtectionPage() {
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
         {/* Claims process */}
-        <div className="p-5 rounded-card-xl bg-card border border-app">
+        <section className="p1-panel account-panel">
           <h3 className="font-semibold text-main mb-3">If something goes wrong</h3>
           <div className="space-y-3">
             {[
               { step: 1, title: 'Report the issue', desc: 'File a claim from your rental detail page' },
-              { step: 2, title: 'Submit evidence', desc: 'Photos, component checklist, and rental agreement' },
+              { step: 2, title: 'Submit evidence', desc: 'Attach relevant files to the claim. Pickup and return checklist answers are not saved as evidence.' },
               { step: 3, title: 'Both parties respond', desc: 'Owner and renter provide their side' },
               { step: 4, title: 'We review and resolve', desc: 'Fair resolution based on evidence and terms' },
             ].map((s) => (
@@ -124,7 +118,7 @@ export function ProtectionPage() {
               </div>
             ))}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );

@@ -31,6 +31,10 @@ Deno.serve(withCors(async (req) => {
     userId = user.id;
   }
 
+  if (Deno.env.get('NOTIFICATION_DELIVERY_DISABLED') === 'true') {
+    return json({ error: 'Notification email delivery is disabled for this environment.' }, 503);
+  }
+
   const apiKey = Deno.env.get('RESEND_API_KEY');
   const from = Deno.env.get('RESEND_FROM_EMAIL');
   const appUrl = Deno.env.get('PUBLIC_APP_URL');

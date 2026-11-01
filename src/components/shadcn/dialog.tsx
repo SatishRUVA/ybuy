@@ -32,7 +32,7 @@ export const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-1/2 top-1/2 z-[201] w-[calc(100%_-_2rem)] max-w-lg max-h-[calc(100dvh_-_2rem)] overflow-y-auto overscroll-contain',
+        'p1 !min-h-0 fixed left-1/2 top-1/2 z-[201] w-[calc(100%_-_2rem)] max-w-lg max-h-[calc(100dvh_-_2rem)] overflow-y-auto overscroll-contain',
         '-translate-x-1/2 -translate-y-1/2 bg-card border border-app rounded-card-xl shadow-pop p-5 sm:p-6 animate-cross-fade [overflow-wrap:anywhere]',
         className,
       )}

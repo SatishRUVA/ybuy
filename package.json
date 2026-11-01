@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
+		"dev:local": "node dev/configure-local-profiles.mjs && vite --mode local-profiles",
 		"build": "vite build",
 		"lint": "eslint .",
 		"preview": "vite preview",

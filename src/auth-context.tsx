@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { LOCAL_PROFILE_LOGIN } from '@/lib/local-profile-login';
 
 export interface Profile {
   id: string;
@@ -9,6 +10,7 @@ export interface Profile {
   email: string;
   avatar_url: string | null;
   phone: string | null;
+  bio?: string | null;
   location: string | null;
   country_code?: string | null;
   state_region_code?: string | null;
@@ -30,6 +32,7 @@ interface AuthContextValue {
   requestPasswordReset: (email: string) => Promise<boolean>;
   finishPasswordReset: (password: string) => Promise<boolean>;
   signInWithGoogle: () => Promise<void>;
+  selectLocalProfile: (id: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -257,6 +260,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  async function selectLocalProfile(id: string) {
+    if (authBusy) return;
+    setAuthBusy('sign-in');
+    setError(null);
+    try {
+      if (!LOCAL_PROFILE_LOGIN) throw new Error('Profile selection is only available in isolated local development.');
+      const response = await fetch('/api/local-profiles', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }),
+      });
+      if (!response.ok) throw new Error('Could not select this local profile. Check local Supabase and try again.');
+      const data: unknown = await response.json();
+      if (!data || typeof data !== 'object' || !('tokenHash' in data) || typeof data.tokenHash !== 'string') {
+        throw new Error('Local sign-in returned an invalid response.');
+      }
+      await clearLocalSession();
+      const result = await supabase.auth.verifyOtp({ type: 'magiclink', token_hash: data.tokenHash });
+      if (result.error) throw result.error;
+      if (!result.data.session || result.data.user?.id !== id) {
+        throw new Error('Local sign-in did not return the selected account.');
+      }
+      setSignInOpen(false);
+    } catch (err) {
+      console.error('Local profile selection failed:', err instanceof Error ? err.message : 'Unknown error');
+      setError('Could not switch to this local profile. Check local Supabase and try again.');
+    } finally {
+      signingOut.current = false;
+      setAuthBusy(null);
+    }
+  }
+
   async function requestPasswordReset(email: string): Promise<boolean> {
     setError(null);
     setAuthBusy('sign-in');
@@ -322,7 +355,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: error ?? sessionError ?? profileError, signInOpen, passwordRecovery, authBusy,
         openSignIn: () => setSignInOpen(true),
         closeSignIn: () => setSignInOpen(false),
-        authenticate, requestPasswordReset, finishPasswordReset, signInWithGoogle, signOut,
+        authenticate, requestPasswordReset, finishPasswordReset, signInWithGoogle, selectLocalProfile, signOut,
       }}
     >
       {children}

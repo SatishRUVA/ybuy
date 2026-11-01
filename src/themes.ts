@@ -1,4 +1,5 @@
 export type ThemeId =
+  | 'preview-one'
   | 'coral'
   | 'forest'
   | 'ocean'
@@ -23,14 +24,14 @@ export interface Theme {
 const baseVars = {
   '--radius-sm': '0.5rem',
   '--radius': '0.625rem',
-  '--radius-lg': '0.875rem',
-  '--radius-xl': '1.25rem',
+  '--radius-lg': '0.75rem',
+  '--radius-xl': '0.875rem',
   '--shadow-xs': '0 1px 2px rgba(16,24,40,0.05)',
   '--shadow-card': '0 1px 2px rgba(16,24,40,0.04), 0 2px 6px -2px rgba(16,24,40,0.06)',
   '--shadow-hover': '0 2px 4px -2px rgba(16,24,40,0.06), 0 12px 28px -8px rgba(16,24,40,0.14)',
   '--shadow-pop': '0 4px 8px -4px rgba(16,24,40,0.08), 0 24px 56px -16px rgba(16,24,40,0.24)',
-  '--font-sans': "'Inter', system-ui, -apple-system, sans-serif",
-  '--font-display': "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif",
+  '--font-sans': "'DM Sans', system-ui, -apple-system, sans-serif",
+  '--font-display': "'Manrope', system-ui, sans-serif",
 };
 
 function makeTheme(
@@ -51,6 +52,35 @@ function makeTheme(
 }
 
 export const themes: Theme[] = [
+  makeTheme(
+    'preview-one',
+    'Preview 1',
+    'Cobalt, lime and warm neutral surfaces',
+    false,
+    {
+      '--bg': 'var(--p1-white)',
+      '--bg-subtle': 'var(--p1-paper)',
+      '--bg-card': 'var(--p1-white)',
+      '--text': 'var(--p1-ink)',
+      '--text-secondary': 'var(--p1-muted)',
+      '--text-muted': 'var(--p1-muted)',
+      '--border': 'var(--p1-border)',
+      '--border-strong': 'var(--p1-border)',
+      '--accent': 'var(--p1-blue)',
+      '--accent-hover': 'var(--p1-blue-hover)',
+      '--accent-soft': 'var(--p1-info)',
+      '--accent-text': 'var(--p1-white)',
+      '--success': 'var(--p1-good)',
+      '--success-soft': 'var(--p1-good-bg)',
+      '--warning': 'var(--p1-pending)',
+      '--warning-soft': 'var(--p1-pending-bg)',
+      '--error': 'var(--p1-bad)',
+      '--error-soft': 'var(--p1-bad-bg)',
+      '--star': 'var(--p1-ink)',
+      '--favorite': 'var(--p1-blue)',
+      '--accent-ink': 'var(--p1-blue)',
+    },
+  ),
   makeTheme(
     'coral',
     'Coral Market',
@@ -113,14 +143,14 @@ export const themes: Theme[] = [
     {
       // Neutrals stay near-neutral (only a trace of green) so photography and the accent carry
       // the colour; a heavily tinted grey scale reads washed-out at marketplace density.
-      '--bg': '#F7F8F8',
-      '--bg-subtle': '#EFF2F1',
+      '--bg': '#FFFFFF',
+      '--bg-subtle': '#F7F6F1',
       '--bg-card': '#FFFFFF',
-      '--text': '#0E1A17',
-      '--text-secondary': '#586A65',
-      '--text-muted': '#65706E',
-      '--border': '#E4E8E7',
-      '--border-strong': '#CFD6D4',
+      '--text': '#172321',
+      '--text-secondary': '#62706D',
+      '--text-muted': '#62706D',
+      '--border': '#DCDED7',
+      '--border-strong': '#C9CDC5',
       '--accent': '#0E7C66',
       '--accent-hover': '#0A6553',
       '--accent-soft': '#E3F2ED',
@@ -331,4 +361,4 @@ export const themes: Theme[] = [
   ),
 ];
 
-export const defaultTheme: ThemeId = 'ocean';
+export const defaultTheme: ThemeId = 'preview-one';

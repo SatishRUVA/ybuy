@@ -100,6 +100,18 @@ test('protected navigation preserves destination and offers YBuy and Google auth
   await expect(page).toHaveURL(`${appUrl}/dashboard?tab=lending#section`);
 });
 
+test('local development skips the hosted security-code gate and preserves the destination', async ({ page }) => {
+  await setup(page);
+  let verificationRequested = false;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/access/verify') verificationRequested = true;
+  });
+  await page.goto(`${appUrl}/access?redirect=${encodeURIComponent('/dashboard?tab=lending')}`, { waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(`${appUrl}/dashboard?tab=lending`);
+  await expect(page.getByLabel('Security code')).toHaveCount(0);
+  expect(verificationRequested).toBe(false);
+});
+
 test('Google sign-in preserves the private destination and prompts for an account', async ({ page }) => {
   await setup(page);
   await page.goto(`${appUrl}/dashboard?tab=lending#section`);

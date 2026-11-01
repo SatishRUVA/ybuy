@@ -6,9 +6,10 @@ import { supabase } from '@/lib/supabase';
 import { fetchBookingsAsRenter, type UiBooking } from '@/lib/bookings';
 import { fetchReviewsForUser } from '@/lib/reviews';
 import { Rating } from '@/components/trust';
-import { Alert, Button, Surface, SectionHeader, Badge } from '@/components/ui';
+import { Alert, Button, Surface, Badge } from '@/components/ui';
+import { Dropdown } from '@/components/shadcn/select';
+import { WorkspaceHeader } from '@/components/account-workspace';
 import { CheckCircle2, Clock, Shield, TrendingUp, Package, ArrowRight, LogOut, Heart } from 'lucide-react';
-import { fieldClass } from '@/components/form-classes';
 
 export function TrustProfilePage() {
   const { navigate } = useRouter();
@@ -20,6 +21,7 @@ export function TrustProfilePage() {
   const [reviewCount, setReviewCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<'profile' | 'notifications' | 'security'>('profile');
 
   useEffect(() => {
     if (!profile) return;
@@ -60,65 +62,49 @@ export function TrustProfilePage() {
   const joinedYear = new Date(profile.created_at).getFullYear();
 
   return (
-    <div className="animate-fade-in pb-20 md:pb-10">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
-        <SectionHeader as="h1" title="Your profile" subtitle={`Signed in as ${profile.email}`} className="mb-6" action={
-          <Button variant="secondary" size="sm" loading={authBusy === 'sign-out'} icon={<LogOut size={15} />} onClick={() => void signOut()}>
-            Sign out
-          </Button>
-        } />
+    <div className="p1-work-page p1-account">
+      <div>
+        <WorkspaceHeader title="A little more about you." description="Help the people you rent from and lend to get to know you." />
 
         {error && <Alert tone="error" className="mb-4">{error}</Alert>}
-        <div className="mb-5">
-          <Button variant="ghost" size="sm" onClick={openSignIn}>Switch account</Button>
-          <Button variant="ghost" size="sm" onClick={() => navigate({ name: 'support' })}>Support tickets</Button>
-          <Button variant="ghost" size="sm" onClick={() => navigate({ name: 'claims' })}>Disputes & claims</Button>
-          <Button variant="ghost" size="sm" onClick={() => navigate({ name: 'wallet' })}>Test wallet</Button>
-          <Button variant="ghost" size="sm" onClick={() => navigate({ name: 'notifications' })}>Notifications</Button>
-          <p className="text-xs text-sec mt-1">Signing out of YBuy does not sign you out of {authProviderLabel(user?.app_metadata.provider)}.</p>
-        </div>
-
-        {/* Profile card */}
-        <Surface className="p-6 mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-            <img
-              src={profile.avatar_url ?? undefined}
-              alt=""
-              className="w-20 h-20 rounded-full object-cover shrink-0 bg-subtle"
-            />
-            <div className="min-w-0">
-              <h2 className="text-xl font-bold text-main font-display">{profile.full_name}</h2>
-              {profile.customer_id && <p className="mt-1 text-sm text-sec">Customer ID: <span className="font-mono select-all">{profile.customer_id}</span></p>}
-              <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                <Rating value={rating} count={reviewCount} size="sm" />
-                <Badge tone="neutral">Member since {joinedYear}</Badge>
-              </div>
+        <div className="p1-profile-layout">
+          <aside aria-label="Account identity">
+            {profile.avatar_url ? <img className="p1-avatar account-profile-avatar" src={profile.avatar_url} alt="" /> : <span aria-hidden="true" className="p1-avatar account-profile-avatar account-chat-avatar">{profile.full_name?.charAt(0) || 'Y'}</span>}
+            <h2>{profile.full_name}</h2>
+            <p className="mt-2 text-sm text-sec break-words">{profile.email}</p>
+            <div className="mt-3"><Badge tone="neutral">Member since {joinedYear}</Badge></div>
+            {profile.customer_id && <p className="mt-3 text-xs text-sec break-all">Customer ID: <span className="select-all">{profile.customer_id}</span></p>}
+            {!loading && !error && <div className="mt-3"><Rating value={rating} count={reviewCount} size="sm" /></div>}
+            <div className="p1-profile-counts" aria-busy={loading}>
+              <span><b>{loading || error ? '—' : completedRentals.length}</b> completed rentals</span>
+              <span><b>{loading || error ? '—' : listingCount}</b> listings owned</span>
             </div>
-          </div>
-        </Surface>
+          </aside>
+          <div>
+          <nav className="p1-tabs p1-space-bottom" aria-label="Account sections">
+            <button type="button" aria-pressed={tab === 'profile'} onClick={() => setTab('profile')}>Profile</button>
+            <button type="button" aria-pressed={tab === 'notifications'} onClick={() => setTab('notifications')}>Notifications</button>
+            <button type="button" aria-pressed={tab === 'security'} onClick={() => setTab('security')}>Security</button>
+          </nav>
+          <section hidden={tab !== 'profile'} aria-label="Profile and activity">
+            <div className="p1-section-head"><div><h2>Your profile</h2><p>Account information comes from your sign-in provider. Country and region are optional, self-reported details.</p></div></div>
+            <div className="p1-form-two p1-space-bottom">
+              <label className="p1-field">Full name<input readOnly value={profile.full_name ?? ''} aria-describedby="account-provider-note" /></label>
+              <label className="p1-field">Email<input readOnly value={profile.email ?? ''} aria-describedby="account-provider-note" /></label>
+            </div>
+            <p id="account-provider-note" className="p1-muted">Name and email are managed by your sign-in provider.</p>
 
         <ProfileGeography key={profile.id} userId={profile.id} initialCountry={profile.country_code??''} initialRegion={profile.state_region_code??''}/>
 
-        {/* Trust stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div className="p1-owner-metrics account-profile-metrics" aria-label="Account activity" aria-busy={loading}>
           <StatCard icon={Package} label="Completed rentals" value={loading || error ? '-' : completedRentals.length} />
           <StatCard icon={Clock} label="Listings owned" value={loading || error ? '-' : listingCount} />
           <StatCard icon={Shield} label="Reviews received" value={loading || error ? '-' : reviewCount} />
           <StatCard icon={TrendingUp} label="Average rating" value={loading || error || reviewCount === 0 ? '-' : rating.toFixed(1)} />
         </div>
 
-        {/* Trust details */}
-        <Surface className="p-5 mb-4">
-          <h3 className="font-semibold text-main font-display mb-4">Trust and verification</h3>
-          <div className="space-y-2.5">
-            <TrustRow label={`Signed in with ${authProviderLabel(user?.app_metadata.provider)}`} verified={Boolean(user?.app_metadata.provider)} />
-            <TrustRow label="Email verified" verified={Boolean(user?.email_confirmed_at)} />
-          </div>
-        </Surface>
-
-        {/* Rental history */}
         {completedRentals.length > 0 && (
-          <Surface className="p-5 mb-6">
+          <Surface className="p1-panel account-panel p1-space-bottom">
             <h3 className="font-semibold text-main font-display mb-4">Recent rentals</h3>
             <div className="space-y-1">
               {completedRentals.slice(0, 3).map((booking) => (
@@ -141,13 +127,38 @@ export function TrustProfilePage() {
           </Surface>
         )}
 
-        <div className="grid sm:grid-cols-2 gap-2">
+          </section>
+          <section hidden={tab !== 'notifications'} aria-label="Notification settings">
+            <div className="p1-section-head"><div><h2>Keep the useful updates.</h2><p>Choose rental, message, request and community updates independently for email and in-app notifications.</p></div></div>
+            <Button variant="secondary" onClick={() => navigate({ name: 'notifications' })}>Open notifications & preferences</Button>
+          </section>
+          <section hidden={tab !== 'security'} aria-label="Account security">
+            <div className="p1-section-head"><div><h2>Trust and verification</h2><p>Your real authentication provider and verified email status. These are not identity or item-safety guarantees.</p></div></div>
+            {authError && <Alert tone="error" className="mb-4">{authError}</Alert>}
+            <div className="space-y-3 mb-5">
+              <TrustRow label={`Signed in with ${authProviderLabel(user?.app_metadata.provider)}`} verified={Boolean(user?.app_metadata.provider)} />
+              <TrustRow label="Email verified" verified={Boolean(user?.email_confirmed_at)} />
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button variant="secondary" onClick={openSignIn}>Switch account</Button>
+              <Button variant="secondary" loading={authBusy === 'sign-out'} icon={<LogOut size={15} />} onClick={() => void signOut()}>Sign out</Button>
+            </div>
+            <p className="text-sm text-sec mt-4">Signing out of YBuy does not sign you out of {authProviderLabel(user?.app_metadata.provider)}.</p>
+          </section>
+          <section className="mt-8 border-t border-app pt-6" aria-label="Account shortcuts">
+          <div className="grid sm:grid-cols-2 gap-2">
           <Button fullWidth variant="secondary" icon={<Heart size={16} />} trailingIcon={<ArrowRight size={16} />} onClick={() => navigate({ name: 'favorites' })}>
             Saved items
           </Button>
           <Button fullWidth trailingIcon={<ArrowRight size={16} />} onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>
             Bookings
           </Button>
+          <Button variant="secondary" onClick={() => navigate({ name: 'support' })}>Support tickets</Button>
+          <Button variant="secondary" onClick={() => navigate({ name: 'claims' })}>Disputes & claims</Button>
+          <Button variant="ghost" onClick={() => navigate({ name: 'wallet' })}>Test wallet · not cash</Button>
+        </div>
+          </section>
+          </div>
         </div>
       </div>
     </div>
@@ -187,7 +198,7 @@ function ProfileGeography({userId,initialCountry,initialRegion}:{userId:string;i
     });
     return()=>{active=false;};
   },[country]);
-  return <Surface className="p-5 mb-4">
+  return <Surface className="p1-panel account-panel p1-space-bottom">
     <h2 className="font-semibold text-main font-display">Country and region</h2>
     <p className="text-xs text-sec mt-1">Optional self-reported account information, also saved with future rentals. This does not verify identity, change your Customer ID, or determine payment currency. Existing rentals keep their original records.</p>
     <form className="mt-3 space-y-3" onSubmit={async event=>{
@@ -202,16 +213,14 @@ function ProfileGeography({userId,initialCountry,initialRegion}:{userId:string;i
       }catch(error){setError(error instanceof Error?error.message:'Could not save country and region.');}
       finally{setSaving(false);}
     }}>
-      <fieldset disabled={loading||saving} className="grid sm:grid-cols-2 gap-3">
-        <label className="text-sm font-semibold text-sec">Country (optional)
-          <select className={fieldClass('mt-1')} value={country} onChange={event=>{setCountry(event.target.value);setRegion('');setSaved(false);}}>
-            <option value="">Not provided</option>{countries.map(item=><option key={item.code} value={item.code}>{item.name}</option>)}
-          </select>
+      <fieldset disabled={loading||saving} className="p1-form-two">
+        <label className="p1-field">Country (optional)
+          <Dropdown aria-label="Country (optional)" disabled={loading||saving} value={country||'not-provided'} onChange={value=>{setCountry(value==='not-provided'?'':value);setRegion('');setSaved(false);}}
+            options={[{value:'not-provided',label:'Not provided'},...countries.map(item=>({value:item.code,label:item.name}))]} />
         </label>
-        <label className="text-sm font-semibold text-sec">State / region (optional)
-          <select className={fieldClass('mt-1')} disabled={!country||regionsLoading} value={region} onChange={event=>{setRegion(event.target.value);setSaved(false);}}>
-            <option value="">Not provided</option>{regions.map(item=><option key={item.code} value={item.code}>{item.name}</option>)}
-          </select>
+        <label className="p1-field">State / region (optional)
+          <Dropdown aria-label="State / region (optional)" disabled={loading||saving||!country||regionsLoading} value={region||'not-provided'} onChange={value=>{setRegion(value==='not-provided'?'':value);setSaved(false);}}
+            options={[{value:'not-provided',label:'Not provided'},...regions.map(item=>({value:item.code,label:item.name}))]} />
         </label>
       </fieldset>
       {error&&<Alert tone="error">{error}</Alert>}
@@ -221,12 +230,11 @@ function ProfileGeography({userId,initialCountry,initialRegion}:{userId:string;i
   </Surface>;
 }
 
-function StatCard({ icon: Icon, label, value }: { icon: typeof Package; label: string; value: string | number }) {
+function StatCard({ label, value }: { icon: typeof Package; label: string; value: string | number }) {
   return (
-    <div className="p-4 rounded-card-lg bg-card border border-app">
-      <Icon size={18} className="text-sec" />
-      <p className="text-2xl font-bold text-main font-display mt-2.5 tnum">{value}</p>
-      <p className="text-xs text-sec mt-0.5">{label}</p>
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }

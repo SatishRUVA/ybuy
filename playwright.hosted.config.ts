@@ -13,7 +13,7 @@ export default defineConfig({
   outputDir: 'test-results-hosted',
   use: {
     baseURL: appUrl,
-    trace: 'retain-on-failure',
+    trace: 'off',
     screenshot: 'only-on-failure',
   },
   webServer: {

@@ -13,6 +13,7 @@ import { Button, Alert, Surface, Field, IconButton } from '@/components/ui';
 import { fieldClass, textareaClass } from '@/components/form-classes';
 import { PickupLocation, type PickupLocationValue } from '@/components/pickup-location';
 import { ListingPhotoEditor } from '@/components/listing-photo-editor';
+import { ListingPhoto } from '@/components/listing-card';
 import { ListingNegotiationSettings } from '@/components/listing-negotiation-settings';
 import { ListingAvailabilityPicker } from '@/components/listing-availability-picker';
 import { LISTING_MAX_AVAILABLE_DAYS, listingAvailabilityError } from '@/lib/listing-availability';
@@ -22,9 +23,19 @@ import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescript
 import { EMPTY_ITEM_DETAILS, listingItemDetailsError, type ListingItemDetails } from '@/lib/listing-item-details';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { calculateRentalPricing } from '@/lib/rental-pricing';
+import { Dropdown } from '@/components/shadcn/select';
+import { OwnerBlockedDates } from '@/components/owner-blocked-dates';
 
-const STEPS = ['Photos', 'Details', 'Rental settings', 'Availability', 'Location', 'Review'] as const;
-const STEP_TITLES = ['Add photos of your item', 'Review and edit item details', 'Set rental settings', 'Set availability', 'Set location and handoff options', 'Review and publish'];
+const STEPS = ['The item', 'Photos', 'Price & pickup', 'Availability', 'Review'] as const;
+const STEP_TITLES = ['Tell us about your item.', 'Show its best side.', 'Good terms make good rentals.', 'Choose availability', 'Ready for its second job.'];
+const STEP_HINTS = ['Give it a little personality', 'Let your gear speak for itself', 'Make the practical stuff clear', 'Lend it on your terms', 'One last look'];
+const STEP_DESCRIPTIONS = [
+  'Describe the item and choose the category renters will search.',
+  'Use clear photos so renters can see what they are booking.',
+  'Set your daily price, booking approval, pickup area, and delivery.',
+  'Choose an availability window of up to 30 days and block unavailable dates.',
+  'Check the real listing details before submitting for review.',
+];
 const EMPTY_PICKUP: PickupLocationValue = { formattedAddress: '', streetAddress: '', city: '', state: '', postalCode: '', country: '', latitude: null, longitude: null, placeId: '' };
 const CONDITION_LABELS: Record<string, string> = { new: 'New', like_new: 'Like new', good: 'Good', fair: 'Fair' };
 const formatListingDate = (date: string) => date ? new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Choose date';
@@ -59,9 +70,12 @@ export function CreateListingPage({ editId }: { editId?: string }) {
   const revision = useRef<number>(1);
   const draftCreation = useRef<Promise<string> | null>(null);
   const [status, setStatus] = useState('draft');
+  const [deposit, setDeposit] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState(1);
+  const [reachedStep, setReachedStep] = useState(1);
+  const [availabilityState, setAvailabilityState] = useState({ ready: false, busy: false });
   const [attempted, setAttempted] = useState(false);
   const [working, setWorking] = useState(false);
   const operation = useRef(false);
@@ -152,6 +166,7 @@ export function CreateListingPage({ editId }: { editId?: string }) {
           idRef.current = ownRow.id;
           setListingId(ownRow.id);
           setStatus(ownRow.status);
+          setDeposit(Number(ownRow.deposit));
           originalWindow.current = ownRow.availability_start && ownRow.availability_end
             ? { start: ownRow.availability_start, end: ownRow.availability_end } : null;
           setForm({
@@ -175,7 +190,7 @@ export function CreateListingPage({ editId }: { editId?: string }) {
           };
           if (savedPickup) { setPickup(savedPickup); setPickupConfirmed(true); }
           setNotice(ownRow.status === 'draft' ? 'Your saved draft is ready to continue.' : 'Photo edits save immediately. Other changes save when you choose Save changes.');
-          if (editId) setStep(2);
+          if (editId) setStep(1);
         } else {
           setForm({ ...EMPTY_FORM, start: todayIso(), end: addDaysIso(todayIso(), Math.min(LISTING_MAX_AVAILABLE_DAYS, nextPolicy.listing_duration_days)) });
         }
@@ -191,6 +206,8 @@ export function CreateListingPage({ editId }: { editId?: string }) {
   useEffect(() => {
     if (!focusTarget) return;
     const target = document.getElementById(focusTarget);
+    const details = target?.closest('details');
+    if (details) details.open = true;
     target?.focus();
     target?.scrollIntoView({ block: 'center' });
     setFocusTarget(null);
@@ -243,15 +260,17 @@ export function CreateListingPage({ editId }: { editId?: string }) {
   if (form.delivery && (deliveryFee === null || deliveryFee < 1 || (policy && deliveryFee > policy.max_delivery_fee))) errors.delivery = `Enter a delivery fee between $1 and $${policy?.max_delivery_fee ?? 99}.`;
   const itemError = listingItemDetailsError(form.itemDetails);
   if (itemError) errors['item-details'] = itemError;
-  const fieldsForStep: (keyof FlowErrors)[] = step === 1 ? ['photos'] : step === 2
-    ? [...ITEM_STEP_FIELDS.filter((field) => field !== 'photos' && field !== 'value'), 'item-details'] : step === 3
-      ? ['price', 'value', 'quantity'] : step === 4 ? ['availability'] : step === 5 ? ['pickup', 'delivery', 'item-details'] : Object.keys(errors) as (keyof FlowErrors)[];
+  const fieldsForStep: (keyof FlowErrors)[] = step === 1
+    ? [...ITEM_STEP_FIELDS.filter((field) => field !== 'photos' && field !== 'value'), 'item-details']
+    : step === 2 ? ['photos']
+      : step === 3 ? ['price', 'value', 'quantity', 'pickup', 'delivery', 'item-details']
+        : step === 4 ? ['availability'] : Object.keys(errors) as (keyof FlowErrors)[];
   const visibleErrors = attempted ? fieldsForStep.filter((field) => errors[field]) : [];
   const blockingFlags = flags.filter((flag) => flag.confidence === 'high' && ['prohibited_item', 'drug_related'].includes(flag.type));
 
   async function persist(publish: boolean): Promise<boolean> {
     setAttempted(true);
-    if (fieldsForStep.some(field => errors[field])) {
+    if (publish && fieldsForStep.some(field => errors[field])) {
       requestAnimationFrame(() => summary.current?.focus());
       return false;
     }
@@ -287,21 +306,21 @@ export function CreateListingPage({ editId }: { editId?: string }) {
           item_details: current.itemDetails,
         };
         const stepKeys: (keyof ListingFlowDetails)[][] = [
-          [],
           ['title', 'description', 'category_id', 'item_condition', 'item_details'],
-          ['price_per_day', 'weekly_discount_enabled', 'weekly_discount_percent', 'monthly_discount_enabled', 'monthly_discount_percent', 'estimated_value', 'instant_booking', 'available_quantity'],
+          [],
+          ['price_per_day', 'weekly_discount_enabled', 'weekly_discount_percent', 'monthly_discount_enabled', 'monthly_discount_percent', 'estimated_value', 'instant_booking', 'available_quantity', 'location_label', 'delivery_available', 'delivery_fee', 'item_details'],
           ['availability_start', 'availability_end', 'availability_timezone'],
-          ['location_label', 'delivery_available', 'delivery_fee', 'item_details'],
         ];
         const details: ListingFlowDetails = step === STEPS.length ? allDetails : Object.fromEntries(
           Object.entries(allDetails).filter(([key]) => stepKeys[step - 1].includes(key as keyof ListingFlowDetails)),
         );
-        const confirmedPickup = step >= 5 && pickupConfirmed && pickup.latitude !== null && pickup.longitude !== null
+        const confirmedPickup = step >= 3 && pickupConfirmed && pickup.latitude !== null && pickup.longitude !== null
           ? { ...pickup, latitude: pickup.latitude, longitude: pickup.longitude } : undefined;
         const result = await saveListingFlow(id, revision.current, details, confirmedPickup, publish);
         revision.current = result.revision;
         originalWindow.current = { start: current.start, end: current.end };
         setStatus(result.status);
+        setDeposit(result.deposit);
         savedVersionRef.current = capturedVersion;
         setSavedVersion(capturedVersion);
         setNotice(publish ? null : result.status === 'draft' ? 'Draft saved. Resume it from My listings.'
@@ -417,23 +436,31 @@ export function CreateListingPage({ editId }: { editId?: string }) {
   }
 
   async function continueStep() {
-    if (saving || working) return;
+    if (saving || working || availabilityState.busy || (step === 4 && !availabilityState.ready)) return;
     setAttempted(true);
     if (fieldsForStep.some((field) => errors[field])) { requestAnimationFrame(() => summary.current?.focus()); return; }
-    setPreparingDetails(step === 1);
+    setPreparingDetails(step === 2);
     try {
       if (!await persist(false)) return;
-      setAttempted(false); setStep((current) => Math.min(STEPS.length, current + 1));
+      const nextStep = Math.min(STEPS.length, step + 1);
+      setReachedStep(current => Math.max(current, nextStep));
+      if (nextStep === 2) setNotice(null);
+      setAttempted(false); setStep(nextStep);
     } finally { setPreparingDetails(false); }
   }
+  async function visitStep(next: number) {
+    if (saving || working || availabilityState.busy || next < 1 || next > reachedStep || next === step) return;
+    if (versionRef.current !== savedVersionRef.current && !await persist(false)) return;
+    setStep(next); setAttempted(false);
+  }
   async function goBack() {
-    if (step > 1) { setStep(step - 1); setAttempted(false); return; }
+    if (step > 1) { await visitStep(step - 1); return; }
     if (versionRef.current !== savedVersionRef.current) {
       if (status !== 'draft') { setSaveError('Review and save your changes before leaving this listing.'); return; }
       setSaveError('Use Continue or Save draft to save a valid step before leaving.');
       return;
     }
-    navigate({ name: 'owner-dashboard' });
+    navigate({ name: 'owner-listings' });
   }
   async function publish() {
     if (operation.current) return;
@@ -462,7 +489,7 @@ export function CreateListingPage({ editId }: { editId?: string }) {
         if (result.masked.changed) {
           if (extraDetails) {
             setPublishError('Remove contact information from your item description, brand, model, included items or additional details before publishing.');
-            setStep(2);
+            setStep(1);
             return;
           }
           const next = { ...formRef.current, title: result.masked.title, description: result.masked.description };
@@ -470,7 +497,7 @@ export function CreateListingPage({ editId }: { editId?: string }) {
           setForm(next);
           changed();
           setPublishError('Contact information was removed. Review the updated details before publishing.');
-          setStep(2);
+          setStep(1);
           return;
         }
       }
@@ -499,8 +526,8 @@ export function CreateListingPage({ editId }: { editId?: string }) {
     versionRef.current = 0; savedVersionRef.current = 0;
     editedFields.current = { title: false, description: false, categoryId: false, brand: false, model: false };
     setForm({ ...EMPTY_FORM, start: todayIso(), end: addDaysIso(todayIso(), Math.min(LISTING_MAX_AVAILABLE_DAYS, policy.listing_duration_days)) });
-    setListingId(null); setStatus('draft'); setCompleted(false); setPhotos([]);
-    setPickup(EMPTY_PICKUP); setPickupConfirmed(false); setStep(1); setAttempted(false);
+    setListingId(null); setStatus('draft'); setDeposit(null); setCompleted(false); setPhotos([]);
+    setPickup(EMPTY_PICKUP); setPickupConfirmed(false); setStep(1); setReachedStep(1); setAttempted(false);
     setIncludedItem(''); setIncludedError(null);
     setVersion(0); setSavedVersion(0); setSaveError(null); setPublishError(null); setNotice(null); setShareCopied(false);
     setAiLoading(false); setAiApplied(false); setAiError(null); setFlags([]);
@@ -526,7 +553,7 @@ export function CreateListingPage({ editId }: { editId?: string }) {
 
   if (loadError) return <div className="max-w-3xl mx-auto p-6"><Alert tone="error" title="Listing form unavailable">{loadError}</Alert><Button className="mt-4" onClick={() => window.location.reload()}>Retry</Button></div>;
   if (!ready || !policy) return <div className="max-w-5xl mx-auto p-6" aria-busy="true"><Skeleton className="h-20 mb-6" /><Skeleton className="h-96" /></div>;
-  if (completed) return <div className="owner-listing min-h-screen px-4 sm:px-6 py-8 sm:py-12"><div className="max-w-3xl mx-auto space-y-6">
+  if (completed) return <div className="owner-listing owner-wizard-v1 min-h-screen px-4 sm:px-6 py-8 sm:py-12"><div className="max-w-3xl mx-auto space-y-6">
     {notice && <p role="status" className="text-sm text-accent">{notice}</p>}
     {status === 'published' ? <SuccessFeedback kind="listing" id={listingId!} title={form.title} image={photos[0]}
       onListAnother={editId ? undefined : startFresh}
@@ -546,78 +573,105 @@ export function CreateListingPage({ editId }: { editId?: string }) {
   const stepHeading = step === STEPS.length && status === 'archived' ? 'Review archived listing'
     : step === STEPS.length && status === 'suspended' ? 'Review listing changes' : STEP_TITLES[step - 1];
   const activePreview = Math.min(previewPhoto, Math.max(0, photos.length - 1));
+  const previewCategory = categories.find((category) => category.id === form.categoryId)?.name;
+  const previewPrice = parseMoney(form.price);
   return (
-    <div className="owner-listing min-h-screen pb-10">
-      <div className={`owner-listing-shell mx-auto px-4 sm:px-6 pt-5 sm:pt-7 ${step === 3 ? 'owner-listing-shell--rental max-w-7xl' : step === 4 ? 'max-w-3xl' : 'max-w-xl'}`}>
-        <div className="owner-listing-toolbar flex flex-wrap items-center justify-between gap-3 mb-2">
-          <h1 className="text-lg sm:text-xl font-bold tracking-tight text-main">{editId ? 'Manage your listing' : 'Create a listing'}</h1>
-          <div className="flex flex-wrap items-center gap-2">
-          <span role="status" className="inline-flex items-center gap-2 text-xs text-sec min-h-11">
-            <span aria-hidden="true" className={`h-2 w-2 rounded-full ${saveError ? 'bg-error' : 'bg-accent'}`} />{saving ? 'Saving...' : saveError ? 'Not saved - retry below' : version === savedVersion && listingId ? 'All changes saved' : listingId ? 'Unsaved changes' : 'Private draft'}
-          </span>
-          {status === 'draft' && <Button size="sm" variant="secondary" disabled={working || saving} loading={saving} icon={<Save aria-hidden="true" size={14} />} onClick={() => void persist(false)}>Save draft</Button>}
-          {!editId && status === 'draft' && <Button size="sm" variant="ghost" disabled={working || saving} onClick={event => { resetButton.current = event.currentTarget; setConfirmReset(true); }}>Reset form</Button>}
+    <main className="p1-container p1-page">
+      <div>
+        <a className="p1-back" href="/dashboard/listings" onClick={event => {
+          if (versionRef.current !== savedVersionRef.current || working || saving || availabilityState.busy) {
+            event.preventDefault();
+            setSaveError('Save your changes before returning to My listings. Your entries have been kept.');
+          }
+        }}><ArrowLeft size={16} aria-hidden="true" /> Back to my listings</a>
+        <header className="p1-page-head">
+          <div>
+            <h1>{editId ? 'Make your listing even better.' : 'Put your good gear to work.'}</h1>
+            <p>The item, the price, your days. You’re in control.</p>
           </div>
-        </div>
-        <p className="owner-listing-mobile-step mb-2 text-sm font-semibold text-main sm:hidden" aria-live="polite">Step {step} of {STEPS.length}<span className="mx-2 text-sec" aria-hidden="true">·</span>{STEPS[step - 1]}</p>
-        <ol aria-label="Listing progress" className="owner-listing-progress grid grid-cols-6 mb-4 sm:mb-6">
-          {STEPS.map((label, index) => <li key={label} className="relative min-w-0" data-reached={index + 1 <= step}>
-            <button type="button" disabled={working || saving || index + 1 > step} onClick={() => { setStep(index + 1); setAttempted(false); }}
+        </header>
+        <p className="sr-only" aria-live="polite">Step {step} of {STEPS.length}: {STEPS[step - 1]}</p>
+        {saveError && <div role="alert" className="owner-listing-save-error mb-5"><Alert tone="error" title="Your changes have not been saved">{saveError}
+          <Button variant="secondary" className="mt-3" disabled={working || saving} onClick={() => void persist(false)}>Retry save</Button></Alert></div>}
+        <div className={`p1-wizard-layout${step === 2 ? ' p1-wizard-photos' : ''}`}>
+        <nav aria-label="Listing progress">
+        <ol aria-label="Listing progress" className="p1-wizard-steps">
+          {STEPS.map((label, index) => <li key={label} className="relative min-w-0" data-reached={index + 1 <= reachedStep}>
+            <button type="button" disabled={working || saving || availabilityState.busy || index + 1 > reachedStep} onClick={() => void visitStep(index + 1)}
               aria-current={step === index + 1 ? 'step' : undefined}
-              className={`owner-step-button relative flex w-full min-h-16 flex-col items-center gap-2 px-1 py-2 text-[10px] sm:text-xs disabled:cursor-default ${step === index + 1 ? 'text-accent' : 'text-sec'}`}>
-              <span className={`owner-step-number relative grid h-6 w-6 shrink-0 place-items-center rounded-full border text-xs font-bold ${index + 1 <= step ? 'bg-accent border-accent text-accent-text' : 'bg-card border-strong text-sec'}`}>{index + 1 < step ? <Check aria-hidden="true" size={12} /> : index + 1}</span>
-              <span className="owner-step-copy text-center"><span className="owner-step-label block font-semibold">{label}</span></span>
+              >
+              <span>{index + 1 < reachedStep && step !== index + 1 ? <Check aria-hidden="true" size={14} /> : index + 1}</span>
+              <div><b>{label}</b><small>{STEP_HINTS[index]}</small></div>
             </button>
           </li>)}
         </ol>
-        {saveError && <div role="alert" className="owner-listing-save-error mb-5"><Alert tone="error" title="Your changes have not been saved">{saveError}
-        <Button variant="secondary" className="mt-3" disabled={working || saving} onClick={() => void persist(false)}>Retry save</Button></Alert></div>}
-        <div className="owner-listing-workspace mx-auto">
-          <Surface className="owner-listing-panel min-w-0 overflow-hidden" role="region" aria-label={`Step ${step}: ${STEPS[step - 1]}`}>
-            <div className="px-5 sm:px-6 pt-5 pb-2">
+        </nav>
+        <div className="p1-wizard-content">
+        <div>
+          <section className="min-w-0" aria-label={`Step ${step}: ${STEPS[step - 1]}`}>
+            <div className={step === 2 ? 'p1-photo-step-heading' : 'mb-6'}>
               <div>
-                <h2 ref={heading} tabIndex={-1} className="text-lg font-bold text-main">{stepHeading}</h2>
-                <p className="text-xs text-sec mt-1.5 leading-relaxed">{['Clear photos help renters choose with confidence. Add up to ' + policy.max_photos + ' photos.', 'AI can help with details. Please review and edit as needed.', 'Configure pricing, quantity, booking type and protection.', 'Choose when your item will be available for rent.', 'Choose where renters can pick up or request delivery.', 'Check all the details before publishing your listing.'][step - 1]}</p></div>
+                <h2 ref={heading} tabIndex={-1}>{stepHeading}</h2>
+                {step === 2
+                  ? <p className="p1-muted">Add up to {policy.max_photos} photos. The first photo is your cover. Photos save to your listing.</p>
+                  : <p className="text-sm text-sec mt-2 leading-relaxed">{STEP_DESCRIPTIONS[step - 1]}</p>}</div>
             </div>
             {notice && <div className="border-b border-app bg-accent-soft px-5 sm:px-6 py-3"><p role="status" className="flex items-start gap-2 text-xs text-accent"><CheckCircle2 size={16} aria-hidden="true" className="shrink-0" />{notice}</p></div>}
             <motion.fieldset key={step} disabled={working || saving}
               initial={reducedMotion ? false : { opacity: 0.96, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }}
-              className="owner-listing-fields min-w-0 px-5 sm:px-6 pt-3 pb-5 space-y-4">
+              className="min-w-0 space-y-5">
               {visibleErrors.length > 0 && <div ref={summary} tabIndex={-1} role="alert" className="rounded-card-lg bg-error-soft p-4">
                 <h3 className="font-semibold text-error">A few details need your attention</h3>
                 <ul className="mt-2 space-y-2 text-sm text-error">{visibleErrors.map((field) => <li key={field}>
                   <a href={`#${field in LISTING_FIELD_IDS ? LISTING_FIELD_IDS[field as ListingField] : `listing-${field}`}`} onClick={(event) => {
                     event.preventDefault();
-                    setStep(field === 'photos' ? 1 : field === 'value' ? 3 : field === 'item-details' || ITEM_STEP_FIELDS.includes(field as ListingField) ? 2 : field === 'availability' ? 4 : ['pickup', 'delivery'].includes(field) ? 5 : 3);
+                    setStep(field === 'photos' ? 2 : field === 'value' || field === 'quantity' || field === 'pickup' || field === 'delivery' ? 3
+                      : field === 'item-details' || ITEM_STEP_FIELDS.includes(field as ListingField) ? 1 : field === 'availability' ? 4 : 3);
                     setFocusTarget(field in LISTING_FIELD_IDS ? LISTING_FIELD_IDS[field as ListingField] : `listing-${field}`);
                   }}>{errors[field]}</a>
                 </li>)}</ul>
               </div>}
-              {preparingDetails && step === 1 ? <motion.div initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4" role="status" aria-busy="true" aria-label="Saving photos and preparing item details">
-                <p className="text-sm font-semibold text-main">Saving photos and preparing your item details…</p>
+              {preparingDetails && step === 2 ? <motion.div initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4" role="status" aria-busy="true" aria-label="Saving photos and preparing your listing">
+                <p className="text-sm font-semibold text-main">Saving your photos and listing changes…</p>
                 <div className="overflow-hidden rounded-card-lg border border-app"><Skeleton className="aspect-[16/10] w-full" rounded="rounded-none" /></div>
-                <Skeleton className="h-5 w-2/3" /><Skeleton className="h-11 w-1/2" />
-                <div className="grid grid-cols-2 gap-3"><Skeleton className="h-11" /><Skeleton className="h-11" /></div>
-                <Skeleton className="h-28 w-full" />
-                <span className="sr-only">The next step will show your title and all listing details.</span>
+                <span className="sr-only">Your listing will be saved before you continue.</span>
               </motion.div> : <>
-              {step === 1 && <>
-                <ListingPhotoEditor photos={photos} maximum={policy.max_photos} disabled={working || saving} uploadProgress={uploadProgress} preventLastPhotoRemoval={status === 'published'}
+              {step === 2 && <>
+                <ListingPhotoEditor photos={photos} maximum={policy.max_photos} maximumBytes={policy.max_photo_bytes} disabled={working || saving} uploadProgress={uploadProgress} preventLastPhotoRemoval={status === 'published'}
                   warnings={{ ...warnings, ...qualitySuggestions }} error={invalid('photos')} onAdd={() => { setReplaceIndex(null); fileInput.current?.click(); }}
                   onDrop={(files) => void upload(files)} onReplace={(index) => { setReplaceIndex(index); fileInput.current?.click(); }}
                   onRemove={(index) => void mutatePhotos(async () => { await removeListingImageUrl(listingId!, photos[index]); const next = photos.filter((_, at) => at !== index); await saveListingImageOrder(listingId!, next); return next; })}
                   onReorder={(from, to) => void mutatePhotos(async () => { const next = [...photos]; const [photo] = next.splice(from, 1); next.splice(to, 0, photo); await saveListingImageOrder(listingId!, next); return next; })} />
                 <input ref={fileInput} aria-label="Upload listing photos" type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only"
                   disabled={working || saving} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; const target = replaceIndex; setReplaceIndex(null); void upload(files, target ?? undefined); }} />
-                <p className="text-xs text-sec">JPEG, PNG, or WebP. Up to {Math.round(policy.max_photo_bytes / 1048576)} MB each; minimum {policy.min_photo_dimension} x {policy.min_photo_dimension} pixels.</p>
                 {aiLoading && <ListingAiSkeleton />}
                 {photoError && <Alert tone="warning">{photoError}</Alert>}
                 {failedUploads.map((item, index) => <Alert key={`${item.file.name}-${index}`} tone="error" title={item.file.name}>{item.error}
                   <div className="flex gap-2 mt-2"><Button variant="secondary" disabled={working || saving} onClick={() => retryFailedUpload(item)}>Retry photo</Button>
                     <Button variant="ghost" onClick={() => setFailedUploads((items) => items.filter((_, at) => at !== index))}>Dismiss</Button></div></Alert>)}
-                <div className="flex gap-3 rounded-card-lg bg-warning-soft p-4"><ImagePlus aria-hidden="true" size={20} className="shrink-0 text-warning" /><div><p className="text-sm font-semibold text-main">A little light goes a long way</p><p className="text-sm text-sec mt-1 leading-relaxed">Use natural light and a clear background. Include different angles, accessories, and visible wear.</p></div></div>
               </>}
-              {step === 2 && <>
+              {step === 1 && <>
+                <Field label="Category" htmlFor="listing-category-group" error={invalid('category')}>
+                  <Dropdown id="listing-category-group" value={form.categoryId} placeholder="Choose a category"
+                    onChange={(value) => { editedFields.current.categoryId = true; update('categoryId', value); }}
+                    options={categories.map((category) => ({ value: category.id, label: category.name }))} {...fieldProps('category')} />
+                </Field>
+                <Field label="Give it a useful title" htmlFor="listing-title" error={invalid('title')}><input id="listing-title" value={form.title} maxLength={LISTING_RULES.title.max} placeholder="Sony A7 IV camera with 24–70mm lens"
+                  onChange={(event) => { editedFields.current.title = true; update('title', event.target.value); }} className={fieldClass()} {...fieldProps('title')} /></Field>
+                <Field label="What should renters know?" htmlFor="listing-description" error={invalid('description')}>
+                  <textarea id="listing-description" value={form.description} rows={5} required minLength={LISTING_RULES.description.min} maxLength={LISTING_RULES.description.max} placeholder="Condition, what’s included, and what makes it a good rental."
+                    onChange={(event) => { editedFields.current.description = true; update('description', event.target.value); }} className={textareaClass()} {...fieldProps('description')} /></Field>
+                <fieldset id="listing-condition" tabIndex={-1} aria-describedby={invalid('condition') ? 'listing-condition-error' : undefined}>
+                  <legend className="text-[13px] font-semibold text-main mb-2">Item condition</legend>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{Object.entries(CONDITION_LABELS).map(([value, label]) => <label key={value} className={`owner-condition relative flex min-h-11 items-center justify-center gap-2 rounded-card border px-3 text-sm cursor-pointer ${form.condition === value ? 'bg-accent text-accent-text border-accent' : 'bg-card text-sec border-strong'}`}>
+                    <input type="radio" name="item-condition" value={value} checked={form.condition === value} onChange={() => update('condition', value)} className="absolute inset-0 h-full w-full opacity-0 cursor-pointer" />
+                    {form.condition === value && <Check aria-hidden="true" size={14} />}{label}
+                  </label>)}</div>
+                  {invalid('condition') && <p id="listing-condition-error" role="alert" className="text-sm text-error mt-2">{invalid('condition')}</p>}
+                </fieldset>
+                <details open={invalid('item-details') ? true : undefined}>
+                <summary>Brand, included items & optional details</summary>
+                <div className="space-y-4">
                 <div className="owner-ai-panel rounded-card">
                   <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold text-accent inline-flex items-center gap-2"><Sparkles aria-hidden="true" size={14} />{aiLoading ? 'Creating suggestions from your photos...' : aiApplied ? 'AI suggestions ready' : 'AI suggestions'}</p>
                     <Button variant="secondary" disabled={working || saving || aiLoading || !photos.length} onClick={() => void ensureDraft().then((id) => analyze(id, photos)).catch((error) => setAiError(message(error, 'Could not analyze photos.')))}>{aiApplied ? 'Regenerate' : 'Generate details'}</Button></div>
@@ -628,12 +682,6 @@ export function CreateListingPage({ editId }: { editId?: string }) {
                 {aiError && <div role="status" className="text-xs text-warning"><p className="font-semibold">Manual entry is available</p><p className="mt-1">{aiError}</p></div>}
                 {flags.length > 0 && <Alert tone={blockingFlags.length ? 'error' : 'warning'} title={blockingFlags.length ? 'Review a potential policy violation' : 'Review these suggestions'}><ul className="list-disc pl-4">{flags.map((flag, index) => <li key={index}>{flag.reason}</li>)}</ul>
                   <p className="mt-2">Correct affected photos or details and regenerate to recheck. Persisted blocking flags require a trusted support review, even after a clean recheck. Photo-quality tips alone do not block publication.</p></Alert>}
-                <Field label="Title" htmlFor="listing-title" error={invalid('title')}><input id="listing-title" value={form.title} maxLength={LISTING_RULES.title.max} placeholder="What are you sharing?"
-                  onChange={(event) => { editedFields.current.title = true; update('title', event.target.value); }} className={fieldClass()} {...fieldProps('title')} />
-                  <p className="text-xs text-sec text-right mt-1">{form.title.length}/{LISTING_RULES.title.max}</p></Field>
-                <Field label="Category" htmlFor="listing-category-group" error={invalid('category')}><select id="listing-category-group" value={form.categoryId}
-                  onChange={(event) => { editedFields.current.categoryId = true; update('categoryId', event.target.value); }} className={fieldClass()} {...fieldProps('category')}>
-                  <option value="">Choose a category</option>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></Field>
                 <div id="listing-item-details" tabIndex={-1} className="grid grid-cols-2 gap-3">
                   <Field label="Brand (optional)" htmlFor="listing-brand"><input id="listing-brand" value={form.itemDetails.brand} maxLength={80}
                     aria-invalid={Boolean(invalid('item-details'))} aria-describedby={invalid('item-details') ? 'listing-item-details-error' : undefined}
@@ -643,18 +691,6 @@ export function CreateListingPage({ editId }: { editId?: string }) {
                     onChange={event => updateItemDetails('model', event.target.value)} className={fieldClass()} /></Field>
                 </div>
                 {invalid('item-details') && <p id="listing-item-details-error" role="alert" className="text-xs text-error">{invalid('item-details')}</p>}
-                <fieldset id="listing-condition" tabIndex={-1} aria-describedby={invalid('condition') ? 'listing-condition-error' : undefined}>
-                  <legend className="text-[13px] font-semibold text-main mb-2">Item condition</legend>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{Object.entries(CONDITION_LABELS).map(([value, label]) => <label key={value} className={`owner-condition relative flex min-h-11 items-center justify-center gap-2 rounded-full border px-3 text-sm cursor-pointer ${form.condition === value ? 'bg-accent text-accent-text border-accent' : 'bg-card text-sec border-strong'}`}>
-                    <input type="radio" name="item-condition" value={value} checked={form.condition === value} onChange={() => update('condition', value)} className="absolute inset-0 h-full w-full opacity-0 cursor-pointer" />
-                    {form.condition === value && <Check aria-hidden="true" size={14} />}{label}
-                  </label>)}</div>
-                  {invalid('condition') && <p id="listing-condition-error" role="alert" className="text-sm text-error mt-2">{invalid('condition')}</p>}
-                </fieldset>
-                <Field label="Description" htmlFor="listing-description" error={invalid('description')}>
-                  <textarea id="listing-description" value={form.description} rows={5} required minLength={LISTING_RULES.description.min} maxLength={LISTING_RULES.description.max} placeholder="Describe the item, what is included, and any wear."
-                    onChange={(event) => { editedFields.current.description = true; update('description', event.target.value); }} className={textareaClass()} {...fieldProps('description')} />
-                  <p className="text-xs text-sec text-right mt-1">{form.description.length}/{LISTING_RULES.description.max}</p></Field>
                 <div>
                   <p className="text-[13px] font-semibold text-main">What's included <span className="text-xs font-normal text-sec">(optional)</span></p>
                   {form.itemDetails.included_items.length > 0 && <ul className="mt-2 flex flex-wrap gap-2" aria-label="Included items">
@@ -678,10 +714,12 @@ export function CreateListingPage({ editId }: { editId?: string }) {
                     placeholder="Usage notes, features, or anything renters should know" onChange={event => updateItemDetails('additional_details', event.target.value)} className={textareaClass()} />
                   <p className="text-xs text-sec text-right mt-1">{form.itemDetails.additional_details.length}/500</p>
                 </Field>
+                </div>
+                </details>
               </>}
               </>}
               {step === 3 && <>
-                <div className="owner-rental-grid">
+                <div className="grid gap-6">
                 <section aria-label="Rental pricing" className="space-y-4">
                   <h3 className="text-sm font-bold text-main">Pricing</h3>
                   <Field label="Daily price (USD)" htmlFor="listing-price" error={invalid('price')}>
@@ -744,24 +782,26 @@ export function CreateListingPage({ editId }: { editId?: string }) {
                     <span><span className="block text-sm font-semibold">{option.label}</span><span className="block text-xs text-sec mt-1">{option.detail}</span></span></label>)}
                   </div>
                 </fieldset>
-                <p className="text-xs text-sec">After publication, configure private offers and scheduled bidding from the success screen or My listings.</p>
+                <p className="text-xs text-sec">After publication, configure competitive bidding from the success screen or My listings.</p>
                 </section>
-                <aside aria-label="How negotiation works" className="rounded-card bg-accent-soft p-4 text-xs text-sec self-start">
+                <aside aria-label="Rental options" className="rounded-card bg-accent-soft p-4 text-xs text-sec self-start">
                   <h3 className="text-sm font-bold text-main mb-4">How this works</h3>
-                  <p>Publish your listing first. You can then enable private offers, competitive bidding or both without changing your rental price or availability.</p>
+                  <p>Choose instant booking or owner approval for regular rentals. After publication, you can add competitive bidding for selected dates; other dates stay available for regular bookings.</p>
                 </aside>
                 </div>
               </>}
               {step === 4 && <>
                 <ListingAvailabilityPicker start={form.start} end={form.end}
                   error={invalid('availability')} onChange={(start, end) => { setForm(current => ({ ...current, start, end })); changed(); }} />
+                {listingId && form.start && form.end && <OwnerBlockedDates listingId={listingId} start={form.start} end={form.end} onStateChange={setAvailabilityState} />}
                 {retainedAvailability && <p className="text-xs text-sec">Your saved listing dates are retained until you select a new range.</p>}
                 <div className="flex gap-3 rounded-card bg-subtle p-3 text-xs text-sec"><BellRing size={17} aria-hidden="true" className="shrink-0 text-accent" />
                   <div><p className="font-semibold text-main">We'll remind you</p><p className="mt-1 leading-relaxed">In-app reminders run 7 days and 1 day before published availability begins, when your booking notifications are enabled.</p></div>
                 </div>
               </>}
-              {step === 5 && <>
-                <div className="space-y-4 min-w-0">
+              {step === 3 && <>
+                <section aria-label="Pickup and delivery settings" className="owner-wizard-pickup-settings space-y-4">
+                  <div><h3 className="text-sm font-bold text-main">Pickup and delivery</h3><p className="mt-1 text-xs leading-relaxed text-sec">Choose a reliable handoff area. Your exact address stays private until an eligible booking is confirmed.</p></div>
                   <PickupLocation showAreaMap value={pickup} onChange={(next) => {
                     setPickup(next);
                     setPickupConfirmed(Boolean(next.formattedAddress && next.city && next.latitude !== null && next.longitude !== null));
@@ -778,16 +818,15 @@ export function CreateListingPage({ editId }: { editId?: string }) {
                       <p className="text-xs text-sec mt-2">$1–${policy.max_delivery_fee} per trip. Not included in the online rental total.</p>
                     </Field>}
                     {form.delivery && <Field label="Delivery radius (optional)" htmlFor="listing-delivery-radius">
-                      <select id="listing-delivery-radius" value={form.itemDetails.delivery_radius_miles ?? ''} className={fieldClass()}
-                        onChange={event => updateItemDetails('delivery_radius_miles', event.target.value ? Number(event.target.value) : null)}>
-                        <option value="">Choose a radius</option>{[5, 10, 25, 50].map(miles => <option key={miles} value={miles}>Within {miles} miles</option>)}
-                      </select>
+                      <Dropdown id="listing-delivery-radius" value={form.itemDetails.delivery_radius_miles === null ? 'none' : String(form.itemDetails.delivery_radius_miles)}
+                        onChange={(value) => updateItemDetails('delivery_radius_miles', value === 'none' ? null : Number(value))}
+                        options={[{ value: 'none', label: 'No declared radius' }, ...[5, 10, 25, 50].map((miles) => ({ value: String(miles), label: `Within ${miles} miles` }))]} />
                       <p className="mt-2 text-xs text-sec">Your declared delivery area, not an automatic address or checkout restriction.</p>
                     </Field>}
                   </fieldset>
-                </div>
+                </section>
               </>}
-              {step === 6 && <>
+              {step === 5 && <>
                 {status === 'archived' && <p role="status" className="rounded-card-lg bg-subtle p-4 text-sm text-sec">This listing is archived. Saving changes here will keep it archived; it will not become visible to renters.</p>}
                 {status === 'suspended' && <p role="status" className="rounded-card-lg bg-warning-soft p-4 text-sm text-sec">This listing is suspended. You can save corrections, but it will stay hidden until it is reviewed.</p>}
                 <div className="owner-listing-review min-w-0 space-y-4">
@@ -800,6 +839,10 @@ export function CreateListingPage({ editId }: { editId?: string }) {
                 <div className="min-w-0 space-y-5">
                 <div><h3 className="text-xl font-bold text-main">{form.title}</h3><p className="mt-2 text-xl font-bold text-main">${form.price}<span className="text-sm text-sec font-normal"> / day</span></p>
                   <p className="text-sm text-sec mt-2">{categories.find((category) => category.id === form.categoryId)?.name} &middot; {CONDITION_LABELS[form.condition]}</p></div>
+                <dl className="p1-price-breakdown">
+                  <div><dt>Refundable deposit</dt><dd>{deposit === null ? 'Calculated when saved' : `$${deposit.toFixed(2)}`}</dd></div>
+                  <div><dt>Replacement value</dt><dd>${form.value}</dd></div>
+                </dl>
                 {(form.itemDetails.brand || form.itemDetails.model) && <dl className="grid grid-cols-2 gap-3 text-xs">
                   {form.itemDetails.brand && <div><dt className="text-sec">Brand</dt><dd className="text-main mt-1 font-semibold break-words">{form.itemDetails.brand}</dd></div>}
                   {form.itemDetails.model && <div><dt className="text-sec">Model</dt><dd className="text-main mt-1 font-semibold break-words">{form.itemDetails.model}</dd></div>}
@@ -814,25 +857,50 @@ export function CreateListingPage({ editId }: { editId?: string }) {
                 {form.itemDetails.included_items.length > 0 && <section><h3 className="text-sm font-semibold mb-2">What's included</h3><ul className="flex flex-wrap gap-2">
                   {form.itemDetails.included_items.map(item => <li key={item} className="rounded-card bg-subtle px-2 py-1 text-xs text-sec">{item}</li>)}</ul></section>}
                 {form.itemDetails.additional_details && <section><h3 className="text-sm font-semibold mb-2">Additional details</h3><p className="text-xs text-sec whitespace-pre-wrap">{form.itemDetails.additional_details}</p></section>}
-                <Button size="sm" variant="secondary" onClick={() => { setStep(2); setAttempted(false); }}>Edit details</Button>
-                <p className="text-xs text-sec">The exact pickup address stays private until an eligible booking is confirmed. Availability, payment verification, return, and deposit rules apply to every rental. Saved offer settings take effect only after publication.</p>
-                {blockingFlags.length > 0 && <Alert tone="error" title="Resolve policy concerns before publishing">{blockingFlags.map((flag) => flag.reason).join(' ')} <Button variant="secondary" onClick={() => setStep(2)}>Review details</Button></Alert>}
+                <Button size="sm" variant="secondary" onClick={() => void visitStep(1)}>Edit details</Button>
+                <p className="text-xs text-sec">The exact pickup address stays private until an eligible booking is confirmed. Availability, payment verification, return, and deposit rules apply to every rental. Competitive bidding is configured after publication.</p>
+                {blockingFlags.length > 0 && <Alert tone="error" title="Resolve policy concerns before publishing">{blockingFlags.map((flag) => flag.reason).join(' ')} <Button variant="secondary" onClick={() => setStep(1)}>Review details</Button></Alert>}
                 <div className="rounded-card-lg border border-app bg-subtle p-4 text-xs text-sec"><ShieldCheck aria-hidden="true" size={18} className="text-accent mb-2" />{policy.high_value_threshold === null || Number(form.value) > policy.high_value_threshold ? 'This declared value requires administrative review. The listing will not be marked live until approved.' : 'Publication is confirmed only after the server checks your photos, content, location and listing policy.'}</div>
                 </div>
               </>}
             </motion.fieldset>
+            <div className="flex flex-wrap items-center gap-2 mt-5">
+              <span role="status" className={step === 2 ? 'sr-only' : 'inline-flex items-center gap-2 text-xs text-sec min-h-11'}>
+                <span aria-hidden="true" className={`h-2 w-2 rounded-full ${saveError ? 'bg-error' : 'bg-accent'}`} />{saving ? 'Saving...' : saveError ? 'Not saved - retry below' : version === savedVersion && listingId ? 'All changes saved' : listingId ? 'Unsaved changes' : 'Private draft'}
+              </span>
+              <Button size="sm" variant="secondary" disabled={working || saving || availabilityState.busy} loading={saving} icon={<Save aria-hidden="true" size={14} />} onClick={() => void persist(false)}>{status === 'draft' ? 'Save draft' : 'Save changes'}</Button>
+              {step !== 2 && !editId && status === 'draft' && <Button size="sm" variant="ghost" disabled={working || saving} onClick={event => { resetButton.current = event.currentTarget; setConfirmReset(true); }}>Reset form</Button>}
+            </div>
             {publishError && <div role="alert" className="px-5 sm:px-6 pb-4"><Alert tone="error" title="Your listing has not been published">
               <p>{status === 'draft' && version === savedVersion ? 'Your draft is saved. ' : 'Your entries are kept. '}{publishError}</p>
               <Button variant="secondary" className="mt-3" disabled={working || saving} onClick={() => void publish()}>Retry publication</Button>
             </Alert></div>}
-            <div className="owner-listing-actions border-t border-app bg-card px-4 sm:px-8 py-4 flex flex-wrap items-center justify-between gap-3">
-              <Button variant="ghost" className="max-sm:w-11 max-sm:px-0" disabled={working || saving} icon={<ArrowLeft aria-hidden="true" size={16} />} onClick={() => void goBack()}><span className="sr-only sm:not-sr-only">Back</span></Button>
+            <div className="p1-dialog-footer">
+              <Button variant={step === 2 ? 'secondary' : 'ghost'} disabled={working || saving || availabilityState.busy} icon={step === 2 ? undefined : <ArrowLeft aria-hidden="true" size={16} />} onClick={() => void goBack()}>Back</Button>
               <div className="flex min-w-0 flex-wrap gap-2">
-                <Button disabled={working || saving || (step === STEPS.length && blockingFlags.length > 0)} loading={working && step === STEPS.length} loadingLabel="Saving..." trailingIcon={step < STEPS.length ? <ArrowRight aria-hidden="true" size={16} /> : <Check aria-hidden="true" size={16} />}
+                <Button disabled={working || saving || availabilityState.busy || (step === 4 && !availabilityState.ready) || (step === STEPS.length && blockingFlags.length > 0)} loading={working || saving} loadingLabel={step === STEPS.length ? 'Saving listing...' : 'Saving step...'} trailingIcon={step < STEPS.length ? <ArrowRight aria-hidden="true" size={17} /> : <Check aria-hidden="true" size={16} />}
                   onClick={() => step === STEPS.length ? void publish() : continueStep()}>{nextLabel}</Button>
               </div>
             </div>
-          </Surface>
+          </section>
+        </div>
+        </div>
+        <aside className="p1-wizard-preview" aria-label="Listing preview">
+            <h3>Your listing, at a glance</h3>
+            <div className="p1-preview-item">
+              {photos[0]
+                ? <ListingPhoto src={photos[0]} alt={`First photo of ${form.title || 'your item'}`} loading="eager" className="h-[170px] w-full rounded-lg mb-4" />
+                : <div className="p1-photo-placeholder"><ImagePlus size={28} aria-hidden="true" /></div>}
+            <span className="p1-tag p1-tag-blue">{previewCategory || 'Choose category'}</span>
+            <h3>{form.title || 'Your item title'}</h3>
+            <p>
+              <b>{previewPrice === null ? 'Set daily price' : `$${previewPrice.toFixed(2)}`}</b>
+              {previewPrice !== null && <span> / day</span>}
+            </p>
+            <p className="p1-muted">{form.start && form.end ? `${formatListingDate(form.start)} – ${formatListingDate(form.end)}` : 'Choose dates'}</p>
+            </div>
+            <p className="p1-locked-note"><ShieldCheck size={17} aria-hidden="true" />A clear description and real photos help renters choose with confidence.</p>
+        </aside>
         </div>
         {!editId && status === 'draft' && <AlertDialog open={confirmReset} onOpenChange={open => { if (!working && !saving) setConfirmReset(open); }}>
           <AlertDialogContent onCloseAutoFocus={event => { event.preventDefault(); resetButton.current?.focus(); }}>
@@ -846,6 +914,6 @@ export function CreateListingPage({ editId }: { editId?: string }) {
           </AlertDialogContent>
         </AlertDialog>}
       </div>
-    </div>
+    </main>
   );
 }

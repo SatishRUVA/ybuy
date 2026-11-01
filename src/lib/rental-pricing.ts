@@ -1,5 +1,12 @@
 export type RentalPackageKind = 'weekly' | 'monthly' | null;
 
+export function validRentalRange(start: string, end: string): boolean {
+  const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(`${value}T00:00:00Z`))
+    && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+  return validDate(start) && validDate(end) && end > start;
+}
+
 export interface RentalPricingOptions {
   weeklyEnabled?: boolean;
   weeklyPercent?: number;

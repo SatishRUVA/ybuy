@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { themes, defaultTheme, type ThemeId, type Theme } from '@/themes';
 import { SHOW_DEMO_THEMES } from '@/lib/feature-flags';
+import '@/styles/preview-one.css';
 
 interface ThemeContextValue {
   theme: Theme;
@@ -15,8 +16,7 @@ const STORAGE_KEY = 'rental-theme';
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [themeId, setThemeId] = useState<ThemeId>(() => {
-    // Only honor a stored theme when the demo switcher is enabled; otherwise the app is
-    // locked to the Ocean Green palette regardless of any stale localStorage value.
+    // Production uses Preview 1 regardless of a stale saved demo theme.
     if (SHOW_DEMO_THEMES && typeof localStorage !== 'undefined') {
       const stored = localStorage.getItem(STORAGE_KEY) as ThemeId | null;
       if (stored && themes.some((t) => t.id === stored)) return stored;

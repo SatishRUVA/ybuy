@@ -5,24 +5,26 @@ import { fetchListingById, toUiListing } from '@/lib/listings';
 import { createBookingRequest, fetchBookingById, type UiBooking } from '@/lib/bookings';
 import { quoteOwnerPromotion } from '@/lib/owner-promotions';
 import { BookingPickup } from '@/components/booking-pickup';
+import { ListingPhoto } from '@/components/listing-card';
 import { getOrCreateConversation } from '@/lib/messages';
 import type { Listing } from '@/data';
 import { Rating, VerifiedBadge } from '@/components/trust';
-import { Button, Alert, Surface, Badge } from '@/components/ui';
-import { SuccessFeedback } from '@/components/success-feedback';
+import { Button, Alert, Surface } from '@/components/ui';
 import { createCheckoutSession, fetchConfirmedPayment, type ConfirmedPayment } from '@/lib/payments';
 import { Skeleton } from '@/components/skeleton';
 import { RentalSettlement } from '@/components/rental-settlement';
 import { CheckoutReservation } from '@/components/checkout-reservation';
 import { RentalAgreement } from '@/components/rental-agreement';
-import { ArrowLeft, CheckCircle2, Calendar, MapPin, Lock, MessageSquare, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Lock, MapPin, MessageSquare, PackageCheck, ShieldCheck } from 'lucide-react';
 import { usePlatformFeePct } from '@/lib/settings';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { fieldClass } from '@/components/form-classes';
-import { calculateRentalPricing } from '@/lib/rental-pricing';
+import { calculateRentalPricing, validRentalRange } from '@/lib/rental-pricing';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
 import { InsuranceAmount } from '@/components/insurance-amount';
 import { demoTaxCents } from '@/lib/demo-tax';
+import { ConfirmationTemplate } from '@/preview-1/renting';
+import { Action as PreviewAction, Button as PreviewButton, ErrorNote, Modal } from '@/preview-1/ui';
 
 function formatDay(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
@@ -47,6 +49,10 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
   const [appliedPromotion, setAppliedPromotion] = useState<{ code: string; percent: number; amount: number } | null>(null);
   const [promotionError, setPromotionError] = useState<string | null>(null);
   const [checkingPromotion, setCheckingPromotion] = useState(false);
+  const [deliveryMode, setDeliveryMode] = useState<'pickup' | 'delivery'>('pickup');
+  const [renterNote, setRenterNote] = useState('');
+  const [step, setStep] = useState(0);
+  const [reviewedTerms, setReviewedTerms] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +81,7 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
     );
   }
 
-  if (!startDate || !endDate) {
+  if (!startDate || !endDate || !validRentalRange(startDate, endDate)) {
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center">
         <h1 className="text-xl font-bold text-main font-display">Choose your dates first</h1>
@@ -99,13 +105,15 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
   const appliedDiscount = appliedPromotion?.amount ?? durationDiscount;
   const rental = Math.max(0, grossRental - appliedDiscount);
   const serviceFee = Math.round(rental * feePct * 100) / 100;
+  const deliveryFee = deliveryMode === 'delivery' && listing.deliveryAvailable ? Number(listing.deliveryFee ?? 0) : 0;
   const insuranceAmount = insuranceFlag.enabled ? insuranceAmountCents(listing.declaredValue, days) / 100 : 0;
   const isTaxDemo = import.meta.env.VITE_TEST_ENVIRONMENT === 'true';
   const taxDemo = isTaxDemo ? demoTaxCents(rental) / 100 : 0;
-  const paymentEstimate = rental + serviceFee + insuranceAmount + listing.deposit;
+  const paymentEstimate = rental + serviceFee + insuranceAmount + deliveryFee + listing.deposit;
   const total = paymentEstimate + taxDemo;
 
   async function handleConfirm() {
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -114,7 +122,14 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
         return;
       }
       if (insuranceFlag.loading || insuranceFlag.error) throw new Error('Insurance pricing could not be verified. Please retry once settings reconnect.');
-      const booking = await createBookingRequest({ listingId: id, startDate: startDate!, endDate: endDate!, promotionCode: appliedPromotion?.code });
+      const booking = await createBookingRequest({
+        listingId: id,
+        startDate: startDate!,
+        endDate: endDate!,
+        promotionCode: appliedPromotion?.code,
+        deliveryMode,
+        renterNote,
+      });
       if (booking.status === 'pending_payment') {
         setPaymentBookingId(booking.id);
         window.location.href = await createCheckoutSession(booking.id);
@@ -138,51 +153,99 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
   }
 
   return (
-    <div className="animate-fade-in pb-24 md:pb-10">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
-        <button onClick={back} className="inline-flex items-center gap-1.5 text-sm font-medium text-sec hover:text-main transition-colors duration-fast mb-5">
+    <div className="p1-container p1-page">
+      <div>
+        <button onClick={back} className="p1-back">
           <ArrowLeft size={18} /> Back
         </button>
 
-        <h1 className="text-[26px] sm:text-[32px] font-extrabold text-main font-display leading-tight">{listing.instantBooking ? 'Review and book' : 'Review and request'}</h1>
-        <p className="text-sec text-sm mt-1.5 mb-6">{listing.instantBooking
-          ? 'This item books instantly. Your dates are reserved while you complete payment.'
-          : `One last look before ${listing.owner.name.split(' ')[0]} gets your request.`}</p>
-
-        {/* Item */}
-        <Surface className="p-4 flex gap-4 mb-4">
-          <img src={listing.images[0]} alt="" className="w-24 h-24 rounded-card object-cover shrink-0 bg-subtle" />
-          <div className="flex-1 min-w-0">
-            {listing.category && <p className="text-xs font-medium text-accent">{listing.category}</p>}
-            <h2 className="font-semibold text-main font-display leading-snug mt-0.5">{listing.title}</h2>
-            <div className="flex items-center gap-3 mt-1.5">
-              <Rating value={listing.rating} count={listing.reviewCount} size="sm" />
-              {listing.verifiedOwner && <VerifiedBadge size="xs" />}
+        <div className="p1-checkout-layout"><div>
+        <ol className="p1-steps" aria-label="Booking steps">{['Your dates', 'Pickup', listing.instantBooking ? 'Review & payment' : 'Review request'].map((label, index) => <li key={label} aria-current={index === step ? 'step' : undefined}><span className={index <= step ? 'done' : ''}>{index < step ? <Check size={15} aria-hidden="true" /> : index + 1}</span>{label}</li>)}</ol>
+        <header className="p1-page-head" aria-live="polite" aria-atomic="true"><div>
+          <h1>{step === 0 ? 'Make time for a good plan.' : step === 1 ? 'How will you get your gear?' : listing.instantBooking ? 'One last look. Then it’s yours.' : 'Send your plan to the owner.'}</h1>
+          <p>{step === 0 ? 'Review the days you need. Availability is checked again when you book.' : step === 1 ? 'Keep the handoff simple.' : listing.instantBooking ? 'Continue to Stripe to pay securely. Only verified payment confirms your booking.' : 'Owner approval comes first. This sends a request, not a payment.'}</p>
+        </div></header>
+          {step === 0 && <section className="p1-panel p1-checkout-dates" aria-label="Your rental dates">
+            <h2>Your dates</h2>
+            <div className="p1-date-summary">
+              <div><p className="text-main font-semibold">{formatDay(startDate)} → {formatDay(endDate)}</p>
+                <p className="text-sm text-sec mt-2">{days} {days === 1 ? 'day' : 'days'} · {selectedRentalOption}</p></div>
+              <Button variant="secondary" disabled={submitting || Boolean(paymentBookingId)} onClick={() => navigate({ name: 'listing', id })}>Change dates</Button>
             </div>
-            {listing.pickup && (
-              <p className="flex items-center gap-1 text-xs text-sec mt-1.5"><MapPin size={12} /> {listing.pickup}</p>
-            )}
-          </div>
-        </Surface>
-
-        {/* Dates */}
-        <Surface className="p-4 mb-4">
-          <div className="flex items-center gap-4">
-            <span className="grid place-items-center w-10 h-10 rounded-card bg-accent-soft text-accent shrink-0">
-              <Calendar size={18} />
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-main">{formatDay(startDate)} → {formatDay(endDate)}</p>
-              <p className="text-xs text-sec mt-0.5 tnum">{days} {days === 1 ? 'day' : 'days'}</p>
-              <p className="text-xs text-sec mt-1">Selected option: <strong className="text-main">{selectedRentalOption}</strong></p>
+            <p className="text-sm text-sec mt-5">Choose another range on the listing to see the owner’s available window, blocked days and existing bookings.</p>
+          </section>}
+          {step === 1 && <section aria-label="Handoff details">
+            <h2>Pickup & return</h2>
+            <div className="p1-choice-grid">
+              <button type="button" aria-pressed={deliveryMode === 'pickup'} disabled={submitting || Boolean(paymentBookingId)} onClick={() => setDeliveryMode('pickup')}>
+                <MapPin aria-hidden="true" /><strong>Pick it up</strong><span>Free · {listing.pickup || 'Coordinate pickup with the owner after booking.'}</span>{deliveryMode === 'pickup' && <Check size={17} aria-hidden="true" />}
+              </button>
+              {listing.deliveryAvailable && (
+                <button type="button" aria-pressed={deliveryMode === 'delivery'} disabled={submitting || Boolean(paymentBookingId)} onClick={() => setDeliveryMode('delivery')}>
+                  <PackageCheck aria-hidden="true" /><strong>Have it delivered</strong><span>
+                    ${formatMoney(listing.deliveryFee ?? 0)} · {' '}
+                    {listing.delivery || 'Delivery details confirmed in messages after booking.'}
+                  </span>{deliveryMode === 'delivery' && <Check size={17} aria-hidden="true" />}
+                </button>
+              )}
             </div>
-            <Button size="sm" variant="ghost" disabled={submitting || Boolean(paymentBookingId)} onClick={() => navigate({ name: 'listing', id })}>Change</Button>
+            <label className="p1-field mt-5">
+              <span className="block text-sm font-semibold text-main mb-2">Note for owner (optional)</span>
+              <textarea
+                className={fieldClass('w-full min-h-24')}
+                maxLength={500}
+                disabled={submitting || Boolean(paymentBookingId)}
+                value={renterNote}
+                onChange={(event) => setRenterNote(event.target.value)}
+                placeholder="Share any pickup or delivery detail that helps with handoff."
+              />
+            </label>
+            <p className="mt-3 text-xs text-sec">This note is saved on your booking and shown to both renter and owner.</p>
+          </section>}
+          {step === 2 && <section className="p1-panel" aria-label="Review your booking">
+            <h2>{listing.instantBooking ? 'Review & payment' : 'Review your request'}</h2>
+            <p className="text-sm text-main">{formatDay(startDate)} → {formatDay(endDate)} · {days} {days === 1 ? 'day' : 'days'}</p>
+            <div className="flex justify-between gap-4 mt-5 py-4 border-y border-app text-main font-semibold"><span>Estimated total</span><span className="tnum">${formatMoney(total)}</span></div>
+            <Alert tone="info" className="mt-5" title={listing.instantBooking ? 'Secure payment is next' : 'Owner approval comes first'}>
+              {listing.instantBooking ? 'Your dates are reserved while you complete Stripe checkout. The booking is confirmed only after the backend verifies payment.' : `Your request goes to ${listing.owner.name}. Pay only after approval to confirm the rental.`}
+            </Alert>
+            <details className="mt-5 text-sm text-sec"><summary className="min-h-11 cursor-pointer font-semibold text-main">Rental & cancellation terms</summary>
+              <p className="mt-2 whitespace-pre-wrap">{listing.cancellation || 'Review the rental agreement in your booking before the handoff.'}</p>
+              <p className="mt-3">Return the item and its included components in the agreed condition. Your charged deposit is refunded after the owner confirms the return and any disputes are resolved.</p>
+            </details>
+            <label className="flex items-start gap-3 mt-5 text-sm text-main min-h-11">
+              <input type="checkbox" className="mt-1 h-5 w-5 shrink-0 accent-accent" checked={reviewedTerms} disabled={submitting || Boolean(paymentBookingId)} onChange={event => setReviewedTerms(event.target.checked)} />
+              <span>I have reviewed the dates, estimated cost, and rental terms.</span>
+            </label>
+          </section>}
+          {promotions.enabled && step === 2 && !paymentBookingId && <Surface className="p-5 mt-5">
+            <h2 className="font-semibold text-main font-display mb-2">Promo code</h2>
+            <p className="text-xs text-sec mb-3">Enter a code from the owner. A promo replaces any long-rental discount.</p>
+            <div className="flex gap-2"><input aria-label="Promo code" value={promotionCode} onChange={(event) => { setPromotionCode(event.target.value.toUpperCase()); setAppliedPromotion(null); setPromotionError(null); }} maxLength={24} className={fieldClass('flex-1 min-w-0')} placeholder="Enter code" /><Button variant="secondary" loading={checkingPromotion} disabled={!promotionCode.trim() || submitting} onClick={() => void applyPromotion()}>Apply</Button></div>
+            {promotionError && <Alert tone="error" className="mt-3">{promotionError}</Alert>}
+            {appliedPromotion && <p role="status" className="text-sm text-accent mt-3">{appliedPromotion.code} applied. You save ${formatMoney(appliedPromotion.amount)}.</p>}
+          </Surface>}
+          {error && <Alert tone="error" title={paymentBookingId ? 'Could not open payment' : 'Booking not created'} className="mt-5">
+            {error}
+            {paymentBookingId && <p className="mt-2">Your booking was created. Retry payment below, or open it from Bookings. Do not submit a new booking.</p>}
+          </Alert>}
+          <div className="p1-actions p1-checkout-actions">
+            {step > 0 && <Button variant="secondary" disabled={submitting || Boolean(paymentBookingId)} onClick={() => setStep(value => value - 1)}>Back</Button>}
+            <Button size="lg" loading={submitting} disabled={checkingPromotion || (step === 2 && !reviewedTerms && !paymentBookingId)} loadingLabel={listing.instantBooking ? 'Opening payment…' : 'Sending request…'}
+              onClick={() => step < 2 ? setStep(value => value + 1) : void handleConfirm()}>
+              {step < 2 ? 'Continue' : paymentBookingId ? 'Retry secure payment' : listing.instantBooking ? 'Continue to payment' : 'Send booking request'}
+              <ArrowRight size={17} aria-hidden="true" />
+            </Button>
           </div>
-        </Surface>
-
-        {/* Price */}
-        <Surface className="p-5 mb-5">
-          <h2 className="font-semibold text-main font-display mb-4">Price breakdown</h2>
+          <p className="flex items-start gap-2 text-xs text-sec mt-4"><ShieldCheck size={15} className="shrink-0" aria-hidden="true" />{listing.instantBooking ? 'Payment is completed securely with Stripe.' : 'No charge now — you pay only if the owner approves.'}</p>
+        </div>
+        <aside className="p1-order-summary" aria-label="Rental order summary">
+          <ListingPhoto src={listing.images[0]} alt={listing.title} />
+          <h2>{listing.title}</h2>
+          <p className="text-sm text-sec mt-2">From {listing.owner.name}</p>
+          <div className="flex flex-wrap gap-3 mt-3"><Rating value={listing.rating} count={listing.reviewCount} size="sm" />{listing.verifiedOwner && <VerifiedBadge size="xs" />}</div>
+          <p className="text-sm text-main mt-4">{formatDay(startDate)} → {formatDay(endDate)}</p>
+          <h3 className="font-semibold text-main font-display mt-5 mb-4">Price breakdown</h3>
           <div className="space-y-3 text-sm">
             {appliedPromotion || !rentalPricing.packageKind
               ? <Row label={`$${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'}`} value={grossRental} />
@@ -193,12 +256,13 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
               </>}
             {appliedPromotion && <Row label={`Owner promo ${appliedPromotion.code} (${appliedPromotion.percent}% off)`} value={-appliedPromotion.amount} />}
             <Row label="Service fee" value={serviceFee} />
+            {deliveryFee > 0 && <Row label="Delivery fee" value={deliveryFee} />}
             <InsuranceAmount days={days} replacementValue={listing.declaredValue} />
             {isTaxDemo ? <Row label="Tax (7% demo)" value={taxDemo} />
               : <div className="flex justify-between gap-3 text-sec"><span>Tax</span><span>Not yet calculated</span></div>}
             <div className="pt-3 border-t border-app flex justify-between font-bold text-base text-main">
               <span>Rental and fees</span>
-              <span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount)}</span>
+              <span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount + deliveryFee)}</span>
             </div>
           </div>
           {listing.deposit > 0 && (
@@ -220,44 +284,8 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
           </div>
           {isTaxDemo && <p className="text-xs text-sec mt-2">Payment estimate excluding demo tax: ${formatMoney(paymentEstimate)}. Demo tax applies to discounted rental only and is not charged.</p>}
           <p className="text-xs text-sec mt-2 leading-relaxed">Includes rental, service fee{insuranceFlag.enabled ? ', insurance' : ''} and refundable deposit{isTaxDemo ? ', plus demo tax' : ''}. Excludes tax.</p>
-        </Surface>
-
-        {promotions.enabled && !paymentBookingId && <Surface className="p-5 mb-5">
-          <h2 className="font-semibold text-main font-display mb-2">Promo code</h2>
-          <p className="text-xs text-sec mb-3">Enter a code from the owner. A promo replaces any long-rental discount.</p>
-          <div className="flex gap-2"><input aria-label="Promo code" value={promotionCode} onChange={(event) => { setPromotionCode(event.target.value.toUpperCase()); setAppliedPromotion(null); setPromotionError(null); }} maxLength={24} className={fieldClass('flex-1')} placeholder="Enter code" /><Button variant="secondary" loading={checkingPromotion} disabled={!promotionCode.trim()} onClick={() => void applyPromotion()}>Apply</Button></div>
-          {promotionError && <Alert tone="error" className="mt-3">{promotionError}</Alert>}
-          {appliedPromotion && <p role="status" className="text-sm text-accent mt-3">{appliedPromotion.code} applied. You save ${formatMoney(appliedPromotion.amount)}.</p>}
-        </Surface>}
-
-        {error && <Alert tone="error" title={paymentBookingId ? 'Could not open payment' : 'Booking not created'} className="mb-4">
-          {error}
-          {paymentBookingId && <p className="mt-2">Your booking was created. Retry payment below, or open it from Bookings. Do not submit a new booking.</p>}
-        </Alert>}
-
-        <div className="hidden md:block">
-          <Button fullWidth size="lg" loading={submitting} loadingLabel={listing.instantBooking ? 'Booking…' : 'Sending request…'} onClick={handleConfirm}>
-            {paymentBookingId ? 'Retry secure payment' : listing.instantBooking ? 'Continue to payment' : 'Send booking request'}
-          </Button>
-          <p className="flex items-center justify-center gap-1.5 text-xs text-sec mt-3">
-            <ShieldCheck size={14} /> {listing.instantBooking ? 'No charge now - pay securely to confirm.' : 'No charge now - you pay only if the owner approves.'}
-          </p>
-        </div>
+        </aside></div>
       </div>
-
-      {/* Mobile: the decision stays in reach */}
-      <div className="md:hidden fixed bottom-[calc(4rem_+_env(safe-area-inset-bottom))] left-0 right-0 z-30 glass-surface border-t border-app px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="min-w-0">
-            <p className="text-lg font-bold text-main tnum">${formatMoney(total)}</p>
-            <p className="text-xs text-sec">Est. total · no charge yet</p>
-          </div>
-          <Button className="flex-1" loading={submitting} loadingLabel={listing.instantBooking ? 'Booking…' : 'Sending…'} onClick={handleConfirm}>
-            {paymentBookingId ? 'Retry payment' : listing.instantBooking ? 'Continue to payment' : 'Send request'}
-          </Button>
-        </div>
-      </div>
-
     </div>
   );
 }
@@ -292,6 +320,7 @@ export function ConfirmationPage({ id }: { id: string }) {
   const [refresh, setRefresh] = useState(0);
   const [checking, setChecking] = useState(false);
   const [verified, setVerified] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -311,6 +340,9 @@ export function ConfirmationPage({ id }: { id: string }) {
         if (next?.status === 'confirmed') {
           const confirmedPayment = await fetchConfirmedPayment(id);
           if (cancelled) return;
+          if (!confirmedPayment || confirmedPayment.currency !== 'USD' || confirmedPayment.amount !== Math.round(next.total * 100)) {
+            throw new Error('Payment could not be verified against this booking. Check status again before continuing.');
+          }
           setPayment(confirmedPayment);
           setVerified(true);
         }
@@ -353,62 +385,39 @@ export function ConfirmationPage({ id }: { id: string }) {
 
   const handleMessageOwner = async () => {
     if (!user) return;
-    const conversationId = await getOrCreateConversation({
-      currentUserId: user.id,
-      otherUserId: booking.counterpartId,
-      listingId: booking.listingId,
-      bookingId: booking.id,
-    });
-    navigate({ name: 'conversation', id: conversationId });
+    try {
+      const conversationId = await getOrCreateConversation({
+        currentUserId: user.id,
+        otherUserId: booking.counterpartId,
+        listingId: booking.listingId,
+        bookingId: booking.id,
+      });
+      navigate({ name: 'conversation', id: conversationId });
+    } catch (reason) {
+      setConfirmationError(reason instanceof Error ? reason.message : 'Could not open your conversation. Try again.');
+    }
   };
 
-  return (
-    <div className="animate-fade-in pb-20 md:pb-10">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
-        <div className={verified ? 'mb-6' : 'text-center mb-8'}>
-          {!verified && <div className={`w-16 h-16 rounded-full grid place-items-center mx-auto mb-4 ${booking.status === 'confirmed' ? 'bg-success-soft text-success' : 'bg-subtle text-sec'}`}>
-            {booking.status === 'confirmed' ? <CheckCircle2 aria-hidden="true" size={34} /> : <Calendar aria-hidden="true" size={30} />}
-          </div>}
-          <h1 id="booking-details" tabIndex={-1} className="text-[26px] sm:text-[32px] font-extrabold text-main font-display leading-tight">
-            {booking.status === 'requested' ? 'Request sent' : 'Your booking'}
-          </h1>
-          <p className="text-sec mt-2">{NEXT_STEP[booking.status]}</p>
-        </div>
-
-        {confirmationError && <Alert tone="error" className="mb-4">{confirmationError}</Alert>}
-        {(booking.status==='pending_payment' || booking.status==='cancelled') && <CheckoutReservation bookingId={booking.id} canPay={!booking.isOwner} />}
-        {booking.status === 'pending_payment' && (
-          <Alert tone="info" title="Payment is not confirmed yet" className="mb-4">
-            {checking ? 'Checking for secure backend confirmation. You can leave this page safely.' : 'If you just paid, confirmation may still be processing.'}
-          </Alert>
-        )}
-        {(booking.status === 'pending_payment' || confirmationError) && (
-          <Button variant="secondary" className="mb-4" loading={checking} onClick={() => setRefresh((value) => value + 1)}>Check status again</Button>
-        )}
-        {verified && booking.status === 'confirmed' && <SuccessFeedback kind="booking" booking={booking} payment={payment}
-          primary={{ label: 'View Booking Details', onClick: () => document.getElementById('booking-summary')?.focus() }}
-          secondary={{ label: 'View Listing', onClick: () => navigate({ name: 'listing', id: booking.listingId }) }} />}
-
-        {!verified && <Surface className="p-4 flex gap-4 mb-3">
-          <button
-            onClick={() => navigate({ name: 'listing', id: booking.listingId })}
-            className="w-24 h-24 rounded-card overflow-hidden shrink-0 bg-subtle"
-            aria-label={`Open ${booking.listingTitle}`}
-          >
-            <img src={booking.listingImage} alt="" className="w-full h-full object-cover" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <h2 className="font-semibold text-main font-display leading-snug">{booking.listingTitle}</h2>
-            <p className="flex items-center gap-1.5 text-sm text-sec mt-1.5">
-              <Calendar size={14} /> {formatDay(booking.startDate)} → {formatDay(booking.endDate)}
-            </p>
-            <div className="mt-2"><Badge tone="accent">{booking.counterpartName}</Badge></div>
-          </div>
-        </Surface>}
-
-        <div className="mb-4"><BookingPickup bookingId={booking.id} status={booking.status} /></div>
+  const confirmed = verified && booking.status === 'confirmed';
+  const status = confirmed ? 'Payment confirmed' : booking.status === 'requested' ? 'Awaiting approval'
+    : booking.status === 'confirmed' ? 'Payment verification pending' : booking.status.replace('_', ' ');
+  return <ConfirmationTemplate title={confirmed ? 'Go make something of it.' : booking.status === 'requested' ? 'Good plans are on their way.' : 'Your booking'}
+    description={confirmed ? 'Your payment is verified and your rental is confirmed. All that’s left is the adventure.'
+      : booking.status === 'confirmed' ? 'Confirmation is not complete until the backend payment receipt is verified.' : NEXT_STEP[booking.status]}
+    status={status} pending={!confirmed} item={{ title: booking.listingTitle, image: booking.listingImage }}
+    start={booking.startDate} end={booking.endDate} total={booking.total - booking.deposit}
+    feedback={<>{confirmationError && <ErrorNote>{confirmationError}</ErrorNote>}
+      {(booking.status === 'pending_payment' || confirmationError) && <PreviewButton variant="secondary" disabled={checking} onClick={() => setRefresh((value) => value + 1)}>Check status again</PreviewButton>}
+    </>}
+    actions={<><PreviewAction to={booking.isOwner ? 'owner' : 'renter'}>View my rentals</PreviewAction>
+      <PreviewButton variant="secondary" onClick={() => { void handleMessageOwner(); }}><MessageSquare size={17} aria-hidden="true" /> Message {booking.isOwner ? 'renter' : 'owner'}</PreviewButton></>}
+    note={<>{confirmed && payment ? `Paid ${payment.currency} ${(payment.amount / 100).toFixed(2)}. ` : 'Check booking details for the next step. '}
+      <PreviewButton variant="quiet" onClick={() => setDetailsOpen(true)}>Booking details</PreviewButton>
+      <Modal open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Booking details" description="Payment, pickup, agreement and settlement.">
+        {(booking.status === 'pending_payment' || booking.status === 'cancelled') && <CheckoutReservation bookingId={booking.id} canPay={!booking.isOwner} />}
+        <BookingPickup bookingId={booking.id} status={booking.status} />
         <RentalAgreement bookingId={booking.id} isOwner={booking.isOwner} />
-        <Surface id="booking-summary" tabIndex={-1} className="p-5 mb-6 space-y-3 text-sm">
+        <Surface id="booking-summary" tabIndex={-1} className="p1-panel text-left mb-6 space-y-3 text-sm">
           <p className="text-xs text-sec break-all">Booking reference: {booking.id}</p>
           <div className="flex justify-between">
             <span className="text-sec">Rental subtotal</span>
@@ -416,8 +425,10 @@ export function ConfirmationPage({ id }: { id: string }) {
           </div>
           {booking.ownerDiscountAmount > 0 && <div className="flex justify-between"><span className="text-sec">Package savings</span><span className="font-semibold text-main tnum">-${booking.ownerDiscountAmount}</span></div>}
           <div className="flex justify-between"><span className="text-sec">Service fee</span><span className="font-semibold text-main tnum">${booking.serviceFeeAmount}</span></div>
+          {booking.deliveryFeeAmount > 0 && <div className="flex justify-between"><span className="text-sec">Delivery fee</span><span className="font-semibold text-main tnum">${booking.deliveryFeeAmount.toFixed(2)}</span></div>}
           {booking.insuranceAmount > 0 && <div className="flex justify-between"><span className="text-sec">Insurance</span><span className="font-semibold text-main tnum">${booking.insuranceAmount.toFixed(2)}</span></div>}
-          <div className="flex justify-between"><span className="text-sec">Rental charge after discount</span><span className="font-semibold text-main tnum">${booking.subtotal + booking.serviceFeeAmount}</span></div>
+          <div className="flex justify-between"><span className="text-sec">Rental charge after discount</span><span className="font-semibold text-main tnum">${booking.subtotal + booking.serviceFeeAmount + booking.deliveryFeeAmount}</span></div>
+          {booking.renterNote && <div className="pt-2 border-t border-app"><p className="text-sec">Note for owner</p><p className="text-main mt-1 whitespace-pre-wrap">{booking.renterNote}</p></div>}
           {booking.deposit > 0 && (
             <div className="flex justify-between">
               <span className="text-sec">Security deposit (charged)</span>
@@ -431,13 +442,5 @@ export function ConfirmationPage({ id }: { id: string }) {
         </Surface>
 
         {booking.status === 'completed' && <RentalSettlement bookingId={booking.id} isOwner={booking.isOwner} autoProcess />}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <Button fullWidth onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>View Bookings</Button>
-          <Button fullWidth variant="secondary" icon={<MessageSquare size={16} />} onClick={handleMessageOwner}>
-            Message {booking.counterpartName.split(' ')[0]}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
+      </Modal></>} />;
 }

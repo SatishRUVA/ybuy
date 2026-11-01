@@ -158,7 +158,7 @@ export function DateRangePicker({
   blockedDates?: Set<string>;
   minimumDate?: string | null;
   maximumDate?: string | null;
-  presentation?: 'dialog' | 'listing';
+  presentation?: 'dialog' | 'listing' | 'search';
 }) {
   const [open, setOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
@@ -385,8 +385,17 @@ export function DateRangePicker({
 
   return (
     // No z-index here: it would cap the panel below the shared dim Overlay (z-200).
-    <div ref={ref} className="relative">
-      {compact ? (
+    <div ref={ref} className={presentation === 'search' ? 'p1-search-date relative' : 'relative'}>
+      {presentation === 'search' ? (
+        <button ref={triggerRef} type="button" className="p1-date-trigger w-full"
+          aria-haspopup="dialog" aria-expanded={open}
+          aria-label={`Choose a date range${startDate ? `, ${triggerDateLabel}` : ''}`}
+          onClick={() => open ? setOpen(false) : openPicker()}>
+          <CalendarDays size={20} aria-hidden="true" />
+          <span><small>When?</small><strong>{triggerDateLabel}</strong></span>
+          <ChevronDown size={14} aria-hidden="true" />
+        </button>
+      ) : compact ? (
         <button ref={triggerRef} type="button" aria-haspopup="dialog" aria-expanded={open}
           aria-label={`Choose a date range${startDate ? `, ${triggerDateLabel}` : ''}`}
           onClick={() => open ? setOpen(false) : openPicker()}

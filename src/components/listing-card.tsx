@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { ChevronLeft, ChevronRight, MapPin, Heart, Star, Zap, ImageOff } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Heart, Star, Zap, ImageOff, BadgeCheck } from 'lucide-react';
 import type { Listing } from '@/data';
 import { Badge } from '@/components/ui';
 import { ProtectionBadge } from '@/components/trust';
@@ -8,48 +8,31 @@ import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
 
 /** Shared heart control: same hit area, same pop, wherever a listing can be saved. */
 function FavoriteButton({
-  liked, onToggle, className = '',
-}: { liked: boolean; onToggle: () => void; className?: string }) {
+  liked, onToggle, busy = false, className = '',
+}: { liked: boolean; onToggle: () => void; busy?: boolean; className?: string }) {
   const [popKey, setPopKey] = useState(0);
   return (
     <button
       onClick={(e) => { e.stopPropagation(); setPopKey((k) => k + 1); onToggle(); }}
       aria-label={liked ? 'Remove from favorites' : 'Save to favorites'}
       aria-pressed={liked}
-      className={`grid place-items-center w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm shadow-xs transition-colors duration-fast ease-out hover:bg-white ${className}`}
+      disabled={busy}
+      aria-busy={busy}
+      className={`p1-save ${liked ? 'is-saved' : ''} ${className}`}
     >
       <Heart
         key={popKey}
-        size={16}
-        className={`${liked ? 'fill-favorite text-favorite' : 'text-gray-900'} ${popKey > 0 ? 'animate-heart-pop' : ''}`}
+        size={17}
+        className={`${liked ? 'fill-current' : ''} ${popKey > 0 ? 'animate-heart-pop' : ''}`}
       />
     </button>
-  );
-}
-
-/** Category and location read as the item's provenance line - kept to one row, never wrapped. */
-function MetaLine({ listing }: { listing: Listing }) {
-  const place = listing.distance > 0 && Number.isFinite(listing.distance)
-    ? `About ${listing.distance} ${listing.distanceUnit} away`
-    : listing.pickup;
-  return (
-    <p className="h-4 flex items-center gap-1 text-xs text-sec truncate">
-      {listing.category && <span className="truncate">{listing.category}</span>}
-      {listing.category && place && <span className="text-muted">•</span>}
-      {place && (
-        <span className="flex items-center gap-0.5 truncate">
-          <MapPin size={11} className="shrink-0" />
-          {place}
-        </span>
-      )}
-    </p>
   );
 }
 
 /** Rating, or an honest "New listing" when the owner has no reviews yet. */
 function RatingLine({ listing }: { listing: Listing }) {
   return (
-    <div className="flex items-center gap-1 text-xs">
+    <div className="flex shrink-0 items-center gap-1 text-xs">
       {listing.reviewCount > 0 ? (
         <>
           <Star size={12} className="fill-[var(--star)] text-[var(--star)]" />
@@ -59,18 +42,25 @@ function RatingLine({ listing }: { listing: Listing }) {
       ) : (
         <span className="text-sec">New listing</span>
       )}
-      {listing.verifiedOwner && <span className="text-muted">•</span>}
-      {listing.verifiedOwner && <span className="text-success font-medium">Verified owner</span>}
     </div>
   );
 }
 
-function PriceBlock({ value, size = 'md' }: { value: number; size?: 'md' | 'lg' }) {
+function OwnerLine({ listing }: { listing: Listing }) {
+  const distance = listing.distance > 0 && Number.isFinite(listing.distance)
+    ? `About ${listing.distance} ${listing.distanceUnit} away` : null;
   return (
-    <p className="flex items-baseline gap-1">
-      <span className={`font-bold text-main tnum ${size === 'lg' ? 'text-xl' : 'text-[17px]'}`}>${value}</span>
-      <span className="text-xs text-sec font-medium">/day</span>
-    </p>
+    <div className="p1-owner-line flex min-w-0 items-center justify-between gap-2 text-xs">
+      <span className="flex min-w-0 items-center gap-1 text-sec">
+        <span className="truncate" title={`By ${listing.owner.name}`}>By {listing.owner.name}</span>
+        {listing.verifiedOwner && <span className="shrink-0 text-accent" title="Verified owner">
+          <BadgeCheck size={14} aria-hidden="true" /><span className="sr-only">Verified owner</span>
+        </span>}
+      </span>
+      {distance && <span className="shrink-0 text-sec tnum" title={distance} aria-label={distance}>
+        {listing.distance} {listing.distanceUnit}
+      </span>}
+    </div>
   );
 }
 
@@ -80,80 +70,52 @@ function handleListingLinkClick(e: MouseEvent<HTMLAnchorElement>, onClick?: () =
   onClick();
 }
 
-export function ListingCard({ listing, onClick, favorited, onToggleFavorite }: { listing: Listing; onClick?: () => void; favorited?: boolean; onToggleFavorite?: () => void }) {
+export function ListingPhoto({ src, alt, loading = 'lazy', className = '' }: {
+  src?: string; alt: string; loading?: 'lazy' | 'eager'; className?: string;
+}) {
+  const [failedImage, setFailedImage] = useState<string | null>(null);
+  return src && failedImage !== src
+    ? <img src={src} alt={alt} loading={loading} className={`w-full h-full object-cover ${className}`} onError={() => setFailedImage(src)} />
+    : <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-subtle text-sec">
+      <ImageOff size={24} aria-hidden="true" /><span className="text-[10px]">Photo unavailable</span>
+    </div>;
+}
+
+export function ListingCard({ listing, onClick, favorited, favoriteBusy, onToggleFavorite, compact = false }: { listing: Listing; onClick?: () => void; favorited?: boolean; favoriteBusy?: boolean; onToggleFavorite?: () => void; compact?: boolean }) {
   const [likedLocal, setLikedLocal] = useState(false);
   const liked = favorited ?? likedLocal;
   const toggleLiked = onToggleFavorite ?? (() => setLikedLocal(!likedLocal));
   return (
-    <article
-      className="group relative flex h-full flex-col bg-card rounded-card-lg overflow-hidden border border-app shadow-xs card-hover"
-    >
+    <article className={`p1-item ${compact ? 'p1-item-compact' : ''}`}>
+      <div className="p1-item-photo">
       <a
         href={`/listing/${encodeURIComponent(listing.id)}`}
         aria-label={`View listing: ${listing.title}`}
         onClick={(e) => handleListingLinkClick(e, onClick)}
-        className="flex h-full flex-col rounded-[inherit] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-accent"
       >
-        <div className="relative aspect-[4/3] overflow-hidden bg-subtle">
-          <img
+          <ListingPhoto
             src={listing.images[0]}
             alt=""
-            loading="lazy"
-            className="w-full h-full object-cover zoom-media"
+            className="zoom-media"
           />
-          <div className="absolute top-2.5 left-2.5 flex gap-1.5">
-            {listing.instantBooking && <Badge tone="inverse" icon={<Zap size={11} />}>Instant</Badge>}
-            {!listing.available && <Badge tone="neutral" className="bg-card">Booked</Badge>}
-          </div>
-        </div>
-
-        <div className="flex flex-1 flex-col gap-1.5 p-3.5 min-h-[152px]">
-          <MetaLine listing={listing} />
-          <h3 className="min-h-10 font-semibold text-main leading-5 line-clamp-2 text-[15px] font-display">{listing.title}</h3>
-          <RatingLine listing={listing} />
-          <div className="flex items-center justify-between gap-2 mt-auto pt-2">
-            <PriceBlock value={listing.pricePerDay} />
-            {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
-          </div>
-        </div>
       </a>
-      <FavoriteButton liked={liked} onToggle={toggleLiked} className="absolute top-2 right-2 z-10" />
+      <FavoriteButton liked={liked} onToggle={toggleLiked} busy={favoriteBusy} />
+      {listing.instantBooking && <span className="p1-instant"><Zap size={12} aria-hidden="true" /> Instant booking</span>}
+      {!listing.available && <Badge tone="neutral" className="absolute bottom-2 right-2 bg-card">Booked</Badge>}
+      </div>
+        <div className="p1-item-body">
+          <div className="p1-item-category"><span>{listing.category}</span><RatingLine listing={listing} /></div>
+          <a href={`/listing/${encodeURIComponent(listing.id)}`} className="p1-item-title" onClick={(event) => handleListingLinkClick(event, onClick)}>{listing.title}</a>
+          <OwnerLine listing={listing} />
+          <p className="p1-item-price"><strong>${listing.pricePerDay}</strong><span>/ day</span></p>
+            {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
+        </div>
     </article>
   );
 }
 
-export function ListingCardWide({ listing, onClick, favorited, onToggleFavorite }: { listing: Listing; onClick?: () => void; favorited?: boolean; onToggleFavorite?: () => void }) {
-  const [likedLocal, setLikedLocal] = useState(false);
-  const liked = favorited ?? likedLocal;
-  const toggleLiked = onToggleFavorite ?? (() => setLikedLocal(!likedLocal));
-  return (
-    <article
-      className="group relative flex h-full min-h-[152px] gap-3.5 bg-card rounded-card-lg overflow-hidden border border-app shadow-xs card-hover p-3"
-    >
-      <a
-        href={`/listing/${encodeURIComponent(listing.id)}`}
-        aria-label={`View listing: ${listing.title}`}
-        onClick={(e) => handleListingLinkClick(e, onClick)}
-        className="flex min-w-0 flex-1 gap-3.5 rounded-[inherit] pr-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-accent"
-      >
-        <div className="relative w-28 sm:w-36 shrink-0 overflow-hidden rounded-card aspect-[4/3] bg-subtle self-start">
-          <img src={listing.images[0]} alt="" loading="lazy" className="w-full h-full object-cover zoom-media" />
-        </div>
-        <div className="flex min-h-[126px] flex-1 min-w-0 flex-col gap-1">
-          <div className="min-w-0">
-            <MetaLine listing={listing} />
-            <h3 className="min-h-10 font-semibold text-main leading-5 line-clamp-2 text-[15px] font-display mt-0.5">{listing.title}</h3>
-          </div>
-          <RatingLine listing={listing} />
-          <div className="flex items-center justify-between gap-2 mt-auto pt-1.5">
-            <PriceBlock value={listing.pricePerDay} />
-            {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
-          </div>
-        </div>
-      </a>
-      <FavoriteButton liked={liked} onToggle={toggleLiked} className="absolute top-2.5 right-2.5 z-10" />
-    </article>
-  );
+export function ListingCardWide({ listing, onClick, favorited, favoriteBusy, onToggleFavorite }: { listing: Listing; onClick?: () => void; favorited?: boolean; favoriteBusy?: boolean; onToggleFavorite?: () => void }) {
+  return <ListingCard compact listing={listing} onClick={onClick} favorited={favorited} favoriteBusy={favoriteBusy} onToggleFavorite={onToggleFavorite} />;
 }
 
 const SWIPE_THRESHOLD_PX = 40;

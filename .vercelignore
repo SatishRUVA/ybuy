@@ -1,5 +1,7 @@
 .env*
 *.local
+test-results*
+playwright*report*
 playwright-local-report
 test-results-local
 playwright-hosted-report
@@ -7,6 +9,7 @@ test-results-hosted
 test-results-settlement
 test-results-private-offers
 test-results-session
+test-results-staging
 playwright*.config.ts
 supabase
 tests
@@ -24,4 +27,13 @@ README.md
 .mcp.json
 .21st
 .tmp-auction
+.tmp-auth
+.agents
+.claude
+.impeccable
+.taste-skill
+.superdesign
+test-accounts.json
+file.png
+file-2.png
 vite.config.ts.timestamp-*

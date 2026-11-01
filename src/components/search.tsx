@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Search, MapPin, ChevronDown, Check, LocateFixed } from 'lucide-react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { useTheme } from '@/theme-context';
 import { Palette, Moon, Check as CheckIcon } from 'lucide-react';
 import { findCities, haversineMiles, locationLabel, todayIso, type MarketplaceLocation } from '@/lib/geo';
@@ -8,6 +8,7 @@ import { useMarketplaceLocation } from '@/location-context';
 import { DateRangePicker } from '@/components/date-range-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/shadcn/select';
 import { SEARCH_RADII, parseSearchRadius, savedSearchState, saveSearchState, type SearchRadius } from '@/lib/search-state';
+import { Button } from '@/components/ui';
 
 export interface SearchParams {
   keyword: string;
@@ -38,14 +39,6 @@ export function SearchRadiusSelect({ value, onChange, label = 'Search radius', d
   );
 }
 
-const PLACEHOLDER_EXAMPLES = [
-  'Camera, drill, projector...',
-  'Camping tent, mountain bike...',
-  'Party tables, DJ speaker...',
-  'Lawn mower, power tools...',
-  'VR headset, stand mixer...',
-];
-
 export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaultValue = '', initialStartDate, initialEndDate, initialRadius = 5, radius: controlledRadius, onRadiusChange }: {
   onSearch?: (params: SearchParams) => void;
   onLocationChange?: (location: MarketplaceLocation) => void;
@@ -61,7 +54,6 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
   const [locating, setLocating] = useState(false);
   const [initialLocationStatus, setInitialLocationStatus] = useState<'idle' | 'locating' | 'manual'>('idle');
   const [locationPermission, setLocationPermission] = useState<PermissionState | 'unavailable'>('prompt');
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [startDate, setStartDate] = useState(initialStartDate ?? '');
   const [endDate, setEndDate] = useState(initialEndDate ?? '');
   const [selectedRadius, setSelectedRadius] = useState(initialRadius);
@@ -72,7 +64,6 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
   const [mobileExpanded, setMobileExpanded] = useState(variant === 'hero');
   const reduceMotion = useReducedMotion();
   const desktopLocRef = useRef<HTMLDivElement>(null);
-  const mobileLocRef = useRef<HTMLDivElement>(null);
   const locationTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -101,25 +92,17 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
 
   useEffect(() => {
     if (showLocMenu) {
-      const container = window.matchMedia('(min-width: 640px)').matches ? desktopLocRef.current : mobileLocRef.current;
-      container?.querySelector('input')?.focus();
+      desktopLocRef.current?.querySelector('input')?.focus();
     } else {
       locationTriggerRef.current?.focus();
     }
-  }, [showLocMenu]);
-
-  useEffect(() => {
-    if (what) return; // don't distract the user once they've started typing
-    const id = setInterval(() => setPlaceholderIndex((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 2000);
-    return () => clearInterval(id);
-  }, [what]);
+  }, [showLocMenu, variant]);
 
   useEffect(() => {
     function handler(e: MouseEvent) {
       const target = e.target as Node;
       const inDesktopMenu = desktopLocRef.current?.contains(target) ?? false;
-      const inMobileMenu = mobileLocRef.current?.contains(target) ?? false;
-      if (!inDesktopMenu && !inMobileMenu) setShowLocMenu(false);
+      if (!inDesktopMenu) setShowLocMenu(false);
     }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -288,154 +271,37 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
     </motion.div>
   );
 
-  return (
-    // No z-index here: it would cap the location/date popovers below the shared dim Overlay (z-200).
-    <div className="relative w-full min-w-0">
-      {/* Not portaled: a portaled backdrop lives in a different stacking context than this menu,
-          so its z-index can't be trusted to lose against the menu's z-[210]. Staying in the same
-          local tree keeps the two comparable and the menu reliably clickable. */}
-      {showLocMenu && (
-        <button type="button" className="fixed inset-0 z-[200] bg-black/45 animate-fade-in" onClick={() => setShowLocMenu(false)} aria-label="Close location picker" />
-      )}
-      {/* Desktop: one pill, three segments, one action. Segments light up on hover/focus. */}
-      <div
-        className={`search-control hidden sm:grid items-center w-full min-w-0 glass-surface border border-app rounded-card-lg shadow-xs
-          transition-shadow duration-standard ease-out focus-within:shadow-hover hover:shadow-hover
-          ${variant === 'hero' ? 'p-1.5' : 'p-1'}`}
-      >
-        <div className="search-input-shell search-field-keyword flex min-w-0 items-center gap-2.5 pl-4 pr-3 h-12 rounded-card transition-colors duration-fast hover:bg-subtle focus-within:bg-subtle">
-          <Search size={18} className="text-sec shrink-0" />
-          <div className="flex-1 min-w-0">
-            <label htmlFor="search-what" className="sr-only">Search for items to rent</label>
-            <input
-              id="search-what"
-              name="search-what"
-              value={what}
-              onChange={(e) => setWhat(e.target.value)}
-              placeholder={PLACEHOLDER_EXAMPLES[placeholderIndex]}
-              aria-label="Search for items to rent"
-              className="search-input w-full bg-transparent outline-none text-sm font-medium text-main placeholder:text-muted placeholder:font-normal min-w-0"
-              onKeyDown={(e) => e.key === 'Enter' && runSearch()}
-            />
-          </div>
-        </div>
-
-        <span className="search-field-divider w-px h-7 bg-[var(--border)] shrink-0" aria-hidden="true" />
-
-        <div ref={desktopLocRef} className="search-field-location relative min-w-0">
-          <button
-            onClick={toggleLocation}
-            aria-haspopup="dialog"
-            aria-expanded={showLocMenu}
-            className="flex w-full min-w-0 items-center gap-2 px-3 h-12 rounded-card text-sm font-medium text-main transition-colors duration-fast hover:bg-subtle"
-          >
-            {location.source === 'BROWSER' ? <LocateFixed size={16} className="shrink-0 text-accent" /> : <MapPin size={16} className="shrink-0 text-accent" />}
-            <span className="min-w-0 flex-1 truncate text-left">{displayLocation}</span>
-            <ChevronDown size={14} className={`text-muted transition-transform duration-fast ${showLocMenu ? 'rotate-180' : ''}`} />
-          </button>
-          {showLocMenu && locationMenu}
-        </div>
-
-        <div className="search-field-radius min-w-0">
-          <SearchRadiusSelect value={radius} onChange={changeRadius} disabled={location.source === 'NONE' || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)} />
-        </div>
-        <div className="search-field-dates min-w-0">
-          <DateRangePicker startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
-        </div>
-
-        <button
-          onClick={runSearch}
-          disabled={location.source === 'NONE'}
-          title={location.source === 'NONE' ? 'Choose a location before searching' : undefined}
-          className="search-field-submit inline-flex items-center justify-center gap-2 h-12 px-5 rounded-card bg-accent text-accent-text font-semibold text-sm hover:bg-accent-hover active:scale-[0.98] transition-all duration-fast disabled:cursor-not-allowed disabled:opacity-55"
-        >
-          <Search size={16} />
-          <span>Search</span>
+  return <div className="relative w-full min-w-0">
+    {variant === 'compact' && !mobileExpanded && <button type="button" onClick={() => setMobileExpanded(true)} className="p1-search-summary sm:hidden">
+      <Search size={18} aria-hidden="true" /><span>{what || 'Search rentals'} {displayLocation} {radius === null ? 'Any distance' : `Within ${radius} miles`}</span><ChevronDown size={16} aria-hidden="true" />
+    </button>}
+    {showLocMenu && <button type="button" className="fixed inset-0 z-[200] bg-black/45" onClick={() => setShowLocMenu(false)} aria-label="Close location picker" />}
+    <form className={`p1-search-bar ${variant === 'compact' ? 'p1-search-compact' : ''} ${!mobileExpanded ? 'p1-search-collapsed' : ''}`} onSubmit={event => { event.preventDefault(); runSearch(); }}>
+      <label className="p1-search-keyword"><Search size={21} aria-hidden="true" /><span><small>What do you need?</small>
+        <input aria-label="Search for items to rent" value={what} onChange={event => setWhat(event.target.value)} placeholder="Camera, tent, tools..." />
+      </span></label>
+      <div ref={desktopLocRef} className="p1-search-location relative">
+        <button type="button" onClick={toggleLocation} className="p1-search-location-trigger" aria-label={displayLocation} aria-haspopup="dialog" aria-expanded={showLocMenu}>
+          <MapPin size={20} aria-hidden="true" /><span><small>Where?</small><strong>{displayLocation}</strong></span><ChevronDown size={14} aria-hidden="true" />
         </button>
+        {showLocMenu && locationMenu}
       </div>
-
-      {/* Mobile: compact summary that expands into the full form. */}
-      <div className="sm:hidden">
-        <AnimatePresence initial={false} mode="wait">
-        {!mobileExpanded ? (
-          <motion.div key="search-summary" initial={reduceMotion ? false : { opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={reduceMotion ? undefined : { opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
-          <button
-            onClick={() => setMobileExpanded(true)}
-            className="w-full flex items-center gap-3 h-12 px-4 rounded-card-lg glass-surface border border-app shadow-xs text-left active:scale-[0.99] transition-transform duration-fast"
-          >
-            <Search size={17} className="text-accent shrink-0" />
-            <span className="flex-1 min-w-0 truncate text-sm font-semibold text-main">
-              {what || 'Search rentals'}
-            </span>
-            <span className="text-xs text-sec min-w-0 max-w-40 text-right">
-              <span className="block truncate">{displayLocation}</span>
-              <span className="block">{radius === null ? 'Any distance' : `Within ${radius} miles`}</span>
-            </span>
-          </button></motion.div>
-        ) : (
-          <motion.div key="search-expanded" initial={reduceMotion ? false : { opacity: 0, y: 8, scale: 0.99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduceMotion ? undefined : { opacity: 0, y: -5 }} transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }} className="rounded-card-xl glass-surface border border-app shadow-card p-3.5 space-y-3">
-            <div className="search-input-shell flex items-center gap-2.5 h-11 px-3 rounded-card bg-subtle">
-              <Search size={16} className="text-sec shrink-0" />
-              <input
-                value={what}
-                onChange={(e) => setWhat(e.target.value)}
-                placeholder={PLACEHOLDER_EXAMPLES[placeholderIndex]}
-                aria-label="What do you need?"
-                className="search-input w-full bg-transparent outline-none text-sm font-medium text-main placeholder:text-muted placeholder:font-normal"
-                onKeyDown={(e) => e.key === 'Enter' && runSearch()}
-              />
-            </div>
-
-            <div ref={mobileLocRef} className="relative">
-              <button
-                onClick={toggleLocation}
-                aria-haspopup="dialog"
-                aria-expanded={showLocMenu}
-                className="w-full flex items-center justify-between h-11 px-3 rounded-card bg-subtle text-sm font-medium text-main"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  {location.source === 'BROWSER' ? <LocateFixed size={15} className="text-accent" /> : <MapPin size={15} className="text-accent" />}
-                  <span className="truncate">{displayLocation}</span>
-                </span>
-                <ChevronDown size={14} className={`text-muted transition-transform duration-fast ${showLocMenu ? 'rotate-180' : ''}`} />
-              </button>
-              {showLocMenu && locationMenu}
-            </div>
-
-            <SearchRadiusSelect value={radius} onChange={changeRadius} disabled={location.source === 'NONE' || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)} />
-
-            <div className="px-1">
-              <DateRangePicker
-                startDate={startDate}
-                endDate={endDate}
-                onChange={(s, e) => { setStartDate(s); setEndDate(e); }}
-                mode="range"
-              />
-            </div>
-            <button
-              onClick={runSearch}
-              disabled={location.source === 'NONE'}
-              title={location.source === 'NONE' ? 'Choose a location before searching' : undefined}
-              className="w-full h-12 rounded-card bg-accent text-accent-text font-semibold text-sm active:scale-[0.99] transition-transform duration-fast flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-55"
-            >
-              <Search size={16} />
-              Search
-            </button>
-          </motion.div>
-        )}
-        </AnimatePresence>
-      </div>
-      <p role={initialLocationStatus === 'locating' ? 'status' : undefined} className={`mt-2 text-xs ${variant === 'compact' && !mobileExpanded ? 'hidden sm:block' : ''} ${variant === 'hero' ? 'text-white/90' : 'text-sec'}`}>
-        {initialLocationStatus === 'locating' && location.source === 'NONE'
-          ? 'Finding your area… You can still search while we check.'
-          : location.source === 'IP'
-            ? `Approximate area: ${locationLabel(location)}. Choose a city to refine your distance.`
-            : location.source === 'NONE'
-              ? 'We couldn’t determine your location. Choose a city or ZIP code before searching nearby.'
-              : 'Dates are optional. Distances are approximate; exact pickup addresses stay private.'}
-      </p>
+      <DateRangePicker startDate={startDate} endDate={endDate} onChange={(start, end) => { setStartDate(start); setEndDate(end); }} presentation="search" />
+      <Button type="submit" disabled={location.source === 'NONE'} title={location.source === 'NONE' ? 'Choose a location before searching' : undefined}>
+        <Search size={18} aria-hidden="true" />Search
+      </Button>
+    </form>
+    <div className={`p1-search-extras ${!mobileExpanded ? 'p1-search-collapsed' : ''}`}>
+      <div className="p1-inline-select">Search radius <SearchRadiusSelect value={radius} onChange={changeRadius} disabled={location.source === 'NONE' || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)} /></div>
     </div>
-  );
+    <p role="status" className={`text-xs text-sec mt-2 ${!mobileExpanded ? 'p1-search-collapsed' : ''}`}>
+      {initialLocationStatus === 'locating' && location.source === 'NONE' ? 'Finding your area…'
+        : location.source === 'NONE' ? 'Choose a city or ZIP code before searching nearby.'
+          : location.source === 'IP' ? `Approximate area: ${locationLabel(location)}. Choose a city to refine your distance.`
+            : 'Dates are optional. Distances are approximate; exact pickup addresses stay private.'}
+    </p>
+  </div>;
+
 }
 
 

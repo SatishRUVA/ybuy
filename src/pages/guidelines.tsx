@@ -1,5 +1,5 @@
 import { ShieldAlert } from 'lucide-react';
-import { SectionHeader, Surface } from '@/components/ui';
+import { WorkspaceHeader } from '@/components/account-workspace';
 
 // Mirrors the prohibited-items list used to prompt the AI photo-analysis Edge Function
 // (supabase/functions/analyze-listing-photo/index.ts) - keep both in sync.
@@ -13,16 +13,12 @@ const PROHIBITED_ITEMS = [
 
 export function GuidelinesPage() {
   return (
-    <div className="animate-fade-in pb-20 md:pb-10">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        <SectionHeader
-          as="h1"
-          title="Community guidelines"
-          subtitle="YBuy is for renting everyday items between neighbours. These items are never allowed as listings."
-          className="mb-6"
-        />
-        <Surface className="p-5">
-          <ul className="space-y-3.5">
+    <div className="p1-container p1-page p1-account">
+      <div>
+        <WorkspaceHeader title="Good gear. Good neighbours." description="YBuy is for renting everyday items between neighbours. These items are never allowed as listings." />
+        <section className="p1-panel account-panel" aria-labelledby="prohibited-items-title">
+          <h2 id="prohibited-items-title">Community guidelines</h2>
+          <ul className="account-guidelines-list">
             {PROHIBITED_ITEMS.map((item) => (
               <li key={item} className="flex items-start gap-2.5 text-sm text-sec leading-relaxed">
                 <ShieldAlert size={16} className="text-warning shrink-0 mt-0.5" />
@@ -30,7 +26,7 @@ export function GuidelinesPage() {
               </li>
             ))}
           </ul>
-        </Surface>
+        </section>
         <p className="text-xs text-muted mt-5 leading-relaxed">
           Listings suspected of violating these guidelines are reviewed manually. Publishing a
           listing that violates them may result in removal and account restrictions.

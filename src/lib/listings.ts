@@ -120,7 +120,7 @@ export async function fetchCategories(): Promise<DbCategory[]> {
     .select('id, name, icon, active, sort_order')
     .eq('active', true)
     .order('sort_order');
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return data ?? [];
 }
 
@@ -441,7 +441,7 @@ export function toUiListing(row: DbListingRow): Listing {
     id: row.id,
     title: cleanText(row.title),
     category: cleanText(row.categories?.name),
-    images: images.length > 0 ? images : [FALLBACK_IMAGE],
+    images,
     pricePerDay: Number(row.price_per_day),
     distance: row.distance_miles == null ? 0 : Math.round(row.distance_miles * 10) / 10,
     distanceUnit: 'mi',
@@ -452,7 +452,7 @@ export function toUiListing(row: DbListingRow): Listing {
       rating: 0,
       rentals: 0,
       responseRate: 0,
-      verified: false,
+      verified: row.owner_verified === true,
       joinedYear: new Date(row.created_at).getFullYear(),
       bio: '',
       onTimeReturns: 0,
@@ -507,8 +507,6 @@ export function toUiListing(row: DbListingRow): Listing {
   };
 }
 
-const FALLBACK_IMAGE =
-  'https://images.pexels.com/photos/4498362/pexels-photo-4498362.jpeg?auto=compress&cs=tinysrgb&w=600&h=450&fit=crop';
 const FALLBACK_AVATAR =
   'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=100&h=100&fit=crop';
 
@@ -529,11 +527,11 @@ export async function enrichListingsWithRatings(listings: Listing[]): Promise<Li
         rating: s.rating,
         reviewCount: s.count,
         rentalCount: s.count,
-        verifiedOwner: true,
-        owner: { ...l.owner, rating: s.rating, rentals: s.count, verified: true },
+        owner: { ...l.owner, rating: s.rating, rentals: s.count },
       };
     });
-  } catch {
+  } catch (error) {
+    console.warn('Could not load owner ratings; listing verification is unchanged.', error);
     return listings;
   }
 }
