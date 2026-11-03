@@ -3,7 +3,7 @@ import { Clock, Package } from 'lucide-react';
 import { useAuth } from '@/auth-context';
 import { useRouter } from '@/router';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
-import { fetchListingById, toUiListing } from '@/lib/listings';
+import { fetchListingById, fetchListingsByOwner, toUiListing } from '@/lib/listings';
 import { auctionCountdown } from '@/lib/auction-countdown';
 import { getListingAuction, getListingAuctionFeed, placeListingAuctionBid, selectListingAuctionWinner,
   type AuctionFeed, type ListingAuction } from '@/lib/listing-auctions';
@@ -11,6 +11,7 @@ import { canPlacePreviewBid, canSelectPreviewWinner } from '@/lib/auction-eligib
 import { Button, Empty, ErrorNote, Field, PageHead, Tag, Avatar, money } from '@/preview-1/ui';
 import { href } from '@/preview-1/state';
 import { AuctionCard, BiddingLayout, BidRoomLayout } from '@/preview-1/bidding';
+import { OwnerBiddingDashboard, type OwnerAuction } from '@/pages/bidding';
 
 const rentalDate = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const errorMessage = (reason: unknown) => reason instanceof Error ? reason.message : 'Could not load live bidding. Please retry.';
@@ -27,6 +28,7 @@ function AuctionImage({ url, alt }: { url: string | null; alt: string }) {
 }
 
 export function PreviewBidding() {
+  const { user } = useAuth();
   const { enabled, loading: flagLoading, error: flagError, reload } = useFeatureFlag('bidding');
   const [feed, setFeed] = useState<AuctionFeed | null>(null);
   const [category, setCategory] = useState<string | null>(null);
@@ -35,6 +37,14 @@ export function PreviewBidding() {
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [ownerAuctionsState, setOwnerAuctionsState] = useState<{ ownerId: string; auctions: OwnerAuction[] } | null>(null);
+  const [ownerLoading, setOwnerLoading] = useState(false);
+  const [ownerError, setOwnerError] = useState<string | null>(null);
+  const [ownerRetry, setOwnerRetry] = useState(0);
+  const [selectingBidId, setSelectingBidId] = useState<string | null>(null);
+  const [view, setView] = useState<'explore' | 'owner'>('explore');
+  const defaultedUser = useRef<string | null>(null);
+  const ownerAuctions = ownerAuctionsState && ownerAuctionsState.ownerId === user?.id ? ownerAuctionsState.auctions : [];
 
   useEffect(() => {
     if (flagLoading || flagError || !enabled) { setLoading(false); return; }
@@ -54,6 +64,56 @@ export function PreviewBidding() {
   }, [category, enabled, flagError, flagLoading, offset, retry]);
 
   useEffect(() => {
+    if (!user?.id) {
+      defaultedUser.current = null;
+      setOwnerAuctionsState(null);
+      setOwnerError(null);
+      setOwnerLoading(false);
+      setView('explore');
+      return;
+    }
+    if (flagLoading || flagError || !enabled) return;
+
+    const ownerId = user.id;
+    let active = true;
+    let requestPending = false;
+    async function loadOwnerAuctions() {
+      if (requestPending) return;
+      requestPending = true;
+      try {
+        const rows = await fetchListingsByOwner(ownerId);
+        const listings = rows.map(toUiListing).filter(listing => listing.auctionEnabled);
+        const results = await Promise.all(listings.map(async listing => ({
+          listing,
+          auction: await getListingAuction(listing.id),
+        })));
+        if (!active) return;
+        const auctions = results.filter((item): item is OwnerAuction => item.auction !== null);
+        setOwnerAuctionsState({ ownerId, auctions });
+        setOwnerError(null);
+        if (defaultedUser.current !== ownerId) {
+          defaultedUser.current = ownerId;
+          setView(auctions.length ? 'owner' : 'explore');
+        }
+      } catch (reason) {
+        if (!active) return;
+        setOwnerError(errorMessage(reason));
+        if (defaultedUser.current !== ownerId) {
+          defaultedUser.current = ownerId;
+          setView('explore');
+        }
+      } finally {
+        requestPending = false;
+        if (active) setOwnerLoading(false);
+      }
+    }
+    setOwnerLoading(true);
+    void loadOwnerAuctions();
+    const timer = window.setInterval(() => { if (!document.hidden) void loadOwnerAuctions(); }, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [enabled, flagError, flagLoading, ownerRetry, user?.id]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
@@ -66,17 +126,54 @@ export function PreviewBidding() {
   const categories = feed?.categories ?? [];
   const items = feed?.items.filter(item => Date.parse(item.expires_at) > now) ?? [];
   const total = feed?.total ?? 0;
+  const sectionNav = user && <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-5">
+    <nav aria-label="Bidding sections" className="p1-tabs">
+      <button type="button" aria-pressed={view === 'owner'} onClick={() => setView('owner')}>
+        My auctions{ownerAuctions.length ? ` (${ownerAuctions.length})` : ''}
+      </button>
+      <button type="button" aria-pressed={view === 'explore'} onClick={() => setView('explore')}>Explore auctions</button>
+    </nav>
+  </div>;
 
   function filter(id: string | null) {
     if (id === category) return;
     setCategory(id); setOffset(0); setFeed(null); setLoading(true); setError(null);
   }
 
-  return <BiddingLayout categories={
+  if (user && view === 'owner') return <>
+    {sectionNav}
+    <OwnerBiddingDashboard
+      auctions={ownerAuctions}
+      loading={ownerLoading}
+      error={ownerError}
+      selectingBidId={selectingBidId}
+      onRefresh={() => { setOwnerLoading(true); setOwnerRetry(value => value + 1); }}
+      onExplore={() => setView('explore')}
+      onSelectWinner={async (listingId, bidId) => {
+        setSelectingBidId(bidId);
+        try {
+          const auction = await selectListingAuctionWinner(listingId, bidId);
+          setOwnerAuctionsState(current => current?.ownerId === user.id
+            ? { ...current, auctions: current.auctions.map(item => item.listing.id === listingId ? { ...item, auction } : item) }
+            : current);
+          setOwnerError(null);
+        } catch (reason) {
+          setOwnerError(errorMessage(reason));
+        } finally {
+          setSelectingBidId(null);
+        }
+      }}
+    />
+  </>;
+
+  return <>
+    {sectionNav}
+    <BiddingLayout categories={
         [{ id: null, name: 'All' }, ...categories].map(option =>
           <button type="button" key={option.id ?? 'all'} aria-pressed={category === option.id} disabled={loading}
             onClick={() => filter(option.id)}>{option.name}</button>)
     }>
+    {ownerError && <div role="alert" className="mb-4"><ErrorNote>{ownerError}</ErrorNote><Button variant="secondary" onClick={() => { setOwnerLoading(true); setOwnerRetry(value => value + 1); }}>Retry your auctions</Button></div>}
     <p role="status" aria-live="polite" className="text-sm text-sec mb-4">
       {loading ? 'Loading auctions...' : error ? 'Auctions could not be refreshed.' : `${total} open ${total === 1 ? 'auction' : 'auctions'}${category ? ` in ${categories.find(item => item.id === category)?.name ?? 'this category'}` : ''}`}
     </p>
@@ -98,7 +195,8 @@ export function PreviewBidding() {
         {category ? <Button variant="secondary" onClick={() => filter(null)}>Clear category filter</Button> : <a className="p1-button p1-button-secondary" href={href('search')}>Browse rentals</a>}
       </Empty>}
     </div>
-  </BiddingLayout>;
+    </BiddingLayout>
+  </>;
 }
 
 function auctionStatus(auction: ListingAuction): { label: string; tone: 'neutral' | 'good' | 'pending' | 'blue' | 'lime' | 'bad' } {
@@ -130,7 +228,6 @@ export function PreviewBidRoom({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [rate, setRate] = useState('');
   const [busy, setBusy] = useState(false);
-  const [selecting, setSelecting] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const serverOffset = useRef(0);
   const pendingBid = useRef<{ rate: number; key: string } | null>(null);
@@ -178,14 +275,6 @@ export function PreviewBidRoom({ id }: { id: string }) {
     finally { setBusy(false); }
   }
 
-  async function selectWinner(bidId: string) {
-    if (!auction || !canSelectPreviewWinner(auction, now)) return;
-    setSelecting(bidId); setError(null);
-    try { applyAuction(await selectListingAuctionWinner(id, bidId)); }
-    catch (reason) { setError(errorMessage(reason)); }
-    finally { setSelecting(null); }
-  }
-
   if (flagLoading || loading) return <main className="p1-container p1-page"><p role="status" aria-busy="true">Loading current bids…</p></main>;
   if (flagError) return <main className="p1-container p1-page"><ErrorNote>{flagError}</ErrorNote><Button variant="secondary" onClick={() => void reload()}>Retry bidding</Button></main>;
   if (!enabled) return <main className="p1-container p1-page"><Empty title="Live bidding is unavailable." body="No sample auction or simulated payment is shown." /></main>;
@@ -202,7 +291,7 @@ export function PreviewBidRoom({ id }: { id: string }) {
   const leading = auction.my_daily_rate !== null && auction.my_daily_rate === top;
 
   return <BidRoomLayout
-    error={error && <div role="alert"><ErrorNote>{error}</ErrorNote><Button variant="secondary" disabled={busy || Boolean(selecting)} onClick={() => void refresh()}>Refresh bids</Button></div>}
+    error={error && <div role="alert"><ErrorNote>{error}</ErrorNote><Button variant="secondary" disabled={busy} onClick={() => void refresh()}>Refresh bids</Button></div>}
     heading={<>
       <AuctionImage url={listing.images[0] ?? null} alt={listing.title} />
       <div><h1>{listing.title}</h1><p><Avatar src={listing.owner.avatar} name={listing.owner.name} size={27} /> From {listing.owner.name} · {rentalDate(auction.start_date)} – {rentalDate(auction.end_date)}</p><Tag tone={status.tone}>{status.label}</Tag></div>
@@ -211,12 +300,14 @@ export function PreviewBidRoom({ id }: { id: string }) {
     </>}>
       <div className="p1-bid-price"><span>{auction.top_bids.length ? 'Top daily bid' : 'Starting daily price'}</span><strong>{money(top)}</strong>
         <small>{auction.my_bid_count} of 3 of your bids used</small></div>
-      {auction.is_owner && maySelect && <div className="p1-info-copy"><h2>Choose an eligible bid</h2><p>Bidder identities remain private. Selecting a winner starts the protected checkout flow; it does not mark a payment as verified.</p></div>}
+      {auction.is_owner && maySelect && <div className="p1-info-copy"><h2>Review your bidders</h2><p>Choose an eligible renter during the one-hour decision window. Payment must still be verified before the rental is confirmed.</p>
+        <Button variant="secondary" onClick={() => navigate({ name: 'bidding' })}>Open My auctions</Button></div>}
       {!auction.is_owner && auction.status === 'open' && user && (leading ? <Tag tone="lime">You’re currently leading</Tag> : <Tag tone="neutral">Your next bid could be the one</Tag>)}
       {!auction.is_owner && mayBid && user && <form onSubmit={event => void submit(event)}>
         {auction.my_daily_rate !== null && <p className="p1-muted">Your highest bid: {money(auction.my_daily_rate)} / day.</p>}
         <Field label="Your bid per day"><input type="number" step="0.01" min={auction.minimum_next_bid} value={rate}
           onChange={event => setRate(event.target.value)} aria-invalid={Boolean(error)} /></Field>
+        <p className="p1-muted">The platform-configured minimum increase is {money(auction.minimum_increment)} per day.</p>
         <div className="p1-actions">{[2, 5, 10].map(amount => <Button key={amount} variant="secondary" type="button"
           onClick={() => setRate((auction.minimum_next_bid + amount).toFixed(2))}>+{money(amount)}</Button>)}</div>
         <Button type="submit" className="p1-full" disabled={busy}>{busy ? 'Placing bid…' : `Place bid · ${money(Number(rate) || 0)} / day`}</Button>
@@ -228,12 +319,23 @@ export function PreviewBidRoom({ id }: { id: string }) {
       {auction.status === 'completed' && auction.my_booking_id && <Button onClick={() => navigate({ name: 'confirmation', id: auction.my_booking_id! })}>View booking</Button>}
       {!auction.is_owner && auction.status === 'scheduled' && <p className="p1-muted">Bidding opens at the scheduled time. You can place up to three bids after it opens.</p>}
       {!auction.is_owner && ['ended', 'cancelled'].includes(auction.status) && <p className="p1-muted">This auction is closed. No further bids can be placed.</p>}
+      {auction.is_owner && auction.status === 'owner_selection' && !maySelect && <p className="p1-muted">The owner decision window has closed. The highest eligible renter is being selected automatically.</p>}
       <h2>Top bids <span className="p1-muted">(anonymous)</span></h2>
       {auction.top_bids.length ? auction.top_bids.map(bid => <div className="p1-bid-row" key={bid.id}>
         <span>Eligible bid {bid.rank}</span><b>{money(bid.daily_rate)} / day · {bid.bid_count} {bid.bid_count === 1 ? 'bid' : 'bids'}</b>
-        {maySelect && <Button variant="secondary" disabled={Boolean(selecting)} onClick={() => void selectWinner(bid.id)}>
-          {selecting === bid.id ? 'Selecting…' : 'Select bidder'}</Button>}
         {!auction.is_owner && <Tag tone={auction.my_daily_rate === bid.daily_rate ? 'lime' : 'pending'}>{auction.my_daily_rate === bid.daily_rate ? 'Your bid' : `#${bid.rank}`}</Tag>}
       </div>) : <p className="p1-muted">No bids yet. The opening price is {money(auction.minimum_next_bid)} per day.</p>}
+      {!auction.is_owner && user && <section aria-labelledby="my-auction-bids-title" className="mt-5">
+        <h2 id="my-auction-bids-title">Your bid history</h2>
+        <p className="p1-muted">{auction.my_rank ? `Your current rank is #${auction.my_rank}.` : 'You are not currently ranked among eligible bids.'}</p>
+        {auction.my_bids.length > 0 ? <ol className="space-y-2">
+          {auction.my_bids.map(bid => <li key={bid.id} className="p1-bid-row">
+            <span>{new Date(bid.submitted_at).toLocaleString()}</span>
+            <b>{money(bid.daily_rate)} / day</b>
+            <span>{bid.selected ? 'Selected' : bid.passed ? 'Payment window expired' : bid.is_current ? 'Current bid' : 'Earlier bid'}</span>
+            {bid.rank !== null && <Tag tone={bid.rank === 1 ? 'lime' : 'pending'}>#{bid.rank}</Tag>}
+          </li>)}
+        </ol> : <p className="p1-muted">You have not placed a bid in this auction.</p>}
+      </section>}
   </BidRoomLayout>;
 }

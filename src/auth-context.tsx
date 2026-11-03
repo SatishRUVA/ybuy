@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { LOCAL_PROFILE_LOGIN } from '@/lib/local-profile-login';
+import { PROFILE_LOGIN, PROFILE_ENDPOINT } from '@/lib/local-profile-login';
 
 export interface Profile {
   id: string;
@@ -265,8 +265,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthBusy('sign-in');
     setError(null);
     try {
-      if (!LOCAL_PROFILE_LOGIN) throw new Error('Profile selection is only available in isolated local development.');
-      const response = await fetch('/api/local-profiles', {
+      if (!PROFILE_LOGIN) throw new Error('Test profile selection is not enabled.');
+      const response = await fetch(PROFILE_ENDPOINT, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }),
       });
       if (!response.ok) throw new Error('Could not select this local profile. Check local Supabase and try again.');

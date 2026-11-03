@@ -27,7 +27,7 @@ export function loadGooglePlaces(): Promise<GooglePlacesLibrary> {
   const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   if (!key) return Promise.reject(new Error('Google Places is not configured.'));
 
-  placesPromise = new Promise((resolve, reject) => {
+  placesPromise = new Promise<GooglePlacesLibrary>((resolve, reject) => {
     const finish = () => {
       const importLibrary = window.google?.maps?.importLibrary;
       if (!importLibrary) {
@@ -56,6 +56,10 @@ export function loadGooglePlaces(): Promise<GooglePlacesLibrary> {
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&libraries=places&callback=google.maps.${GOOGLE_READY_CALLBACK}`;
     script.addEventListener('error', () => reject(new Error('Google Places could not be loaded.')), { once: true });
     document.head.appendChild(script);
+  }).catch((error: unknown) => {
+    placesPromise = null;
+    if (!window.google?.maps?.importLibrary) document.getElementById(GOOGLE_SCRIPT_ID)?.remove();
+    throw error;
   });
 
   return placesPromise;

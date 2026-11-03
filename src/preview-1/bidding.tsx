@@ -26,7 +26,7 @@ export function AuctionCard({ id, title, image, countdown, category, status, own
   return <article className="p1-auction-card"><a href={href('auction', id)} className="p1-auction-photo">{image}<span><Clock size={14} aria-hidden="true" />{countdown}</span></a><div>
     <div className="p1-section-head"><span className="p1-muted">{category}</span>{status}</div>
     <h2><a href={href('auction', id)}>{title}</a></h2><div className="p1-auction-owner">{owner}</div>
-    <div className="p1-auction-price"><p><small>{priceLabel}</small><strong>{money(price)}</strong></p><Action to="auction" id={id} variant="secondary">See bidding <ArrowRight size={16} aria-hidden="true" /></Action></div>
+    <div className="p1-auction-price"><p><small>{priceLabel}</small><strong>{money(price)}</strong></p><Action to="auction" id={id}>See bidding <ArrowRight size={16} aria-hidden="true" /></Action></div>
   </div></article>;
 }
 

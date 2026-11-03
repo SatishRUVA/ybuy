@@ -54,7 +54,7 @@ export function PreviewRentals() {
   };
   return <Rentals live={{
     bookings: bookings.map((booking) => ({
-      id: booking.id, listingId: booking.listingId, title: booking.listingTitle, image: booking.listingImage,
+      id: booking.id, bookingReference: booking.bookingReference, listingId: booking.listingId, title: booking.listingTitle, image: booking.listingImage,
       start: booking.startDate, end: booking.endDate, total: booking.total - booking.deposit, ownerName: booking.counterpartName,
       status: STATUSES[booking.status], label: LABELS[booking.status],
       pickup: booking.deliveryMode === 'delivery' ? 'Delivery. Arrange the handoff in messages.' : 'The private pickup address is available after verified confirmation.',
@@ -105,8 +105,9 @@ function RentalDetails({ booking }: { booking: UiBooking }) {
     return () => { active = false; };
   }, [userId, booking.id, booking.status, attempt]);
   return <details><summary>Agreement, payment & rental tools</summary>
-    <p>Booking reference: {booking.id}</p>
+    <p>Booking reference: {booking.bookingReference ?? 'Not assigned'}</p>
     <p>Rental ${booking.subtotal.toFixed(2)} · service ${booking.serviceFeeAmount.toFixed(2)} · delivery ${booking.deliveryFeeAmount.toFixed(2)} · insurance ${booking.insuranceAmount.toFixed(2)} · deposit ${booking.deposit.toFixed(2)} · total ${booking.total.toFixed(2)}</p>
+    {(booking.taxRate > 0 || booking.sandboxTax) && <p>{booking.sandboxTax ? 'Tax (7% test)' : 'Tax (7%)'}: ${booking.taxAmount.toFixed(2)} · Included in the stored total.</p>}
     {booking.renterNote && <p>Note for owner: {booking.renterNote}</p>}
     <BookingPickup bookingId={booking.id} status={booking.status} />
     <RentalAgreement bookingId={booking.id} isOwner={false} />

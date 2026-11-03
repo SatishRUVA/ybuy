@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-const appUrl = 'http://localhost:5174';
+const appUrl = 'http://localhost:5174/';
 const localAnonKey = process.env.YBUY_LOCAL_SUPABASE_ANON_KEY;
 
 if (process.env.YBUY_E2E_HOSTED === 'true') {

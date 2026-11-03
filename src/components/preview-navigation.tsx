@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/auth-context';
 import { useRouter, type Route } from '@/router';
 import { useAdminAccess } from '@/lib/admin';
-import { subscribeToNotifications, unreadNotificationCount } from '@/lib/notifications';
+import { NOTIFICATIONS_CHANGED, subscribeToNotifications, unreadNotificationCount } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
-import { LOCAL_PROFILE_LOGIN } from '@/lib/local-profile-login';
+import { HOSTED_PROFILE_LOGIN, PROFILE_LOGIN } from '@/lib/local-profile-login';
 import { PreviewFooter, PreviewHeader, PreviewSidebar, AdminLink } from '@/preview-1/navigation';
 import { Button, ErrorNote, Modal } from '@/preview-1/ui';
 import type { PageName } from '@/preview-1/state';
@@ -29,7 +29,7 @@ function pageName(route: Route): PageName {
 
 export function ProductionPreviewHeader() {
   const { route } = useRouter();
-  const { user, profile, openSignIn } = useAuth();
+  const { user, profile, openSignIn, signOut, error: authError } = useAuth();
   const access = useAdminAccess();
   const [unread, setUnread] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,13 +48,16 @@ export function ProductionPreviewHeader() {
     };
     void refresh();
     const channel = subscribeToNotifications(userId, () => { void refresh(); });
+    const onChanged = () => { void refresh(); };
+    window.addEventListener(NOTIFICATIONS_CHANGED, onChanged);
     const timer = window.setInterval(() => { void refresh(); }, 60_000);
-    return () => { active = false; window.clearInterval(timer); void supabase.removeChannel(channel); };
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener(NOTIFICATIONS_CHANGED, onChanged); void supabase.removeChannel(channel); };
   }, [userId]);
   return <>
     <PreviewHeader key={`${route.name}:${userId ?? 'anonymous'}`} route={pageName(route)} profile={{ name: profile?.full_name ?? 'Your', avatar: profile?.avatar_url ?? '', signedIn: Boolean(user) }}
-      unread={unread} signIn={openSignIn} extraNavigation={<>{access.access && <AdminLink />}<AccountTools admin={Boolean(access.access)} /></>} />
+      unread={unread} notificationCount signIn={openSignIn} signOut={signOut} profileSelection={PROFILE_LOGIN} extraNavigation={<>{access.access && <AdminLink />}<AccountTools admin={Boolean(access.access)} /></>} />
     {error && <div className="p1-container"><ErrorNote>{error}</ErrorNote></div>}
+    {authError && <div className="p1-container"><ErrorNote>{authError}</ErrorNote></div>}
   </>;
 }
 
@@ -77,9 +80,9 @@ function AccountTools({ admin }: { admin: boolean }) {
         <a href="/support">Help & support</a><a href="/protection">Rental protection</a><a href="/guidelines">Community guidelines</a>
         <a href="/profile">Profile & security</a>{admin && <AdminLink />}</nav>
       {error && <ErrorNote>{error}</ErrorNote>}
-      {user && LOCAL_PROFILE_LOGIN && <Button variant="secondary" disabled={busy} onClick={() => {
+      {user && PROFILE_LOGIN && <Button variant="secondary" disabled={busy} onClick={() => {
         setOpen(false); openSignIn();
-      }}>Switch local profile</Button>}
+      }}>{HOSTED_PROFILE_LOGIN ? 'Switch test profile' : 'Switch local profile'}</Button>}
       {user && <Button variant="secondary" disabled={busy} onClick={() => {
         setBusy(true); setError(null);
         void signOut().then(() => setOpen(false)).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not sign out. Please try again.'))

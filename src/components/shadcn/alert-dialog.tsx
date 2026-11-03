@@ -41,5 +41,5 @@ export const AlertDialogDescription = React.forwardRef<
 AlertDialogDescription.displayName = 'AlertDialogDescription';
 
 export const AlertDialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)} {...props} />
+  <div className={cn('sticky -bottom-5 sm:-bottom-6 z-10 mt-5 flex flex-col-reverse gap-2 border-t border-app bg-card py-4 sm:flex-row sm:justify-end', className)} {...props} />
 );

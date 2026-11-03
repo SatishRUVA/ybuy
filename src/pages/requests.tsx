@@ -13,11 +13,11 @@ import { Dropdown } from '@/components/shadcn/select';
 import './production-workflows.css';
 import {
   closeItemRequest, createItemRequest,
-  fetchItemRequestResponseCounts, fetchMyItemRequests, fetchMyNegotiations,
+  fetchMyItemRequests,
   fetchOpenItemRequests, listRequestCategories, requestImageUrl,
   fetchRequestListingMatches, fetchMarketplaceRequestEvents,
-  updateItemRequest, type ItemRequest, type ItemRequestStatus, type MarketplaceNegotiation,
-  type NegotiationProposal, type OwnerListing, type MarketplaceRequestEvent,
+  updateItemRequest, type ItemRequest, type ItemRequestStatus,
+  type OwnerListing, type MarketplaceRequestEvent,
 } from '@/lib/marketplace';
 import { useFeatureFlags, useFeatureFlag } from '@/lib/use-feature-flags';
 import {
@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 
 type Category = { id: string; name: string };
-type RequestTab = 'browse' | 'mine' | 'offers';
+type RequestTab = 'browse' | 'mine';
 
 const STATUS_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'error'> = {
   open: 'accent', responses_received: 'warning', negotiating: 'warning', matched: 'success',
@@ -47,7 +47,7 @@ const dateLabel = (start: string, end: string) => {
 };
 const money = (value: number | null | undefined) => value == null ? 'No limit set' : `$${Number(value).toFixed(2)}/day`;
 
-export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTab }) {
+export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTab | 'offers' }) {
   const { user, openSignIn } = useAuth();
   const { navigate } = useRouter();
   const { data: flags, loading: flagsLoading, error: featureError, reload: reloadFlags } = useFeatureFlags();
@@ -58,8 +58,6 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
   const [listingMatches,setListingMatches]=useState<Record<string,OwnerListing[]>>({});
   const [requests, setRequests] = useState<ItemRequest[] | null>(null);
   const [myRequests, setMyRequests] = useState<ItemRequest[] | null>(null);
-  const [negotiations, setNegotiations] = useState<MarketplaceNegotiation[] | null>(null);
-  const [responseCounts, setResponseCounts] = useState<Record<string, number>>({});
   const [categoryId, setCategoryId] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -83,14 +81,9 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
     if (!user || !enabled) return;
     setError(null);
     try {
-      const [mine, offers] = await Promise.all([
-        fetchMyItemRequests(user.id),
-        fetchMyNegotiations(user.id),
-      ]);
+      const mine = await fetchMyItemRequests(user.id);
       setMyRequests(mine);
-      setNegotiations(offers);
       if (enabled && tab === 'mine') {
-        setResponseCounts(await fetchItemRequestResponseCounts(mine.map((request) => request.id)));
         setListingMatches(await fetchRequestListingMatches(mine.map(request=>request.id)));
       }
       if (enabled && tab === 'browse') {
@@ -106,7 +99,6 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
         });
         setRequests(result.rows);
         setTotal(result.total);
-        setResponseCounts(await fetchItemRequestResponseCounts(result.rows.map((request) => request.id)));
         setListingMatches(await fetchRequestListingMatches(result.rows.map((request)=>request.id)));
       }
     } catch (reason) {
@@ -119,7 +111,6 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
     if (enabled && user) void reload();
   }, [enabled, user, reload]);
 
-  const filteredNegotiations = useMemo(() => negotiations ?? [], [negotiations]);
   const visibleMine = useMemo(() => myRequests ?? [], [myRequests]);
   const pages = Math.max(1, Math.ceil(total / 12));
 
@@ -212,10 +203,9 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
               }} />
           ) : <div className="p1-community-grid">
             {requests.map((request) => <RequestCard key={request.id} request={request}
-              responseCount={responseCounts[request.id] ?? 0}
               matchingListings={listingMatches[request.id]??[]}
               active={activeRequest === request.id}
-              onOffer={() => setActiveRequest(activeRequest === request.id ? null : request.id)}
+              onViewMatches={() => setActiveRequest(activeRequest === request.id ? null : request.id)}
             />)}
             <div className="p1-production-request-details flex flex-wrap items-center justify-between gap-3 pt-2">
               <span className="text-sm text-sec">{total} requests · page {page + 1} of {pages}</span>
@@ -236,10 +226,8 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
               description="Tell nearby owners what you need and when you need it."
               actionLabel="Request an item" onAction={() => navigate({ name: 'need-something' })} />
           ) : <div className="p1-community-grid">{visibleMine.map((request) => (
-            <MyRequestCard key={request.id} request={request} responseCount={responseCounts[request.id] ?? 0}
+            <MyRequestCard key={request.id} request={request}
               matchingListings={listingMatches[request.id] ?? []}
-              offers={filteredNegotiations.filter((negotiation) => negotiation.item_request_id === request.id)}
-              currentUserId={user.id}
               onRefresh={() => void reload()} />
           ))}</div>}
         </>}
@@ -249,9 +237,9 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
   );
 }
 
-function RequestCard({ request, responseCount, matchingListings, active, onOffer }: {
-  request: ItemRequest; responseCount: number; matchingListings: OwnerListing[];
-  active: boolean; onOffer: () => void;
+function RequestCard({ request, matchingListings, active, onViewMatches }: {
+  request: ItemRequest; matchingListings: OwnerListing[];
+  active: boolean; onViewMatches: () => void;
 }) {
   const category = request.categories?.name ?? 'Item';
   return <article className={`p1-production-request-card ${active ? 'p1-production-request-details' : ''}`} data-request-card>
@@ -269,7 +257,6 @@ function RequestCard({ request, responseCount, matchingListings, active, onOffer
       <span className="inline-flex items-center gap-1"><CalendarDays size={13} />{dateLabel(request.preferred_start_date, request.preferred_end_date)}</span>
       <span className="inline-flex items-center gap-1"><MapPin size={13} />{request.location_label}</span>
       <span>{request.requested_quantity} requested</span>
-      <span>{responseCount} {responseCount === 1 ? 'response' : 'responses'}</span>
       <span className="inline-flex items-center gap-1"><Clock size={13} />Expires {new Date(request.expires_at).toLocaleDateString()}</span>
     </div>
     <div className="p1-section-head mt-4">
@@ -277,8 +264,7 @@ function RequestCard({ request, responseCount, matchingListings, active, onOffer
       <Badge tone="accent">{matchingListings.length} public matches</Badge>
     </div>
     <div className="p1-request-person">
-      <span>{responseCount} recorded responses</span>
-      <Button variant="secondary" onClick={onOffer} aria-expanded={active} aria-controls={`request-matches-${request.id}`}>{active ? 'Hide matching rentals' : 'View matching rentals'}</Button>
+      <Button variant="secondary" onClick={onViewMatches} aria-expanded={active} aria-controls={`request-matches-${request.id}`}>{active ? 'Hide matching rentals' : 'View matching rentals'}</Button>
     </div>
     {matchingListings.length > 0 && <p className="mt-3 text-xs text-success">
       Available nearby fit: {matchingListings[0].title}. Category, coordinates, rental dates, quantity and budget match. Booking still revalidates availability.
@@ -325,9 +311,8 @@ function PublishedListingMatches({ listings }: { listings: OwnerListing[] }) {
   </div>;
 }
 
-function MyRequestCard({ request, responseCount, matchingListings, offers, currentUserId, onRefresh }: {
-  request: ItemRequest; responseCount?: number; matchingListings: OwnerListing[]; offers: MarketplaceNegotiation[];
-  currentUserId: string; onRefresh: () => void;
+function MyRequestCard({ request, matchingListings, onRefresh }: {
+  request: ItemRequest; matchingListings: OwnerListing[]; onRefresh: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -351,14 +336,13 @@ function MyRequestCard({ request, responseCount, matchingListings, offers, curre
         {request.reference_image_paths.length > 0 && <RequestImages paths={request.reference_image_paths} title={request.title} />}
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-xs text-sec">{matchingListings.length} public matches · {responseCount ?? 0} recorded responses</span>
+        <span className="text-xs text-sec">{matchingListings.length} public listing matches</span>
         <Button size="sm" variant="ghost" aria-expanded={detailsOpen} aria-controls={`request-details-${request.id}`}
           onClick={() => setDetailsOpen((value) => !value)}>{detailsOpen ? 'Hide details' : 'View details'}</Button>
       </div>
     </div>
     <p className="mt-3 text-xs text-sec">{dateLabel(request.preferred_start_date, request.preferred_end_date)} · {request.location_label} · {money(request.max_daily_budget)}</p>
-    {detailsOpen && <MyRequestDetails request={request} matchingListings={matchingListings} offers={offers}
-      currentUserId={currentUserId} />}
+    {detailsOpen && <MyRequestDetails request={request} matchingListings={matchingListings} />}
     {error && <Alert tone="error" className="mt-3">{error}</Alert>}
     {editing && <RequestEditForm request={request} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onRefresh(); }} />}
     {!editing && active && <div className="mt-3 flex flex-wrap gap-2">
@@ -368,9 +352,8 @@ function MyRequestCard({ request, responseCount, matchingListings, offers, curre
   </article>;
 }
 
-function MyRequestDetails({ request, matchingListings, offers, currentUserId }: {
-  request: ItemRequest; matchingListings: OwnerListing[]; offers: MarketplaceNegotiation[];
-  currentUserId: string;
+function MyRequestDetails({ request, matchingListings }: {
+  request: ItemRequest; matchingListings: OwnerListing[];
 }) {
   const [events, setEvents] = useState<MarketplaceRequestEvent[] | null>(null);
   const [eventsLoading, setEventsLoading] = useState(true);
@@ -420,14 +403,6 @@ function MyRequestDetails({ request, matchingListings, offers, currentUserId }: 
             </div>
           </li>;
         })}</ul>}
-    </div>
-    <div className="space-y-2">
-      <h3 className="font-semibold text-main">Recorded request responses</h3>
-      <p className="text-sm text-sec">Historical records are read-only. New rentals start from a public listing at its listed terms.</p>
-      {offers.length === 0 ? <p className="text-sm text-sec">No recorded responses yet.</p> : <div className="space-y-2">
-        {offers.map((offer) => <NegotiationCard key={offer.id} negotiation={offer} currentUserId={currentUserId}
-          />)}
-      </div>}
     </div>
     <div className="space-y-2">
       <h3 className="font-semibold text-main">Request history</h3>
@@ -493,44 +468,6 @@ function RequestEditForm({ request, onCancel, onSaved }: {
     {error && <Alert tone="error">{error}</Alert>}
     <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button><Button type="submit" loading={busy}>Save changes</Button></div>
   </form>;
-}
-
-function NegotiationCard({ negotiation, currentUserId }: {
-  negotiation: MarketplaceNegotiation; currentUserId: string;
-}) {
-  const { navigate } = useRouter();
-  const latest = [...(negotiation.negotiation_proposals ?? [])].sort((a, b) => b.revision - a.revision)[0];
-  if (!negotiation.item_request_id) return null;
-  return <Surface className="p-4 sm:p-5">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0">
-        <h4 className="text-base font-semibold text-main">{negotiation.item_requests?.title ?? 'Request response history'}</h4>
-        <p className="mt-1 text-xs text-sec">Read-only historical record · revision {latest?.revision ?? 0}</p>
-      </div>
-      <Badge tone={STATUS_TONE[negotiation.status]}>{negotiation.status.replace(/_/g, ' ')}</Badge>
-    </div>
-    {negotiation.listings && <p className="mt-2 text-sm text-main">Linked listing: {negotiation.listings.title}
-      <span className="text-xs text-sec"> · advertised ${Number(negotiation.listings.price_per_day).toFixed(2)}/day</span>
-    </p>}
-    {negotiation.item_requests && <p className="mt-1 text-xs text-sec">Request location: {negotiation.item_requests.location_label}</p>}
-    {latest && <p className="mt-2 text-xs text-sec">Recorded terms: ${Number(latest.daily_rate).toFixed(2)}/day · {dateLabel(latest.start_date, latest.end_date)} · expired or pending terms do not create a booking.</p>}
-
-    <ol className="mt-4 space-y-3" aria-label="Recorded request response history">
-      {[...(negotiation.negotiation_proposals ?? [])].sort((a, b) => a.revision - b.revision).map((proposal: NegotiationProposal) => (
-        <li key={proposal.id} className="relative">
-          <p className="text-sm font-semibold text-main">${Number(proposal.daily_rate).toFixed(2)}/day
-            <span className="ml-2 text-xs font-normal text-sec">{proposal.proposed_by === currentUserId ? 'You proposed' : 'Other participant proposed'} · {proposal.status}</span>
-          </p>
-          <p className="text-xs text-sec mt-0.5">{dateLabel(proposal.start_date, proposal.end_date)} · {new Date(proposal.created_at).toLocaleString()}</p>
-          {proposal.message && <p className="text-sm text-sec mt-1 whitespace-pre-wrap">{proposal.message}</p>}
-        </li>
-      ))}
-    </ol>
-
-    {negotiation.booking_id && <Button size="sm" variant="secondary" className="mt-3" onClick={() => navigate({ name: 'confirmation', id: negotiation.booking_id! })}>
-      View existing booking
-    </Button>}
-  </Surface>;
 }
 
 function RequestSkeleton() {

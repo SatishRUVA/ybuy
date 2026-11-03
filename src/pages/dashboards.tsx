@@ -5,8 +5,9 @@ import { type Listing } from '@/data';
 import { WorkspaceHeader } from '@/components/account-workspace';
 import {
   fetchBookingsAsRenter, fetchBookingsAsOwner, respondToBookingRequest, cancelBooking,
-  startBookingReturn, completeBookingReturn, type UiBooking,
+  startBookingReturn, type UiBooking,
 } from '@/lib/bookings';
+import { startBookingPickup } from '@/lib/booking-handoff';
 import { getOrCreateConversation } from '@/lib/messages';
 import { createReview, fetchReviewedBookingIds, REVIEW_MAX_LENGTH } from '@/lib/reviews';
 import { deleteOwnerListing, fetchListingsByOwner, toUiListing } from '@/lib/listings';
@@ -125,6 +126,7 @@ function BookingRow({
             <Badge tone={STATUS_TONE[booking.status]}>{STATUS_LABEL[booking.status]}</Badge>
             <span className="text-xs text-sec truncate">{booking.counterpartName}</span>
           </div>
+          <p className="text-xs text-sec mt-1">Booking reference: {booking.bookingReference ?? 'Not assigned'}</p>
         </div>
       {['confirmed', 'active', 'return_pending'].includes(booking.status) && <div className="p1-production-rental-extra"><BookingPickup bookingId={booking.id} status={booking.status} /></div>}
       {(children || onMessage) && (
@@ -266,7 +268,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
 
   const handleCancel = (id: string) => run(id, async () => { await cancelBooking(id); reload(); }, 'Could not cancel this booking.');
   const handleStartCheckIn = (id: string) =>
-    run(id, async () => { navigate({ name: 'check-in', id }); }, 'Could not start check-in.');
+    run(id, async () => { await startBookingPickup(id); navigate({ name: 'check-in', id }); }, 'Could not start pickup.');
   const handleStartReturn = (id: string) =>
     run(id, async () => { await startBookingReturn(id); navigate({ name: 'check-out', id }); }, 'Could not start the return.');
   const handlePayNow = (id: string) =>
@@ -356,13 +358,16 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
                 )}
                 {booking.status === 'confirmed' && (
                   <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id)}>
-                    Start check-in
+                    I'm Here – Start Pickup
                   </Button>
                 )}
                 {booking.status === 'active' && (
                   <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartReturn(booking.id)}>
                     Start return
                   </Button>
+                )}
+                {booking.status === 'return_pending' && (
+                  <Button size="sm" onClick={() => navigate({ name: 'check-out', id: booking.id })}>Continue return</Button>
                 )}
                 {REQUESTED_STATUSES.includes(booking.status) && (
                   <Button size="sm" variant="danger" loading={busyId === booking.id} onClick={() => void handleCancel(booking.id)}>
@@ -481,13 +486,6 @@ export function OwnerDashboard({ onRequestCount, listingView = false }: { onRequ
 
   const handleRespond = (id: string, approve: boolean) =>
     run(id, async () => { await respondToBookingRequest(id, approve); reload(); }, 'Could not respond to this request.');
-  const handleMarkReturned = (id: string) =>
-    run(id, async () => {
-      const updated = await completeBookingReturn(id);
-      if (updated.status !== 'completed') throw new Error('The return status could not be confirmed.');
-      setSuccessNotice({ message: 'Return complete.', eventKey: `completed:${id}` });
-      reload();
-    }, 'Could not complete this return.');
 
   function toggleListingSelection(id: string) {
     setSelectedListingIds((current) => {
@@ -669,6 +667,7 @@ export function OwnerDashboard({ onRequestCount, listingView = false }: { onRequ
             <div className="space-y-2.5">
               {upcomingRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
+                  {booking.status === 'confirmed' && <Button size="sm" onClick={() => navigate({ name: 'check-in', id: booking.id })}>Open pickup handoff</Button>}
                   <PayoutControl booking={booking} />
                 </BookingRow>
               ))}
@@ -681,7 +680,7 @@ export function OwnerDashboard({ onRequestCount, listingView = false }: { onRequ
             <div className="space-y-2.5">
               {activeRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
-                  {booking.status === 'return_pending' && <Button size="sm" loading={busyId === booking.id} onClick={() => void handleMarkReturned(booking.id)}>Mark returned</Button>}
+                  {booking.status === 'return_pending' && <Button size="sm" onClick={() => navigate({ name: 'check-out', id: booking.id })}>Inspect return</Button>}
                   <PayoutControl booking={booking} />
                 </BookingRow>
               ))}

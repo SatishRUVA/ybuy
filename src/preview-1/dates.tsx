@@ -88,7 +88,8 @@ export function DateField({ start, end, onChange, min, max, maxDays, blocked, en
       && !eachDay(draft.start, endExclusive ? addDays(draft.end, -1) : draft.end).some((day) => blocked?.has(day));
   return <>
     <button type="button" className="p1-date-trigger" aria-haspopup="dialog" aria-expanded={open} onClick={show}><CalendarDays size={19} aria-hidden="true" /><span><small>{label}</small><strong>{start && end ? rangeLabel(start, end) : optional ? 'Any dates' : 'Choose dates'}</strong></span><ChevronDown size={15} aria-hidden="true" /></button>
-    <Modal open={open} onClose={() => setOpen(false)} title="When do you need it?" description="Choose your pick-up day, then your return day. Shaded days are unavailable.">
+    <Modal open={open} onClose={() => setOpen(false)} title="When do you need it?" description="Choose your pick-up day, then your return day. Shaded days are unavailable."
+      footer={<><Button variant="quiet" onClick={() => setDraft({ start: '', end: '' })}>Clear dates</Button><Button disabled={!validDraft} onClick={() => { onChange(draft.start, draft.end); setOpen(false); }}>Apply dates</Button></>}>
       <DateSummary {...draft} />
       {optional && <div className="p1-actions p1-date-presets">{[2, 7, 14].map((n) => {
         const s = addDays(todayIso(), 1), e = addDays(s, n);
@@ -96,7 +97,6 @@ export function DateField({ start, end, onChange, min, max, maxDays, blocked, en
         return <Button key={n} variant="secondary" disabled={!valid} onClick={() => setDraft({ start: s, end: e })}>{n === 2 ? 'A short break' : `${n} days`}</Button>;
       })}</div>}
       <RangeCalendar {...{ min, max, maxDays, blocked, endExclusive }} start={draft.start} end={draft.end} onChange={(s, e) => setDraft({ start: s, end: e })} />
-      <div className="p1-dialog-footer"><Button variant="quiet" onClick={() => setDraft({ start: '', end: '' })}>Clear dates</Button><Button disabled={!validDraft} onClick={() => { onChange(draft.start, draft.end); setOpen(false); }}>Apply dates</Button></div>
     </Modal>
   </>;
 }

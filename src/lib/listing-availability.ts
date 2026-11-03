@@ -4,6 +4,10 @@ export const LISTING_SCHEDULING_DAYS = 180;
 export const LISTING_MAX_AVAILABLE_DAYS = 30;
 export const RENTAL_MAX_DAYS = Math.min(MAX_BOOKING_RANGE_DAYS, LISTING_MAX_AVAILABLE_DAYS);
 
+export function listingAvailabilityExpired(end: string | null | undefined, today = new Date().toISOString().slice(0, 10)): boolean {
+  return Boolean(end && end <= today);
+}
+
 export function listingAvailabilityError(start: string, end: string, today = todayIso()): string | undefined {
   const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
     && Number.isFinite(Date.parse(`${value}T00:00:00Z`))

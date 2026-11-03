@@ -66,10 +66,9 @@ export interface Listing {
   availableQuantity?: number;
   availabilityStart?: string | null;
   availabilityEnd?: string | null;
+  availabilityExpired?: boolean;
   deliveryFee?: number | null;
-  negotiationEnabled?: boolean;
   auctionEnabled?: boolean;
-  offerRules?: {minimumDaily:number|null;maximumDaily?:number|null;targetDaily:number|null;guardrailPct:number|null;startDate:string|null;endDate:string|null};
   durationDiscount?: { minimumDays: number; percent: number } | null;
   weeklyDiscountEnabled?: boolean;
   weeklyDiscountPercent?: number;

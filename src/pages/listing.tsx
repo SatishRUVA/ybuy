@@ -18,7 +18,7 @@ import { MAX_BOOKING_RANGE_DAYS, addDaysIso, todayIso } from '@/lib/geo';
 import { ListingDetailSkeleton } from '@/components/skeleton';
 import { InsuranceAmount } from '@/components/insurance-amount';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
-import { demoTaxCents } from '@/lib/demo-tax';
+import { bookingTaxCents } from '@/lib/booking-tax';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { calculateRentalPricing } from '@/lib/rental-pricing';
 import { savedSearchState, saveSearchState } from '@/lib/search-state';
@@ -219,10 +219,9 @@ export function ListingPage({ id }: { id: string }) {
   const rental = rentalPricing.subtotal;
   const serviceFee = Math.round(rental * feePct * 100) / 100;
   const insuranceAmount = insuranceFlag.enabled ? insuranceAmountCents(listing.declaredValue, days) / 100 : 0;
-  const isTaxDemo = import.meta.env.VITE_TEST_ENVIRONMENT === 'true';
-  const taxDemo = isTaxDemo ? demoTaxCents(rental) / 100 : 0;
+  const tax = bookingTaxCents(rental, serviceFee) / 100;
   const paymentEstimate = rental + serviceFee + insuranceAmount + listing.deposit;
-  const total = paymentEstimate + taxDemo;
+  const total = paymentEstimate + tax;
   const datesValid = Boolean(startDate && endDate && startDate >= todayIso() && endDate > startDate && days <= MAX_BOOKING_RANGE_DAYS
     && (!listing.availabilityStart || startDate >= listing.availabilityStart)
     && (!listing.availabilityEnd || endDate <= listing.availabilityEnd));
@@ -321,6 +320,7 @@ export function ListingPage({ id }: { id: string }) {
         <Alert tone="warning" className="mt-3">Choose future rental dates with a return after pickup, up to {MAX_BOOKING_RANGE_DAYS} days.</Alert>
       )}
       {listing.availabilityStart && listing.availabilityEnd && <p className="text-xs text-sec mt-3">Available {listing.availabilityStart} through {addDaysIso(listing.availabilityEnd, -1)}. Return by {listing.availabilityEnd}. Your rental must fit within this window.</p>}
+      {!listing.available && <Alert tone="warning" className="mt-3">{listing.availabilityExpired ? 'This listing has expired. The owner must update availability before it can be booked again.' : 'This listing is not currently available for booking.'}</Alert>}
       {!isOwner && datesValid && rangeUnavailable && (
         <Alert tone="warning" className="mt-3">Those dates are already taken. Choose another available range.</Alert>
       )}
@@ -348,12 +348,11 @@ export function ListingPage({ id }: { id: string }) {
         {isOwner
           ? <div className="flex justify-between gap-3 text-sec"><span>Insurance</span><span className="text-xs text-right">{insuranceFlag.enabled ? 'Included when rented' : 'Not included'}</span></div>
           : <InsuranceAmount days={days} replacementValue={listing.declaredValue} />}
-        {isTaxDemo ? <PriceRow label="Tax (7% demo)" value={taxDemo} />
-          : <div className="flex justify-between gap-3 text-sec"><span>Tax</span><span className="text-xs text-right">Not yet calculated</span></div>}
+        <PriceRow label="Tax (7%)" value={tax} />
         <div className="pt-3 border-t border-app flex justify-between gap-3 font-bold text-main">
           <span>Rental and fees</span><span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount)}</span>
         </div>
-        <p className="text-xs text-sec leading-relaxed">{isTaxDemo ? 'Demo tax applies to discounted rental only and is not charged.' : 'Tax is not included in this estimate.'} {insuranceFlag.enabled ? 'Insurance is calculated from the owner-declared item value.' : 'Insurance is not included.'}</p>
+        <p className="text-xs text-sec leading-relaxed">Tax is 7% of discounted rental and service fees only. The server confirms the final amount. {insuranceFlag.enabled ? 'Insurance is calculated from the owner-declared item value.' : 'Insurance is not included.'}</p>
       </div>}
       <div className="listing-deposit-box mt-4 flex gap-3">
         <ShieldCheck size={26} className="shrink-0 text-accent mt-0.5" aria-hidden="true" />
@@ -369,8 +368,7 @@ export function ListingPage({ id }: { id: string }) {
       {datesValid && <div className="mt-4 flex justify-between gap-3 text-sm font-bold text-main">
         <span>Estimated total</span><span className="tnum">${formatMoney(total)}</span>
       </div>}
-      {isTaxDemo && <p className="text-xs text-sec mt-2">Payment estimate excluding demo tax: ${formatMoney(paymentEstimate)}.</p>}
-      <p className="text-xs text-sec mt-2">Includes rental, service fee{insuranceFlag.enabled ? ', insurance' : ''} and refundable deposit{isTaxDemo ? ', plus demo tax' : ''}. Excludes tax. Review the final amount before paying.</p>
+      <p className="text-xs text-sec mt-2">Includes rental, service fee{insuranceFlag.enabled ? ', insurance' : ''}, refundable deposit and estimated tax. Review the backend-confirmed total before paying.</p>
       {!isOwner && <><Button fullWidth size="lg" className="mt-5" disabled={!canBook} onClick={goToCheckout}>
         {listing.instantBooking ? 'Book instantly' : 'Request to book'}
       </Button>

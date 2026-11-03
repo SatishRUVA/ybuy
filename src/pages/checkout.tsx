@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import { fetchListingById, toUiListing } from '@/lib/listings';
-import { createBookingRequest, fetchBookingById, type UiBooking } from '@/lib/bookings';
+import { createBookingRequest, fetchBookingById, type DbBookingRow, type UiBooking } from '@/lib/bookings';
 import { quoteOwnerPromotion } from '@/lib/owner-promotions';
 import { BookingPickup } from '@/components/booking-pickup';
 import { ListingPhoto } from '@/components/listing-card';
@@ -22,7 +22,7 @@ import { fieldClass } from '@/components/form-classes';
 import { calculateRentalPricing, validRentalRange } from '@/lib/rental-pricing';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
 import { InsuranceAmount } from '@/components/insurance-amount';
-import { demoTaxCents } from '@/lib/demo-tax';
+import { bookingTaxCents } from '@/lib/booking-tax';
 import { ConfirmationTemplate } from '@/preview-1/renting';
 import { Action as PreviewAction, Button as PreviewButton, ErrorNote, Modal } from '@/preview-1/ui';
 
@@ -44,6 +44,7 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
   const [listing, setListing] = useState<Listing | null | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [paymentBookingId, setPaymentBookingId] = useState<string | null>(null);
+  const [createdBooking, setCreatedBooking] = useState<DbBookingRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [promotionCode, setPromotionCode] = useState('');
   const [appliedPromotion, setAppliedPromotion] = useState<{ code: string; percent: number; amount: number } | null>(null);
@@ -107,10 +108,10 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
   const serviceFee = Math.round(rental * feePct * 100) / 100;
   const deliveryFee = deliveryMode === 'delivery' && listing.deliveryAvailable ? Number(listing.deliveryFee ?? 0) : 0;
   const insuranceAmount = insuranceFlag.enabled ? insuranceAmountCents(listing.declaredValue, days) / 100 : 0;
-  const isTaxDemo = import.meta.env.VITE_TEST_ENVIRONMENT === 'true';
-  const taxDemo = isTaxDemo ? demoTaxCents(rental) / 100 : 0;
+  const isTaxDemo = createdBooking?.sandbox_tax === true;
+  const tax = createdBooking ? Number(createdBooking.tax_amount ?? 0) : bookingTaxCents(rental, serviceFee) / 100;
   const paymentEstimate = rental + serviceFee + insuranceAmount + deliveryFee + listing.deposit;
-  const total = paymentEstimate + taxDemo;
+  const total = createdBooking ? Number(createdBooking.total) : paymentEstimate + tax;
 
   async function handleConfirm() {
     if (submitting) return;
@@ -130,6 +131,7 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
         deliveryMode,
         renterNote,
       });
+      setCreatedBooking(booking);
       if (booking.status === 'pending_payment') {
         setPaymentBookingId(booking.id);
         window.location.href = await createCheckoutSession(booking.id);
@@ -258,8 +260,7 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
             <Row label="Service fee" value={serviceFee} />
             {deliveryFee > 0 && <Row label="Delivery fee" value={deliveryFee} />}
             <InsuranceAmount days={days} replacementValue={listing.declaredValue} />
-            {isTaxDemo ? <Row label="Tax (7% demo)" value={taxDemo} />
-              : <div className="flex justify-between gap-3 text-sec"><span>Tax</span><span>Not yet calculated</span></div>}
+            <Row label={isTaxDemo ? 'Tax (7% test)' : createdBooking?.tax_rate === 0 ? 'Tax' : 'Tax (7%)'} value={tax} />
             <div className="pt-3 border-t border-app flex justify-between font-bold text-base text-main">
               <span>Rental and fees</span>
               <span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount + deliveryFee)}</span>
@@ -280,10 +281,10 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
             <span>Security hold</span><span>No card hold placed</span>
           </div>
           <div className="flex justify-between text-sm font-semibold text-main mt-3 pt-3 border-t border-app">
-            <span>Estimated total</span><span className="tnum">${formatMoney(total)}</span>
+            <span>{createdBooking ? 'Backend-confirmed total' : 'Estimated total'}</span><span className="tnum">${formatMoney(total)}</span>
           </div>
-          {isTaxDemo && <p className="text-xs text-sec mt-2">Payment estimate excluding demo tax: ${formatMoney(paymentEstimate)}. Demo tax applies to discounted rental only and is not charged.</p>}
-          <p className="text-xs text-sec mt-2 leading-relaxed">Includes rental, service fee{insuranceFlag.enabled ? ', insurance' : ''} and refundable deposit{isTaxDemo ? ', plus demo tax' : ''}. Excludes tax.</p>
+          <p className="text-xs text-sec mt-2">{createdBooking ? 'Stored tax and total confirmed by the backend.' : 'Tax is 7% of discounted rental and service fees only. The server confirms the final amount.'}</p>
+          <p className="text-xs text-sec mt-2 leading-relaxed">Includes rental, service fee{insuranceFlag.enabled ? ', insurance' : ''}, refundable deposit and tax.</p>
         </aside></div>
       </div>
     </div>
@@ -418,7 +419,7 @@ export function ConfirmationPage({ id }: { id: string }) {
         <BookingPickup bookingId={booking.id} status={booking.status} />
         <RentalAgreement bookingId={booking.id} isOwner={booking.isOwner} />
         <Surface id="booking-summary" tabIndex={-1} className="p1-panel text-left mb-6 space-y-3 text-sm">
-          <p className="text-xs text-sec break-all">Booking reference: {booking.id}</p>
+          <p className="text-xs text-sec">Booking reference: {booking.bookingReference ?? 'Not assigned'}</p>
           <div className="flex justify-between">
             <span className="text-sec">Rental subtotal</span>
             <span className="font-semibold text-main tnum">${booking.subtotal + booking.ownerDiscountAmount}</span>
@@ -427,6 +428,7 @@ export function ConfirmationPage({ id }: { id: string }) {
           <div className="flex justify-between"><span className="text-sec">Service fee</span><span className="font-semibold text-main tnum">${booking.serviceFeeAmount}</span></div>
           {booking.deliveryFeeAmount > 0 && <div className="flex justify-between"><span className="text-sec">Delivery fee</span><span className="font-semibold text-main tnum">${booking.deliveryFeeAmount.toFixed(2)}</span></div>}
           {booking.insuranceAmount > 0 && <div className="flex justify-between"><span className="text-sec">Insurance</span><span className="font-semibold text-main tnum">${booking.insuranceAmount.toFixed(2)}</span></div>}
+          {(booking.taxRate > 0 || booking.sandboxTax) && <Row label={booking.sandboxTax ? 'Tax (7% test)' : 'Tax (7%)'} value={booking.taxAmount} />}
           <div className="flex justify-between"><span className="text-sec">Rental charge after discount</span><span className="font-semibold text-main tnum">${booking.subtotal + booking.serviceFeeAmount + booking.deliveryFeeAmount}</span></div>
           {booking.renterNote && <div className="pt-2 border-t border-app"><p className="text-sec">Note for owner</p><p className="text-main mt-1 whitespace-pre-wrap">{booking.renterNote}</p></div>}
           {booking.deposit > 0 && (

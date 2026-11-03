@@ -13,9 +13,11 @@ import { savedSearchState, saveSearchState } from '@/lib/search-state';
 import { usePlatformFeePct } from '@/lib/settings';
 import { calculateRentalPricing, validRentalRange } from '@/lib/rental-pricing';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
+import { useUtcDay } from '@/lib/use-utc-day';
 import { createBookingRequest } from '@/lib/bookings';
 import { createCheckoutSession } from '@/lib/payments';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
+import { bookingTaxCents } from '@/lib/booking-tax';
 import { Checkout } from '@/preview-1/renting';
 import { Button, ErrorNote, Field, Modal } from '@/preview-1/ui';
 import { quoteOwnerPromotion } from '@/lib/owner-promotions';
@@ -49,6 +51,7 @@ function restoredSearch(route: Route): SearchState {
 }
 
 export function PreviewMarketplace() {
+  const utcDay = useUtcDay();
   const { route, navigate } = useRouter();
   const { user, openSignIn } = useAuth();
   const feePct = usePlatformFeePct();
@@ -86,6 +89,7 @@ export function PreviewMarketplace() {
   const routeName = route.name;
   const catalogSearch = routeName === 'home' || routeName === 'search' ? search : null;
   const catalogCoords = catalogSearch ? coords : null;
+  useEffect(() => setPage(0), [utcDay]);
 
   useEffect(() => {
     let active = true;
@@ -148,7 +152,7 @@ export function PreviewMarketplace() {
       if (active) { setError(reason instanceof Error ? reason.message : 'Could not load rentals. Please try again.'); setLoading(false); }
     });
     return () => { active = false; };
-  }, [catalogSearch, catalogCoords, routeName, listingId, userId, page, refresh, verifiedOnly, deliveryOnly, protectionOnly]);
+  }, [catalogSearch, catalogCoords, routeName, listingId, userId, page, refresh, verifiedOnly, deliveryOnly, protectionOnly, utcDay]);
 
   useEffect(() => {
     let active = true;
@@ -218,7 +222,9 @@ export function PreviewMarketplace() {
         if (!user) throw new Error('Sign in before requesting a rental.');
         if (insurance.loading || insurance.error) throw new Error('Insurance pricing could not be verified. Please retry once settings reconnect.');
         const booking = await createBookingRequest({ ...params, quantity: route.name === 'checkout' ? route.quantity : undefined, promotionCode: appliedPromotion?.code });
-        return { id: booking.id, paymentRequired: booking.status === 'pending_payment' };
+        return { id: booking.id, paymentRequired: booking.status === 'pending_payment',
+          taxAmount: Number(booking.tax_amount ?? 0), sandboxTax: booking.sandbox_tax === true,
+          rentalTotal: Number(booking.total) - Number(booking.deposit), total: Number(booking.total) };
       },
       pay: async (id) => { window.location.assign(await createCheckoutSession(id)); },
       options: promotions.enabled ? <Button variant="quiet" onClick={() => setOptionsOpen(true)}>Promo code</Button> : undefined,
@@ -235,9 +241,10 @@ export function PreviewMarketplace() {
         weeklyEnabled: discounts.enabled && item.weeklyDiscountEnabled, weeklyPercent: item.weeklyDiscountPercent,
         monthlyEnabled: discounts.enabled && item.monthlyDiscountEnabled, monthlyPercent: item.monthlyDiscountPercent,
       });
-      if (!days) return { rental: 0, fee: 0, insurance: 0 };
+      if (!days) return { rental: 0, fee: 0, insurance: 0, tax: import.meta.env.VITE_TEST_ENVIRONMENT === 'true' ? 0 : undefined };
       const rental = appliedPromotion ? Math.max(0, pricing.gross - appliedPromotion.amount) : pricing.subtotal;
-      return { rental, fee: Math.round(rental * feePct * 100) / 100,
+      const fee = Math.round(rental * feePct * 100) / 100;
+      return { rental, fee, tax: bookingTaxCents(rental, fee) / 100,
         insurance: insurance.enabled ? insuranceAmountCents(item.declaredValue, days) / 100 : 0 };
     },
     loading, error, retry: () => setRefresh((current) => current + 1), total, hasMore,

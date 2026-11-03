@@ -14,7 +14,6 @@ import {
 } from '@/lib/messages';
 import {
   fetchOpenItemRequests,
-  fetchItemRequestResponseCounts,
   fetchRequestListingMatches,
   fetchMyOwnerListings,
   listRequestCategories,
@@ -32,10 +31,13 @@ import {
   markNotificationRead,
   setNotificationPreference,
   subscribeToNotifications,
+  mandatoryNotification,
+  NOTIFICATIONS_CHANGED,
   type AppNotification,
   type NotificationPreferenceKey,
   type NotificationPreferences,
 } from '@/lib/notifications';
+import { previewNotificationCategories, type PreviewNotificationCategory } from '@/preview-1/notification-data';
 import { authProviderLabel } from '@/lib/auth-providers';
 import { updateOwnAccountProfile } from '@/lib/account-profile';
 import { findCities, locationLabel, addDaysIso, todayIso, type MarketplaceLocation } from '@/lib/geo';
@@ -91,10 +93,7 @@ export function PreviewRequests({ initialTab = 'browse' }: { initialTab?: 'brows
     ])
       .then(async ([result, myListings]) => {
         const ids = result.rows.map((request) => request.id);
-        const [responseCounts, matches] = await Promise.all([
-          fetchItemRequestResponseCounts(ids),
-          fetchRequestListingMatches(ids),
-        ]);
+         const matches = await fetchRequestListingMatches(ids);
         if (!active) return;
         setOwnerListings(myListings.map((listing) => ({
           id: listing.id, title: listing.title, dailyPrice: listing.price_per_day,
@@ -108,7 +107,6 @@ export function PreviewRequests({ initialTab = 'browse' }: { initialTab?: 'brows
           location: request.location_label,
           dailyBudget: request.max_daily_budget,
           createdAt: request.created_at,
-          responseCount: responseCounts[request.id] ?? 0,
           description: request.description,
           category: request.categories?.name ?? 'Item',
           quantity: request.requested_quantity,
@@ -116,7 +114,7 @@ export function PreviewRequests({ initialTab = 'browse' }: { initialTab?: 'brows
           specifications: request.specifications,
           notes: request.additional_notes,
           categoryId: request.category_id,
-          matchedListings: (matches[request.id] ?? []).map((listing) => ({
+           matchedListings: (matches[request.id] ?? []).map((listing) => ({
             id: listing.id,
             title: listing.title,
             dailyPrice: listing.price_per_day,
@@ -305,7 +303,7 @@ function RequestComposer({ onComplete }: {
     <label className="p1-check"><input required type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />
       <span>I understand this request is visible to signed-in owners while open.</span></label>
     {error && <Alert tone="error" title="Request was not posted">{error}</Alert>}
-    <Button type="submit" disabled={busy || categoriesLoading || Boolean(categoriesError) || !categories.length} aria-busy={busy}>{busy ? 'Posting your request…' : 'Post request'}</Button>
+    <div className="p1-dialog-footer"><Button type="submit" disabled={busy || categoriesLoading || Boolean(categoriesError) || !categories.length} aria-busy={busy}>{busy ? 'Posting your request…' : 'Post request'}</Button></div>
   </form>;
 }
 
@@ -416,7 +414,8 @@ export function PreviewMessages({ id }: { id?: string } = {}) {
 
 type UnifiedNotification = PreviewNotice & { marketplace: boolean; createdAt: string };
 function mapAppNotification(row: AppNotification): UnifiedNotification {
-  return { id: row.id, title: row.title, body: row.body, read: Boolean(row.read_at), destination: row.destination, marketplace: false, createdAt: row.created_at };
+  return { id: row.id, title: row.title, body: row.body, read: Boolean(row.read_at), destination: row.destination, marketplace: false, createdAt: row.created_at,
+    category: row.category === 'cases' ? 'safety' : row.category, mandatory: mandatoryNotification(row.category, row.event_key) };
 }
 function mapMarketplaceNotification(row: MarketplaceNotification): UnifiedNotification {
   return {
@@ -427,6 +426,7 @@ function mapMarketplaceNotification(row: MarketplaceNotification): UnifiedNotifi
     destination: '/requests?tab=mine',
     marketplace: true,
     createdAt: row.created_at,
+    category: 'requests',
   };
 }
 
@@ -436,8 +436,14 @@ function notificationRoute(destination: string): Route {
   if (destination === '/requests' || destination === '/requests?tab=mine') return { name: 'requests', tab: 'mine' };
   if (destination === '/bidding') return { name: 'bidding' };
   if (destination === '/profile') return { name: 'trust-profile' };
+  if (destination === '/dashboard/listings') return { name: 'owner-listings' };
+  if (destination === '/payouts') return { name: 'owner-payouts' };
+  if (destination === '/messages') return { name: 'messaging' };
+  if (destination === '/support') return { name: 'support' };
   const routes: [RegExp, (id: string) => Route][] = [
     [new RegExp(`^/bidding/(${uuid})$`, 'i'), (id) => ({ name: 'bidding-detail', id })],
+    [new RegExp(`^/auction/(${uuid})$`, 'i'), (id) => ({ name: 'auction', id })],
+    [new RegExp(`^/listing/(${uuid})$`, 'i'), (id) => ({ name: 'listing', id })],
     [new RegExp(`^/confirmation/(${uuid})$`, 'i'), (id) => ({ name: 'confirmation', id })],
     [new RegExp(`^/messages/(${uuid})$`, 'i'), (id) => ({ name: 'conversation', id })],
     [new RegExp(`^/support/(${uuid})$`, 'i'), (id) => ({ name: 'support', id })],
@@ -462,6 +468,41 @@ export function PreviewNotifications() {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const loadedPages = useRef(1);
+  const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
+  const [preferencesLoading, setPreferencesLoading] = useState(true);
+  const [preferencesError, setPreferencesError] = useState<string | null>(null);
+  const [preferenceBusy, setPreferenceBusy] = useState<string | null>(null);
+  const currentUser = useRef(userId);
+  currentUser.current = userId;
+  const loadPreferences = useCallback(async () => {
+    if (!userId) return;
+    setPreferencesLoading(true);
+    setPreferencesError(null);
+    try {
+      const result = await getNotificationPreferences();
+      if (currentUser.current === userId) setPreferences(result);
+    } catch (reason) {
+      if (currentUser.current === userId) setPreferencesError(reason instanceof Error ? reason.message : 'Could not load notification preferences.');
+    } finally {
+      if (currentUser.current === userId) setPreferencesLoading(false);
+    }
+  }, [userId]);
+  useEffect(() => { setPreferences(null); void loadPreferences(); }, [loadPreferences]);
+
+  async function updatePreference(category: PreviewNotificationCategory, enabled: boolean) {
+    if (!userId || preferenceBusy) return;
+    const key: NotificationPreferenceKey = `${category === 'safety' ? 'cases' : category}_in_app`;
+    setPreferenceBusy(key);
+    setPreferencesError(null);
+    try {
+      await setNotificationPreference(userId, key, enabled);
+      await loadPreferences();
+    } catch (reason) {
+      if (currentUser.current === userId) setPreferencesError(reason instanceof Error ? reason.message : 'Could not save this preference.');
+    } finally {
+      if (currentUser.current === userId) setPreferenceBusy(null);
+    }
+  }
 
   const load = useCallback(async (pageCount = 1, append = false): Promise<boolean> => {
     if (!userId) {
@@ -480,6 +521,7 @@ export function PreviewNotifications() {
       ]);
       const notifications = notificationPages.flatMap((page) => page.rows);
       const marketplace = marketplacePages.flat();
+      if (currentUser.current !== userId) return false;
       setRows([...notifications.map(mapAppNotification), ...marketplace.map(mapMarketplaceNotification)]
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
       const systemTotal = notificationPages[0]?.total ?? 0;
@@ -487,16 +529,19 @@ export function PreviewNotifications() {
       setHasMore(systemTotal > pageCount * PAGE_SIZE || lastMarketplacePage.length === PAGE_SIZE);
       return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not load updates.');
+      if (currentUser.current === userId) setError(reason instanceof Error ? reason.message : 'Could not load updates.');
       return false;
     } finally {
-      if (append) setLoadingMore(false);
-      else setLoading(false);
+      if (currentUser.current === userId) {
+        if (append) setLoadingMore(false);
+        else setLoading(false);
+      }
     }
   }, [userId]);
 
   useEffect(() => {
     loadedPages.current = 1;
+    setRows([]);
     setHasMore(false);
     void load(1);
   }, [load, attempt]);
@@ -511,20 +556,21 @@ export function PreviewNotifications() {
     if (await load(pageCount, true)) loadedPages.current = pageCount;
   }
 
-  async function mark(id: string): Promise<boolean> {
-    const row = rows.find((item) => item.id === id);
-    if (!row || busy || loadingMore) return false;
-    setBusy(id);
+  async function mark(ids: string[]): Promise<boolean> {
+    const selected = rows.filter(item => ids.includes(item.id) && !item.read);
+    if (busy || loadingMore) return false;
+    if (!selected.length) return true;
+    setBusy('selected');
     setError(null);
     try {
-      if (row.marketplace) await markMarketplaceNotificationRead(id.slice('marketplace:'.length));
-      else await markNotificationRead(id);
+      await Promise.all(selected.map(row => row.marketplace ? markMarketplaceNotificationRead(row.id.slice('marketplace:'.length)) : markNotificationRead(row.id)));
       return await load(loadedPages.current, true);
     } catch (reason) {
       await load(loadedPages.current, true);
       setError(reason instanceof Error ? reason.message : 'Could not mark this update as read.');
       return false;
     } finally {
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
       setBusy(null);
     }
   }
@@ -540,22 +586,27 @@ export function PreviewNotifications() {
       await load(pageCount, true);
       setError(reason instanceof Error ? reason.message : 'Could not mark all updates as read.');
     } finally {
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
       setBusy(null);
     }
   }
   async function open(notice: PreviewNotice) {
     const row = rows.find((item) => item.id === notice.id);
     if (!row) return;
-    if (!row.read && !await mark(row.id)) return;
+    if (!row.read && !await mark([row.id])) return;
     navigate(notificationRoute(row.destination));
   }
 
   if (!user) return <div className="p1-work-page"><EmptyState title="Sign in to view updates" description="Your account notifications are available after signing in." actionLabel="Sign in" onAction={openSignIn} /></div>;
   return <NotificationsTemplate backend={{
     rows, loading, hasMore, loadingMore, busy, error,
+    mutedCategories: previewNotificationCategories.filter(item => !item.mandatory && preferences && !preferences[`${item.key}_in_app`]).map(item => item.key),
+    preferencesLoading, preferencesError, preferenceBusy,
+    onPreferenceChange: (category, enabled) => { void updatePreference(category, enabled); },
+    onRetryPreferences: () => { void loadPreferences(); },
     onRetry: () => setAttempt((value) => value + 1),
     onLoadMore: () => { void loadMore(); },
-    onMark: (id) => { void mark(id); },
+    onMark: mark,
     onMarkAll: () => { void markAll(); },
     onOpen: (notice) => { void open(notice); },
   }} />;

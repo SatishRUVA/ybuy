@@ -3,7 +3,7 @@ import { LockKeyhole } from 'lucide-react';
 import { useAuth } from '@/auth-context';
 import { Alert, Button } from '@/components/ui';
 import { fieldClass } from '@/components/form-classes';
-import { LOCAL_PROFILE_LOGIN, loadLocalProfiles, type LocalLoginProfile } from '@/lib/local-profile-login';
+import { HOSTED_PROFILE_LOGIN, PROFILE_LOGIN, loadLocalProfiles, type LocalLoginProfile } from '@/lib/local-profile-login';
 import { Button as PreviewButton, Field, Modal } from '@/preview-1/ui';
 
 export function SignInDialog() {
@@ -42,19 +42,19 @@ export function SignInDialog() {
     if (result === 'confirmation-required') setSubmitted(true);
   }
 
-  const title = LOCAL_PROFILE_LOGIN && !passwordRecovery ? 'Choose a local profile'
+  const title = PROFILE_LOGIN && !passwordRecovery ? HOSTED_PROFILE_LOGIN ? 'Choose a test profile' : 'Choose a local profile'
     : passwordRecovery ? 'Choose a new password' : resetMode ? 'Reset your password' : register ? 'Create your account'
       : user ? 'Use another account' : 'More doing starts with hello.';
   return (
     <Modal open={signInOpen} onClose={closeSignIn} title={title}
-      description={LOCAL_PROFILE_LOGIN && !passwordRecovery ? 'Isolated local test accounts. Database permissions still apply.'
+      description={PROFILE_LOGIN && !passwordRecovery ? 'Synthetic test accounts. Database permissions still apply.'
         : user ? `You are signed in as ${user.email}. Signing in switches accounts on this device.` : 'One account to rent items and list your own.'}>
-        {LOCAL_PROFILE_LOGIN && !passwordRecovery ? <LocalProfilePicker /> : <>
+        {PROFILE_LOGIN && !passwordRecovery ? <LocalProfilePicker /> : <>
         {error && <div role="alert" className="mb-4"><Alert tone="error">{error}</Alert></div>}
         {submitted && !error && <Alert tone="info">Check your email for a confirmation link before signing in. If you already have an account, sign in instead.</Alert>}
         {resetSent && !error && <Alert tone="info">If an account uses that email, a reset link is on its way. Check your inbox and spam folder.</Alert>}
         {passwordRecovery && <Alert tone="info">Enter a new password for your YBuy account.</Alert>}
-        <form onSubmit={(event) => void submit(event)}>
+        <form className="p1-auth-form" onSubmit={(event) => void submit(event)}>
           {register && !resetMode && !passwordRecovery && <Field label="Full name">
             <input autoComplete="name" required disabled={authBusy !== null} maxLength={100} value={fullName} onChange={(event) => setFullName(event.target.value)} />
           </Field>}
@@ -95,6 +95,24 @@ function LocalProfilePicker() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [attempt, setAttempt] = useState(0);
+  const [code, setCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
+
+  async function verifyTester(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setVerifying(true);
+    setLoadError(null);
+    try {
+      const response = await fetch('/api/access/verify', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }),
+      });
+      if (!response.ok) throw new Error('Could not verify tester access. Check your authenticator code and retry.');
+      setCode('');
+      setAttempt(value => value + 1);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Tester verification failed.');
+    } finally { setVerifying(false); }
+  }
 
   useEffect(() => {
     if (!signInOpen) return;
@@ -109,6 +127,13 @@ function LocalProfilePicker() {
   }, [signInOpen, attempt]);
 
   return <>
+    {HOSTED_PROFILE_LOGIN && <form onSubmit={event => void verifyTester(event)} className="p1-auth-form mb-6">
+      <Field label="Tester security code" hint="Use your authorized tester authenticator. Access expires after two hours.">
+        <input value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+          inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required disabled={verifying} />
+      </Field>
+      <Button type="submit" disabled={code.length !== 6} loading={verifying}>Verify tester access</Button>
+    </form>}
     <p className="mb-6 mt-2 text-sm leading-relaxed text-sec">
       No password needed. These are isolated test accounts, not real customers.
       {profile && ` Currently using ${profile.full_name}.`}
@@ -125,7 +150,7 @@ function LocalProfilePicker() {
       onChange={(event) => void selectLocalProfile(event.target.value)}
     >
       <option value="" disabled>{loading ? 'Loading profiles...' : 'Select a profile'}</option>
-      {(['Owner', 'Renter', 'Admin', 'Super Admin'] as const).map((role) => (
+      {(['Owner', 'Renter', ...(HOSTED_PROFILE_LOGIN ? [] : ['Admin', 'Super Admin'])] as const).map((role) => (
         <optgroup key={role} label={role === 'Owner' || role === 'Renter' ? `${role}s` : role}>
           {profiles.filter((item) => item.role === role).map((item) => (
             <option key={item.id} value={item.id}>{item.name} - {item.role}</option>

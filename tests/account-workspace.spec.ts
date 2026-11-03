@@ -138,8 +138,8 @@ test('renter status filters retain approved-payment routing and real rental stat
     export const respondToBookingRequest = async () => {};
     export const cancelBooking = async () => {};
     export const startBookingReturn = async () => {};
-    export const completeBookingReturn = async () => {};
     export const fetchBookingPickup = async () => ({ address: 'Fixture pickup address' });`);
+  await moduleFixture(page, 'lib/booking-handoff.ts', 'export const startBookingPickup = async () => {};');
   await moduleFixture(page, 'lib/reviews.ts', `
     export const fetchReviewedBookingIds = async () => new Set();
     export const createReview = async () => {};
@@ -168,8 +168,8 @@ test('owner overview puts approvals beside inventory and preserves approval-befo
     };
     export const cancelBooking = async () => {};
     export const startBookingReturn = async () => {};
-    export const completeBookingReturn = async () => {};
     export const fetchBookingPickup = async () => ({ address: 'Fixture pickup address' });`);
+  await moduleFixture(page, 'lib/booking-handoff.ts', 'export const startBookingPickup = async () => {};');
   await moduleFixture(page, 'lib/listings.ts', `
     export const fetchListingsByOwner = async () => [${JSON.stringify(listing)}];
     export const toUiListing = value => value;
@@ -201,9 +201,10 @@ test('workspace source retains authoritative financial and participant workflows
   expect(checkout).toContain('await fetchConfirmedPayment(id)');
   expect(checkout).toContain("next?.status === 'confirmed'");
   const dashboard = source('src/pages/dashboards.tsx');
-  for (const api of ['respondToBookingRequest', 'cancelBooking', 'startBookingReturn', 'completeBookingReturn', 'setDateAvailability', 'deleteOwnerListing', 'fetchBankPayoutStatus']) {
+  for (const api of ['respondToBookingRequest', 'cancelBooking', 'startBookingPickup', 'startBookingReturn', 'setDateAvailability', 'deleteOwnerListing', 'fetchBankPayoutStatus']) {
     expect(dashboard).toContain(`await ${api}(`);
   }
+  expect(dashboard).not.toContain('completeBookingReturn');
   expect(dashboard).not.toContain('claims.map(');
   const requests = source('src/pages/requests.tsx');
   expect(requests).toContain('fetchRequestListingMatches');

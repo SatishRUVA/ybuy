@@ -48,9 +48,9 @@ select lives_ok($$update public.listings set title='Preserved legacy window' whe
 select is((select availability_end-availability_start from public.listings where id='a4000000-0000-4000-8000-000000000002'),60,
  'Existing saved dates are not shortened');
 select throws_ok($$update public.listings set availability_end=current_date+61 where id='a4000000-0000-4000-8000-000000000002'$$,
- '23514','Choose no more than 30 consecutive available days. Blocked days do not extend this window.','Changed windows must obey the 30-day cap');
+ '23514','Availability exceeds the configured listing duration','Changed windows must obey the 30-day cap');
 select throws_ok($$update public.listings set availability_start=current_date+1,availability_end=current_date+32 where id='a4000000-0000-4000-8000-000000000002'$$,
- '23514','Choose no more than 30 consecutive available days. Blocked days do not extend this window.','A future start cannot exceed 30 days');
+ '23514','Availability exceeds the configured listing duration','A future start cannot exceed 30 days');
 select lives_ok($$update public.listings set availability_start=current_date+1,availability_end=current_date+31 where id='a4000000-0000-4000-8000-000000000002'$$,
  'Future-start 30-day window accepted');
 select lives_ok($$update public.listings set availability_start=current_date+150,availability_end=current_date+180 where id='a4000000-0000-4000-8000-000000000002'$$,
@@ -73,7 +73,8 @@ select throws_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-800
  '40001','This listing changed in another session. Reload before saving.','Stale revision rejected');
 select lives_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),
- jsonb_build_object('availability_start',current_date,'availability_end',current_date+30,'available_quantity',2))$$,'Owner saves availability and quantity atomically');
+ jsonb_build_object('availability_start',current_date,'availability_end',current_date+30,'available_quantity',2))$$,
+ 'Owner saves availability and quantity atomically');
 select ok(not has_function_privilege('authenticated','public.owner_save_listing_flow_before_item_details(uuid,bigint,jsonb,jsonb,boolean)','execute'),
  'Internal item detail wrapper cannot bypass public validation');
 select lives_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
@@ -124,45 +125,15 @@ select is((select brand from public.listings where id='a4000000-0000-4000-8000-0
 select is((select status from public.listings where id='a4000000-0000-4000-8000-000000000001'),'draft','Optional details never self-publish a draft');
 select ok(not has_function_privilege('authenticated','public.owner_save_listing_flow_before_offers(uuid,bigint,jsonb,jsonb,boolean)','execute'),
  'Wrapped listing save cannot bypass the new offer transaction');
-select throws_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),
- jsonb_build_object('offer_preferences',jsonb_build_object('negotiation_enabled',true,'offer_minimum_daily',8,'offer_maximum_daily',11,
- 'offer_start_date',current_date,'offer_end_date',current_date+30,'offer_expiration_hours',24)))$$,
- '23514','Offer preferences are outside the approved listing policy','Draft offers still require approved policy');
+select ok(not has_function_privilege('authenticated','public.owner_save_offer_preferences(uuid,bigint,jsonb)','EXECUTE'),
+ 'Clients cannot configure private listing prices');
+select ok(not has_function_privilege('authenticated','public.listing_offer_within_rules(uuid,numeric,date,date)','EXECUTE'),
+ 'Listing offer eligibility helper is revoked');
+select throws_ok($$select public.owner_save_listing_flow(null,null,
+ jsonb_build_object('offer_preferences',jsonb_build_object('negotiation_enabled',true)))$$,
+ '55000','Private offers have been removed; publish rentals at their listed price.','Legacy listing payload cannot re-enable private offers');
 reset role;
-update public.app_settings set value='true' where key='listing_offers_configured';
-update public.app_settings set value='0.2' where key='listing_offer_below_pct';
-update public.app_settings set value='0.1' where key='listing_offer_above_pct';
-set local role authenticated;
-select lives_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),
- jsonb_build_object('offer_preferences',jsonb_build_object('negotiation_enabled',true,'offer_minimum_daily',8,'offer_maximum_daily',11,
- 'offer_start_date',current_date,'offer_end_date',current_date+30,'offer_expiration_hours',1)))$$,
- 'Owner saves enabled offers on a private draft');
-select is((select status from public.listings where id='a4000000-0000-4000-8000-000000000001'),'draft','Offer save does not publish draft');
 reset role;
-select ok(not public.listing_offer_within_rules('a4000000-0000-4000-8000-000000000001',9,current_date+1,current_date+2),
- 'Draft cannot accept rental bids');
-set local role authenticated;
-select throws_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),
- '{"title":"Must roll back","offer_preferences":{"negotiation_enabled":true,"offer_maximum_daily":12}}')$$,
- '23514','Offer preferences are outside the approved listing policy','Invalid nested offers reject entire transaction');
-select is((select title from public.listings where id='a4000000-0000-4000-8000-000000000001'),'Flow camera',
- 'Listing terms roll back when nested offer validation fails');
-select throws_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',1,'{"negotiation_enabled":false}')$$,
- '40001','This listing changed in another session. Reload before saving.','Draft offer save rejects stale revision');
-select throws_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{"negotiation_enabled":true,"offer_expiration_hours":169}')$$,
- '23514','Offer preferences are outside the approved listing policy','Draft expiry maximum enforced');
-select lives_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{"negotiation_enabled":true,"offer_expiration_hours":168}')$$,
- 'Draft expiry accepts maximum 168 hours');
-select lives_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{"negotiation_enabled":false}')$$,
- 'Owner can turn draft bidding off');
-reset role;
-update public.app_settings set value='false' where key='listing_offers_configured';
 set local role authenticated;
 select throws_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{}',null,true)$$,
@@ -227,9 +198,6 @@ select is(public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{}',
  '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":""}',true)->>'revision',
  (select revision::text from public.listings where id='a4000000-0000-4000-8000-000000000001'),'Repeated publication with identical pickup is also idempotent');
-select lives_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{"negotiation_enabled":false}')$$,
- 'Pending owner may save offer preferences without self-approving publication');
 select throws_ok($$select public.admin_approve_listing_publication('a4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'Owner cannot approve')$$,
  '42501','Not authorized','Owner cannot self-approve publication');
@@ -240,8 +208,6 @@ select throws_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-800
  '42501','Listing not found or not owned','Cross-account item detail save denied');
 select throws_ok($$select public.owner_reorder_listing_images('a4000000-0000-4000-8000-000000000001',array[]::text[])$$,
  '42501','Listing not found or not owned','Cross-account photo reorder denied');
-select throws_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',1,'{"negotiation_enabled":false}')$$,
- '42501','Listing not found or not owned','Cross-account offer save denied');
 select is((select count(*)::integer from public.listing_pickup_locations),0,'Private pickup remains owner-only');
 set local request.jwt.claims='{"sub":"a1000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"a2000000-0000-4000-8000-000000000003","exp":4102444800}';
 select is(public.admin_get_listing_publication_review('a4000000-0000-4000-8000-000000000001')->>'estimated_value','200.00','Admin reviews exact saved declared value');
@@ -255,35 +221,12 @@ select throws_ok($$update public.listings set description='short' where id='a400
  '23514','Description must be at least 10 characters.','Privileged writes cannot shorten published listing description');
 select is((select count(*)::integer from public.admin_audit_log where action='listing.publication_approved'
  and entity_id='a4000000-0000-4000-8000-000000000001'),1,'Approval is audited');
-update public.app_settings set value='true' where key='listing_offers_configured';
-update public.app_settings set value='0.20' where key='listing_offer_below_pct';
-update public.app_settings set value='0.50' where key='listing_offer_above_pct';
-
-set local role authenticated;
-set local request.jwt.claims='{"sub":"a1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"a2000000-0000-4000-8000-000000000001","exp":4102444800}';
-select lives_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),
- jsonb_build_object('negotiation_enabled',true,'offer_minimum_daily',8,'offer_maximum_daily',15,'offer_target_daily',14,
- 'offer_start_date',current_date+1,'offer_end_date',current_date+20,'offer_expiration_hours',24))$$,
- 'Published owner explicitly saves asymmetric offer bounds and narrower dates');
-select is((select status from public.listings where id='a4000000-0000-4000-8000-000000000001'),'published','Offer-only changes preserve individual approval');
-select throws_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),
- '{"negotiation_enabled":true,"offer_minimum_daily":7}')$$,
- '23514','Offer preferences are outside the approved listing policy','Below-floor minimum denied');
-select throws_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),
- '{"negotiation_enabled":true,"offer_maximum_daily":16}')$$,
- '23514','Offer preferences are outside the approved listing policy','Above-ceiling maximum denied');
-select throws_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),
- jsonb_build_object('negotiation_enabled',true,'offer_end_date',current_date+31))$$,
- '23514','Offer preferences are outside the approved listing policy','Offer dates cannot exceed availability');
-reset role;
-select ok(public.listing_offer_within_rules('a4000000-0000-4000-8000-000000000001',15,current_date+2,current_date+3),'Target is not a maximum: higher rate up to explicit maximum allowed');
-select ok(not public.listing_offer_within_rules('a4000000-0000-4000-8000-000000000001',15.01,current_date+2,current_date+3),'Offer maximum enforced');
-select ok(not public.listing_offer_within_rules('a4000000-0000-4000-8000-000000000001',7.99,current_date+2,current_date+3),'Asymmetric lower bound enforced');
-select ok(not public.listing_offer_within_rules('a4000000-0000-4000-8000-000000000001',10,current_date+20,current_date+21),'Narrower offer range enforced');
+select ok(not exists(select 1 from public.app_settings where key in ('listing_offers_configured','listing_offer_below_pct','listing_offer_above_pct')),
+ 'Private-offer pricing settings are removed');
+select ok(not has_function_privilege('authenticated','public.owner_save_offer_preferences(uuid,bigint,jsonb)','EXECUTE'),
+ 'Clients cannot configure private listing prices');
+select ok(not has_function_privilege('authenticated','public.listing_offer_within_rules(uuid,numeric,date,date)','EXECUTE'),
+ 'Listing offer eligibility helper is not client-accessible');
 select ok(not public.listing_has_capacity('a4000000-0000-4000-8000-000000000001',current_date+29,current_date+31),'Capacity rejects date range beyond listing end');
 select ok(public.listing_has_capacity('a4000000-0000-4000-8000-000000000001',current_date+29,current_date+30,2),'End-exclusive boundary and remaining quantity allowed');
 
@@ -328,29 +271,20 @@ select throws_ok($$update public.listings set delivery_radius_miles=5 where id='
  '23514','Item and delivery detail changes require existing approved rentals to finish','Delivery area cannot change underneath an approved rental');
 update public.app_settings set value='1000' where key='listing_high_value_threshold';
 update public.listings set price_per_day=11 where id='a4000000-0000-4000-8000-000000000001';
-select ok((select not negotiation_enabled from public.listings where id='a4000000-0000-4000-8000-000000000001'),'Asking-price edits disable offers if saved owner minimum becomes invalid');
-select is((select offer_target_daily from public.listings where id='a4000000-0000-4000-8000-000000000001'),14::numeric,'Price edits preserve owner target without treating it as maximum');
 select ok((select bool_and(daily_rate=10) from public.bookings where listing_id='a4000000-0000-4000-8000-000000000001'),'Existing rentals keep snapshotted daily price');
 
 set local role authenticated;
 set local request.jwt.claims='{"sub":"a1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"a2000000-0000-4000-8000-000000000001","exp":4102444800}';
-select lives_ok($$select public.owner_save_offer_preferences('a4000000-0000-4000-8000-000000000001',
- (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),
- '{"negotiation_enabled":true,"offer_minimum_daily":9}')$$,'Owner explicitly re-enables valid updated preferences');
 select lives_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{"price_per_day":10.5}')$$,
- 'Asking price can change without resetting valid owner preferences');
-select ok((select negotiation_enabled and offer_minimum_daily=9 and offer_maximum_daily=15
- from public.listings where id='a4000000-0000-4000-8000-000000000001'),'Valid explicit owner bounds are preserved');
+ 'Asking price can change without private offer settings');
 select throws_ok($$delete from public.listing_pickup_locations where listing_id='a4000000-0000-4000-8000-000000000001'$$,
  '23514','Archive the listing before removing its last photo or pickup location','Published listing retains private pickup');
 reset role;
 insert into public.listing_flags(listing_id,reason,confidence,type)
  values('a4000000-0000-4000-8000-000000000001','Advisory image quality','high','other_guideline');
-select ok(public.listing_offer_within_rules('a4000000-0000-4000-8000-000000000001',10,current_date+6,current_date+7),'Advisory flags do not blanket-block eligible negotiation');
 insert into public.listing_flags(listing_id,reason,confidence,type)
  values('a4000000-0000-4000-8000-000000000001','Prohibited item identified','high','prohibited_item');
-select ok(not public.listing_offer_within_rules('a4000000-0000-4000-8000-000000000001',10,current_date+6,current_date+7),'High-confidence unresolved prohibited flags block new offers');
 update public.listings set status='draft' where id='a4000000-0000-4000-8000-000000000001';
 select throws_ok($$update public.listings set status='published' where id='a4000000-0000-4000-8000-000000000001'$$,
  '23514','This listing requires moderation review before publication','High-confidence prohibited flag blocks publication');
@@ -376,7 +310,7 @@ set local request.jwt.claims='{"sub":"a1000000-0000-4000-8000-000000000001","rol
 select throws_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000002',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000002'),'{"estimated_value":0,"description":"Camera with a carrying case."}',
  '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":""}',true)$$,
- '23514','Choose dates from today through 180 days from today','A retained stale draft cannot publish without choosing current dates');
+ '23514','Choose dates from today through 180 days from today','Stale draft cannot publish until availability is corrected');
 select lives_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000002',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000002'),
  jsonb_build_object('availability_start',current_date,'availability_end',current_date+1))$$,

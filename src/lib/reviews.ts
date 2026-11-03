@@ -38,7 +38,7 @@ export async function fetchReviewsForUser(userId: string): Promise<OwnerReviewsR
     date: new Date(r.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
     text: r.body?.split('\u2014').join('-') ?? '',
   }));
-  const rating = reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
+  const rating = (await fetchOwnerRatings([userId])).get(userId)?.rating ?? 0;
   return { reviews, rating, reviewCount: reviews.length };
 }
 
@@ -57,6 +57,8 @@ export async function fetchReviewedBookingIds(reviewerId: string, bookingIds: st
 export interface OwnerRatingStats {
   rating: number;
   count: number;
+  missedDecisionCount: number;
+  ratingAdjustment: number;
 }
 
 /**
@@ -69,21 +71,13 @@ export async function fetchOwnerRatings(ownerIds: string[]): Promise<Map<string,
   const ids = [...new Set(ownerIds)].filter(Boolean);
   if (ids.length === 0) return result;
 
-  const { data, error } = await supabase
-    .from('reviews')
-    .select('reviewee_id, rating')
-    .in('reviewee_id', ids);
+  const { data, error } = await supabase.rpc('get_owner_rating_stats', { p_owner_ids: ids });
   if (error) throw error;
-
-  const sums = new Map<string, { total: number; count: number }>();
-  for (const row of (data ?? []) as { reviewee_id: string; rating: number }[]) {
-    const acc = sums.get(row.reviewee_id) ?? { total: 0, count: 0 };
-    acc.total += row.rating;
-    acc.count += 1;
-    sums.set(row.reviewee_id, acc);
-  }
-  for (const [ownerId, { total, count }] of sums) {
-    result.set(ownerId, { rating: count > 0 ? total / count : 0, count });
+  for (const row of (data ?? []) as {
+    owner_id: string; rating: number; review_count: number; missed_decision_count: number; rating_adjustment: number;
+  }[]) {
+    result.set(row.owner_id, { rating: Number(row.rating), count: row.review_count,
+      missedDecisionCount: row.missed_decision_count, ratingAdjustment: Number(row.rating_adjustment) });
   }
   return result;
 }

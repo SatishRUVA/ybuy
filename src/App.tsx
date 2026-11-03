@@ -1,4 +1,6 @@
 import { Fragment, lazy, Suspense } from 'react';
+import './index.css';
+import '@/styles/preview-one.css';
 import { ThemeProvider } from '@/theme-context';
 import { AuthProvider, useAuth } from '@/auth-context';
 import { LocationProvider } from '@/location-context';
@@ -10,6 +12,7 @@ import { PreviewMarketplace } from '@/components/preview-marketplace';
 import { OutOfScopePage } from '@/pages/out-of-scope';
 import { AccessPage } from '@/pages/access';
 import { VpnNotice } from '@/components/vpn-notice';
+import { BiddingTicker } from '@/components/bidding-ticker';
 import { SHOW_OUT_OF_SCOPE_PAGES, OUT_OF_SCOPE_ROUTES } from '@/lib/feature-flags';
 
 const ConfirmationPage = lazy(() => import('@/pages/checkout').then(({ ConfirmationPage: page }) => ({ default: page })));
@@ -104,6 +107,7 @@ function AppContent() {
     <div className="p1">
       <a href="#p1-main" className="p1-skip">Skip to content</a>
       <Header />
+      <BiddingTicker />
       <PageContainer id="p1-main" tabIndex={-1} className={workspace ? 'p1-workspace p1-container' : undefined}>
         {workspace && <WorkspaceSidebar />}
         <div className={workspace ? 'p1-work-canvas' : undefined}>

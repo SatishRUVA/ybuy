@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import { rejects } from 'node:assert/strict';
+import ts from 'typescript';
 import { cents, requireTestSettlement, sameWorkerSecret, settleRental, type Settlement, type SettlementServices } from '../supabase/functions/settle-rental/settlement';
 
 function fixture() {
@@ -51,6 +55,33 @@ test('live credentials, production backend and missing enable flag all fail clos
   expect(() => requireTestSettlement('sk_live_fixture', 'http://kong:8000', 'true')).toThrow('disabled');
   expect(() => requireTestSettlement('sk_test_fixture', 'https://xwmnfnhnnxxaarbfkqrp.supabase.co', 'true')).toThrow('disabled');
   expect(() => requireTestSettlement('sk_test_fixture', 'http://kong:8000', undefined)).toThrow('disabled');
+  expect(() => requireTestSettlement('sk_test_fixture', 'https://jzyjmsixfuwzfnntewqn.supabase.co', 'true')).not.toThrow();
+});
+
+test('settlement preserves actionable database errors instead of a generic provider failure', async () => {
+  const source = readFileSync('supabase\\functions\\settle-rental\\index.ts', 'utf8');
+  const output = ts.transpileModule(
+    `${source.slice(source.indexOf('async function processBooking('))}\nexports.processBooking = processBooking;`,
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const saved: { last_error?: string }[] = [];
+  const admin = {
+    from: (table: string) => table === 'bookings' ? ({
+      select: () => ({ eq: () => ({ single: async () => ({ data: {
+        id: 'booking', renter_id: 'renter', deposit: 0, deposit_collection_model: 'captured',
+        status: 'completed', return_confirmed_at: new Date().toISOString(),
+      }, error: null }) }) }),
+    }) : ({ update: (value: { last_error?: string }) => {
+      saved.push(value);
+      return { eq: async () => ({ error: null }) };
+    } }),
+    rpc: async () => ({ data: null, error: { message: 'Owner must complete Stripe Connect setup' } }),
+  };
+  const exports: { processBooking?: (admin: unknown, stripe: unknown, booking: string, owner: string) => Promise<void> } = {};
+  runInNewContext(output, { exports, settleRental, console, Date });
+  await rejects(async () => exports.processBooking!(admin, {}, 'booking', 'owner'),
+    { message: 'Owner must complete Stripe Connect setup' });
+  expect(saved).toContainEqual({ last_error: 'Owner must complete Stripe Connect setup' });
 });
 
 test('money conversion rejects invalid, fractional-cent, and unsafe values', () => {

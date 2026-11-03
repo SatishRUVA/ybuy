@@ -37,7 +37,7 @@ export function ListingPhotoEditor({ photos, maximum, maximumBytes, disabled, wa
           <Upload size={24} aria-hidden="true" className="text-main" />
         </motion.span>
         <b>{uploadProgress ? 'Saving photos...' : 'Choose photos'}</b>
-        <span id="listing-photo-help">JPEG, PNG or WebP &middot; up to {Math.round(maximumBytes / 1048576)} MB each</span>
+        <span id="listing-photo-help">Choose original photos from your camera or device. JPEG, PNG or WebP &middot; up to {Math.round(maximumBytes / 1048576)} MB each</span>
       </button>
       {(photos.length > 0 || uploadProgress) && <div className="mt-3 flex gap-2 overflow-x-auto py-1">
         <AnimatePresence initial={false}>

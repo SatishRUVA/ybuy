@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { ArrowRight, Bell, Check, CheckCheck, ChevronLeft, Plus, Search, Send, ShieldCheck } from 'lucide-react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { ArrowRight, CheckCheck, ChevronLeft, Plus, Search, Send, ShieldCheck } from 'lucide-react';
 import { currentUser } from '@/data';
+import { PreviewNotificationCenter, type NotificationCenterRow, type NotificationsBackend } from './notification-center';
+export type { NotificationsBackend } from './notification-center';
 import { rangeLabel } from '../preview/dates';
 import { DateField } from './dates';
 import { href, usePreview } from './state';
@@ -52,10 +54,7 @@ function DemoMessages({ id }: { id?: string }) {
 }
 
 function DemoNotifications() {
-  const store = usePreview();
-  const [unreadOnly, setUnreadOnly] = useState(false);
-  const rows = store.notices.filter((n) => !unreadOnly || !n.read);
-  return <main className="p1-work-page"><PageHead title="The useful updates." description="Your rentals, requests and messages. The things worth knowing." action={<Button variant="secondary" onClick={() => store.setNotices((prev) => prev.map((n) => ({ ...n, read: true })))}><CheckCheck size={17} aria-hidden="true" /> Mark all read</Button>} /><div className="p1-tabs p1-space-bottom"><button type="button" aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>All updates</button><button type="button" aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>Unread ({store.notices.filter((n) => !n.read).length})</button></div>{rows.length ? <div className="p1-notice-list">{rows.map((n) => <article key={n.id} className={!n.read ? 'is-unread' : ''}><Bell size={21} aria-hidden="true" /><a href={href(n.to, n.itemId)} onClick={() => store.setNotices((prev) => prev.map((x) => x.id === n.id ? { ...x, read: true } : x))}><h2>{n.title}</h2><p>{n.body}</p></a>{!n.read && <button type="button" className="p1-icon" aria-label={`Mark "${n.title}" read`} onClick={() => store.setNotices((prev) => prev.map((x) => x.id === n.id ? { ...x, read: true } : x))}><Check size={17} aria-hidden="true" /></button>}</article>)}</div> : <Empty title="All caught up. Nice." body="New sample updates appear when you book, bid or receive a request."><Action to="search" variant="secondary">Find your next plan</Action></Empty>}</main>;
+  return <PreviewNotificationCenter />;
 }
 
 function DemoProfile() {
@@ -63,6 +62,7 @@ function DemoProfile() {
   const [draft, setDraft] = useState(store.profile);
   const [tab, setTab] = useState('Profile');
   const [saved, setSaved] = useState(false);
+  if (tab === 'Notifications') return <><div className="p1-space-bottom"><Button variant="secondary" onClick={() => setTab('Profile')}>Back to profile</Button></div><PreviewNotificationCenter /></>;
   return <main className="p1-work-page"><PageHead title="A little more about you." description="Help the people you rent from and lend to get to know you." /><div className="p1-profile-layout"><aside><Avatar src={currentUser.avatar} name={store.profile.name} size={92} /><h2>{store.profile.name}</h2><p className="p1-muted">Sample member profile</p><Tag tone="blue"><ShieldCheck size={14} aria-hidden="true" />Demo verification badge</Tag><div className="p1-profile-counts"><span><b>{store.bookings.length}</b> sample rentals</span><span><b>{store.saved.length}</b> saved items</span></div></aside><div><div className="p1-tabs p1-space-bottom">{['Profile', 'Notifications', 'Security'].map((t) => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)}>{t}</button>)}</div>{tab === 'Profile' && <form onSubmit={(e) => { e.preventDefault(); store.setProfile(draft); setSaved(true); store.notify('Profile saved. A little more you.', true); }}><div className="p1-form-two"><Field label="Full name"><input required minLength={2} value={draft.name} onChange={(e) => { setDraft({ ...draft, name: e.target.value }); setSaved(false); }} /></Field><Field label="Email"><input required type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} /></Field></div><Field label="Phone"><input type="tel" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} /></Field><Field label="About you"><textarea value={draft.bio} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} rows={4} maxLength={500} /></Field><Button type="submit">Save profile</Button>{saved && <p role="status" className="p1-info-copy">Changes saved for this preview session.</p>}</form>}{tab === 'Notifications' && <section><h2>Keep the useful updates.</h2><label className="p1-check"><input type="checkbox" checked={store.profile.updates} onChange={(e) => store.setProfile((p) => ({ ...p, updates: e.target.checked }))} /><span>Rental and community email updates<small>Preference only. No emails are sent in this preview.</small></span></label><Action to="notifications" variant="secondary">View notification center</Action></section>}{tab === 'Security' && <section><h2>Safety isn’t a preview shortcut.</h2><p>Authentication, identity checks and account recovery stay with YBuy’s real security flows. This isolated preview doesn’t collect passwords or verify identities.</p><Button variant="secondary" onClick={() => { store.setSignedIn(false); store.notify('Demo session signed out. Use the header to explore sign-in.'); }}>Sign out of demo</Button></section>}</div></div></main>;
 }
 
@@ -74,7 +74,6 @@ function DemoProfile() {
     location: string;
     dailyBudget: number | null;
     createdAt: string;
-    responseCount: number;
     description: string;
     category: string;
     quantity: number;
@@ -127,10 +126,10 @@ function DemoProfile() {
             {row.specifications && <div><dt>Specifications</dt><dd>{row.specifications}</dd></div>}
             {row.notes && <div><dt>Additional notes</dt><dd>{row.notes}</dd></div>}
           </dl></details>
-          <div className="p1-request-person"><span>{row.responseCount} owner responses</span><div className="p1-actions">
+          <div className="p1-request-person"><span>{row.matchedListings.length} public listing matches</span><div className="p1-actions">
             {row.categoryId && ownerListings.some((listing) => listing.categoryId === row.categoryId && listing.quantity >= row.quantity)
-              ? <Button variant="secondary" onClick={() => setOfferFor(row)}>Have something that fits?</Button>
-              : <Action to="create" variant="secondary">List an item</Action>}
+              ? <Button onClick={() => setOfferFor(row)}>Have something that fits?</Button>
+              : <Action to="create">List an item</Action>}
             <Button variant="secondary" onClick={onManage}>My requests</Button>
           </div></div>
         </article>)}</div>
@@ -175,7 +174,7 @@ function DemoProfile() {
         <p className="p1-muted">YBuy checks the requested dates, area, quantity and listed price. Linking does not reserve or book the rental.</p>
       </>}
       {error && <p role="alert" className="p1-error">{error}</p>}
-      <div className="p1-actions"><Button variant="quiet" type="button" disabled={busy} onClick={() => setError(null)}>Keep editing</Button>
+      <div className="p1-dialog-footer"><Button variant="quiet" type="button" disabled={busy} onClick={() => setError(null)}>Keep editing</Button>
         {eligible.length > 0 && <Button type="submit" disabled={busy || !listingId}>{busy ? 'Linking rental…' : 'Link rental'}</Button>}
       </div>
     </form>;
@@ -248,41 +247,7 @@ function DemoProfile() {
     </main>;
   }
 
-  export interface PreviewNotice {
-    id: string;
-    title: string;
-    body: string;
-    read: boolean;
-    destination: string;
-  }
-  export interface NotificationsBackend {
-    rows: PreviewNotice[];
-    loading: boolean;
-    hasMore: boolean;
-    loadingMore: boolean;
-    busy: string | null;
-    error: string | null;
-    onRetry: () => void;
-    onMark: (id: string) => void;
-    onMarkAll: () => void;
-    onLoadMore: () => void;
-    onOpen: (notice: PreviewNotice) => void;
-  }
-  function BackendNotifications({ rows, loading, hasMore, loadingMore, busy, error, onRetry, onMark, onMarkAll, onLoadMore, onOpen }: NotificationsBackend) {
-    const [unreadOnly, setUnreadOnly] = useState(false);
-    const visible = rows.filter((row) => !unreadOnly || !row.read);
-    return <main className="p1-work-page"><PageHead title="The useful updates." description="Your rentals, requests and messages. The things worth knowing."
-      action={<Button variant="secondary" disabled={busy !== null} onClick={onMarkAll}><CheckCheck size={17} aria-hidden="true" /> Mark all read</Button>} />
-      <div className="p1-tabs p1-space-bottom"><button type="button" aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>All updates</button>
-        <button type="button" aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>Unread ({rows.filter((row) => !row.read).length})</button></div>
-      {error && <div role="alert" className="p1-error">{error}<Button variant="secondary" onClick={onRetry}>Try again</Button></div>}
-      {loading ? <p role="status" className="p1-muted">Loading updates…</p> : visible.length ? <div className="p1-notice-list">{visible.map((notice) => <article key={notice.id} className={!notice.read ? 'is-unread' : ''}>
-        <Bell size={21} aria-hidden="true" /><a href={href('notifications')} onClick={(event) => { event.preventDefault(); onOpen(notice); }}><h2>{notice.title}</h2><p>{notice.body}</p></a>
-        {!notice.read && <button type="button" className="p1-icon" aria-label={`Mark "${notice.title}" read`} disabled={busy !== null} onClick={() => onMark(notice.id)}><Check size={17} aria-hidden="true" /></button>}
-      </article>)}</div> : <Empty title="All caught up. Nice." body="New updates will appear here when activity happens on your account."><Action to="search" variant="secondary">Find your next plan</Action></Empty>}
-      {!loading && hasMore && <div className="p1-actions"><Button variant="secondary" disabled={loadingMore || busy !== null} onClick={onLoadMore}>{loadingMore ? 'Loading older updates…' : 'Load older updates'}</Button></div>}
-    </main>;
-  }
+  export type PreviewNotice = NotificationCenterRow;
 
   export interface PreviewProfileData {
     id: string;
@@ -365,8 +330,8 @@ function DemoProfile() {
             {preferencesLoading ? <p role="status" className="p1-muted">Loading preferences…</p> : preferences && <div className="p1-preference-list">
               {NOTIFICATION_CATEGORIES.map((category) => <fieldset key={category.key} className="p1-preference-row"><legend>{category.label}</legend>
                 {(['in_app', 'email'] as const).map((channel) => { const key = `${category.key}_${channel}` as NotificationPreferenceKey; return <label className="p1-check" key={key}>
-                  <input type="checkbox" checked={preferences[key]} disabled={preferenceBusy === key} onChange={(event) => onPreferenceChange(key, event.target.checked)} />
-                  <span>{channel === 'in_app' ? 'In-app updates' : 'Email updates'}</span></label>; })}
+                  <input type="checkbox" checked={['bookings', 'payments', 'cases'].includes(category.key) || preferences[key]} disabled={preferenceBusy !== null || ['bookings', 'payments', 'cases'].includes(category.key)} onChange={(event) => onPreferenceChange(key, event.target.checked)} />
+                  <span>{channel === 'in_app' ? 'In-app updates' : 'Email updates'}{['bookings', 'payments', 'cases'].includes(category.key) ? ' (mandatory)' : category.key === 'bidding' ? ' (winning bids and deadlines stay on)' : ''}</span></label>; })}
               </fieldset>)}
             </div>}
           </details>
@@ -386,7 +351,7 @@ function DemoProfile() {
     return backend ? <BackendMessages {...backend} /> : <DemoMessages id={id} />;
   }
   export function Notifications({ backend }: { backend?: NotificationsBackend } = {}) {
-    return backend ? <BackendNotifications {...backend} /> : <DemoNotifications />;
+    return backend ? <PreviewNotificationCenter backend={backend} /> : <DemoNotifications />;
   }
   export function Profile({ backend }: { backend?: ProfileBackend } = {}) {
     return backend ? <BackendProfile {...backend} /> : <DemoProfile />;

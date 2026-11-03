@@ -12,8 +12,6 @@ export interface ListingFlowPolicy {
   max_photo_bytes: number;
   min_photo_dimension: number;
   max_delivery_fee: number;
-  offer_below_pct: number | null;
-  offer_above_pct: number | null;
   high_value_threshold: number | null;
   max_estimated_value: number;
   deposit_rules: CategoryDepositRule[];
@@ -40,71 +38,8 @@ export interface ListingFlowDetails {
   /** Used transiently during the save transaction to align date-only checks with the owner’s calendar. */
   availability_timezone?: string;
   delivery_fee?: number;
-  offer_preferences?: ListingOfferPreferences;
   item_details?: ListingItemDetails;
   auction_preferences?: ListingAuctionPreferences;
-}
-
-export const roundOfferPrice = (value: number) => Math.round((value + Number.EPSILON * Math.max(1, value)) * 100) / 100;
-
-export interface ListingOfferForm {
-  enabled: boolean;
-  minimumDaily: string;
-  maximumDaily: string;
-  expirationHours: string;
-  startDate: string;
-  endDate: string;
-  targetDaily: number | null;
-}
-
-export const EMPTY_LISTING_OFFERS: ListingOfferForm = {
-  enabled: false, minimumDaily: '', maximumDaily: '', expirationHours: '',
-  startDate: '', endDate: '', targetDaily: null,
-};
-
-export function listingOfferPreferences(form: ListingOfferForm, price: number, start: string, end: string): ListingOfferPreferences {
-  const minimum = roundOfferPrice(Number(form.minimumDaily));
-  const maximum = roundOfferPrice(Number(form.maximumDaily));
-  return {
-    negotiation_enabled: form.enabled,
-    offer_minimum_daily: form.enabled ? minimum : null,
-    offer_maximum_daily: form.enabled ? maximum : null,
-    offer_target_daily: form.enabled && form.targetDaily !== null && form.targetDaily >= minimum && form.targetDaily <= maximum ? form.targetDaily : null,
-    offer_start_date: form.enabled ? form.startDate || start : null,
-    offer_end_date: form.enabled ? form.endDate || end : null,
-    offer_expiration_hours: form.enabled ? Number(form.expirationHours) : null,
-  };
-}
-
-export function listingOfferError(form: ListingOfferForm, price: number | null, policy: ListingFlowPolicy | null, start: string, end: string): string | null {
-  if (!form.enabled) return null;
-  if (!policy || policy.offer_below_pct === null || policy.offer_above_pct === null) return 'Offer setup is unavailable until an administrator approves the price boundaries.';
-  if (price === null || price <= 0) return 'Enter a valid daily rental price before configuring offers.';
-  const preferences = listingOfferPreferences(form, price, start, end);
-  const minimum = preferences.offer_minimum_daily!;
-  const maximum = preferences.offer_maximum_daily!;
-  const floor = Math.max(0.01, roundOfferPrice(price * (1 - policy.offer_below_pct)));
-  const ceiling = Math.min(100000, roundOfferPrice(price * (1 + policy.offer_above_pct)));
-  if (![form.minimumDaily, form.maximumDaily].every(value => /^\d+(\.\d{1,2})?$/.test(value))
-    || !Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum < floor || maximum > ceiling || minimum > maximum) {
-    return `Keep the offer range between $${floor.toFixed(2)} and $${ceiling.toFixed(2)} per day, with the minimum no higher than the maximum.`;
-  }
-  if (!/^\d+$/.test(form.expirationHours) || !Number.isInteger(preferences.offer_expiration_hours)
-    || preferences.offer_expiration_hours! < 1 || preferences.offer_expiration_hours! > 168) return 'Choose an offer expiry between 1 and 168 whole hours.';
-  if (preferences.offer_start_date! < start || preferences.offer_end_date! > end || preferences.offer_end_date! <= preferences.offer_start_date!) {
-    return 'Offer dates must fit your listing availability. Use the full listing availability or restore dates that contain the saved offer window.';
-  }
-  return null;
-}
-
-export interface ListingOfferPreferences {
-  negotiation_enabled: boolean;
-  offer_minimum_daily: number | null;
-  offer_maximum_daily: number | null;
-  offer_target_daily: number | null;
-  offer_start_date: string | null;
-  offer_end_date: string | null;
-  offer_expiration_hours: number | null;
 }
 
 export interface ListingFlowResult {
@@ -157,30 +92,26 @@ export async function saveListingFlow(
     }
   }
   if (error) throw new Error(error.message);
-  return result(data);
+  const saved = result(data);
+  if (publish && saved.status === 'published' && details.auction_preferences?.enabled) {
+    window.dispatchEvent(new Event('ybuy-auction-published'));
+  }
+  return saved;
 }
 
-export async function saveOfferPreferences(
-  listingId: string,
-  revision: number,
-  preferences: ListingOfferPreferences,
-): Promise<ListingFlowResult> {
-  const { data, error } = await supabase.rpc('owner_save_offer_preferences', {
-    p_listing_id: listingId, p_revision: revision, p_preferences: preferences,
-  });
-  if (error) throw new Error(error.message);
-  return result(data);
-}
-
-export async function saveListingNegotiation(
-  listingId: string, revision: number, offers: ListingOfferPreferences, auction: ListingAuctionPreferences,
+export async function saveAuctionPreferences(
+  listingId: string, revision: number, auction: ListingAuctionPreferences,
 ): Promise<ListingFlowResult> {
   const { data, error } = await supabase.rpc('owner_configure_listing_negotiation', {
-    p_listing_id: listingId, p_revision: revision, p_offers: offers,
+    p_listing_id: listingId, p_revision: revision,
+    p_offers: { negotiation_enabled: false, offer_minimum_daily: null, offer_maximum_daily: null,
+      offer_target_daily: null, offer_start_date: null, offer_end_date: null, offer_expiration_hours: null },
     p_auction: { ...auction, availability_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' },
   });
   if (error) throw new Error(error.message);
-  return result(data);
+  const saved = result(data);
+  window.dispatchEvent(new Event('ybuy-auction-published'));
+  return saved;
 }
 
 export async function saveDurationDiscount(

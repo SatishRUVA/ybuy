@@ -5,11 +5,23 @@ export interface ConfirmedPayment {
   currency: string;
 }
 
-export interface CheckoutReservation { status: string; expires_at: string | null; expired_at: string | null; server_now: string }
+export interface CheckoutReservation {
+  status: string;
+  expires_at: string | null;
+  expired_at: string | null;
+  server_now: string;
+  confirmation_gate: string;
+  payment_received: boolean;
+  authorization_status: string | null;
+  capture_before: string | null;
+}
 export async function fetchCheckoutReservation(bookingId: string): Promise<CheckoutReservation> {
   const { data,error } = await supabase.rpc('get_checkout_reservation', { p_booking_id: bookingId });
   if (error) throw new Error(error.message);
-  if (!data || typeof data.status!=='string' || !Number.isFinite(Date.parse(data.server_now))) throw new Error('Invalid checkout reservation response.');
+  if (!data || typeof data.status!=='string' || typeof data.confirmation_gate!=='string'
+    || typeof data.payment_received!=='boolean' || !Number.isFinite(Date.parse(data.server_now))) {
+    throw new Error('Invalid checkout reservation response.');
+  }
   return data;
 }
 
@@ -43,7 +55,15 @@ export async function createCheckoutSession(bookingId: string): Promise<string> 
     'create-checkout-session',
     { body: { bookingId } },
   );
-  if (error) throw new Error(error.message);
+  if (error) {
+    if ('context' in error && error.context instanceof Response) {
+      const details: unknown = await error.context.json();
+      if (details && typeof details === 'object' && 'error' in details && typeof details.error === 'string') {
+        throw new Error(details.error);
+      }
+    }
+    throw new Error(error.message);
+  }
   if (!data?.url) throw new Error(data?.error ?? 'Could not start checkout.');
   return data.url;
 }

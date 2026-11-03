@@ -23,17 +23,19 @@ export function RentalAgreement({bookingId,isOwner}:{bookingId:string;isOwner:bo
   const snapshot=agreement.snapshot;
   const accepted=agreement.acceptances.some(value=>value.role===(isOwner?'Owner':'Renter'));
   return <Surface className="p-5 mb-4">
-    <h2 className="font-semibold text-main mb-2">Rental agreement · version {agreement.version}</h2>
-    <p className="text-xs text-sec mb-3">Snapshot created {new Date(agreement.created_at).toLocaleString()}. Later listing edits do not change this record.</p>
+    <h2 className="font-semibold text-main mb-2">Rental agreement {agreement.agreement_reference} · version {agreement.version}</h2>
+    <p className="text-xs text-sec mb-3">Booking reference: {snapshot.booking_reference} · Snapshot created {new Date(agreement.created_at).toLocaleString()}. Later listing edits do not change this record.</p>
     {snapshot.legal_status==='test_dummy'&&<Alert tone="warning" className="mb-3">TEST ONLY: These fictional sample terms are not a legal contract and must never be used for real rentals.</Alert>}
     {snapshot.legal_status==='approval_pending'&&<Alert tone="warning" className="mb-3">This is a stored operational booking record, not an approved rental contract. Legal terms await approval; acceptance is disabled.</Alert>}
     <details>
       <summary className="text-accent font-semibold cursor-pointer">View saved rental details and terms</summary>
       <dl className="mt-3 text-sm space-y-2 text-sec">
+        <div><dt className="font-semibold text-main">References</dt><dd>Booking {snapshot.booking_reference} · rental agreement {snapshot.agreement_reference}</dd></div>
         <div><dt className="font-semibold text-main">Parties</dt><dd>Owner: {snapshot.owner_name} · Renter: {snapshot.renter_name}</dd></div>
         <div><dt className="font-semibold text-main">Item</dt><dd>{snapshot.listing.title}</dd><dd className="whitespace-pre-line">{snapshot.listing.description}</dd><dd>Condition: {snapshot.listing.condition?.replace(/_/g,' ')||'Not recorded'}</dd></div>
         <div><dt className="font-semibold text-main">Rental period</dt><dd>{snapshot.start_date} to {snapshot.end_date} · {snapshot.quantity} item(s)</dd></div>
         <div><dt className="font-semibold text-main">Price snapshot ({snapshot.currency})</dt><dd>Rental {snapshot.rental_subtotal}{snapshot.owner_discount_amount?` · package savings ${snapshot.owner_discount_amount}${snapshot.promo_code?` (${snapshot.promo_code})`:''}`:''} · fee {snapshot.service_fee}{snapshot.insurance_amount?` · insurance ${snapshot.insurance_amount}`:''} · deposit {snapshot.deposit} · total {snapshot.total}</dd></div>
+        {(Number(snapshot.tax_rate ?? 0) > 0 || snapshot.sandbox_tax) && <div><dt className="font-semibold text-main">{snapshot.sandbox_tax ? 'Tax (7% test)' : 'Tax (7%)'}</dt><dd>{Number(snapshot.tax_amount ?? 0).toFixed(2)} {snapshot.currency} · Included in the immutable total.</dd></div>}
         <div><dt className="font-semibold text-main">Owner-declared value</dt><dd>{snapshot.listing.owner_declared_value??'Not recorded'} {snapshot.currency} (not independently verified)</dd></div>
         <div><dt className="font-semibold text-main">Pickup area</dt><dd>{snapshot.listing.approximate_pickup_area||'Not recorded'}</dd></div>
         <div><dt className="font-semibold text-main">Deposit handling</dt><dd>{snapshot.deposit_model}</dd></div>

@@ -4,18 +4,8 @@ import { useMarketplaceLocation } from '@/location-context';
 import { fieldClass } from '@/components/form-classes';
 import { loadGooglePlaces } from '@/lib/google-maps';
 import { countryIsAllowed, fetchMarketplaceCountries, type MarketplaceCountry } from '@/lib/marketplace-countries';
-
-export interface PickupLocationValue {
-  formattedAddress: string;
-  streetAddress: string;
-  city: string;
-  state: string;
-  postalCode: string;
-  country: string;
-  latitude: number | null;
-  longitude: number | null;
-  placeId: string;
-}
+import { currentPickupLocation, type PickupLocationValue } from '@/lib/pickup-location';
+export type { PickupLocationValue } from '@/lib/pickup-location';
 
 type AddressComponent = { longText?: string; shortText?: string; types: string[] };
 type SelectedPlace = {
@@ -33,7 +23,7 @@ function getComponent(place: SelectedPlace, type: string, short = false): string
 }
 
 export function PickupLocation({ value, onChange, showAreaMap = false }: { value: PickupLocationValue; onChange: (value: PickupLocationValue) => void; showAreaMap?: boolean }) {
-  const { location, requestBrowserLocation } = useMarketplaceLocation();
+  const { location } = useMarketplaceLocation();
   const autocompleteContainerRef = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
   const [locating, setLocating] = useState(false);
@@ -118,11 +108,9 @@ export function PickupLocation({ value, onChange, showAreaMap = false }: { value
     setLocating(true);
     setLocationError(null);
     try {
-      const city = await requestBrowserLocation();
-      if (city) {
-        setPickupCountry(city.country);
-        onChangeRef.current({ ...value, city: '', state: '', country: '', formattedAddress: '', streetAddress: '', postalCode: '', latitude: null, longitude: null, placeId: '' });
-      }
+      const address = await currentPickupLocation();
+      setPickupCountry(address.country);
+      onChangeRef.current(address);
     } catch (error) {
       setLocationError(error instanceof Error ? error.message : 'Could not use your location.');
     } finally {
@@ -138,9 +126,9 @@ export function PickupLocation({ value, onChange, showAreaMap = false }: { value
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-card-lg border border-app bg-subtle px-4 py-3">
-        <p className="min-w-0 text-sm text-sec">{searchCity ? `Search suggestions near ${[searchCity, searchState].filter(Boolean).join(', ')}.` : 'Use your area to find a nearby address.'}</p>
+        <p className="min-w-0 text-sm text-sec">Use your location to fill the pickup address, then check it before saving.</p>
         <button type="button" onClick={() => void handleUseCurrentLocation()} disabled={locating} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-card px-2 text-sm font-semibold text-accent hover:bg-accent-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-60">
-          <LocateFixed size={16} aria-hidden="true" />{locating ? 'Finding your area…' : 'Use my location'}
+          <LocateFixed size={16} aria-hidden="true" />{locating ? 'Finding your address…' : 'Use my location'}
         </button>
         {locationError && <p role="status" className="text-xs text-error mt-1">{locationError}</p>}
       </div>

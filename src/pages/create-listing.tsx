@@ -392,7 +392,7 @@ export function CreateListingPage({ editId }: { editId?: string }) {
           if (file.size > policy.max_photo_bytes) throw new Error(`Use a photo smaller than ${Math.round(policy.max_photo_bytes / 1048576)} MB.`);
           const bitmap = await createImageBitmap(file);
           const { width, height } = bitmap; bitmap.close();
-          if (width < policy.min_photo_dimension || height < policy.min_photo_dimension) throw new Error(`Use a photo at least ${policy.min_photo_dimension} pixels wide and tall.`);
+          if (width < policy.min_photo_dimension || height < policy.min_photo_dimension) throw new Error(`This photo is too small (${width} x ${height} pixels). Choose a larger original photo, at least ${policy.min_photo_dimension} x ${policy.min_photo_dimension} pixels, then upload it again.`);
           const result = await uploadListingPhoto(id, file, replacing ?? next.length, replacing === undefined ? undefined : next[replacing]);
           if (replacing === undefined) next.push(result.url); else next[replacing] = result.url;
           setPhotos([...next]);

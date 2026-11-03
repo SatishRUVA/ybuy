@@ -56,8 +56,8 @@ export function DatePicker({ value, onChange, label, id, min, max, required = fa
     </DialogTrigger>
     {required && <input aria-hidden="true" tabIndex={-1} className="sr-only" value={value} required disabled={disabled}
       onChange={() => {}} onInvalid={(event) => { event.preventDefault(); trigger.current?.focus(); trigger.current?.click(); }} />}
-    <DialogContent className="w-[calc(100vw_-_1rem)] max-w-[440px] overflow-hidden rounded-[24px] border border-app bg-card p-0 shadow-pop">
-      <div className="border-b border-app bg-subtle px-5 py-5 sm:px-6">
+    <DialogContent className="flex flex-col w-[calc(100vw_-_1rem)] max-w-[440px] overflow-hidden rounded-[24px] border border-app bg-card p-0 shadow-pop">
+      <div className="shrink-0 border-b border-app bg-subtle px-5 py-5 sm:px-6">
         <DialogHeader className="flex-row items-center gap-3 space-y-0 text-left">
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-accent-soft text-accent"><CalendarDays size={20} aria-hidden="true" /></span>
           <div className="min-w-0">
@@ -66,7 +66,7 @@ export function DatePicker({ value, onChange, label, id, min, max, required = fa
           </div>
         </DialogHeader>
       </div>
-      <div className="px-4 pt-4 sm:px-5">
+      <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pt-4 sm:px-5">
         <div className="mb-2 flex items-center justify-between gap-3">
           <p aria-live="polite" className="text-base font-bold tracking-tight text-main">{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</p>
           <div className="flex items-center gap-1">
@@ -77,7 +77,7 @@ export function DatePicker({ value, onChange, label, id, min, max, required = fa
         <MonthGrid monthDate={month} todayStr={todayIso()} minDate={minimum} maxDate={maximum} draftStart={selected}
           draftEnd={windowDays ? end : null} bookedDates={NO_DATES} blockedDates={NO_DATES} onPick={setSelected} showMonthLabel={false} />
       </div>
-      <div className="mt-4 border-t border-app px-5 py-4 sm:px-6">
+      <div className="shrink-0 mt-4 border-t border-app px-5 py-4 sm:px-6">
         <div className="mb-4 flex min-h-11 items-center justify-between gap-3" role="status" aria-live="polite">
           <div className="min-w-0"><p className="text-xs font-medium text-sec">Selected day</p>
             <p className="mt-0.5 truncate text-sm font-semibold text-main">{selected ? `${dateLabel(selected)}${windowDays ? ` – ${dateLabel(end)}` : ''}` : 'Choose a day'}</p></div>

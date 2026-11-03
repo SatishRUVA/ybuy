@@ -7,13 +7,13 @@ export type Route =
   | { name: 'owner-listings' }
   | { name: 'owner-payouts' }
   | ({ name: 'search'; lat?: number; lng?: number; locationLabel?: string } & Partial<SearchState>)
-  | { name: 'listing'; id: string }
+  | { name: 'listing'; id: string; requestId?: string }
   | { name: 'checkout'; id: string; startDate?: string; endDate?: string; quantity?: number }
   | { name: 'confirmation'; id: string }
   | { name: 'renter-dashboard' }
   | { name: 'owner-dashboard' }
-  | { name: 'create-listing' }
-  | { name: 'edit-listing'; id: string }
+  | { name: 'create-listing'; requestId?: string }
+  | { name: 'edit-listing'; id: string; requestId?: string }
   | { name: 'check-in'; id: string }
   | { name: 'check-out'; id: string }
   | { name: 'item-passport'; id: string }
@@ -24,7 +24,7 @@ export type Route =
   | { name: 'trust-profile' }
   | { name: 'messaging' }
   | { name: 'conversation'; id: string }
-  | { name: 'requests'; tab?: 'browse' | 'mine' | 'offers' }
+  | { name: 'requests'; tab?: 'browse' | 'mine' | 'offers'; requestId?: string; matches?: boolean }
   | { name: 'favorites' }
   | { name: 'need-something' }
   | { name: 'protection' }
@@ -61,7 +61,7 @@ function routeToPath(route: Route): string {
       const qs = params.toString();
       return qs ? `/search?${qs}` : '/search';
     }
-    case 'listing': return `/listing/${route.id}`;
+    case 'listing': return `/listing/${route.id}${route.requestId ? `?request=${encodeURIComponent(route.requestId)}` : ''}`;
     case 'checkout': {
       const params = new URLSearchParams();
       if (route.startDate) params.set('start', route.startDate);
@@ -73,8 +73,8 @@ function routeToPath(route: Route): string {
     case 'confirmation': return `/confirmation/${route.id}`;
     case 'renter-dashboard': return '/dashboard?tab=renting';
     case 'owner-dashboard': return '/dashboard?tab=lending';
-    case 'create-listing': return '/create-listing';
-    case 'edit-listing': return `/edit-listing/${route.id}`;
+    case 'create-listing': return `/create-listing${route.requestId ? `?request=${encodeURIComponent(route.requestId)}` : ''}`;
+    case 'edit-listing': return `/edit-listing/${route.id}${route.requestId ? `?request=${encodeURIComponent(route.requestId)}` : ''}`;
     case 'check-in': return `/check-in/${route.id}`;
     case 'check-out': return `/check-out/${route.id}`;
     case 'item-passport': return `/item-passport/${route.id}`;
@@ -85,7 +85,8 @@ function routeToPath(route: Route): string {
     case 'trust-profile': return '/profile';
     case 'messaging': return '/messages';
     case 'conversation': return `/messages/${route.id}`;
-    case 'requests': return route.tab && route.tab !== 'browse' ? `/requests?tab=${route.tab}` : '/requests';
+    case 'requests': return route.requestId && route.matches ? `/requests/${route.requestId}/matches`
+      : route.tab && route.tab !== 'browse' ? `/requests?tab=${route.tab}` : '/requests';
     case 'favorites': return '/favorites';
     case 'need-something': return '/need-something';
     case 'protection': return '/protection';
@@ -103,7 +104,7 @@ function pathToRoute(pathname: string, search: string): Route {
   const parts = pathname.split('/').filter(Boolean);
   const [first, second] = parts;
   switch (first) {
-    case 'edit-listing': return second ? { name: 'edit-listing',id: second } : { name: 'owner-dashboard' };
+    case 'edit-listing': return second ? { name: 'edit-listing',id: second, requestId: new URLSearchParams(search).get('request') ?? undefined } : { name: 'owner-dashboard' };
     case undefined: return { name: 'home' };
     case 'search': {
       const qp = new URLSearchParams(search);
@@ -117,7 +118,7 @@ function pathToRoute(pathname: string, search: string): Route {
         locationLabel: qp.get('loc') ?? undefined,
       };
     }
-    case 'listing': return second ? { name: 'listing', id: second } : { name: 'home' };
+    case 'listing': return second ? { name: 'listing', id: second, requestId: new URLSearchParams(search).get('request') ?? undefined } : { name: 'home' };
     case 'checkout': {
       if (!second) return { name: 'home' };
       const qp = new URLSearchParams(search);
@@ -138,7 +139,7 @@ function pathToRoute(pathname: string, search: string): Route {
       if (second === 'renter') return { name: 'dashboard', tab: 'renting' };
       return { name: 'dashboard', tab: params.get('tab') === 'lending' ? 'lending' : 'renting' };
     }
-    case 'create-listing': return { name: 'create-listing' };
+    case 'create-listing': return { name: 'create-listing', requestId: new URLSearchParams(search).get('request') ?? undefined };
     case 'check-in': return second ? { name: 'check-in', id: second } : { name: 'home' };
     case 'check-out': return second ? { name: 'check-out', id: second } : { name: 'home' };
     case 'item-passport': return second ? { name: 'item-passport', id: second } : { name: 'home' };
@@ -149,6 +150,7 @@ function pathToRoute(pathname: string, search: string): Route {
     case 'profile': return { name: 'trust-profile' };
     case 'messages': return second ? { name: 'conversation', id: second } : { name: 'messaging' };
     case 'requests': {
+      if (second && parts[2] === 'matches') return { name: 'requests', requestId: second, matches: true };
       const tab = new URLSearchParams(search).get('tab');
       return { name: 'requests', tab: tab === 'mine' || tab === 'offers' ? tab : 'browse' };
     }

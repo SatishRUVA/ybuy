@@ -7,6 +7,7 @@ const source = readFileSync('src\\lib\\listing-availability.ts', 'utf8')
   .replace(/^import .*$/gm, '').replace(/^export /gm, '');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 const { listingAvailabilityError: validate } = runInNewContext(`${compiled}\n({ listingAvailabilityError });`, {
+  MAX_BOOKING_RANGE_DAYS: 30,
   todayIso: () => '2026-10-28',
   addDaysIso: (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10),
 }) as { listingAvailabilityError: (start: string, end: string) => string | undefined };
@@ -15,6 +16,16 @@ test('owner availability accepts up to thirty calendar days within the schedulin
   expect(validate('2026-10-28', '2026-11-27')).toBeUndefined();
   expect(validate('2027-03-27', '2027-04-26')).toBeUndefined();
   expect(validate('2027-04-25', '2027-04-26')).toBeUndefined();
+});
+
+test('listing expiry uses the exclusive end date and preserves undated legacy listings', () => {
+  const { listingAvailabilityExpired } = runInNewContext(`${compiled}\n({ listingAvailabilityExpired });`, {
+    MAX_BOOKING_RANGE_DAYS: 30,
+  }) as { listingAvailabilityExpired: (end: string | null | undefined, today: string) => boolean };
+  expect(listingAvailabilityExpired('2026-11-01', '2026-11-02')).toBe(true);
+  expect(listingAvailabilityExpired('2026-11-02', '2026-11-02')).toBe(true);
+  expect(listingAvailabilityExpired('2026-11-03', '2026-11-02')).toBe(false);
+  expect(listingAvailabilityExpired(null, '2026-11-02')).toBe(false);
 });
 
 test('owner availability rejects thirty-one days even within the scheduling horizon', () => {

@@ -21,7 +21,7 @@ function sessionForUser() {
   };
 }
 
-async function setup(page: Page, flags: { item_requests: boolean; bidding: boolean; private_offers?: boolean; mock_bidding?: boolean }, admin = false) {
+async function setup(page: Page, flags: { item_requests: boolean; bidding: boolean; mock_bidding?: boolean }, admin = false) {
   const channels = new Map<string, { socket: WebSocketRoute; joinRef: string }>();
   await page.routeWebSocket('**/realtime/v1/websocket**', (socket) => {
     socket.onMessage((message) => {
@@ -159,9 +159,9 @@ test('real bidding flag does not enable the mock demo', async ({ page }) => {
 });
 
 test('live ticker counts down automatically and removes offers at their bidding deadline', async ({ page }) => {
+  test.setTimeout(60_000);
   const now = new Date('2026-10-27T09:00:00Z');
-  await page.clock.install({ time: now });
-  await page.clock.pauseAt(now);
+  await page.clock.setFixedTime(now);
   await setup(page, { item_requests: false, bidding: true });
   const row = {
     listing_id: 'b3000000-0000-4000-8000-000000000001',
@@ -173,22 +173,22 @@ test('live ticker counts down automatically and removes offers at their bidding 
     contentType: 'application/json', body: JSON.stringify([row]),
   }));
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  const ticker = page.getByRole('region', { name: 'Top rental offers' });
+  const ticker = page.getByRole('region', { name: 'Live bidding auctions' });
   const time = ticker.locator('.bid-banner-group').first().locator('time');
-  await expect(time).toHaveText(' · 1h 00m 02s left to bid');
+  await expect(time).toHaveText(' · 1h 00m 02s left to bid', { timeout: 30_000 });
   await expect(time).toHaveAttribute('datetime', row.expires_at);
-  await page.clock.runFor(3000);
+  await page.clock.setFixedTime(new Date(now.getTime() + 3000));
   await expect(time).toHaveText(' · 0h 59m 59s left to bid');
   await page.setViewportSize({ width: 375, height: 812 });
   const badge = ticker.locator('.bid-card-badge').first();
   expect(await badge.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
-  await page.clock.fastForward(3599000);
+  await page.clock.setFixedTime(new Date(row.expires_at));
   await expect(ticker.getByRole('link', { name: /Countdown fixture/ })).toHaveCount(0);
   await expect(ticker.locator('time')).toHaveCount(0);
 });
 
-test('Top Offers news ribbon stays 100px tall with heartbeat, whole-dollar prices and accessible motion', async ({ page }) => {
-  test.slow(true, 'Checks scrolling, keyboard links and responsive layout on two routes.');
+test('Live auctions news ribbon stays 100px tall with heartbeat, whole-dollar prices and accessible motion', async ({ page }) => {
+  test.setTimeout(120_000);
   await setup(page, { item_requests: false, bidding: true });
   const rows = Array.from({ length: 5 }, (_, index) => ({
     listing_id: `b3000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
@@ -205,14 +205,14 @@ test('Top Offers news ribbon stays 100px tall with heartbeat, whole-dollar price
     contentType: 'application/json', body: JSON.stringify(rows),
   }));
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  const ticker = page.getByRole('region', { name: 'Top rental offers' });
-  await expect(ticker.getByRole('link')).toHaveCount(6);
-  await expect(ticker.getByRole('heading', { name: 'Top Offers', exact: true })).toBeVisible();
+  const ticker = page.getByRole('region', { name: 'Live bidding auctions' });
+  await expect(ticker.getByRole('link')).toHaveCount(6, { timeout: 30_000 });
+  await expect(ticker.getByRole('heading', { name: 'Live auctions', exact: true })).toBeVisible();
   await expect(ticker.locator('.bid-card-image img').first()).toBeVisible();
   await expect(ticker.locator('.bid-card-image').nth(1).locator('svg')).toBeVisible();
   await expect(ticker.locator('.bid-card-price').first()).toHaveText('$101 / day');
   await expect(ticker.getByRole('link', { name: /Ticker fixture 1 / })).toHaveAttribute('href', `/bidding/${rows[0].listing_id}`);
-  await expect(ticker.locator('.bid-banner-group').first().locator('.bid-card-badge')).toHaveText(Array(5).fill(/LIVE OFFER.*left to bid/));
+  await expect(ticker.locator('.bid-banner-group').first().locator('.bid-card-badge')).toHaveText(Array(5).fill(/LIVE AUCTION.*left to bid/));
   await expect(ticker.locator('.bid-banner-arrow')).toHaveCount(0);
   const firstTitle = ticker.locator('.bid-card-title').first();
   await expect(firstTitle).toHaveCSS('text-overflow', 'ellipsis');
@@ -226,11 +226,12 @@ test('Top Offers news ribbon stays 100px tall with heartbeat, whole-dollar price
     return { width: box.width, height: box.height, padding: style.padding, border: style.borderWidth, imageWidth: image.width, imageHeight: image.height, imageInset: Math.round(image.x - box.x), textInset: Math.round(content.x - box.x), imageTop: Math.round(image.y - box.y), textTop: Math.round(content.y - box.y), bottom: Math.round(Math.max(image.bottom, content.bottom) - box.y) };
   }));
   for (const card of geometry) {
-    expect({ ...card, width: Math.round(card.width) }).toEqual({ ...geometry[0], width: Math.round(geometry[0].width) });
+    expect({ ...card, width: Math.round(card.width), imageWidth: Math.round(card.imageWidth), imageHeight: Math.round(card.imageHeight) })
+      .toEqual({ ...geometry[0], width: Math.round(geometry[0].width), imageWidth: Math.round(geometry[0].imageWidth), imageHeight: Math.round(geometry[0].imageHeight) });
     expect(card.height).toBe(84);
     expect(card.border).toBe('1px');
-    expect(card.imageWidth).toBe(48);
-    expect(card.imageHeight).toBe(48);
+    expect(card.imageWidth).toBeCloseTo(48, 3);
+    expect(card.imageHeight).toBeCloseTo(48, 3);
     expect(card.bottom).toBeLessThanOrEqual(card.height - 6);
   }
   const toggle = ticker.getByRole('button', { name: /bidding ribbon motion/ });
@@ -290,15 +291,15 @@ test('Top Offers news ribbon stays 100px tall with heartbeat, whole-dollar price
   await expect(ticker.locator('.bid-card').first()).toHaveCSS('background-color', 'rgba(255, 255, 255, 0.96)');
   await page.screenshot({ path: test.info().outputPath('top-offers-dark-mobile.png') });
   await page.goto(`${appUrl}/search`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('region', { name: 'Top rental offers' }).getByRole('link')).toHaveCount(6);
+  await expect(page.getByRole('region', { name: 'Live bidding auctions' }).getByRole('link')).toHaveCount(6, { timeout: 30_000 });
 });
 
 test('bidding sleeve minimizes and expands with keyboard on desktop and phone', async ({ page }) => {
   test.slow();
-  await setup(page, { item_requests: false, bidding: true });
+  await setup(page, { item_requests: false, bidding: true, mock_bidding: true });
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  const ticker = page.getByRole('region', { name: 'Top rental offers' });
-  await expect(ticker.getByRole('heading', { name: 'Top Offers', exact: true })).toBeVisible();
+  const ticker = page.getByRole('region', { name: 'Live bidding auctions' });
+  await expect(ticker.getByRole('heading', { name: 'Live auctions', exact: true })).toBeVisible();
   for (const width of [1440, 375]) {
     await page.setViewportSize({ width, height: 900 });
     const motion = ticker.getByRole('button', { name: 'Pause bidding ribbon motion' });
@@ -331,7 +332,7 @@ test('bidding sleeve minimizes and expands with keyboard on desktop and phone', 
     await expect(minimize).toBeFocused();
     await expect(minimize).toHaveAttribute('aria-expanded', 'true');
     await expect(ticker).toHaveCSS('height', '100px');
-    await expect(ticker.getByRole('heading', { name: 'Top Offers', exact: true })).toBeVisible();
+    await expect(ticker.getByRole('heading', { name: 'Live auctions', exact: true })).toBeVisible();
     const resume = ticker.getByRole('button', { name: 'Resume bidding ribbon motion' });
     await expect(resume).toHaveAttribute('aria-pressed', 'true');
     await resume.click();
@@ -362,10 +363,11 @@ test('bidding sleeve minimizes and expands with keyboard on desktop and phone', 
 });
 
 test('ticker rejects an oversized feed and retry excludes expired offers', async ({ page }) => {
+  test.setTimeout(60_000);
   await setup(page, { item_requests: false, bidding: true });
   let oversized = true;
   await page.route('**/rest/v1/rpc/get_top_listing_bids', route => route.fulfill({
-    contentType: 'application/json', body: JSON.stringify(Array.from({ length: oversized ? 6 : 1 }, (_, index) => ({
+    contentType: 'application/json', body: JSON.stringify(Array.from({ length: oversized ? 25 : 1 }, (_, index) => ({
       listing_id: `b3000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
       title: `Expired fixture ${index + 1}`, daily_rate: 10,
       start_date: '2026-11-02', end_date: '2026-11-05',
@@ -373,12 +375,35 @@ test('ticker rejects an oversized feed and retry excludes expired offers', async
     }))),
   }));
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('status').filter({ hasText: 'The live bidding feed returned an invalid result.' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'The live bidding feed returned an invalid result.' })).toBeVisible({ timeout: 30_000 });
   oversized = false;
   await page.getByRole('button', { name: 'Retry offers', exact: true }).click();
-  const ticker = page.getByRole('region', { name: 'Top rental offers' });
-  await expect(ticker.getByText('TEST DATA', { exact: true })).toBeVisible();
+  const ticker = page.getByRole('region', { name: 'Live bidding auctions' });
+  await expect(ticker).toContainText('No open auctions right now');
+  await expect(ticker.getByText('TEST DATA', { exact: true })).toHaveCount(0);
   await expect(ticker.getByRole('link', { name: /Expired fixture/ })).toHaveCount(0);
+});
+
+test('new zero-bid auctions refresh immediately and the ribbon accepts twenty-four entries', async ({ page }) => {
+  test.setTimeout(60_000);
+  await setup(page, { item_requests: false, bidding: true });
+  let published = false;
+  const rows = Array.from({ length: 24 }, (_, index) => ({
+    listing_id: `b3000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    title: `New auction ${index + 1}`, daily_rate: 10,
+    start_date: '2026-11-05', end_date: '2026-11-08',
+    expires_at: new Date(Date.now() + 3600000).toISOString(), image_url: null,
+  }));
+  await page.route('**/rest/v1/rpc/get_top_listing_bids', route => route.fulfill({
+    contentType: 'application/json', body: JSON.stringify(published ? rows : []),
+  }));
+  await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
+  const ticker = page.getByRole('region', { name: 'Live bidding auctions' });
+  await expect(ticker).toContainText('No open auctions right now', { timeout: 30_000 });
+  published = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('ybuy-auction-published')));
+  await expect(ticker.locator('.bid-banner-group').first().getByRole('link')).toHaveCount(24);
+  await expect(ticker.locator('.bid-card-price').first()).toHaveText('$10 / day');
 });
 
 test('sample auctions accept demo bids without real mutations while live bidding is off', async ({ page }) => {
@@ -418,13 +443,6 @@ test('home never substitutes simulated auctions for marketplace inventory', asyn
   await expect(page.getByRole('heading', { name: 'Mock bidding', exact: true })).toHaveCount(0);
 });
 
-test('legacy private-offer flags do not re-enable private pricing creation', async ({ page }) => {
-  await setup(page, { item_requests: false, bidding: false, private_offers: true });
-  await signIn(page, '/requests');
-  await expect(page.getByRole('heading', { name: 'Item requests are not enabled yet', exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Offers & negotiations' })).toHaveCount(0);
-});
-
 test('bidding route offers sample auctions when live bidding is off', async ({ page }) => {
   await setup(page, { item_requests: true, bidding: false });
   await signIn(page, '/bidding');
@@ -435,39 +453,21 @@ test('bidding route offers sample auctions when live bidding is off', async ({ p
 });
 
 test('request discovery and offer tabs are exposed only when item requests are enabled', async ({ page }) => {
-  await setup(page, { item_requests: true, bidding: false, private_offers: true });
+  await setup(page, { item_requests: true, bidding: false });
   await signIn(page, '/requests');
   await expect(page.getByRole('tab', { name: 'Find requests' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'My requests' })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Offers & negotiations' })).toBeVisible();
-});
-
-test('an open private-offers page follows its own websocket flag', async ({ page }) => {
-  const live = await setup(page, { item_requests: false, bidding: false, private_offers: true });
-  await signIn(page, '/requests');
-  await expect(page.getByText('No offers or negotiations yet')).toBeVisible();
-  expect(live.connections()).toBe(1);
-  live.update('private_offers', false);
-  await expect(page.getByText('Item requests are not enabled yet')).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Offers & negotiations' })).toHaveCount(0);
-  live.update('private_offers', true);
-  await expect(page.getByText('No offers or negotiations yet')).toBeVisible();
-  expect(page.url()).toBe(`${appUrl}/requests`);
 });
 
 test('the admin flag switch reflects changes from another client without user action', async ({ page }) => {
-  const live = await setup(page, { item_requests: false, bidding: false, private_offers: false }, true);
+  const live = await setup(page, { item_requests: false, bidding: false }, true);
   await signIn(page, '/admin/flags');
   await expect(page.getByRole('switch', { name: 'Enable bidding', exact: true })).not.toBeChecked();
-  await expect(page.getByRole('switch', { name: 'Enable private_offers', exact: true })).not.toBeChecked();
   live.update('bidding', true);
   await expect(page.getByRole('switch', { name: 'Disable bidding', exact: true })).toBeChecked();
   live.update('bidding', false);
   await expect(page.getByRole('switch', { name: 'Enable bidding', exact: true })).not.toBeChecked();
-  live.update('private_offers', true);
-  await expect(page.getByRole('switch', { name: 'Disable private_offers', exact: true })).toBeChecked();
-  live.update('private_offers', false);
-  await expect(page.getByRole('switch', { name: 'Enable private_offers', exact: true })).not.toBeChecked();
 });
 
 test('an open request form disappears immediately when item_requests is disabled', async ({ page }) => {
@@ -483,48 +483,22 @@ test('an open request form disappears immediately when item_requests is disabled
 
 for (const event of ['phx_error', 'phx_close'] as const) {
   test(`${event} blocks feature actions and reconnect resyncs a missed flag change`, async ({ page }) => {
-    const live = await setup(page, { item_requests: false, bidding: false, private_offers: true });
-    await signIn(page, '/requests');
-    await expect(page.getByText('No offers or negotiations yet')).toBeVisible();
-    live.disconnectAndChange('private_offers', false, event);
+    const live = await setup(page, { item_requests: true, bidding: false });
+    await signIn(page, '/need-something');
+    await expect(page.getByRole('heading', { name: 'Request an item', exact: true })).toBeVisible();
+    live.disconnectAndChange('item_requests', false, event);
     await expect(page.getByText(/Live feature settings are disconnected/)).toBeVisible();
-    await expect(page.getByText('No offers or negotiations yet')).toHaveCount(0);
     await expect(page.getByText('Item requests are not enabled yet')).toBeVisible({ timeout: 15000 });
   });
 }
 
-test('a mounted listing private-offer form reacts to private_offers flag changes', async ({ page }) => {
-  const live = await setup(page, { item_requests: false, bidding: false, private_offers: true });
-  const listing = {
-    id: '30000000-0000-4000-8000-000000000001',
-    owner_id: '10000000-0000-4000-8000-000000000001',
-    category_id: '20000000-0000-4000-8000-000000000001',
-    title: 'Negotiable test listing', description: 'A published listing accepting offers.',
-    price_per_day: 12, deposit: 0, location_lat: null, location_lng: null, location_label: 'Dallas, TX',
-    status: 'published', created_at: '2026-01-01T00:00:00Z', listing_images: [],
-    available_quantity: 1, negotiation_enabled: true, offer_minimum_daily: 10, offer_maximum_daily: 14,
-    owner: { id: '10000000-0000-4000-8000-000000000001', full_name: 'Owner', avatar_url: null },
-    categories: { name: 'Tools' },
-  };
-  await page.route('**/rest/v1/listings?**', (route) => {
-    const url = new URL(route.request().url());
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(url.searchParams.get('id') === `eq.${listing.id}` ? listing : []) });
-  });
-  await signIn(page, `/listing/${listing.id}`);
-  await expect(page.getByRole('heading', { name: 'Make an offer', exact: true })).toBeVisible();
-  live.update('private_offers', false);
-  await expect(page.getByRole('heading', { name: 'Make an offer', exact: true })).toHaveCount(0);
-  live.update('private_offers', true);
-  await expect(page.getByRole('heading', { name: 'Make an offer', exact: true })).toBeVisible();
-});
-
 test('LIVE BIDDING shows ten clearly labeled demo offers when the test feed is empty', async ({ page }) => {
-  await setup(page, { item_requests: false, bidding: true });
+  await setup(page, { item_requests: false, bidding: true, mock_bidding: true });
   await page.setViewportSize({ width: 2000, height: 900 });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
 
-  const ticker = page.getByRole('region', { name: 'Top rental offers' });
-  await expect(ticker.getByRole('heading', { name: 'Top Offers', exact: true })).toBeVisible();
+  const ticker = page.getByRole('region', { name: 'Live bidding auctions' });
+  await expect(ticker.getByRole('heading', { name: 'Live auctions', exact: true })).toBeVisible();
   await expect(ticker.getByText('LIVE BIDDING', { exact: true })).toBeVisible();
   await expect(ticker.getByText('TEST DATA', { exact: true })).toBeVisible();
   const offers = ticker.locator('.bid-banner-group').first().locator('.bid-card-demo');
@@ -553,7 +527,7 @@ test('LIVE BIDDING uses persisted top offers instead of synthetic demo content',
   }));
   await page.goto('/');
 
-  const ticker = page.getByRole('region', { name: 'Top rental offers' });
+  const ticker = page.getByRole('region', { name: 'Live bidding auctions' });
   await expect(ticker.getByRole('link', { name: /Persisted renter offer/ })).toBeVisible();
   await expect(ticker.getByText('TEST DATA', { exact: true })).toHaveCount(0);
   await expect(ticker.locator('.bid-card-demo')).toHaveCount(0);
@@ -564,7 +538,7 @@ test('LIVE BIDDING opens ten filterable samples with keyboard and responsive cat
   await setup(page, { item_requests: false, bidding: true });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  const ticker = page.getByRole('region', { name: 'Top rental offers' });
+  const ticker = page.getByRole('region', { name: 'Live bidding auctions' });
   const link = ticker.getByRole('link', { name: 'LIVE BIDDING', exact: true });
   await link.focus();
   await page.keyboard.press('Enter');

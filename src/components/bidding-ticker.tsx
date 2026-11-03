@@ -64,6 +64,7 @@ function timeToBid(expiresAt: string, now: number): string {
 export function BiddingTicker() {
   const { navigate } = useRouter();
   const { enabled } = useFeatureFlag('bidding');
+  const { enabled: mockBidding } = useFeatureFlag('mock_bidding');
   const [rows, setRows] = useState<TopBid[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -71,9 +72,8 @@ export function BiddingTicker() {
   const [motionStopped, setMotionStopped] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const contentId = useId();
-  const testEnvironment = import.meta.env.VITE_TEST_ENVIRONMENT === 'true';
   const liveOffers = rows?.filter((row) => Date.parse(row.expires_at) > now) ?? [];
-  const demoOffers = testEnvironment && rows !== null && liveOffers.length === 0 ? createDemoOffers(now) : [];
+  const demoOffers = mockBidding && !error && rows !== null && liveOffers.length === 0 ? createDemoOffers(now) : [];
   const offers = liveOffers.length ? liveOffers : demoOffers;
   const isDemoFeed = liveOffers.length === 0 && demoOffers.length > 0;
 
@@ -88,7 +88,11 @@ export function BiddingTicker() {
         setRows([]);
         return;
       }
-      if (!Array.isArray(response.data) || response.data.length > 5) {
+      if (!Array.isArray(response.data) || response.data.length > 24
+        || response.data.some(row => !row || typeof row.listing_id !== 'string' || typeof row.title !== 'string'
+          || !Number.isFinite(row.daily_rate) || row.daily_rate <= 0
+          || !Number.isFinite(Date.parse(row.expires_at)) || !Number.isFinite(Date.parse(row.start_date))
+          || !Number.isFinite(Date.parse(row.end_date)) || (row.image_url !== null && typeof row.image_url !== 'string'))) {
         setError('The live bidding feed returned an invalid result.');
         setRows([]);
         return;
@@ -102,17 +106,19 @@ export function BiddingTicker() {
     const clock = window.setInterval(() => setNow(Date.now()), 1000);
     const visible = () => { if (document.visibilityState === 'visible') void refresh(); };
     document.addEventListener('visibilitychange', visible);
+    window.addEventListener('ybuy-auction-published', refresh);
     return () => {
       active = false;
       window.clearInterval(poll);
       window.clearInterval(clock);
       document.removeEventListener('visibilitychange', visible);
+      window.removeEventListener('ybuy-auction-published', refresh);
     };
   }, [enabled, retry]);
 
   if (!enabled) return null;
   return (
-    <section aria-label="Top rental offers" className={`bid-banner${motionStopped ? ' bid-banner-stopped' : ''}${collapsed ? ' bid-banner-collapsed' : ''}`}>
+    <section aria-label="Live bidding auctions" className={`bid-banner${motionStopped ? ' bid-banner-stopped' : ''}${collapsed ? ' bid-banner-collapsed' : ''}`}>
       <div id={contentId} className="bid-banner-inner" hidden={collapsed}>
         {error ? (
           <div className="bid-banner-error">
@@ -137,21 +143,21 @@ export function BiddingTicker() {
             {motionStopped ? <Play size={12} aria-hidden="true" /> : <Pause size={12} aria-hidden="true" />}
           </button>
           </div>
-          <h2>Top Offers</h2>
-          <p className="bid-banner-subtitle">Auction bids · refreshes every 15 sec</p>
+          <h2>Live auctions</h2>
+          <p className="bid-banner-subtitle">New auctions first · refreshes every 15 sec</p>
           {isDemoFeed && <span className="bid-banner-demo">TEST DATA</span>}
         </div>
         {rows === null ? (
-          <p role="status" className="bid-banner-message">Loading top offers…</p>
+          <p role="status" className="bid-banner-message">Loading live auctions…</p>
         ) : offers.length === 0 ? (
-          <p className="bid-banner-message">No eligible offers right now. <a className="underline font-semibold" href="/search">Explore listings</a></p>
+          <p className="bid-banner-message">No open auctions right now. Scheduled auctions appear when bidding opens. <a className="underline font-semibold" href="/bidding">View bidding</a></p>
         ) : (
           <div className="bid-banner-viewport" tabIndex={0} role="group" aria-label={isDemoFeed ? 'Sample rental offers' : 'Live rental offers'}>
             <div className="bid-banner-track">
               {[0, 1].map(copy => (
                 <ul key={copy} className={`bid-banner-group${copy ? ' bid-banner-copy' : ''}`} aria-hidden={copy ? true : undefined}>
                   {offers.map((row, index) => {
-                    const badge = row.synthetic ? DEMO_BADGES[index % DEMO_BADGES.length] : { label: 'LIVE OFFER', Icon: Tag, tone: 'deal' };
+                    const badge = row.synthetic ? DEMO_BADGES[index % DEMO_BADGES.length] : { label: 'LIVE AUCTION', Icon: Tag, tone: 'deal' };
                     const card = (
                       <>
                         <span className="bid-card-rank">{String(index + 1).padStart(2, '0')}</span>

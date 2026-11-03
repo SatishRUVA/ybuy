@@ -454,3 +454,6 @@ enabled = true
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
 [functions.expire-checkout-sessions]
 verify_jwt = false
+
+[functions.process-deposit-authorizations]
+verify_jwt = false

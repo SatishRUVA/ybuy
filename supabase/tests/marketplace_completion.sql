@@ -9,9 +9,6 @@ insert into auth.sessions(id,user_id) select
  ('92000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  ('91000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid from generate_series(1,3) n;
 insert into public.categories(id,name) values('93000000-0000-4000-8000-000000000001','Completion fixture');
--- These approved offer bounds exist only inside this rollback-only SQL fixture.
-update public.app_settings set value='true'::jsonb where key='listing_offers_configured';
-update public.app_settings set value='0.5'::jsonb where key in ('listing_offer_below_pct','listing_offer_above_pct');
 update public.app_settings set value='366'::jsonb where key='listing_duration_days';
 insert into public.listings(id,owner_id,category_id,title,description,price_per_day,deposit,status,estimated_value,item_condition,location_lat,location_lng,availability_start,availability_end)
 values
@@ -27,10 +24,6 @@ update public.listings set status='published' where id in
  ('94000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000002');
 set local role authenticated;
 set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
-select public.owner_save_offer_preferences('94000000-0000-4000-8000-000000000002',
- (select revision from public.listings where id='94000000-0000-4000-8000-000000000002'),
- jsonb_build_object('negotiation_enabled',true,'offer_minimum_daily',5,'offer_maximum_daily',15,
-  'offer_target_daily',10,'offer_start_date',current_date,'offer_end_date',current_date+366,'offer_expiration_hours',72));
 reset role;
 update public.feature_flags set enabled=true where key in ('bidding','item_requests');
 
@@ -45,8 +38,6 @@ select throws_ok($$update public.listings set price_per_week='NaN' where id='940
  '23514',null,'Direct writes cannot introduce nonfinite weekly prices');
 select throws_ok($$update public.listings set deposit='NaN' where id='94000000-0000-4000-8000-000000000001'$$,
  '23514',null,'Direct writes cannot introduce a nonfinite security deposit');
-select throws_ok($$update public.listings set offer_minimum_daily=20,offer_guardrail_pct=.3 where id='94000000-0000-4000-8000-000000000001'$$,
- '23514',null,'Impossible minimum/guardrail combinations rejected');
 
 set local role authenticated;
 set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
@@ -106,11 +97,8 @@ select is((select status from public.bookings where id='95000000-0000-4000-8000-
 select lives_ok($$select public.confirm_booking_payment('95000000-0000-4000-8000-000000000001','cs_completion','pi_completion',76.4)$$,'Delayed webhook retry is idempotent');
 select is((select count(*)::integer from public.payments where booking_id='95000000-0000-4000-8000-000000000001'),1,'Retry does not duplicate payment');
 
-select ok(public.listing_offer_within_rules('94000000-0000-4000-8000-000000000002',10,current_date+10,current_date+12),'Listing offer accepts allowed price/dates');
-update public.listings set offer_minimum_daily=9,offer_maximum_daily=13,offer_target_daily=10,offer_guardrail_pct=.3 where id='94000000-0000-4000-8000-000000000002';
-select ok(not public.listing_offer_within_rules('94000000-0000-4000-8000-000000000002',8,current_date+10,current_date+12),'Listing minimum is authoritative');
-select ok(not public.listing_offer_within_rules('94000000-0000-4000-8000-000000000002',14,current_date+10,current_date+12),'Listing maximum guardrail is authoritative');
-select ok(not public.listing_offer_within_rules('94000000-0000-4000-8000-000000000002','NaN',current_date+10,current_date+12),'Nonfinite offers are excluded');
+select ok(not has_function_privilege('authenticated','public.listing_offer_within_rules(uuid,numeric,date,date)','EXECUTE'),
+ 'Listing offer eligibility helper is revoked');
 
 create temp table located_payload as select jsonb_build_object(
  'p_id','96000000-0000-4000-8000-000000000001','p_idempotency_key','97000000-0000-4000-8000-000000000001',
@@ -181,60 +169,14 @@ select is((select status from public.bookings where id='95000000-0000-4000-8000-
 select is((select count(*)::integer from public.checkout_payment_exceptions where booking_id='95000000-0000-4000-8000-000000000002'),1,'Financial exception is persisted');
 select lives_ok($$select public.confirm_booking_payment('95000000-0000-4000-8000-000000000002','cs_conflict','pi_conflict',72)$$,'Repeated conflicting payment does not duplicate reconciliation');
 
-update public.listings set price_per_day=1000+substring(title from '[0-9]+$')::integer
- where title in (select 'Completion batch camera '||n from generate_series(1,7) n)
- and category_id='93000000-0000-4000-8000-000000000001';
-set local role authenticated;
-set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
-do $$ declare v_listing record; begin
-  for v_listing in select id,revision,price_per_day,availability_start,availability_end from public.listings
-    where title in (select 'Completion batch camera '||n from generate_series(1,7) n)
-      and category_id='93000000-0000-4000-8000-000000000001'
-  loop
-    perform public.owner_save_offer_preferences(v_listing.id,v_listing.revision,jsonb_build_object(
-      'negotiation_enabled',true,'offer_minimum_daily',round(v_listing.price_per_day*0.5,2),
-      'offer_maximum_daily',round(v_listing.price_per_day*1.5,2),'offer_target_daily',v_listing.price_per_day,
-      'offer_start_date',v_listing.availability_start,'offer_end_date',v_listing.availability_end,'offer_expiration_hours',72));
-  end loop;
-end $$;
-reset role;
-set local role authenticated;
-set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000002","exp":4102444800}';
-select lives_ok(format('select public.create_marketplace_offer(null,%L,current_date+20,current_date+22,%L,null,%L)',
- id,price_per_day,gen_random_uuid()),'Renter creates eligible persisted bid: '||title)
- from public.listings where category_id='93000000-0000-4000-8000-000000000001' and price_per_day>1000;
-select is(jsonb_array_length(public.get_top_listing_bids()),0,'Private offers never enter the public competitive-bidding ticker');
-select is((public.get_top_listing_bids()->0->>'daily_rate')::numeric,null::numeric,'Private offer rates are not disclosed publicly');
-select ok(not exists(select 1 from jsonb_array_elements(public.get_top_listing_bids()) bid
- where bid ?| array['ordering_id','proposed_by','renter_id','owner_id','negotiation_id','proposal_id']),'Public ticker omits participant and private proposal identities');
-reset role;
-update public.negotiation_proposals set expires_at=now()-interval '1 second' where daily_rate=1007 and negotiation_id in
- (select id from public.marketplace_negotiations where renter_id='91000000-0000-4000-8000-000000000002');
-select is((public.get_top_listing_bids()->0->>'daily_rate')::numeric,null::numeric,'Expired private offers stay out of public feed');
-update public.marketplace_negotiations set status='withdrawn' where id in
- (select negotiation_id from public.negotiation_proposals where daily_rate=1006);
-select is((public.get_top_listing_bids()->0->>'daily_rate')::numeric,null::numeric,'Withdrawn private negotiations stay private');
+select ok(not has_function_privilege('authenticated','public.create_marketplace_offer(uuid,uuid,date,date,numeric,text,uuid)','EXECUTE'),
+ 'Clients cannot create private request or listing offers');
+select ok(not has_function_privilege('authenticated','public.respond_to_marketplace_offer(uuid,text,numeric,date,date,text)','EXECUTE'),
+ 'Clients cannot accept or counter private offers');
+select is(jsonb_array_length(public.get_top_listing_bids()),0,'Private offers cannot enter the public bidding ticker');
 update public.feature_flags set enabled=false where key='bidding';
 select is(jsonb_array_length(public.get_top_listing_bids()),0,'Disabling bidding clears the public feed');
 
-update public.listings set available_quantity=2
- where title='Completion batch camera 8' and category_id='93000000-0000-4000-8000-000000000001';
-set local role authenticated;
-set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
-select public.owner_save_offer_preferences(id,revision,jsonb_build_object('negotiation_enabled',true,
- 'offer_minimum_daily',5,'offer_maximum_daily',15,'offer_target_daily',10,
- 'offer_start_date',availability_start,'offer_end_date',availability_end,'offer_expiration_hours',72))
-from public.listings where title='Completion batch camera 8' and category_id='93000000-0000-4000-8000-000000000001';
-reset role;
-select id,owner_id,'91000000-0000-4000-8000-000000000003',current_date+20,current_date+22,10,2,20,.1,2,0,22,'confirmed'
- from public.listings where title='Completion batch camera 8' and category_id='93000000-0000-4000-8000-000000000001';
-update public.feature_flags set enabled=true where key='bidding';
-set local role authenticated;
-set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000002","exp":4102444800}';
-select lives_ok(format('select public.create_marketplace_offer(null,%L,current_date+20,current_date+22,10,null,%L)',id,gen_random_uuid()),
- 'A partially booked two-unit listing still accepts a one-unit offer') from public.listings
- where title='Completion batch camera 8' and category_id='93000000-0000-4000-8000-000000000001';
-reset role;
 update public.item_requests set visibility='private' where id='96000000-0000-4000-8000-000000000001';
 select ok(not has_function_privilege('authenticated','public.claim_notification_email_jobs(uuid,integer)','execute'),'Client cannot claim trusted email work');
 select is((select count(*)::integer from public.claim_notification_email_jobs('91000000-0000-4000-8000-000000000002',25) claimed

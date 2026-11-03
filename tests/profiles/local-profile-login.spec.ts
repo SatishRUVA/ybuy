@@ -10,6 +10,44 @@ test.beforeEach(async ({ page }) => {
   await page.route(/^https:\/\/(?:fonts\.googleapis\.com|fonts\.gstatic\.com|images\.pexels\.com)\//, (route) => route.abort());
 });
 
+test('main-site local sign-in exposes the Profile selector', async ({ page }) => {
+  test.skip(process.env.VITE_SITE_VARIANT !== 'main', 'Run with VITE_SITE_VARIANT=main.');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Sign in / Join' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Choose a local profile' });
+  const select = dialog.getByLabel('Profile', { exact: true });
+  await expect(select).toBeEnabled();
+  await expect(select.locator('optgroup[label="Owners"] option')).toHaveCount(10);
+  await expect(select.locator('optgroup[label="Renters"] option')).toHaveCount(10);
+  await expect(select.locator('optgroup[label="Admin"] option')).toHaveCount(1);
+  await expect(select.locator('optgroup[label="Super Admin"] option')).toHaveCount(1);
+});
+
+test('shared palette matches approved core, category and status colors', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const expected = {
+    ink: '#172321', blue: '#3157E1', lime: '#D8FF68', forest: '#163D34',
+    white: '#FFFFFF', paper: '#F7F6F1', sand: '#EEEAE0', border: '#DCDED7', muted: '#62706D',
+    good: '#178455', 'good-bg': '#DFF2E8', pending: '#8A6110', 'pending-bg': '#FFF1CF', info: '#EDF0FF',
+    'category-cameras': '#DCE8F7', 'category-outdoor': '#DCEBDC', 'category-tools': '#F6E8B9', 'category-sports': '#F6D8C5',
+    'category-home': '#F5DFE4', 'category-fashion': '#E7E1F2', 'category-baby': '#D9EEE8', 'category-vehicles': '#E5E6E2',
+  };
+  const actual = await page.locator('.p1').first().evaluate((element, keys) => {
+    const style = getComputedStyle(element);
+    return Object.fromEntries(keys.map(key => [key, style.getPropertyValue(`--p1-${key}`).trim().toUpperCase()]));
+  }, Object.keys(expected));
+  expect(actual).toEqual(expected);
+  const categories = page.locator('.p1-category-grid');
+  await expect(categories.getByRole('button', { name: 'Tools & Equipment' })).toHaveCSS('background-color', 'rgb(246, 232, 185)');
+  await expect(categories.getByRole('button', { name: 'Outdoor & Camping' })).toHaveCSS('background-color', 'rgb(220, 235, 220)');
+  await expect(categories.getByRole('button', { name: 'Sports & Fitness' })).toHaveCSS('background-color', 'rgb(246, 216, 197)');
+  await expect(categories.getByRole('button', { name: 'Home & Garden' })).toHaveCSS('background-color', 'rgb(245, 223, 228)');
+  await page.goto('/preview-1/', { waitUntil: 'domcontentloaded' });
+  const card = page.locator('.p1-item').first();
+  await expect(card.locator('.p1-card-bottom .p1-button')).toHaveCSS('background-color', 'rgb(49, 87, 225)');
+  await expect(card.locator('.p1-item-price strong')).toHaveCSS('color', 'rgb(23, 35, 33)');
+});
+
 test('Login exposes exactly 22 named profiles without automatically signing in', async ({ page }) => {
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible();
@@ -32,12 +70,48 @@ test('Login exposes exactly 22 named profiles without automatically signing in',
   await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible();
 });
 
+test('top-right account dropdown exposes only sign-out and profile switching', async ({ page }) => {
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Choose a local profile' });
+  await picker.getByLabel('Profile', { exact: true }).selectOption({ label: 'Maya Patel - Owner' });
+  await expect(picker).not.toBeVisible();
+  const trigger = page.getByRole('button', { name: 'Open account menu', includeHidden: true });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const menu = page.getByRole('region', { name: 'Account actions', exact: true });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(menu.getByRole('button')).toHaveCount(2);
+    await expect(menu.getByRole('button', { name: 'Switch profile', exact: true })).toBeVisible();
+    await expect(menu.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
+    const bounds = await menu.boundingBox();
+    expect(bounds!.width).toBeLessThanOrEqual(200);
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    await page.keyboard.press('Escape');
+    await expect(menu).not.toBeVisible();
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await page.getByRole('link', { name: 'YBuy home', exact: true }).click();
+    await expect(menu).not.toBeVisible();
+  }
+  await trigger.click();
+  await page.getByRole('region', { name: 'Account actions' }).getByRole('button', { name: 'Switch profile' }).click();
+  await expect(picker).toBeVisible();
+  await expect(picker.getByLabel('Profile').locator('optgroup option')).toHaveCount(22);
+  await page.keyboard.press('Escape');
+  await trigger.click();
+  await page.getByRole('region', { name: 'Account actions' }).getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+});
+
 test('Owner listings use the Preview 1 workspace layout and remain responsive', async ({ page }) => {
   await page.goto('/dashboard?tab=lending', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Choose a local profile' });
   await dialog.getByLabel('Profile', { exact: true }).selectOption({ label: 'Maya Patel - Owner' });
-  await expect(page.getByRole('link', { name: 'Open your workspace' }).getByRole('img')).toHaveAttribute('alt', 'Maya Patel');
+  await expect(page.getByRole('button', { name: 'Open account menu' }).getByRole('img')).toHaveAttribute('alt', 'Maya Patel');
 
   const workspaceNav = page.getByRole('navigation', { name: 'Workspace navigation' });
   await workspaceNav.getByRole('link', { name: 'My listings' }).click();
@@ -64,7 +138,7 @@ test('all named accounts create real sessions with their own profile and databas
   for (const profile of profiles) {
     await select.selectOption(profile.id);
     await expect(dialog).not.toBeVisible();
-    await expect(page.getByRole('link', { name: 'Open your workspace' }).getByRole('img')).toHaveAttribute('alt', profile.label.split(' - ')[0]);
+    await expect(page.getByRole('button', { name: 'Open account menu' }).getByRole('img')).toHaveAttribute('alt', profile.label.split(' - ')[0]);
     const access = await page.evaluate(async () => {
       // @ts-expect-error Vite serves this module directly in the browser.
       const { supabase } = await import('/src/lib/supabase.ts');
@@ -92,7 +166,7 @@ test('all named accounts create real sessions with their own profile and databas
   }
   await page.keyboard.press('Escape');
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('link', { name: 'Open your workspace' }).getByRole('img')).toHaveAttribute('alt', 'Daniel Lawson');
+  await expect(page.getByRole('button', { name: 'Open account menu' }).getByRole('img')).toHaveAttribute('alt', 'Daniel Lawson');
   await page.setViewportSize({ width: 390, height: 844 });
   await openAccountTools(page);
   await page.getByRole('button', { name: 'Switch local profile' }).click();

@@ -5,9 +5,6 @@ import { requireMarketplaceCountry } from '@/lib/marketplace-countries';
 
 export type ItemRequestStatus =
   | 'open' | 'responses_received' | 'negotiating' | 'matched' | 'cancelled' | 'expired' | 'closed';
-export type NegotiationStatus =
-  | 'pending' | 'countered' | 'accepted' | 'declined' | 'withdrawn' | 'expired' | 'cancelled';
-export type ProposalStatus = Exclude<NegotiationStatus, 'countered'>;
 
 export interface ItemRequest {
   id: string;
@@ -34,43 +31,6 @@ export interface ItemRequest {
   categories?: { name: string } | null;
 }
 
-export interface NegotiationProposal {
-  id: string;
-  negotiation_id: string;
-  revision: number;
-  proposed_by: string;
-  proposed_to: string;
-  daily_rate: number;
-  start_date: string;
-  end_date: string;
-  message: string | null;
-  status: ProposalStatus;
-  expires_at: string;
-  created_at: string;
-}
-
-export interface MarketplaceNegotiation {
-  id: string;
-  item_request_id: string | null;
-  listing_id: string | null;
-  renter_id: string;
-  owner_id: string;
-  status: NegotiationStatus;
-  booking_id: string | null;
-  created_at: string;
-  item_requests: Pick<ItemRequest, 'id' | 'renter_id' | 'category_id' | 'title' | 'location_label' | 'status' | 'preferred_start_date' | 'preferred_end_date' | 'requested_quantity' | 'max_daily_budget'> | null;
-  listings: {
-    id: string;
-    title: string;
-    price_per_day: number;
-    deposit: number;
-    available_quantity: number;
-    listing_images: { url: string; sort_order: number }[];
-  } | null;
-  negotiation_proposals: NegotiationProposal[];
-  bookings: { id: string; status: string } | null;
-}
-
 export interface CreateRequestInput {
   id: string;
   idempotencyKey: string;
@@ -90,6 +50,7 @@ export interface CreateRequestInput {
   specifications: string;
   notes: string;
   images: File[];
+  mainSitePreferences?: { notifyMatches: boolean };
 }
 
 export interface OwnerListing {
@@ -200,7 +161,11 @@ export async function createItemRequest(input: CreateRequestInput, userId: strin
     p_reference_image_paths: referenceImagePaths,
     p_country_code: countryCode,
   };
-  const {data,error}=await supabase.rpc('create_located_item_request',{p_request:payload,p_latitude:input.latitude,p_longitude:input.longitude,p_radius_miles:input.radiusMiles===undefined?5:input.radiusMiles});
+  const args = { p_request: payload, p_latitude: input.latitude, p_longitude: input.longitude, p_radius_miles: input.radiusMiles === undefined ? 5 : input.radiusMiles };
+  const { data, error } = input.mainSitePreferences
+    ? await supabase.rpc('create_main_item_request', { ...args,
+      p_open_for_offers: false, p_notify_matches_in_app: input.mainSitePreferences.notifyMatches })
+    : await supabase.rpc('create_located_item_request', args);
   if (error) throw new Error(error.message);
   return data as ItemRequest;
 }
@@ -284,24 +249,6 @@ export async function fetchMyItemRequests(userId: string): Promise<ItemRequest[]
   return (data ?? []) as unknown as ItemRequest[];
 }
 
-const NEGOTIATION_SELECT = `
-  id,item_request_id,listing_id,renter_id,owner_id,status,booking_id,created_at,
-  item_requests(id,renter_id,category_id,title,location_label,status,preferred_start_date,preferred_end_date,requested_quantity,max_daily_budget),
-  listings(id,title,price_per_day,deposit,available_quantity,listing_images(url,sort_order)),
-  negotiation_proposals(id,negotiation_id,revision,proposed_by,proposed_to,daily_rate,start_date,end_date,message,status,expires_at,created_at),
-  bookings(id,status)
-`;
-
-export async function fetchMyNegotiations(userId: string): Promise<MarketplaceNegotiation[]> {
-  assertUuid(userId, 'user id');
-  const { data, error } = await supabase.from('marketplace_negotiations')
-    .select(NEGOTIATION_SELECT)
-    .or(`renter_id.eq.${userId},owner_id.eq.${userId}`)
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as unknown as MarketplaceNegotiation[];
-}
-
 export async function fetchMyOwnerListings(ownerId: string): Promise<OwnerListing[]> {
   assertUuid(ownerId, 'user id');
   const { data, error } = await supabase.from('listings')
@@ -311,17 +258,9 @@ export async function fetchMyOwnerListings(ownerId: string): Promise<OwnerListin
   return data ?? [];
 }
 
-export async function fetchItemRequestResponseCounts(requestIds: string[]): Promise<Record<string, number>> {
-  if (requestIds.length === 0) return {};
-  const { data, error } = await supabase.rpc('get_item_request_response_counts', { p_request_ids: requestIds });
-  if (error) throw new Error(error.message);
-  return Object.fromEntries(Object.entries(data as Record<string, number>).map(([id, count]) => [id, Number(count)]));
-}
-
 export interface MarketplaceNotification {
   id: string;
   item_request_id: string | null;
-  negotiation_id: string | null;
   event_type: string;
   title: string;
   body: string;
@@ -349,7 +288,8 @@ export async function fetchMarketplaceRequestEvents(requestId: string): Promise<
 
 export async function fetchMarketplaceNotifications(limit = 25, offset = 0): Promise<MarketplaceNotification[]> {
   const { data, error } = await supabase.from('marketplace_notifications')
-    .select('id,item_request_id,negotiation_id,event_type,title,body,created_at,read_at')
+    .select('id,item_request_id,event_type,title,body,created_at,read_at')
+    .is('negotiation_id', null)
     .order('created_at', { ascending: false }).order('id', { ascending: false })
     .range(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit) - 1);
   if (error) throw new Error(error.message);
@@ -371,71 +311,6 @@ export async function requestImageUrl(path: string): Promise<string> {
   const { data, error } = await supabase.storage.from('item-request-images').createSignedUrl(path, 60 * 30);
   if (error) throw new Error(error.message);
   return data.signedUrl;
-}
-
-export async function createMarketplaceOffer(params: {
-  requestId: string | null;
-  listingId: string | null;
-  startDate: string;
-  endDate: string;
-  dailyRate: number;
-  message: string;
-  idempotencyKey: string;
-}): Promise<void> {
-  if (!Number.isFinite(params.dailyRate) || params.dailyRate <= 0 || params.dailyRate > 100000) {
-    throw new Error('Offer price must be positive and within the platform limit.');
-  }
-  if (!params.startDate || params.endDate <= params.startDate) throw new Error('Choose a valid date range.');
-  assertPlainText('Offer message', params.message.trim(), 1000);
-  const { error } = await supabase.rpc('create_marketplace_offer', {
-    p_item_request_id: params.requestId,
-    p_listing_id: params.listingId,
-    p_start_date: params.startDate,
-    p_end_date: params.endDate,
-    p_daily_rate: params.dailyRate,
-    p_message: params.message.trim() || null,
-    p_idempotency_key: params.idempotencyKey,
-  });
-  if (error) throw new Error(error.message);
-}
-
-export async function linkRequestOfferListing(negotiationId: string, listingId: string): Promise<void> {
-  const { error } = await supabase.rpc('link_request_offer_listing', {
-    p_negotiation_id: negotiationId,
-    p_listing_id: listingId,
-  });
-  if (error) throw new Error(error.message);
-}
-
-export async function respondToMarketplaceOffer(params: {
-  negotiationId: string;
-  action: 'accept' | 'decline' | 'counter' | 'withdraw';
-  dailyRate?: number;
-  startDate?: string;
-  endDate?: string;
-  message?: string;
-}): Promise<{ bookingId: string | null }> {
-  if (params.action === 'counter') {
-    if (!Number.isFinite(params.dailyRate) || (params.dailyRate ?? 0) <= 0 || (params.dailyRate ?? 0) > 100000) {
-      throw new Error('Counteroffer price must be positive and within the platform limit.');
-    }
-    if (!params.startDate || !params.endDate || params.endDate <= params.startDate) {
-      throw new Error('Choose a valid date range for the counteroffer.');
-    }
-    assertPlainText('Counteroffer message', params.message?.trim() ?? '', 1000);
-  }
-  const { data, error } = await supabase.rpc('respond_to_marketplace_offer', {
-    p_negotiation_id: params.negotiationId,
-    p_action: params.action,
-    p_daily_rate: params.dailyRate ?? null,
-    p_start_date: params.startDate ?? null,
-    p_end_date: params.endDate ?? null,
-    p_message: params.message?.trim() || null,
-  });
-  if (error) throw new Error(error.message);
-  const result = data as { booking?: { id: string }; expired?: boolean };
-  if (result.expired) throw new Error('This offer expired before the response could be saved.');
-  return { bookingId: result.booking?.id ?? null };
 }
 
 export async function closeItemRequest(requestId: string, action: 'cancel' | 'close' = 'cancel'): Promise<void> {

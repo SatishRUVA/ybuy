@@ -10,6 +10,7 @@ import { Checkout, Confirmation, Rentals } from './renting';
 import { href, pages, parseRoute, PreviewProvider, usePreview, type PageName } from './state';
 import { Button, Field, Modal } from './ui';
 import { AdminLink, PreviewFooter, PreviewHeader, PreviewSidebar } from './navigation';
+import '../index.css';
 import './preview.css';
 
 const workPages: PageName[] = ['renter', 'owner', 'listings', 'payouts', 'messages', 'notifications', 'profile', 'admin'];
@@ -61,7 +62,7 @@ function Shell() {
     <a href="#p1-main" className="p1-skip">Skip to content</a>
     <div className="p1-preview-bar"><span><b>Preview 1</b> · Sample data only. No payments, emails or backend calls.</span><div><a href="/preview">Original preview</a><button type="button" onClick={() => setScreens(true)}>All screens <LayoutGrid size={13} aria-hidden="true" /></button></div></div>
     {store.adminSettings.maintenance && <div role="status" className="p1-maintenance">Demo maintenance notice: a little tune-up, without interrupting your plans.</div>}
-    <PreviewHeader key={route.name} route={route.name} profile={profile} unread={unread} signIn={() => setSignIn(true)}
+    <PreviewHeader key={route.name} route={route.name} profile={profile} unread={unread} notificationCount signIn={() => setSignIn(true)}
       extraNavigation={<><AdminLink /><button type="button" onClick={() => setScreens(true)}>All screens</button></>} />
     <div id="p1-main" className={workspace ? 'p1-workspace p1-container' : ''}>
       {workspace && <PreviewSidebar route={route.name} profile={profile} unread={unread} tools={<><AdminLink /><button type="button" onClick={() => setScreens(true)}><LayoutGrid size={17} aria-hidden="true" />All screens</button></>} />}

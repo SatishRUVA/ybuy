@@ -4,6 +4,8 @@ import { addDaysIso } from '@/lib/geo';
 
 export interface ListingAuctionPreferences {
   enabled: boolean;
+  starts_immediately?: boolean;
+  opening_daily_rate?: number | null;
   start_date: string | null;
   end_date: string | null;
   bidding_starts_at?: string | null;
@@ -12,25 +14,41 @@ export interface ListingAuctionPreferences {
 
 export const EMPTY_AUCTION_PREFERENCES: ListingAuctionPreferences = { enabled: false, start_date: null, end_date: null };
 
+export function auctionPublicationMessage(auction: Pick<ListingAuction, 'status' | 'starts_at' | 'ends_at'>): string {
+  if (!['scheduled', 'open'].includes(auction.status)) return `Bidding settings saved. Auction ${auction.status.replace(/_/g, ' ')}.`;
+  const format = (value: string) => new Date(value).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  });
+  if (!auction.starts_at || !auction.ends_at || !Number.isFinite(Date.parse(auction.starts_at)) || !Number.isFinite(Date.parse(auction.ends_at))) {
+    throw new Error('Could not verify the saved bidding schedule. Refresh your auction before continuing.');
+  }
+  if (auction.status === 'scheduled') return `Your item is scheduled for bidding. Bidding opens ${format(auction.starts_at)} and closes ${format(auction.ends_at)}.`;
+  return `Your item is open for bidding. Bidding closes ${format(auction.ends_at)}.`;
+}
+
 export function earliestAuctionPickupDate(): string {
   return addDaysIso(new Date(Date.now() + 26 * 3600000).toISOString().slice(0, 10), 1);
 }
 
 export function listingAuctionError(value: ListingAuctionPreferences, start: string, end: string): string | null {
   if (!value.enabled) return null;
+  if (value.opening_daily_rate !== undefined && value.opening_daily_rate !== null
+    && (!Number.isFinite(value.opening_daily_rate) || value.opening_daily_rate < 0.01 || value.opening_daily_rate > 100000)) {
+    return 'Enter a starting bid from $0.01 to $100,000 per day.';
+  }
   if (!value.start_date || !value.end_date || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))
     || !Number.isFinite(Date.parse(value.start_date)) || !Number.isFinite(Date.parse(value.end_date))
     || value.start_date < start || value.end_date > end || value.end_date <= value.start_date) {
     return 'Choose a complete auction rental period inside your listing availability.';
   }
-  if (value.bidding_starts_at !== undefined || value.bidding_ends_at !== undefined) {
-    const opens = value.bidding_starts_at ? Date.parse(value.bidding_starts_at) : Date.now() + 60_000;
-    const closes = Date.parse(value.bidding_ends_at ?? '');
-    if (!Number.isFinite(opens) || !Number.isFinite(closes) || closes - 10 * 60_000 <= opens) return 'Choose rental dates that leave at least 10 minutes for bidding to open.';
-    const expectedClose = new Date(value.start_date + 'T00:00:00');
-    expectedClose.setDate(expectedClose.getDate() - 1);
-    if (closes > expectedClose.getTime()) return 'Bidding must close at least one day before pickup.';
-  } else if (value.start_date < earliestAuctionPickupDate()) return 'Choose a pickup date at least one day from now so bidding can close before the rental.';
+  const opens = value.starts_immediately ? Date.now() : Date.parse(value.bidding_starts_at ?? '');
+  const closes = Date.parse(value.bidding_ends_at ?? '');
+  if (!Number.isFinite(opens) || !Number.isFinite(closes)
+    || (!value.starts_immediately && opens <= Date.now()) || closes - 10 * 60_000 <= opens) {
+    return 'Choose future bidding times with at least 10 minutes for bids.';
+  }
+  const pickup = new Date(value.start_date + 'T00:00:00').getTime();
+  if (closes + 2 * 60 * 60_000 > pickup) return 'Bidding must close at least 2 hours before pickup.';
   return null;
 }
 
@@ -39,6 +57,28 @@ export interface AuctionBid {
   rank: number;
   daily_rate: number;
   bid_count: number;
+}
+
+export interface MyAuctionBid {
+  id: string;
+  daily_rate: number;
+  submitted_at: string;
+  bid_count: number;
+  passed: boolean;
+  is_current: boolean;
+  rank: number | null;
+  selected: boolean;
+}
+
+export interface OwnerAuctionBid extends MyAuctionBid {
+  eligible: boolean;
+  renter: {
+    id: string;
+    full_name: string;
+    avatar_url: string | null;
+    rating: number | null;
+    review_count: number;
+  };
 }
 
 export interface ListingAuction {
@@ -52,12 +92,21 @@ export interface ListingAuction {
   selection_deadline: string | null;
   payment_deadline: string | null;
   server_now: string;
+  minimum_increment: number;
   minimum_next_bid: number;
   top_bids: AuctionBid[];
   my_bid_count: number;
   my_daily_rate: number | null;
+  my_rank: number | null;
+  my_bids: MyAuctionBid[];
+  owner_bids: OwnerAuctionBid[] | null;
   my_booking_id: string | null;
   selected_bid_id: string | null;
+  selected_payment_status: 'pending' | 'paid' | 'expired' | null;
+  owner_decision_missed_at: string | null;
+  owner_missed_decision_count?: number;
+  owner_decision_hours?: number;
+  winner_payment_hours?: number;
   is_owner: boolean;
 }
 
@@ -69,13 +118,35 @@ function auctionResult(data: unknown): ListingAuction | null {
     || !Array.isArray(value.top_bids) || value.top_bids.length > 3
     || value.top_bids.some(bid => !bid || typeof bid.id !== 'string' || !Number.isInteger(bid.rank) || bid.rank < 1 || bid.rank > 3
       || !Number.isFinite(bid.daily_rate) || bid.daily_rate <= 0 || !Number.isInteger(bid.bid_count) || bid.bid_count < 1 || bid.bid_count > 3)
+    || !Number.isFinite(value.minimum_increment) || value.minimum_increment <= 0
     || !Number.isFinite(value.minimum_next_bid) || value.minimum_next_bid <= 0 || !Number.isInteger(value.my_bid_count)
     || value.my_bid_count < 0 || value.my_bid_count > 3 || typeof value.is_owner !== 'boolean'
+    || !(value.my_rank === null || (Number.isInteger(value.my_rank) && value.my_rank > 0))
+    || !Array.isArray(value.my_bids) || value.my_bids.length > 3
+    || value.my_bids.some(bid => !bid || typeof bid.id !== 'string' || !Number.isFinite(bid.daily_rate) || bid.daily_rate <= 0
+      || !Number.isFinite(Date.parse(bid.submitted_at)) || !Number.isInteger(bid.bid_count) || bid.bid_count < 1 || bid.bid_count > 3
+      || typeof bid.passed !== 'boolean' || typeof bid.is_current !== 'boolean' || typeof bid.selected !== 'boolean'
+      || !(bid.rank === null || (Number.isInteger(bid.rank) && bid.rank > 0)))
+    || (value.is_owner ? !Array.isArray(value.owner_bids) : value.owner_bids !== null)
+    || (Array.isArray(value.owner_bids) && value.owner_bids.some(bid => !bid || typeof bid.id !== 'string'
+      || !Number.isFinite(bid.daily_rate) || bid.daily_rate <= 0 || !Number.isFinite(Date.parse(bid.submitted_at))
+      || !Number.isInteger(bid.bid_count) || bid.bid_count < 1 || bid.bid_count > 3
+      || typeof bid.passed !== 'boolean' || typeof bid.is_current !== 'boolean' || typeof bid.selected !== 'boolean'
+      || typeof bid.eligible !== 'boolean' || !(bid.rank === null || (Number.isInteger(bid.rank) && bid.rank > 0))
+      || !bid.renter || typeof bid.renter.id !== 'string' || typeof bid.renter.full_name !== 'string'
+      || (bid.renter.avatar_url !== null && typeof bid.renter.avatar_url !== 'string')
+      || (bid.renter.rating !== null && (!Number.isFinite(bid.renter.rating) || bid.renter.rating < 0 || bid.renter.rating > 5))
+      || !Number.isInteger(bid.renter.review_count) || bid.renter.review_count < 0))
     || typeof value.start_date !== 'string' || typeof value.end_date !== 'string'
     || !/^\d{4}-\d{2}-\d{2}$/.test(value.start_date) || !/^\d{4}-\d{2}-\d{2}$/.test(value.end_date) || value.end_date <= value.start_date
     || (value.my_daily_rate !== null && (!Number.isFinite(value.my_daily_rate) || value.my_daily_rate <= 0))
     || [value.ends_at, value.selection_deadline, value.payment_deadline].some(date => date !== null && !Number.isFinite(Date.parse(date)))
     || [value.my_booking_id, value.selected_bid_id].some(id => id !== null && typeof id !== 'string')
+    || (value.selected_payment_status !== null && !['pending', 'paid', 'expired'].includes(value.selected_payment_status))
+    || (value.owner_decision_missed_at !== null && !Number.isFinite(Date.parse(value.owner_decision_missed_at)))
+    || (value.owner_missed_decision_count !== undefined && (!Number.isInteger(value.owner_missed_decision_count) || value.owner_missed_decision_count < 0))
+    || (value.owner_decision_hours !== undefined && (!Number.isInteger(value.owner_decision_hours) || value.owner_decision_hours < 1))
+    || (value.winner_payment_hours !== undefined && (!Number.isInteger(value.winner_payment_hours) || value.winner_payment_hours < 1))
     || (value.starts_at !== undefined && !Number.isFinite(Date.parse(value.starts_at)))
     || !Number.isFinite(Date.parse(value.server_now))) throw new Error('Could not verify the current auction. Please retry.');
   return value;
@@ -88,12 +159,13 @@ export async function getListingAuction(listingId: string): Promise<ListingAucti
   return auctionResult(data);
 }
 
-export async function placeListingAuctionBid(listingId: string, dailyRate: number, idempotencyKey: string): Promise<ListingAuction> {
+export async function placeListingAuctionBid(listingId: string, dailyRate: number, idempotencyKey: string, depositHoldConsent = false): Promise<ListingAuction> {
   assertUuid(listingId, 'listing id');
   assertUuid(idempotencyKey, 'idempotency key');
   if (!Number.isFinite(dailyRate) || dailyRate <= 0 || Math.abs(Math.round(dailyRate * 100) - dailyRate * 100) > 0.0000001) throw new Error('Enter a positive daily price with at most two decimal places.');
   const { data, error } = await supabase.rpc('place_listing_auction_bid', {
     p_listing_id: listingId, p_daily_rate: dailyRate, p_idempotency_key: idempotencyKey,
+    p_deposit_hold_consent: depositHoldConsent,
   });
   if (error) throw new Error(error.message);
   const result = auctionResult(data);

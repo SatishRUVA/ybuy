@@ -444,13 +444,14 @@ export function NotificationsPage() {
               {(['in_app', 'email'] as const).map((channel) => {
                 const key = `${item.key}_${channel}` as NotificationPreferenceKey;
                 const channelLabel = channel === 'in_app' ? 'In-app' : 'Email';
+                const mandatory = ['bookings', 'payments', 'cases'].includes(item.key);
                 return <label key={key} className="flex min-h-11 items-center justify-center">
                   <input
                     type="checkbox"
                     className="h-5 w-5 accent-accent"
-                    checked={preferences[key]}
-                    disabled={preferenceBusy !== null}
-                    aria-label={`${item.label}: ${channelLabel}`}
+                    checked={mandatory || preferences[key]}
+                    disabled={mandatory || preferenceBusy !== null}
+                    aria-label={`${item.label}: ${channelLabel}${mandatory ? ' (mandatory)' : ''}`}
                     onChange={(event) => void changePreference(key, event.target.checked)}
                   />
                   {preferenceBusy === key && <span className="sr-only">Saving</span>}

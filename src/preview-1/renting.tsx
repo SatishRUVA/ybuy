@@ -21,12 +21,15 @@ export function Checkout({ id }: { id: string }) {
   const [failPayment, setFailPayment] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [paymentBookingId, setPaymentBookingId] = useState<string | null>(null);
+  const [createdBooking, setCreatedBooking] = useState<{ taxAmount: number; sandboxTax: boolean; rentalTotal: number; total: number } | null>(null);
   if (!item) return <main className="p1-container p1-page"><Empty title="Choose a rental first." body="Find the item you need, then pick your dates."><Action to="search">Browse rentals</Action></Empty></main>;
   const a = store.availFor(id), days = dates.start && dates.end ? rentalDays(dates.start, dates.end) : 0;
   const quote = store.rentalQuote(item, days);
   const subtotal = quote.rental, fee = quote.fee, insurance = quote.insurance ?? 0,
     delivery = pickup === 'delivery' ? item.deliveryFee ?? (store.production ? 0 : 15) : 0;
-  const total = subtotal + fee + insurance + delivery;
+  const tax = createdBooking?.taxAmount ?? quote.tax ?? 0;
+  const showTax = createdBooking !== null || quote.tax !== undefined;
+  const total = createdBooking?.rentalTotal ?? subtotal + fee + insurance + delivery + tax;
   const valid = store.availableRange(id, dates.start, dates.end) && item.available && item.listingStatus === 'published';
   const finish = async () => {
     if (submitting) return;
@@ -38,6 +41,7 @@ export function Checkout({ id }: { id: string }) {
       try {
         if (paymentBookingId) { await store.checkout.pay(paymentBookingId); return; }
         const booking = await store.checkout.create({ listingId: id, startDate: dates.start, endDate: dates.end, deliveryMode: pickup, renterNote: note });
+        setCreatedBooking(booking);
         if (booking.paymentRequired) {
           setPaymentBookingId(booking.id);
           await store.checkout.pay(booking.id);
@@ -78,7 +82,7 @@ export function Checkout({ id }: { id: string }) {
       </div>}
       {error && <ErrorNote>{error}</ErrorNote>}
       <div className="p1-actions p1-checkout-actions">{step > 0 && <Button variant="secondary" disabled={submitting || Boolean(paymentBookingId)} onClick={() => { setStep(step - 1); setError(''); }}>Back</Button>}<Button disabled={submitting || (step === 0 && !valid)} onClick={() => { if (step < 2) { setStep(step + 1); setError(''); } else void finish(); }}>{submitting ? 'Working…' : step < 2 ? 'Continue' : paymentBookingId ? 'Retry secure payment' : item.instantBooking ? store.production ? 'Continue to secure payment' : `Confirm demo booking · ${money(total)}` : 'Send rental request'}<ArrowRight size={17} aria-hidden="true" /></Button></div>
-    </div><aside className="p1-order-summary"><img src={item.images[0]} alt={item.title} /><h2>{item.title}</h2><p className="p1-muted">From {item.owner.name}</p><DateSummary {...dates} /><dl className="p1-price-breakdown"><div><dt>{money(item.pricePerDay)} × {days} days</dt><dd>{money(subtotal)}</dd></div><div><dt>{insurance > 0 ? 'Service fee & insurance' : 'Service fee'}</dt><dd>{money(fee + insurance)}</dd></div>{delivery > 0 && <div><dt>Delivery</dt><dd>{money(delivery)}</dd></div>}<div className="total"><dt>Rental total</dt><dd>{money(total)}</dd></div><div><dt>{store.production ? 'Refundable deposit' : 'Refundable deposit hold'}</dt><dd>{money(item.deposit)}</dd></div></dl><p className="p1-locked-note"><Lock size={16} aria-hidden="true" />{store.production ? `Estimated payment including deposit: ${money(total + item.deposit)}. The server confirms the final amount.` : 'Preview only. Nothing charged.'}</p></aside></div>
+    </div><aside className="p1-order-summary"><img src={item.images[0]} alt={item.title} /><h2>{item.title}</h2><p className="p1-muted">From {item.owner.name}</p><DateSummary {...dates} /><dl className="p1-price-breakdown"><div><dt>{money(item.pricePerDay)} × {days} days</dt><dd>{money(subtotal)}</dd></div><div><dt>{insurance > 0 ? 'Service fee & insurance' : 'Service fee'}</dt><dd>{money(fee + insurance)}</dd></div>{delivery > 0 && <div><dt>Delivery</dt><dd>{money(delivery)}</dd></div>}{showTax && <div><dt>{createdBooking?.sandboxTax ? 'Tax (7% test)' : createdBooking && tax === 0 ? 'Tax' : 'Tax (7%)'}</dt><dd>{money(tax)}</dd></div>}<div className="total"><dt>Rental total</dt><dd>{money(total)}</dd></div><div><dt>{store.production ? 'Refundable deposit' : 'Refundable deposit hold'}</dt><dd>{money(createdBooking ? createdBooking.total - createdBooking.rentalTotal : item.deposit)}</dd></div></dl>{showTax && <p className="p1-muted">{createdBooking ? 'Stored tax confirmed by the backend.' : 'Tax is 7% of discounted rental and service fees only. The server confirms the final amount.'}</p>}<p className="p1-locked-note"><Lock size={16} aria-hidden="true" />{store.production ? createdBooking ? `Backend-confirmed payment including deposit: ${money(createdBooking.total)}.` : `Estimated payment including deposit: ${money(total + item.deposit)}. The server confirms the final amount.` : 'Preview only. Nothing charged.'}</p></aside></div>
   </main>;
 }
 
@@ -105,7 +109,7 @@ export function ConfirmationTemplate({ title, description, status, pending, item
 }
 
 export interface RentalSummary {
-  id: string; listingId: string; start: string; end: string; total: number;
+  id: string; bookingReference?: string | null; listingId: string; start: string; end: string; total: number;
   status: DemoBooking['status'] | 'return_pending'; label?: string;
   title: string; image: string; ownerName: string; pickup: string; cancellation: string;
   disputed?: boolean; resolved?: boolean;
@@ -153,7 +157,7 @@ export function Rentals({ live }: { live?: RentalActions } = {}) {
     {live?.loading && <p role="status">Loading rentals…</p>}
     {live?.error && <ErrorNote>{live.error}<Button variant="secondary" onClick={live.retry}>Try again</Button></ErrorNote>}
     {rows.length ? <div className="p1-rental-list">{rows.map((b) =>
-      <article className="p1-rental-row" key={b.id}><img src={b.image} alt={b.title} /><div><Tag tone={b.status === 'pending' ? 'pending' : b.status === 'active' ? 'blue' : b.status === 'upcoming' ? 'good' : 'neutral'}>{b.label ?? b.status}</Tag><h2>{b.title}</h2><p><CalendarCheck size={15} aria-hidden="true" />{rangeLabel(b.start, b.end)}</p><p className="p1-muted">From {b.ownerName} · {money(b.total)} rental total</p></div><Button variant="secondary" onClick={() => { setDetail(b.id); setIssue(''); setActionError(''); }}>Rental details</Button></article>)}</div> : !live?.loading && !live?.error && <Empty title={`No ${tab === 'All' ? '' : tab.toLowerCase()} rentals yet.`} body="Your next good plan will live here."><Action to="search">Browse rentals</Action></Empty>}
+      <article className="p1-rental-row" key={b.id}><img src={b.image} alt={b.title} /><div><Tag tone={b.status === 'pending' ? 'pending' : b.status === 'active' ? 'blue' : b.status === 'upcoming' ? 'good' : 'neutral'}>{b.label ?? b.status}</Tag><h2>{b.title}</h2><p><CalendarCheck size={15} aria-hidden="true" />{rangeLabel(b.start, b.end)}</p><p className="p1-muted">From {b.ownerName} · {money(b.total)} rental total</p><p className="p1-muted">Booking reference: {b.bookingReference ?? 'Not assigned'}</p></div><Button variant="secondary" onClick={() => { setDetail(b.id); setIssue(''); setActionError(''); }}>Rental details</Button></article>)}</div> : !live?.loading && !live?.error && <Empty title={`No ${tab === 'All' ? '' : tab.toLowerCase()} rentals yet.`} body="Your next good plan will live here."><Action to="search">Browse rentals</Action></Empty>}
     <Modal open={Boolean(detail)} onClose={() => { if (!busy) { setDetail(null); setCancel(false); } }} title="Your rental" description={live ? 'Track pickup, return, verified payment and any issues.' : 'Track pickup, return and any issues in this demo.'}>
       {booking && <><h2>{booking.title}</h2><DateSummary start={booking.start} end={booking.end} /><Tag tone={booking.status === 'pending' ? 'pending' : 'blue'}>{booking.label ?? booking.status}</Tag><p>{booking.pickup}</p><div className="p1-actions p1-wrap">
         {booking.status === 'upcoming' && <Button disabled={busy} onClick={() => live ? void run(() => live.pickup(booking.id)) : update('active')}>{live ? 'Start check-in' : 'Mark picked up'}</Button>}

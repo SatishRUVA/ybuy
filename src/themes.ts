@@ -1,4 +1,5 @@
 export type ThemeId =
+  | 'main'
   | 'preview-one'
   | 'coral'
   | 'forest'
@@ -52,6 +53,44 @@ function makeTheme(
 }
 
 export const themes: Theme[] = [
+  makeTheme(
+    'main',
+    'YBuy',
+    'Black, white, and gray',
+    false,
+    {
+      '--bg': 'var(--ybuy-bg)',
+      '--bg-subtle': 'var(--ybuy-bg-subtle)',
+      '--bg-card': 'var(--ybuy-surface)',
+      '--text': 'var(--ybuy-text)',
+      '--text-secondary': 'var(--ybuy-text-secondary)',
+      '--text-muted': 'var(--ybuy-text-muted)',
+      '--border': 'var(--ybuy-border)',
+      '--border-strong': 'var(--ybuy-border-strong)',
+      '--accent': 'var(--ybuy-accent)',
+      '--accent-hover': 'var(--ybuy-accent-hover)',
+      '--accent-deep': 'var(--ybuy-gray-900)',
+      '--accent-soft': 'var(--ybuy-accent-soft)',
+      '--accent-text': 'var(--ybuy-accent-text)',
+      '--accent-ink': 'var(--ybuy-accent)',
+      '--highlight': 'var(--ybuy-gray-300)',
+      '--secondary-accent': 'var(--ybuy-gray-500)',
+      '--success': 'var(--ybuy-success)',
+      '--success-soft': 'var(--ybuy-success-soft)',
+      '--warning': 'var(--ybuy-warning)',
+      '--warning-soft': 'var(--ybuy-warning-soft)',
+      '--error': 'var(--ybuy-error)',
+      '--error-soft': 'var(--ybuy-error-soft)',
+      '--star': 'var(--ybuy-star)',
+      '--favorite': 'var(--ybuy-favorite)',
+      '--radius-lg': '0.875rem',
+      '--radius-xl': '1.25rem',
+    },
+    {
+      '--font-sans': "'Inter', system-ui, -apple-system, sans-serif",
+      '--font-display': "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif",
+    },
+  ),
   makeTheme(
     'preview-one',
     'Preview 1',

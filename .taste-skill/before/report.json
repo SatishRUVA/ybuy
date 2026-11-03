@@ -1,0 +1,2085 @@
+{
+ "url": "http://localhost:5174/",
+ "at": "2026-10-31T23:46:11.865Z",
+ "allow": [],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 3,
+   "filled": [
+    0.69,
+    0.26,
+    0.53
+   ],
+   "motion": {
+    "elements": 83,
+    "css": 67,
+    "transitions": 16,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 2524,
+     "screens": 2.8,
+     "words": 302,
+     "img": 12,
+     "video": 0,
+     "canvas": 0,
+     "svg": 37,
+     "sections": 6,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Great gear. No need to buy.",
+     "words": 6,
+     "chars": 27,
+     "lines": 2,
+     "size": 68,
+     "vw": 4.7,
+     "font": "Manrope",
+     "weight": 750,
+     "tracking": -0.03,
+     "leading": 1.06,
+     "top": 208,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "Great gear. No need to buy.",
+     "words": 6,
+     "lines": 2,
+     "size": 67.7,
+     "font": "Manrope"
+    },
+    "headings": [
+     {
+      "text": "Great gear. No need to buy.",
+      "words": 6,
+      "chars": 27,
+      "lines": 2,
+      "size": 67.7,
+      "vw": 4.7,
+      "font": "Manrope",
+      "weight": 750,
+      "tracking": -0.035,
+      "leading": 1.06,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.42,
+      "top": 208,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Less owning. More doing.",
+      "words": 4,
+      "chars": 24,
+      "lines": 2,
+      "size": 44,
+      "vw": 3.1,
+      "font": "Manrope",
+      "weight": 700,
+      "tracking": -0.025,
+      "leading": 1.12,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.42,
+      "top": 1630,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Give your gear a second job.",
+      "words": 6,
+      "chars": 28,
+      "lines": 2,
+      "size": 44,
+      "vw": 3.1,
+      "font": "Manrope",
+      "weight": 700,
+      "tracking": -0.025,
+      "leading": 1.12,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.29,
+      "top": 2172,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 3,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 6,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "DM Sans",
+       "share": 0.86,
+       "mono": false
+      },
+      {
+       "family": "Manrope",
+       "share": 0.14,
+       "mono": false
+      }
+     ],
+     "familyCount": 2,
+     "sizes": [
+      9,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      22,
+      24,
+      44,
+      68
+     ],
+     "sizeCount": 11,
+     "notLoaded": [],
+     "body": {
+      "font": "DM Sans",
+      "size": 15,
+      "leading": 1.6,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 5.2
+     },
+     "measureChars": 66,
+     "max": {
+      "size": 67.7,
+      "vw": 4.7,
+      "font": "Manrope",
+      "text": "Great gear.No need to buy."
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.01,
+     "centerShare": 0.3,
+     "smallText": 6
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#ffffff",
+       "top": 36,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      },
+      {
+       "color": "#f7f6f1",
+       "top": 113,
+       "hsl": {
+        "h": 50,
+        "s": 0.27,
+        "l": 0.96
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#62706d",
+       "share": 0.46
+      },
+      {
+       "color": "#172321",
+       "share": 0.39
+      },
+      {
+       "color": "#8d6014",
+       "share": 0.06
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.05
+      },
+      {
+       "color": "#0f735f",
+       "share": 0.02
+      }
+     ],
+     "button": {
+      "bg": "#0e7c66",
+      "hsl": {
+       "h": 168,
+       "s": 0.8,
+       "l": 0.27
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 7,
+     "inHero": 4,
+     "radius": 10,
+     "height": 44,
+     "withShadow": 4,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "List an item",
+      "List your first item",
+      "5 mi",
+      "Search"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 4,
+     "shadowOverlay": 0,
+     "shadowSamples": [
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px",
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px",
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px",
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px"
+     ],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 1,
+     "hairlineSamples": [
+      "header.sticky.top-0 1440px"
+     ],
+     "outlinedBoxes": 1,
+     "dashed": 1,
+     "blurred": 0,
+     "roundedBoxes": 4,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": true,
+     "height": 77,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "dm sans",
+     "manrope"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 2524,
+    "margins": {
+     "left": 80,
+     "right": 80
+    },
+    "sections": [
+     {
+      "sel": "section.marketplace-home-hero",
+      "tag": "section",
+      "top": 113,
+      "height": 626,
+      "words": 89,
+      "media": 0,
+      "middle": 4,
+      "heading": {
+       "text": "Great gear.",
+       "size": 68,
+       "tag": "h1"
+      },
+      "left": 80,
+      "right": 80,
+      "textLeft": 80,
+      "textRight": 80,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section",
+      "tag": "section",
+      "top": 739,
+      "height": 375,
+      "words": 33,
+      "media": 0,
+      "middle": 12,
+      "heading": {
+       "text": "What's the plan?",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 80,
+      "right": 80,
+      "textLeft": 80,
+      "textRight": 99,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#home-finds.marketplace-home-section",
+      "tag": "section",
+      "top": 1114,
+      "height": 452,
+      "words": 40,
+      "media": 0,
+      "middle": 352,
+      "heading": {
+       "text": "Good finds around Irving",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 80,
+      "right": 80,
+      "textLeft": 80,
+      "textRight": 99,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section.marketplace-home-how",
+      "tag": "section",
+      "top": 1566,
+      "height": 335,
+      "words": 68,
+      "media": 0,
+      "middle": 422,
+      "heading": {
+       "text": "Less owning.",
+       "size": 44,
+       "tag": "h2"
+      },
+      "left": 80,
+      "right": 183,
+      "textLeft": 80,
+      "textRight": 183,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section",
+      "tag": "section",
+      "top": 1901,
+      "height": 184,
+      "words": 19,
+      "media": 0,
+      "middle": 629,
+      "heading": {
+       "text": "Can't find what you need?",
+       "size": 22,
+       "tag": "h2"
+      },
+      "left": 112,
+      "right": 112,
+      "textLeft": 112,
+      "textRight": 129,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section.marketplace-home-owner",
+      "tag": "section",
+      "top": 2132,
+      "height": 248,
+      "words": 23,
+      "media": 0,
+      "middle": 612,
+      "heading": {
+       "text": "Give your gear",
+       "size": 44,
+       "tag": "h2"
+      },
+      "left": 128,
+      "right": 128,
+      "textLeft": 128,
+      "textRight": 170,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "footer.marketplace-home-container.marketplace-home-footer",
+      "tag": "footer",
+      "top": 2380,
+      "height": 144,
+      "words": 7,
+      "media": 0,
+      "middle": 421,
+      "heading": null,
+      "left": 80,
+      "right": 80,
+      "textLeft": 630,
+      "textRight": 80,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Great gear. No need to buy.",
+      "size": 68,
+      "top": 208,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 80,
+      "n": 7
+     },
+     {
+      "x": 112,
+      "n": 2
+     },
+     {
+      "x": 128,
+      "n": 2
+     }
+    ],
+    "leftBlocks": 11,
+    "bodySize": 15,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0.12,
+    "voidBox": {
+     "x": 600,
+     "y": 120,
+     "w": 840,
+     "h": 180
+    }
+   },
+   "app": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "dark": false,
+    "ground": "#ffffff",
+    "sidebar": null,
+    "topbar": {
+     "h": 36
+    },
+    "canvas": {
+     "left": 80,
+     "right": 80
+    },
+    "hero": {
+     "text": "Great gear. No need to buy.",
+     "words": 6,
+     "chars": 27,
+     "lines": 2,
+     "size": 68,
+     "vw": 4.7,
+     "font": "Manrope",
+     "weight": 750,
+     "tracking": -0.03,
+     "leading": 1.06,
+     "top": 208,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 12,
+     "firstScreen": 1,
+     "ragged": [],
+     "voids": [
+      {
+       "gap": 48,
+       "at": 451,
+       "panel": "Your next adventure starts with somethin"
+      }
+     ]
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 12,
+     "radii": [
+      [
+       12,
+       10
+      ],
+      [
+       14,
+       2
+      ]
+     ],
+     "heavyBorders": 1,
+     "borderSamples": [
+      "#c9cdc5 on #ffffff (1.61:1)"
+     ],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 1,
+     "hues": 1,
+     "samples": [
+      {
+       "hue": 50,
+       "size": 48,
+       "radius": "9999px"
+      }
+     ]
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 0,
+     "tabularShare": null,
+     "kpiMax": null
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.16,
+     "tiny": 2,
+     "tinySamples": [
+      "Date range 9px",
+      "Date range 9px"
+     ],
+     "sizes": [
+      9,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      22,
+      24,
+      44,
+      68
+     ]
+    },
+    "title": {
+     "text": "Great gear.\nNo need to buy.",
+     "size": 68,
+     "top": 208
+    },
+    "colourShare": 0.013
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 3,
+   "filled": [
+    0.77,
+    0.36,
+    0.43
+   ],
+   "motion": {
+    "elements": 83,
+    "css": 67,
+    "transitions": 16,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 2796,
+     "screens": 2.7,
+     "words": 302,
+     "img": 12,
+     "video": 0,
+     "canvas": 0,
+     "svg": 37,
+     "sections": 6,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 8,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [
+      "pexels-photo-1249611.jpeg?auto=compress&cs=tinys",
+      "pexels-photo-19969452.jpeg?auto=compress&cs=tiny",
+      "pexels-photo-699558.jpeg?auto=compress&cs=tinysr",
+      "pexels-photo-169190.jpeg?auto=compress&cs=tinysr",
+      "pexels-photo-841130.jpeg?auto=compress&cs=tinysr",
+      "pexels-photo-170811.jpeg?auto=compress&cs=tinysr",
+      "pexels-photo-4503273.jpeg?auto=compress&cs=tinys",
+      "pexels-photo-1866149.jpeg?auto=compress&cs=tinys"
+     ],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Great gear. No need to buy.",
+     "words": 6,
+     "chars": 27,
+     "lines": 2,
+     "size": 40,
+     "vw": 5.2,
+     "font": "Manrope",
+     "weight": 750,
+     "tracking": -0.03,
+     "leading": 1.06,
+     "top": 169,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "Great gear. No need to buy.",
+     "words": 6,
+     "lines": 2,
+     "size": 40,
+     "font": "Manrope"
+    },
+    "headings": [
+     {
+      "text": "Great gear. No need to buy.",
+      "words": 6,
+      "chars": 27,
+      "lines": 2,
+      "size": 40,
+      "vw": 5.2,
+      "font": "Manrope",
+      "weight": 750,
+      "tracking": -0.035,
+      "leading": 1.06,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.44,
+      "top": 169,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Less owning. More doing.",
+      "words": 4,
+      "chars": 24,
+      "lines": 2,
+      "size": 32,
+      "vw": 4.2,
+      "font": "Manrope",
+      "weight": 700,
+      "tracking": -0.025,
+      "leading": 1.12,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.44,
+      "top": 1857,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Give your gear a second job.",
+      "words": 6,
+      "chars": 28,
+      "lines": 2,
+      "size": 32,
+      "vw": 4.2,
+      "font": "Manrope",
+      "weight": 700,
+      "tracking": -0.025,
+      "leading": 1.12,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.53,
+      "top": 2471,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 3,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 6,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "DM Sans",
+       "share": 0.86,
+       "mono": false
+      },
+      {
+       "family": "Manrope",
+       "share": 0.14,
+       "mono": false
+      }
+     ],
+     "familyCount": 2,
+     "sizes": [
+      9,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      22,
+      24,
+      32,
+      40
+     ],
+     "sizeCount": 11,
+     "notLoaded": [],
+     "body": {
+      "font": "DM Sans",
+      "size": 15,
+      "leading": 1.6,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 5.2
+     },
+     "measureChars": 39,
+     "max": {
+      "size": 40,
+      "vw": 5.2,
+      "font": "Manrope",
+      "text": "Great gear.No need to buy."
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.01,
+     "centerShare": 0.3,
+     "smallText": 6
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#ffffff",
+       "top": 36,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      },
+      {
+       "color": "#f7f6f1",
+       "top": 113,
+       "hsl": {
+        "h": 50,
+        "s": 0.27,
+        "l": 0.96
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#62706d",
+       "share": 0.46
+      },
+      {
+       "color": "#172321",
+       "share": 0.39
+      },
+      {
+       "color": "#8d6014",
+       "share": 0.06
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.05
+      },
+      {
+       "color": "#0f735f",
+       "share": 0.02
+      }
+     ],
+     "button": {
+      "bg": "#0e7c66",
+      "hsl": {
+       "h": 168,
+       "s": 0.8,
+       "l": 0.27
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 7,
+     "inHero": 4,
+     "radius": 10,
+     "height": 44,
+     "withShadow": 4,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "List an item",
+      "List your first item",
+      "5 mi",
+      "Search"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 4,
+     "shadowOverlay": 0,
+     "shadowSamples": [
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px",
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px",
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px",
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px"
+     ],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 1,
+     "hairlineSamples": [
+      "header.sticky.top-0 768px"
+     ],
+     "outlinedBoxes": 2,
+     "dashed": 1,
+     "blurred": 0,
+     "roundedBoxes": 13,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 5,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 902
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": true,
+     "height": 77,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "dm sans",
+     "manrope"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 2796,
+    "margins": {
+     "left": 25,
+     "right": 32
+    },
+    "sections": [
+     {
+      "sel": "section.marketplace-home-hero",
+      "tag": "section",
+      "top": 113,
+      "height": 642,
+      "words": 89,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Great gear.",
+       "size": 40,
+       "tag": "h1"
+      },
+      "left": 32,
+      "right": 32,
+      "textLeft": 32,
+      "textRight": 32,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section",
+      "tag": "section",
+      "top": 755,
+      "height": 585,
+      "words": 33,
+      "media": 8,
+      "middle": 14,
+      "heading": {
+       "text": "What's the plan?",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 32,
+      "right": 32,
+      "textLeft": 32,
+      "textRight": 51,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#home-finds.marketplace-home-section",
+      "tag": "section",
+      "top": 1340,
+      "height": 452,
+      "words": 40,
+      "media": 0,
+      "middle": 64,
+      "heading": {
+       "text": "Good finds around Irving",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 32,
+      "right": 32,
+      "textLeft": 32,
+      "textRight": 51,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section.marketplace-home-how",
+      "tag": "section",
+      "top": 1793,
+      "height": 407,
+      "words": 68,
+      "media": 0,
+      "middle": 118,
+      "heading": {
+       "text": "Less owning.",
+       "size": 32,
+       "tag": "h2"
+      },
+      "left": 32,
+      "right": 39,
+      "textLeft": 32,
+      "textRight": 39,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section",
+      "tag": "section",
+      "top": 2199,
+      "height": 184,
+      "words": 19,
+      "media": 0,
+      "middle": 53,
+      "heading": {
+       "text": "Can't find what you need?",
+       "size": 22,
+       "tag": "h2"
+      },
+      "left": 64,
+      "right": 64,
+      "textLeft": 64,
+      "textRight": 81,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section.marketplace-home-owner",
+      "tag": "section",
+      "top": 2431,
+      "height": 221,
+      "words": 23,
+      "media": 0,
+      "middle": 39,
+      "heading": {
+       "text": "Give your gear",
+       "size": 32,
+       "tag": "h2"
+      },
+      "left": 80,
+      "right": 80,
+      "textLeft": 80,
+      "textRight": 137,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "footer.marketplace-home-container.marketplace-home-footer",
+      "tag": "footer",
+      "top": 2652,
+      "height": 144,
+      "words": 7,
+      "media": 0,
+      "middle": 133,
+      "heading": null,
+      "left": 32,
+      "right": 32,
+      "textLeft": 294,
+      "textRight": 32,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Great gear. No need to buy.",
+      "size": 40,
+      "top": 169,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 32,
+      "n": 7
+     },
+     {
+      "x": 64,
+      "n": 2
+     },
+     {
+      "x": 80,
+      "n": 2
+     }
+    ],
+    "leftBlocks": 11,
+    "bodySize": 15,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "dark": false,
+    "ground": "#ffffff",
+    "sidebar": null,
+    "topbar": {
+     "h": 36
+    },
+    "canvas": {
+     "left": 25,
+     "right": 32
+    },
+    "hero": {
+     "text": "Great gear. No need to buy.",
+     "words": 6,
+     "chars": 27,
+     "lines": 2,
+     "size": 40,
+     "vw": 5.2,
+     "font": "Manrope",
+     "weight": 750,
+     "tracking": -0.03,
+     "leading": 1.06,
+     "top": 169,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 13,
+     "firstScreen": 6,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 13,
+     "radii": [
+      [
+       12,
+       11
+      ],
+      [
+       14,
+       2
+      ]
+     ],
+     "heavyBorders": 1,
+     "borderSamples": [
+      "#c9cdc5 on #ffffff (1.61:1)"
+     ],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 1,
+     "hues": 1,
+     "samples": [
+      {
+       "hue": 50,
+       "size": 48,
+       "radius": "9999px"
+      }
+     ]
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 0,
+     "tabularShare": null,
+     "kpiMax": null
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.16,
+     "tiny": 2,
+     "tinySamples": [
+      "Date range 9px",
+      "Date range 9px"
+     ],
+     "sizes": [
+      9,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      22,
+      24,
+      32,
+      40
+     ]
+    },
+    "title": {
+     "text": "Great gear.\nNo need to buy.",
+     "size": 40,
+     "top": 169
+    },
+    "colourShare": 0.045
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 5,
+   "filled": [
+    0.75,
+    0.77,
+    0.58,
+    0.43,
+    0.57
+   ],
+   "motion": {
+    "elements": 75,
+    "css": 67,
+    "transitions": 8,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 4078,
+     "screens": 4.8,
+     "words": 289,
+     "img": 12,
+     "video": 0,
+     "canvas": 0,
+     "svg": 37,
+     "sections": 6,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 8,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [
+      "pexels-photo-1249611.jpeg?auto=compress&cs=tinys",
+      "pexels-photo-19969452.jpeg?auto=compress&cs=tiny",
+      "pexels-photo-699558.jpeg?auto=compress&cs=tinysr",
+      "pexels-photo-169190.jpeg?auto=compress&cs=tinysr",
+      "pexels-photo-841130.jpeg?auto=compress&cs=tinysr",
+      "pexels-photo-170811.jpeg?auto=compress&cs=tinysr",
+      "pexels-photo-4503273.jpeg?auto=compress&cs=tinys",
+      "pexels-photo-1866149.jpeg?auto=compress&cs=tinys"
+     ],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Great gear. No need to buy.",
+     "words": 6,
+     "chars": 27,
+     "lines": 2,
+     "size": 44,
+     "vw": 11.3,
+     "font": "Manrope",
+     "weight": 750,
+     "tracking": -0.04,
+     "leading": 1.06,
+     "top": 185,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "Great gear. No need to buy.",
+     "words": 6,
+     "lines": 2,
+     "size": 44,
+     "font": "Manrope"
+    },
+    "headings": [
+     {
+      "text": "Great gear. No need to buy.",
+      "words": 6,
+      "chars": 27,
+      "lines": 2,
+      "size": 44,
+      "vw": 11.3,
+      "font": "Manrope",
+      "weight": 750,
+      "tracking": -0.035,
+      "leading": 1.06,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 185,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Your next adventure starts with something shared.",
+      "words": 7,
+      "chars": 49,
+      "lines": 3,
+      "size": 24,
+      "vw": 6.2,
+      "font": "DM Sans",
+      "weight": 400,
+      "tracking": 0,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.71,
+      "top": 1020,
+      "tag": "p",
+      "kind": "statement"
+     },
+     {
+      "text": "Less owning. More doing.",
+      "words": 4,
+      "chars": 24,
+      "lines": 2,
+      "size": 32,
+      "vw": 8.2,
+      "font": "Manrope",
+      "weight": 700,
+      "tracking": -0.025,
+      "leading": 1.12,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 2773,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Can't find what you need?",
+      "words": 5,
+      "chars": 25,
+      "lines": 1,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Manrope",
+      "weight": 650,
+      "tracking": -0.02,
+      "leading": 1.5,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.77,
+      "top": 3351,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Give your gear a second job.",
+      "words": 6,
+      "chars": 28,
+      "lines": 2,
+      "size": 32,
+      "vw": 8.2,
+      "font": "Manrope",
+      "weight": 700,
+      "tracking": -0.025,
+      "leading": 1.12,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.77,
+      "top": 3593,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 5,
+     "maxLines": 3,
+     "over2Lines": 0,
+     "statements": 1,
+     "centered": 0,
+     "medianWords": 6,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "DM Sans",
+       "share": 0.86,
+       "mono": false
+      },
+      {
+       "family": "Manrope",
+       "share": 0.14,
+       "mono": false
+      }
+     ],
+     "familyCount": 2,
+     "sizes": [
+      9,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      20,
+      22,
+      24,
+      32,
+      44
+     ],
+     "sizeCount": 12,
+     "notLoaded": [],
+     "body": {
+      "font": "DM Sans",
+      "size": 15,
+      "leading": 1.6,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 5.2
+     },
+     "measureChars": 42,
+     "max": {
+      "size": 44,
+      "vw": 11.3,
+      "font": "Manrope",
+      "text": "Great gear.No need to buy."
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.01,
+     "centerShare": 0.29,
+     "smallText": 2
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#ffffff",
+       "top": 76,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      },
+      {
+       "color": "#f7f6f1",
+       "top": 153,
+       "hsl": {
+        "h": 50,
+        "s": 0.27,
+        "l": 0.96
+       }
+      },
+      {
+       "color": "#e3f2ed",
+       "top": 931,
+       "hsl": {
+        "h": 160,
+        "s": 0.37,
+        "l": 0.92
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#62706d",
+       "share": 0.47
+      },
+      {
+       "color": "#172321",
+       "share": 0.38
+      },
+      {
+       "color": "#8d6014",
+       "share": 0.06
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.04
+      },
+      {
+       "color": "#0f735f",
+       "share": 0.02
+      }
+     ],
+     "button": {
+      "bg": "#0e7c66",
+      "hsl": {
+       "h": 168,
+       "s": 0.8,
+       "l": 0.27
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 7,
+     "inHero": 3,
+     "radius": 10,
+     "height": 44,
+     "withShadow": 3,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Near Irving, Texas",
+      "5 mi",
+      "Search"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 4,
+     "shadowOverlay": 0,
+     "shadowSamples": [
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px",
+      "div.rounded-card-xl.glass-surface → rgba(16, 24, 40, 0.04) 0px 1px 2px 0px, rgba(16, 24, 40, 0.06) 0px 2px 6px -2px",
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px",
+      "button.inline-flex.min-w-0 → rgba(16, 24, 40, 0.05) 0px 1px 2px 0px"
+     ],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 1,
+     "hairlineSamples": [
+      "header.sticky.top-0 390px"
+     ],
+     "outlinedBoxes": 2,
+     "dashed": 1,
+     "blurred": 0,
+     "roundedBoxes": 13,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 5,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 1413
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": true,
+     "height": 77,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "dm sans",
+     "manrope"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 4078,
+    "margins": {
+     "left": 16,
+     "right": 16
+    },
+    "sections": [
+     {
+      "sel": "section.marketplace-home-hero",
+      "tag": "section",
+      "top": 153,
+      "height": 1096,
+      "words": 89,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Great gear.",
+       "size": 44,
+       "tag": "h1"
+      },
+      "left": 16,
+      "right": 31,
+      "textLeft": 16,
+      "textRight": 31,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section",
+      "tag": "section",
+      "top": 1249,
+      "height": 1015,
+      "words": 33,
+      "media": 8,
+      "middle": 0,
+      "heading": {
+       "text": "What's the plan?",
+       "size": 20,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 16,
+      "textLeft": 16,
+      "textRight": 40,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#home-finds.marketplace-home-section",
+      "tag": "section",
+      "top": 2264,
+      "height": 469,
+      "words": 40,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Good finds around Irving",
+       "size": 20,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 45,
+      "textLeft": 16,
+      "textRight": 45,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section.marketplace-home-how",
+      "tag": "section",
+      "top": 2733,
+      "height": 550,
+      "words": 68,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Less owning.",
+       "size": 32,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 18,
+      "textLeft": 16,
+      "textRight": 18,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section",
+      "tag": "section",
+      "top": 3283,
+      "height": 250,
+      "words": 19,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Can't find what you need?",
+       "size": 22,
+       "tag": "h2"
+      },
+      "left": 44,
+      "right": 58,
+      "textLeft": 44,
+      "textRight": 58,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.marketplace-home-section.marketplace-home-owner",
+      "tag": "section",
+      "top": 3565,
+      "height": 265,
+      "words": 23,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Give your gear",
+       "size": 32,
+       "tag": "h2"
+      },
+      "left": 44,
+      "right": 51,
+      "textLeft": 44,
+      "textRight": 51,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "footer.marketplace-home-container.marketplace-home-footer",
+      "tag": "footer",
+      "top": 3830,
+      "height": 248,
+      "words": 7,
+      "media": 0,
+      "middle": 49,
+      "heading": null,
+      "left": 16,
+      "right": 16,
+      "textLeft": 16,
+      "textRight": 16,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Great gear. No need to buy.",
+      "size": 44,
+      "top": 185,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 16,
+      "n": 7
+     },
+     {
+      "x": 44,
+      "n": 4
+     }
+    ],
+    "leftBlocks": 11,
+    "bodySize": 15,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "dark": false,
+    "ground": "#ffffff",
+    "sidebar": null,
+    "topbar": {
+     "h": 76
+    },
+    "canvas": {
+     "left": 16,
+     "right": 16
+    },
+    "hero": {
+     "text": "Great gear. No need to buy.",
+     "words": 6,
+     "chars": 27,
+     "lines": 2,
+     "size": 44,
+     "vw": 11.3,
+     "font": "Manrope",
+     "weight": 750,
+     "tracking": -0.04,
+     "leading": 1.06,
+     "top": 185,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 13,
+     "firstScreen": 1,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 13,
+     "radii": [
+      [
+       12,
+       10
+      ],
+      [
+       14,
+       3
+      ]
+     ],
+     "heavyBorders": 1,
+     "borderSamples": [
+      "#c9cdc5 on #ffffff (1.61:1)"
+     ],
+     "heavyShadows": 0,
+     "softShadows": 2,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 1,
+     "hues": 1,
+     "samples": [
+      {
+       "hue": 50,
+       "size": 48,
+       "radius": "9999px"
+      }
+     ]
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 0,
+     "tabularShare": null,
+     "kpiMax": null
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.14,
+     "tiny": 2,
+     "tinySamples": [
+      "Date range 9px",
+      "Date range 9px"
+     ],
+     "sizes": [
+      9,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      20,
+      22,
+      24,
+      32,
+      44
+     ]
+    },
+    "title": {
+     "text": "Great gear.\nNo need to buy.",
+     "size": 44,
+     "top": 185
+    },
+    "colourShare": 0.051
+   },
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "button-fx",
+   "width": 1440,
+   "message": "Buttons with shadow/glow.",
+   "fix": "Flat fill, one colour.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "palette-cream",
+   "width": 1440,
+   "message": "Yellow-cream background (section #f7f6f1).",
+   "fix": "Use the drawn palette. If you want warmth, take a low-chroma stone or bone, not a yellow cream.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "dev-server",
+   "width": 1440,
+   "message": "This page is served by a development server (Vite, webpack or Next in dev mode).",
+   "fix": "Run the last gate on the production build too (vite build && vite preview, next build && next start, or the built index.html): minifiers and bundlers change the CSS a visitor receives.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "below-fold",
+   "width": 1440,
+   "message": "Only 1 of 12 blocks start on the first 1440px screen.",
+   "fix": "Every block the brief names shows its header and first rows on the first desktop screen: size the headline block to its question, cap long lists with \"View all\", and put time-sensitive blocks before long tables."
+  },
+  {
+   "level": "WARN",
+   "id": "panel-void",
+   "width": 1440,
+   "message": "1 card(s) hold a blank band inside: 48px in \"Your next adventure starts with somethin\".",
+   "fix": "A card stretches to its neighbour only when it has content to fill. Keep a legend or a note directly under its chart (only an action or a total may sit at a stretched card's foot), let a short card keep its own height (align-items: start), and let a filtered block shrink to its rows."
+  },
+  {
+   "level": "WARN",
+   "id": "app-title-size",
+   "width": 1440,
+   "message": "The h1 is 68px (\"Great gear.\nNo need to buy.\").",
+   "fix": "An app screen is not a landing page: the title is 18-32px (20-24px on a phone).",
+   "alsoAt": [
+    768,
+    390
+   ]
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "D:\\gigs-workspace\\YBuy\\.taste-skill\\before\\desktop-fold.jpg",
+   "pages": [
+    "D:\\gigs-workspace\\YBuy\\.taste-skill\\before\\desktop-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "D:\\gigs-workspace\\YBuy\\.taste-skill\\before\\tablet-fold.jpg",
+   "pages": [
+    "D:\\gigs-workspace\\YBuy\\.taste-skill\\before\\tablet-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "D:\\gigs-workspace\\YBuy\\.taste-skill\\before\\mobile-fold.jpg",
+   "pages": [
+    "D:\\gigs-workspace\\YBuy\\.taste-skill\\before\\mobile-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

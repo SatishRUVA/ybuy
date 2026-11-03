@@ -36,11 +36,16 @@ const aliceListing = {
 };
 
 async function setup(page: Page, id?: string) {
+  await page.route('**/src/lib/local-profile-login.ts*', route => route.fulfill({
+    contentType: 'application/javascript',
+    body: 'export const LOCAL_PROFILE_LOGIN=false; export const HOSTED_PROFILE_LOGIN=false; export const PROFILE_LOGIN=false; export const PROFILE_ENDPOINT="/api/local-profiles"; export async function loadLocalProfiles(){throw new Error("Profile picker not used in email authentication tests");}',
+  }));
   await page.routeWebSocket(`${appWebSocketUrl}/**`, () => {});
   await page.route('**/*', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     if (url.origin === appUrl) {
+      if (url.pathname === '/src/lib/local-profile-login.ts') return route.fallback();
       if (url.pathname === '/src/lib/supabase.ts') return mockSupabaseModule(route);
       return route.continue();
     }
@@ -83,6 +88,69 @@ async function switchAccount(page: Page, id: string) {
     const { error } = await supabase.auth.setSession(session);
     if (error) throw error;
   }, sessionFor(id));
+}
+
+for (const width of [390, 1440]) {
+  test(`shared sign-in fields stay visible and checkboxes remain keyboard accessible at ${width}px`, async ({ page }) => {
+    await setup(page);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${appUrl}/dashboard`);
+    await page.getByRole('button', { name: 'Sign in or create an account' }).click();
+    const dialog = page.getByRole('dialog');
+    const email = dialog.getByLabel('Email', { exact: true });
+    const password = dialog.getByLabel('Password', { exact: true });
+    await dialog.getByRole('heading').click();
+    for (const input of [email, password]) {
+      await expect(input).not.toBeFocused();
+      await expect(input).toHaveCSS('border-top-width', '1px');
+      await expect(input).toHaveCSS('border-top-style', 'solid');
+      await expect(input).toHaveCSS('padding-left', '14px');
+      await expect(input).toHaveCSS('padding-top', '12px');
+      const bounds = await input.boundingBox();
+      expect(bounds!.height).toBeGreaterThanOrEqual(46);
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    }
+    const checkbox = dialog.getByRole('checkbox', { name: 'Show password' });
+    await expect(checkbox).toHaveCSS('appearance', 'none');
+    await expect(checkbox).not.toBeChecked();
+    await expect(checkbox).toHaveCSS('border-top-style', 'solid');
+    await password.focus();
+    await page.keyboard.press('Tab');
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toHaveCSS('outline-style', 'solid');
+    await page.keyboard.press('Space');
+    await expect(checkbox).toBeChecked();
+    await expect(password).toHaveAttribute('type', 'text');
+    await expect(checkbox).toHaveCSS('background-color', 'rgb(49, 87, 225)');
+    await page.keyboard.press('Space');
+    await expect(password).toHaveAttribute('type', 'password');
+    const fields = await dialog.locator('.p1-field').evaluateAll(elements => elements.map(element => element.getBoundingClientRect()));
+    expect(fields[1].y - fields[0].bottom).toBe(12);
+    await page.emulateMedia({ forcedColors: 'active' });
+    await expect(checkbox).toHaveCSS('appearance', 'auto');
+    await checkbox.check();
+    await expect(password).toHaveAttribute('type', 'text');
+    await page.emulateMedia({ forcedColors: 'none' });
+    await page.screenshot({ path: test.info().outputPath(`sign-in-fields-${width}.png`) });
+    const sharedControls = await page.evaluate(() => {
+      const container = document.createElement('div');
+      container.className = 'p1';
+      container.innerHTML = '<input type="text"><input type="number"><input type="date"><textarea></textarea><select><option>Option</option></select>';
+      document.body.append(container);
+      const result = Array.from(container.children, element => {
+        const style = getComputedStyle(element);
+        return { border: style.borderTopWidth, padding: style.paddingLeft, height: element.getBoundingClientRect().height };
+      });
+      container.remove();
+      return result;
+    });
+    for (const control of sharedControls) {
+      expect(control.border).toBe('1px');
+      expect(control.padding).toBe('14px');
+      expect(control.height).toBeGreaterThanOrEqual(46);
+    }
+  });
 }
 
 test('protected navigation preserves destination and offers YBuy and Google authentication', async ({ page }) => {

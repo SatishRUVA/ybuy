@@ -24,11 +24,12 @@ export function Home() {
   const { items, search, setSearch } = store;
   const shelf = [...items].filter((l) => l.listingStatus === 'published').sort((a, b) => store.production
     ? store.distance(a) - store.distance(b) : distanceMi(a, search.loc) - distanceMi(b, search.loc)).slice(0, 4);
-  const campItem = items.find((l) => /camp|outdoor/i.test(l.category)) ?? items[3];
-  const toolItem = items.find((l) => /tool/i.test(l.category)) ?? items[2];
-  const camp = campItem ?? { id: '', images: [imagery[3].images[0]], title: 'Make room for your next adventure', pricePerDay: 0 };
-  const tool = toolItem ?? { id: '', images: [imagery[2].images[0]], title: 'Gear for your next project' };
-  const camera = items[0] ?? { id: '', images: [imagery[0].images[0]], title: 'For your next great shot' };
+  const campItem = items.find(l => l.listingStatus === 'published' && l.title === imagery[3].title);
+  const toolItem = items.find(l => l.listingStatus === 'published' && l.title === imagery[1].title);
+  const cameraItem = items.find(l => l.listingStatus === 'published' && l.title === imagery[11].title);
+  const camp = { id: campItem?.id ?? '', images: imagery[3].images, title: campItem?.title ?? 'Make room for your next adventure', pricePerDay: campItem?.pricePerDay ?? 0 };
+  const tool = { id: toolItem?.id ?? '', images: imagery[1].images, title: 'Gear for your next project' };
+  const camera = { id: cameraItem?.id ?? '', images: imagery[11].images, title: 'For your next great shot' };
   const cat = (name: string) => { setSearch({ ...DEFAULT_SEARCH, loc: search.loc, cat: name }); store.navigate('search'); };
   const categoryRows = store.production ? store.categories : categories;
   return <main>
@@ -40,9 +41,9 @@ export function Home() {
           <div className="p1-hero-links"><a href="#p1-nearby" className="p1-text-link">Find your next thing <ArrowRight size={18} aria-hidden="true" /></a><a href={href('create')}>Or put your gear to work</a></div>
         </div>
         <div className="p1-hero-collage">
-          <a href={href(camp.id ? 'listing' : 'search', camp.id || undefined)} className="p1-hero-main-photo"><img src={camp.images[0]} alt={camp.title} /><span><Tag tone="lime">Make room for adventure</Tag><strong>{camp.title}</strong><small>{campItem ? `Rent it from ${money(camp.pricePerDay)} / day` : 'Find outdoor gear nearby'}</small></span></a>
-          <a className="p1-hero-small-photo p1-hero-camera" href={href(camera.id ? 'listing' : 'search', camera.id || undefined)}><img src={camera.images[0]} alt={camera.title} /><span><Camera size={15} aria-hidden="true" /> For your next great shot</span></a>
-          <a className="p1-hero-small-photo p1-hero-tool" href={href(tool.id ? 'listing' : 'search', tool.id || undefined)}><img src={tool.images[0]} alt={tool.title} /><span><Hammer size={15} aria-hidden="true" /> Finally finish that project</span></a>
+          <a href={href(camp.id ? 'listing' : 'search', camp.id || undefined)} onClick={event => { if (!camp.id) { event.preventDefault(); cat('Camping'); } }} className="p1-hero-main-photo"><img src={camp.images[0]} alt={camp.title} /><span><Tag tone="lime">Make room for adventure</Tag><strong>{camp.title}</strong><small>{campItem ? `Rent it from ${money(camp.pricePerDay)} / day` : 'Find outdoor gear nearby'}</small></span></a>
+          <a className="p1-hero-small-photo p1-hero-camera" href={href(camera.id ? 'listing' : 'search', camera.id || undefined)} onClick={event => { if (!camera.id) { event.preventDefault(); cat('Home & Garden'); } }}><img src={camera.images[0]} alt={camera.title} /><span><Camera size={15} aria-hidden="true" /> For your next great shot</span></a>
+          <a className="p1-hero-small-photo p1-hero-tool" href={href(tool.id ? 'listing' : 'search', tool.id || undefined)} onClick={event => { if (!tool.id) { event.preventDefault(); cat('Tools'); } }}><img src={tool.images[0]} alt={tool.title} /><span><Hammer size={15} aria-hidden="true" /> Finally finish that project</span></a>
         </div>
         <div className="p1-hero-search"><SearchBar /><div className="p1-search-extras">
           <label className="p1-inline-select">Search radius <Dropdown label="Search radius" value={String(search.radius ?? 'any')} onChange={(value) => setSearch({ radius: value === 'any' ? null : Number(value) as typeof search.radius })} options={RADII.map((r) => ({ value: String(r ?? 'any'), label: r ? `${r} miles` : 'Any distance' }))} /></label>
@@ -104,7 +105,7 @@ export function Browse() {
         : view === 'map' ? <DiscoveryMap items={results} /> : <div className={`p1-item-grid p1-results-grid ${view === 'list' ? 'p1-list-view' : ''}`}>{results.map((l) => <ItemCard key={l.id} item={l} compact={view === 'list'} />)}</div>}
       {store.hasMore && <Button variant="secondary" disabled={store.loading} onClick={store.loadMore}>Load more rentals</Button>}
     </div></div>
-    <Modal open={mobileFilters} onClose={() => setMobileFilters(false)} title="Search filters">{filters}<Button className="p1-full" onClick={() => setMobileFilters(false)}>Show {results.length} results</Button></Modal>
+    <Modal open={mobileFilters} onClose={() => setMobileFilters(false)} title="Search filters" footer={<Button className="p1-full" onClick={() => setMobileFilters(false)}>Show {results.length} results</Button>}>{filters}</Modal>
   </main>;
 }
 
@@ -132,7 +133,7 @@ function ItemDetails({ item, gallery, setGallery, photo, setPhoto }: { item: Lis
   const seed = store.availableRange(item.id, store.search.start, store.search.end) ? store.search : store.firstRange(item.id);
   const [dates, setDates] = useState({ start: seed.start, end: seed.end });
   const days = dates.start && dates.end ? rentalDays(dates.start, dates.end) : 0;
-  const { rental: subtotal, fee, insurance = 0 } = store.rentalQuote(item, days);
+  const { rental: subtotal, fee, insurance = 0, tax } = store.rentalQuote(item, days);
   const valid = store.availableRange(item.id, dates.start, dates.end) && item.available && item.listingStatus === 'published';
   const pickDates = (start: string, end: string) => { setDates({ start, end }); store.setSearch({ start, end }); };
   const book = () => { store.setSearch(dates); store.navigate('checkout', item.id); };
@@ -150,7 +151,8 @@ function ItemDetails({ item, gallery, setGallery, photo, setPhoto }: { item: Lis
     </div><aside className="p1-booking-panel"><div className="p1-booking-price"><strong>{money(item.pricePerDay)}</strong><span>/ day</span>{item.instantBooking && <Tag tone="blue"><Zap size={13} aria-hidden="true" /> Instant</Tag>}</div><p className="p1-muted">Good gear, for exactly your days.</p>
       <DateField {...dates} onChange={pickDates} min={a.start} max={a.end} maxDays={store.production ? RENTAL_MAX_DAYS : undefined} blocked={blocked} endExclusive={store.production} label="Your rental dates" />
       <p className="p1-window-note">Open {rangeLabel(a.start, store.production ? addDays(a.end, -1) : a.end)}. Taken days stay unavailable.</p>
-      <dl className="p1-price-breakdown"><div><dt>{days ? `${money(item.pricePerDay)} × ${days} days` : 'Rental'}</dt><dd>{days ? money(subtotal) : 'Choose dates'}</dd></div><div><dt>{insurance > 0 ? 'Service fee & insurance' : 'Service fee'}</dt><dd>{money(fee + insurance)}</dd></div><div className="total"><dt>Rental total</dt><dd>{money(subtotal + fee + insurance)}</dd></div><div><dt>{store.production ? 'Refundable deposit' : 'Refundable deposit hold'}</dt><dd>{money(item.deposit)}</dd></div></dl>
+      <dl className="p1-price-breakdown"><div><dt>{days ? `${money(item.pricePerDay)} × ${days} days` : 'Rental'}</dt><dd>{days ? money(subtotal) : 'Choose dates'}</dd></div><div><dt>{insurance > 0 ? 'Service fee & insurance' : 'Service fee'}</dt><dd>{money(fee + insurance)}</dd></div>{tax !== undefined && <div><dt>Tax (7%)</dt><dd>{money(tax)}</dd></div>}<div className="total"><dt>Rental total</dt><dd>{money(subtotal + fee + insurance + (tax ?? 0))}</dd></div><div><dt>{store.production ? 'Refundable deposit' : 'Refundable deposit hold'}</dt><dd>{money(item.deposit)}</dd></div></dl>
+      {tax !== undefined && <p className="p1-muted">Tax is 7% of discounted rental and service fees only. The server confirms the final amount.</p>}
       {store.production && <MarketplaceStatus />}
       <Button className="p1-full" disabled={!valid} onClick={book}>{item.instantBooking ? 'Book these dates' : 'Request these dates'} <ArrowRight size={17} aria-hidden="true" /></Button><p className="p1-booking-note">{item.instantBooking ? 'Review the total before confirming.' : 'No payment until the owner approves.'}</p>
       <a className="p1-text-link" href={!store.production && auctions.some((a) => a.title === item.title) ? href('auction', auctions.find((a) => a.title === item.title)?.id) : href('bidding')}>Explore competitive bidding <ChevronRight size={15} aria-hidden="true" /></a>

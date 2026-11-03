@@ -13,10 +13,20 @@ insert into auth.sessions (id, user_id) values
   ('60000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000003');
 insert into public.categories (id, name) values
   ('20000000-0000-4000-8000-000000000001', 'Isolation test category');
-insert into public.listings (id, owner_id, category_id, title, price_per_day, status,estimated_value,item_condition) values
-  ('30000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'Alice private draft', 10, 'draft',200,'good'),
-  ('30000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000001', 'Bob private draft', 10, 'draft',200,'good'),
-  ('30000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000003', '20000000-0000-4000-8000-000000000001', 'Public rental', 10, 'published',200,'good');
+insert into public.listings (id, owner_id, category_id, title, description, price_per_day, status,
+  estimated_value, item_condition, availability_start, availability_end) values
+  ('30000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001',
+   'Alice private draft','Alice draft fixture for isolation tests.',10,'draft',200,'good',current_date+10,current_date+40),
+  ('30000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000001',
+   'Bob private draft','Bob draft fixture for isolation tests.',10,'draft',200,'good',current_date+10,current_date+40),
+  ('30000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000003', '20000000-0000-4000-8000-000000000001',
+   'Public rental','Public fixture for isolation tests.',10,'draft',200,'good',current_date+10,current_date+40);
+insert into public.listing_images(listing_id,url,sort_order) values
+  ('30000000-0000-4000-8000-000000000003','https://example.test/isolation-rental.png',0);
+insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude) values
+  ('30000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000003',
+   'Private pickup','Dallas','TX','75201','US',32.8,-96.8);
+update public.listings set status='published' where id='30000000-0000-4000-8000-000000000003';
 insert into public.favorites (user_id, listing_id) values
   ('10000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000003');
 insert into public.bookings (
@@ -42,8 +52,10 @@ insert into public.payouts (booking_id, owner_id, amount) values (
 select ok(not has_function_privilege('anon', 'public.cancel_booking(uuid)', 'EXECUTE'), 'Anonymous callers cannot cancel bookings');
 select ok(not has_function_privilege('anon', 'public.respond_to_booking_request(uuid,boolean)', 'EXECUTE'), 'Anonymous callers cannot approve bookings');
 select ok(not has_function_privilege('anon', 'public.mark_booking_active(uuid)', 'EXECUTE'), 'Anonymous callers cannot start rentals');
+select ok(not has_function_privilege('authenticated', 'public.mark_booking_active(uuid)', 'EXECUTE'), 'Authenticated callers cannot bypass pickup verification');
 select ok(not has_function_privilege('anon', 'public.start_booking_return(uuid)', 'EXECUTE'), 'Anonymous callers cannot start returns');
 select ok(not has_function_privilege('anon', 'public.complete_booking_return(uuid)', 'EXECUTE'), 'Anonymous callers cannot complete rentals');
+select ok(not has_function_privilege('authenticated', 'public.complete_booking_return(uuid)', 'EXECUTE'), 'Authenticated callers cannot bypass return verification');
 select ok(not has_function_privilege('anon', 'public.create_booking_request(uuid,date,date,integer)', 'EXECUTE'), 'Anonymous callers cannot request bookings');
 select ok(not has_function_privilege('anon', 'public.get_my_profile()', 'EXECUTE'), 'Anonymous callers cannot read private profiles');
 select ok(not has_function_privilege('authenticated', 'public.confirm_booking_payment(uuid,text,text,numeric)', 'EXECUTE'), 'Clients cannot confirm payments');
@@ -98,7 +110,7 @@ select throws_ok(
 );
 select throws_ok(
   $$select public.cancel_booking('40000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'not a participant in this booking', 'Cannot cancel another user booking by ID'
+  '42501', 'Not a participant in this booking', 'Cannot cancel another user booking by ID'
 );
 select throws_ok(
   $$select public.confirm_booking_payment('40000000-0000-4000-8000-000000000001','fake','fake',22)$$,

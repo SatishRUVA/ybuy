@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import { assertPlainText, PICKUP_TEXT_MAX, sanitizeFilterValue, UUID_RE } from '@/lib/text-safety';
 import type { Listing, Category } from '@/data';
 import { fetchOwnerRatings } from '@/lib/reviews';
+import { listingAvailabilityExpired } from '@/lib/listing-availability';
 
 export interface DbCategory {
   id: string;
@@ -34,13 +35,6 @@ export interface DbListingRow {
   estimated_value?: number | null;
   item_condition?: string | null;
   revision?: number;
-  offer_minimum_daily?: number | null;
-  offer_target_daily?: number | null;
-  offer_guardrail_pct?: number | null;
-  offer_start_date?: string | null;
-  offer_end_date?: string | null;
-  offer_expiration_hours?: number | null;
-  offer_maximum_daily?: number | null;
   brand?: string;
   model?: string;
   included_items?: string[];
@@ -64,8 +58,8 @@ export interface DbListingRow {
   delivery_available: boolean;
   owner_verified: boolean;
   available_quantity: number;
-  negotiation_enabled: boolean;
   auction_enabled?: boolean;
+  auction_opening_daily_rate?: number | null;
   auction_start_date?: string | null;
   auction_end_date?: string | null;
   auction_bidding_starts_at?: string | null;
@@ -127,7 +121,8 @@ export async function fetchCategories(): Promise<DbCategory[]> {
 // ponytail: O(n) scan over published listings is sufficient for Part 1's small dataset.
 // Upgrade to a DB view/RPC count(*) group by category_id if listing volume grows materially.
 export async function fetchCategoryCounts(): Promise<Map<string, number>> {
-  const { data, error } = await supabase.from('listings').select('category_id').eq('status', 'published');
+  const { data, error } = await supabase.from('listings').select('category_id').eq('status', 'published')
+    .or(`availability_end.is.null,availability_end.gt.${new Date().toISOString().slice(0, 10)}`);
   if (error) throw error;
   const counts = new Map<string, number>();
   for (const row of data ?? []) counts.set(row.category_id, (counts.get(row.category_id) ?? 0) + 1);
@@ -139,6 +134,7 @@ export async function fetchPublishedListings(): Promise<DbListingRow[]> {
     .from('listings')
     .select(LISTING_SELECT)
     .eq('status', 'published')
+    .or(`availability_end.is.null,availability_end.gt.${new Date().toISOString().slice(0, 10)}`)
     .order('created_at', { ascending: false });
   if (error) throw error;
   return signListingRows((data ?? []) as unknown as DbListingRow[]);
@@ -309,7 +305,9 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
       const entry = JSON.parse(cached) as { cachedAt: number; result: SearchListingsResult };
-      if (Date.now() - entry.cachedAt < SEARCH_CACHE_TTL_MS) {
+      if (Date.now() - entry.cachedAt < SEARCH_CACHE_TTL_MS
+        && new Date(entry.cachedAt).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
+        && !entry.result.rows.some(row => listingAvailabilityExpired(row.availability_end))) {
         return { ...entry.result, rows: await signListingRows(entry.result.rows) };
       }
       sessionStorage.removeItem(cacheKey);
@@ -326,7 +324,8 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
   let query = supabase
     .from('listings')
     .select(LISTING_SELECT, { count: 'exact' })
-    .eq('status', 'published');
+    .eq('status', 'published')
+    .or(`availability_end.is.null,availability_end.gt.${new Date().toISOString().slice(0, 10)}`);
 
   if (params.categoryId) query = query.eq('category_id', params.categoryId);
   if (params.maxPrice != null) query = query.lte('price_per_day', params.maxPrice);
@@ -360,7 +359,7 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
   // Older deployments can still serve published listings while optional listing
   // flags and quantity-aware negotiation columns are waiting on migrations.
   if (error?.code === '42703'
-    && /owner_verified|instant_booking|protection_eligible|delivery_available|available_quantity|negotiation_enabled/i.test(error.message)) {
+      && /owner_verified|instant_booking|protection_eligible|delivery_available|available_quantity/i.test(error.message)) {
     if ((params.verifiedOnly && /owner_verified/i.test(error.message))
       || (params.instantOnly && /instant_booking/i.test(error.message))
       || (params.protectionOnly && /protection_eligible/i.test(error.message))
@@ -370,7 +369,8 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
     let fallback = supabase
       .from('listings')
       .select(LEGACY_SEARCH_LISTING_SELECT, { count: 'exact' })
-      .eq('status', 'published');
+      .eq('status', 'published')
+      .or(`availability_end.is.null,availability_end.gt.${new Date().toISOString().slice(0, 10)}`);
 
     if (params.categoryId) fallback = fallback.eq('category_id', params.categoryId);
     if (params.maxPrice != null) fallback = fallback.lte('price_per_day', params.maxPrice);
@@ -437,6 +437,7 @@ export function toUiCategory(row: DbCategory, listingCountByCategoryId: Map<stri
 export function toUiListing(row: DbListingRow): Listing {
   const images = [...row.listing_images].sort((a, b) => a.sort_order - b.sort_order).map((i) => i.url);
   const cleanText = (value: string | null | undefined) => value?.split('\u2014').join('-') ?? '';
+  const expired = listingAvailabilityExpired(row.availability_end);
   return {
     id: row.id,
     title: cleanText(row.title),
@@ -461,7 +462,7 @@ export function toUiListing(row: DbListingRow): Listing {
     rating: 0,
     reviewCount: 0,
     rentalCount: 0,
-    available: row.status === 'published',
+    available: row.status === 'published' && !expired,
     listingStatus: row.status,
     instantBooking: row.instant_booking === true,
     verifiedOwner: row.owner_verified === true,
@@ -491,8 +492,8 @@ export function toUiListing(row: DbListingRow): Listing {
     availableQuantity: Number(row.available_quantity ?? 1),
     availabilityStart: row.availability_start ?? null,
     availabilityEnd: row.availability_end ?? null,
+    availabilityExpired: expired,
     deliveryFee: row.delivery_fee == null ? null : Number(row.delivery_fee),
-    negotiationEnabled: row.status === 'published' && row.negotiation_enabled === true && row.offer_maximum_daily != null,
     auctionEnabled: row.auction_enabled === true,
     durationDiscount: row.duration_discount_percent && row.duration_discount_min_days
       ? { minimumDays: row.duration_discount_min_days, percent: Number(row.duration_discount_percent) } : null,
@@ -500,8 +501,6 @@ export function toUiListing(row: DbListingRow): Listing {
     weeklyDiscountPercent: Number(row.weekly_discount_percent ?? 0),
     monthlyDiscountEnabled: row.monthly_discount_enabled === true,
     monthlyDiscountPercent: Number(row.monthly_discount_percent ?? 0),
-    offerRules: {minimumDaily:row.offer_minimum_daily ?? null,maximumDaily:row.offer_maximum_daily ?? null,targetDaily:row.offer_target_daily ?? null,
-      guardrailPct:row.offer_guardrail_pct ?? null,startDate:row.offer_start_date ?? row.availability_start ?? null,endDate:row.offer_end_date ?? row.availability_end ?? null},
     lat: row.location_lat ?? 0,
     lng: row.location_lng ?? 0,
   };
@@ -616,13 +615,6 @@ export interface ListingDetailsUpdate {
   deposit: number;
   estimated_value?: number | null;
   item_condition?: string | null;
-  offer_minimum_daily?: number | null;
-  offer_target_daily?: number | null;
-  offer_guardrail_pct?: number | null;
-  offer_start_date?: string | null;
-  offer_end_date?: string | null;
-  offer_expiration_hours?: number | null;
-  offer_maximum_daily?: number | null;
   availability_start?: string | null;
   availability_end?: string | null;
   delivery_fee?: number;
@@ -632,7 +624,6 @@ export interface ListingDetailsUpdate {
   delivery_available?: boolean;
   owner_verified?: boolean;
   available_quantity?: number;
-  negotiation_enabled?: boolean;
 }
 
 export interface CategoryDepositRule { category_id: string; suggested_pct: number; minimum_amount: number; maximum_amount: number }
@@ -663,14 +654,13 @@ export async function updateListingDetails(listingId: string, details: ListingDe
   let { error } = await supabase.from('listings').update(details).eq('id', listingId);
 
   // Backward compatibility while DB migrations are rolling out.
-  if (error && /owner_verified|instant_booking|protection_eligible|delivery_available|available_quantity|negotiation_enabled/i.test(error.message)) {
+  if (error && /owner_verified|instant_booking|protection_eligible|delivery_available|available_quantity/i.test(error.message)) {
     const legacyDetails = { ...details };
     delete legacyDetails.instant_booking;
     delete legacyDetails.protection_eligible;
     delete legacyDetails.delivery_available;
     delete legacyDetails.owner_verified;
     delete legacyDetails.available_quantity;
-    delete legacyDetails.negotiation_enabled;
     ({ error } = await supabase.from('listings').update(legacyDetails).eq('id', listingId));
   }
 

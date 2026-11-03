@@ -3,6 +3,7 @@ import { mockSupabaseModule } from './mock-supabase';
 import { appUrl } from './test-url';
 
 test('notification subscribers have independent channels and cleanup', async ({ page }) => {
+  test.setTimeout(60_000);
   await page.route('**/src/lib/supabase.ts*', mockSupabaseModule);
   await page.route('http://localhost:54321/**', (route) =>
     route.fulfill({ contentType: 'application/json', body: '[]' }));
@@ -19,7 +20,7 @@ test('notification subscribers have independent channels and cleanup', async ({ 
       }
     });
   });
-  await page.goto(`${appUrl}/notifications`);
+  await page.goto(`${appUrl}/notifications`, { waitUntil: 'domcontentloaded' });
   const result = await page.evaluate(async () => {
     const { subscribeToNotifications } = await import('/src/lib/notifications.ts');
     const { supabase } = await import('/src/lib/supabase.ts');

@@ -29,7 +29,7 @@ function AuctionImage({ url }: { url: string | null }) {
   </div>;
 }
 
-type OwnerAuction = { listing: Listing; auction: ListingAuction };
+export type OwnerAuction = { listing: Listing; auction: ListingAuction };
 type AuctionFilter = 'all' | 'live' | 'scheduled' | 'completed' | 'closed';
 
 function isAuctionLive(auction: ListingAuction) {
@@ -66,7 +66,7 @@ function matchesAuctionFilter(auction: ListingAuction, filter: AuctionFilter) {
   return auction.status === 'ended' || auction.status === 'cancelled';
 }
 
-function OwnerBiddingDashboard({
+export function OwnerBiddingDashboard({
   auctions: ownerAuctions, loading, error, selectingBidId, onRefresh, onExplore, onSelectWinner,
 }: {
   auctions: OwnerAuction[];
@@ -99,7 +99,7 @@ function OwnerBiddingDashboard({
     <header className="p1-page-head">
       <div>
         <h1>Your gear. Their next good bid.</h1>
-        <p>Manage your auctions, review anonymous bids, and track rental status.</p>
+        <p>Review every bidder, make your decision before the deadline, and track payment status.</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" disabled={loading} icon={<RefreshCw size={16} aria-hidden="true" />} onClick={onRefresh}>Refresh auctions</Button>
@@ -116,7 +116,7 @@ function OwnerBiddingDashboard({
           </button>;
         })}
       </nav>
-      <p className="text-xs text-sec pb-2">Bids are anonymous. Owners can select a winner during bidding; selecting closes the auction.</p>
+      <p className="text-xs text-sec pb-2">After bidding closes, you have one hour to select an eligible bidder. Otherwise the highest eligible bid is selected automatically.</p>
     </div>
 
     {error && <Alert tone="error" title="Your auctions could not be loaded">
@@ -127,7 +127,9 @@ function OwnerBiddingDashboard({
         {filteredAuctions.map(({ listing, auction }) => {
           const status = auctionStatus(auction);
           const deadline = auctionDeadline(auction);
-          const canSelectWinner = auction.status === 'open' || auction.status === 'owner_selection';
+          const canSelectWinner = auction.status === 'owner_selection'
+            && !!auction.selection_deadline && Date.parse(auction.selection_deadline) > now;
+          const ownerBids = auction.owner_bids ?? [];
           return <article key={auction.id} className="p1-production-bidding-owner">
                 <header className="p1-bid-room-head">
                   <div className="p1-production-bid-head-photo"><ListingPhoto src={listing.images[0]} alt="" /></div>
@@ -146,33 +148,48 @@ function OwnerBiddingDashboard({
                 </header>
             <div className="p1-bid-room-layout">
               <section className="p1-bid-panel min-w-0">
-                <h3 className="text-sm font-semibold text-main mb-2">Top bids <span className="font-normal text-sec">(anonymous)</span></h3>
-                {auction.top_bids.length === 0 ? (
+                <h3 className="text-sm font-semibold text-main mb-2">Bid history</h3>
+                {ownerBids.length === 0 ? (
                   <p className="rounded-card bg-subtle px-3 py-4 text-sm text-sec">No bids yet. The opening bid is {dollars(auction.minimum_next_bid)} per day.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="p1-production-bid-table w-full text-left text-sm">
                       <thead><tr className="border-b border-app text-xs text-sec">
                         <th scope="col" className="py-2 pr-3 font-medium">Rank</th>
+                        <th scope="col" className="py-2 pr-3 font-medium">Bidder</th>
+                        <th scope="col" className="py-2 pr-3 font-medium">Rating</th>
                         <th scope="col" className="py-2 pr-3 font-medium">Bid per day</th>
+                        <th scope="col" className="py-2 pr-3 font-medium">Submitted</th>
                         <th scope="col" className="py-2 pr-3 font-medium">Bids placed</th>
                         {canSelectWinner && <th scope="col" className="py-2 text-right font-medium">Action</th>}
                       </tr></thead>
-                      <tbody>{auction.top_bids.map(bid => {
+                      <tbody>{ownerBids.map(bid => {
                         const selecting = selectingBidId === bid.id;
                         return <tr key={bid.id} className="border-b last:border-0 border-app">
-                          <td className="py-3 pr-3 font-semibold text-main">#{bid.rank}</td>
+                          <td className="py-3 pr-3 font-semibold text-main">{bid.rank ? `#${bid.rank}` : '—'}</td>
+                          <td className="py-3 pr-3">
+                            <span className="flex items-center gap-2">
+                              {bid.renter.avatar_url
+                                ? <img src={bid.renter.avatar_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+                                : <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-full bg-subtle text-xs font-semibold">{bid.renter.full_name.slice(0, 1).toUpperCase()}</span>}
+                              <span className="font-medium text-main">{bid.renter.full_name}</span>
+                            </span>
+                          </td>
+                          <td className="py-3 pr-3 text-sec">{bid.renter.review_count
+                            ? `${bid.renter.rating === null ? 'Unrated' : bid.renter.rating.toFixed(1)} (${bid.renter.review_count})`
+                            : 'No reviews'}</td>
                           <td className="py-3 pr-3 font-bold text-main tnum">{dollars(bid.daily_rate)}</td>
+                          <td className="py-3 pr-3 text-sec">{new Date(bid.submitted_at).toLocaleString()}</td>
                           <td className="py-3 pr-3 text-sec tnum">{bid.bid_count} {bid.bid_count === 1 ? 'bid' : 'bids'}</td>
                           {canSelectWinner && <td className="py-3 text-right">
                             <Button
                               size="sm"
                               onClick={() => void onSelectWinner(listing.id, bid.id)}
-                              disabled={loading || !!selectingBidId}
+                              disabled={!bid.eligible || loading || !!selectingBidId}
                               loading={selecting}
                               loadingLabel="Selecting..."
                             >
-                              Select winner
+                              {bid.eligible ? 'Select bidder' : bid.passed ? 'Payment expired' : 'Not eligible'}
                             </Button>
                           </td>}
                         </tr>;
@@ -183,8 +200,9 @@ function OwnerBiddingDashboard({
               </section>
               <aside className="p1-bid-rules">
                 <h2>A bid is not a booking.</h2>
-                <div className="p1-info"><ShieldCheck size={20} aria-hidden="true" /><p>Choose an eligible anonymous bid when selection is available. Selecting closes bidding; payment verification is still required before a rental is confirmed.</p></div>
-                <p className="p1-muted">The auction controls and deadlines reflect its current backend status. No bidder identities are shown.</p>
+                <div className="p1-info"><ShieldCheck size={20} aria-hidden="true" /><p>Choose any eligible bidder when selection is available. Payment verification is still required before a rental is confirmed.</p></div>
+                {auction.selected_payment_status && <p className="p1-muted">Selected renter payment: {auction.selected_payment_status.replace('_', ' ')}.</p>}
+                {auction.owner_decision_missed_at && <p role="status" className="p1-muted">Decision window missed and recorded on {new Date(auction.owner_decision_missed_at).toLocaleString()}.</p>}
               </aside>
             </div>
           </article>;

@@ -19,9 +19,9 @@ export interface MarketplaceStore {
   navigate: (name: PageName, id?: string) => void;
   contact: (item: Listing) => void;
   distance: (item: Listing) => number;
-  rentalQuote: (item: Listing, days: number) => { rental: number; fee: number; insurance?: number };
+  rentalQuote: (item: Listing, days: number) => { rental: number; fee: number; insurance?: number; tax?: number };
   checkout?: {
-    create: (params: { listingId: string; startDate: string; endDate: string; deliveryMode: 'pickup' | 'delivery'; renterNote: string }) => Promise<{ id: string; paymentRequired: boolean }>;
+    create: (params: { listingId: string; startDate: string; endDate: string; deliveryMode: 'pickup' | 'delivery'; renterNote: string }) => Promise<{ id: string; paymentRequired: boolean; taxAmount: number; sandboxTax: boolean; rentalTotal: number; total: number }>;
     pay: (id: string) => Promise<void>;
     options?: ReactNode;
   };

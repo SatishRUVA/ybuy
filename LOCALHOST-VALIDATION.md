@@ -28,7 +28,7 @@ Estimated completion: **45%**. This is a conservative scope estimate, not a line
 - `pnpm run build`: passed before the final test-only account-loader/import edits.
 - `pnpm run lint`: 0 errors and 7 existing warnings after removing the unused checkout capture. The account-loader change then exposed two unused imports; those were removed and targeted ESLint passed for the account loader and both affected specs.
 - VS Code diagnostics: no errors in the affected Playwright config/spec files.
-- Source scans: no `127.0.0.1` occurrences in `tests/**` or `playwright*.config.ts`.
+- Source scans: no `localhost` occurrences in `tests/**` or `playwright*.config.ts`.
 - No email sender function was invoked during this validation pass. Because hosted E2E ran earlier and could enqueue notifications, this log does not claim that no email was delivered by an independent scheduled worker during that earlier run.
 
 ## Remaining

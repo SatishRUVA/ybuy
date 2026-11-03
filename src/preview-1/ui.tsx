@@ -1,6 +1,6 @@
 import { useId, useRef, cloneElement, isValidElement, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ArrowRight, Check, Heart, MapPin, Package, Search, ShieldCheck, Star, Truck, X, Zap } from 'lucide-react';
+import { ArrowRight, Heart, MapPin, Package, Search, ShieldCheck, Star, Truck, X, Zap } from 'lucide-react';
 import { type Listing } from '@/data';
 import { Select as SelectRoot, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/shadcn/select';
 import { distanceMi } from '../preview/dates';
@@ -12,8 +12,11 @@ export const money = (value: number) => new Intl.NumberFormat('en-US', {
   style: 'currency', currency: 'USD', minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2,
 }).format(value);
 export const tones: Record<string, string> = {
-  Cameras: '#DCE8F7', Camping: '#DCEBDC', Garden: '#DCEBDC', Tools: '#F6E8B9', Sports: '#F6D8C5',
-  Home: '#F5DFE4', Fashion: '#E7E1F2', Baby: '#D9EEE8', Vehicles: '#E5E6E2', Party: '#E7E1F2', Music: '#E7E1F2', Electronics: '#E5E6E2',
+  Cameras: 'var(--p1-category-cameras)', Outdoor: 'var(--p1-category-outdoor)', Camping: 'var(--p1-category-outdoor)', Garden: 'var(--p1-category-outdoor)',
+  Tools: 'var(--p1-category-tools)', Sports: 'var(--p1-category-sports)', Home: 'var(--p1-category-home)', Fashion: 'var(--p1-category-fashion)',
+  Baby: 'var(--p1-category-baby)', Vehicles: 'var(--p1-category-vehicles)', Party: 'var(--p1-category-fashion)', Music: 'var(--p1-category-fashion)', Electronics: 'var(--p1-category-vehicles)',
+  'Tools & Equipment': 'var(--p1-category-tools)', 'Outdoor & Camping': 'var(--p1-category-outdoor)', 'Party & Events': 'var(--p1-category-fashion)',
+  'Sports & Fitness': 'var(--p1-category-sports)', 'Home & Garden': 'var(--p1-category-home)',
 };
 export function Button({ variant = 'primary', children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'quiet' | 'lime' | 'danger' }) {
   return <button type="button" className={`p1-button p1-button-${variant} ${className}`} {...props}>{children}</button>;
@@ -69,7 +72,7 @@ export function ItemCard({ item, compact = false }: { item: Listing; compact?: b
 export function Empty({ title, body, children }: { title: string; body: string; children?: ReactNode }) {
   return <div className="p1-empty"><Search size={30} aria-hidden="true" /><h2>{title}</h2><p>{body}</p><div className="p1-actions">{children}</div></div>;
 }
-export function Modal({ open, onClose, title, description, children, wide = false }: { open: boolean; onClose: () => void; title: string; description?: string; children: ReactNode; wide?: boolean }) {
+export function Modal({ open, onClose, title, description, children, footer, wide = false }: { open: boolean; onClose: () => void; title: string; description?: string; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   const opener = useRef<HTMLElement | null>(null);
   return <Dialog.Root open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
     <Dialog.Portal><Dialog.Overlay className="p1 p1-overlay" /><Dialog.Content className={`p1 p1-dialog ${wide ? 'p1-dialog-wide' : ''}`}
@@ -78,6 +81,7 @@ export function Modal({ open, onClose, title, description, children, wide = fals
       <div className="p1-dialog-head"><Dialog.Title>{title}</Dialog.Title><Dialog.Close className="p1-icon" aria-label="Close dialog"><X size={20} aria-hidden="true" /></Dialog.Close></div>
       <Dialog.Description className={description ? 'p1-muted' : 'sr-only'}>{description ?? title}</Dialog.Description>
       <div className="p1-dialog-body">{children}</div>
+      {footer && <div className="p1-dialog-footer">{footer}</div>}
     </Dialog.Content></Dialog.Portal>
   </Dialog.Root>;
 }

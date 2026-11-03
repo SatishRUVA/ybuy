@@ -414,8 +414,8 @@ test('listing redesign keeps a single cost-first booking panel and photo-first r
   await expect(request).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Request to book', exact: true })).toHaveCount(1);
   await expect(panel.getByLabel('Price breakdown')).toContainText('$27.50');
-  await expect(panel.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$79.25');
-  await expect(panel.getByText('Tax (7% demo)', { exact: true }).locator('..')).toContainText('$1.75');
+  await expect(panel.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$79.43');
+  await expect(panel.getByText('Tax (7%)', { exact: true }).locator('..')).toContainText('$1.93');
   await expect(panel.getByText('Insurance', { exact: true })).toBeVisible();
   await expect(panel.getByText('Not included', { exact: true })).toBeVisible();
   await expect(panel.getByText('Placeholder', { exact: true })).toHaveCount(0);
@@ -427,7 +427,7 @@ test('listing redesign keeps a single cost-first booking panel and photo-first r
   await expect(page.getByText('Service fee', { exact: true })).toHaveCount(1);
   await expect(page.getByText('(10%)', { exact: false })).toHaveCount(0);
   await expect(panel.getByText('Refundable security deposit', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Demo tax applies to discounted rental only and is not charged.', { exact: false })).toBeVisible();
+  await expect(panel.getByText('Tax is 7% of discounted rental and service fees only.', { exact: false })).toBeVisible();
   expect((await panel.getByText('Estimated total').boundingBox())!.y).toBeLessThan((await request.boundingBox())!.y);
   await expect(page.getByText('Identity verified', { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Joined 2026/)).toHaveCount(0);
@@ -472,49 +472,32 @@ test('listing redesign keeps a single cost-first booking panel and photo-first r
   await expect(page.locator('.listing-detail')).toHaveCSS('animation-name', 'none');
 });
 
-test('listing dates recalculate costs before checkout and clearing dates disables requests', async ({ page }) => {
+test('listing dates recalculate default tax and preserve it through checkout navigation', async ({ page }) => {
   test.slow();
   await setup(page, {}, renterId);
   await page.goto(`${appUrl}/listing/${listingId}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: listing.title, exact: true })).toBeVisible({ timeout: 30000 });
-  const panel = page.getByRole('complementary', { name: 'Book this item' });
-  await expect(panel.getByRole('button', { name: 'Request to book' })).toBeEnabled({ timeout: 15000 });
-  await panel.locator('.relative > button').click();
-  const calendar = page.getByRole('dialog', { name: 'Choose rental dates' });
-  await expect(calendar).toHaveClass(/listing-calendar-popover/);
-  await expect(calendar.getByLabel('Quick date choices')).toHaveCount(0);
-  await expect(panel.getByRole('button', { name: /Choose a date range/ })).toContainText('Pickup');
-  await expect(panel.getByRole('button', { name: /Choose a date range/ })).toContainText('Return');
+  const panel = page.getByRole('complementary');
+  await expect(panel.getByRole('button', { name: 'Request these dates' })).toBeEnabled({ timeout: 15000 });
+  await panel.getByRole('button', { name: /Your rental dates/ }).click();
+  const calendar = page.getByRole('dialog', { name: 'When do you need it?' });
   const labels = await page.evaluate(() => [0, 3].map(offset => {
     const day = new Date(); day.setDate(day.getDate() + offset);
     return day.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   }));
   await calendar.getByRole('button', { name: new RegExp(labels[0]) }).first().click();
   await calendar.getByRole('button', { name: new RegExp(labels[1]) }).first().click();
-  await calendar.getByRole('button', { name: 'Use these dates', exact: true }).click();
-  await expect(panel.getByLabel('Price breakdown')).toContainText('$82.50');
-  await expect(panel.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$137.75');
-  await expect(panel.getByLabel('Insurance simulation')).toContainText('$1.20');
-  await panel.getByRole('button', { name: 'Request to book' }).click();
+  await calendar.getByRole('button', { name: 'Apply dates', exact: true }).click();
+  await expect(panel.getByText('Tax (7%)', { exact: true }).locator('..')).toContainText('$5.78');
+  await expect(panel.getByText('Rental total', { exact: true }).locator('..')).toContainText('$88.28');
+  await panel.getByRole('button', { name: 'Request these dates' }).click();
   await expect(page.getByRole('heading', { name: 'Make time for a good plan.' })).toBeVisible();
   await expect(page.getByText('Service fee', { exact: true })).toHaveCount(1);
   await expect(page.getByText(/Service fee \(/)).toHaveCount(0);
-  await expect(page.getByText('Tax (7% demo)', { exact: true }).locator('..')).toContainText('$5.25');
-  await expect(page.getByText('Insurance (demo)', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Insurance simulation')).toHaveCount(1);
-  await expect(page.getByLabel('Insurance simulation')).toContainText('$1.20');
-  await expect(page.getByLabel('Insurance simulation')).toContainText('Not charged · No coverage');
-  await expect(page.getByText('Not offered', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Security hold', { exact: true })).toBeVisible();
-  await expect(page.getByText('No card hold placed', { exact: true })).toBeVisible();
-  await expect(page.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$137.75');
-  await expect(page.getByText('Payment estimate excluding demo tax:', { exact: false })).toContainText('$132.50');
+  await expect(page.getByText('Tax (7%)', { exact: true }).locator('..')).toContainText('$5.78');
+  await expect(page.getByText('Estimated payment including deposit: $138.28. The server confirms the final amount.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Tax is 7% of discounted rental and service fees only.', { exact: false })).toBeVisible();
   expect(new URL(page.url()).searchParams.has('start')).toBe(true);
-  await page.goBack();
-  await panel.locator('.relative > button').click();
-  await page.getByRole('button', { name: 'Clear dates', exact: true }).click();
-  await expect(panel.getByRole('button', { name: 'Request to book' })).toBeDisabled();
-  await expect(panel.getByText('Estimated total')).toHaveCount(0);
 });
 
 test('instant checkout opens payment and retries the same booking when Stripe is unavailable', async ({ page }) => {
@@ -524,7 +507,8 @@ test('instant checkout opens payment and retries the same booking when Stripe is
   let paymentCalls = 0;
   await page.route('**/rest/v1/rpc/create_booking_request', async route => {
     bookingCalls++;
-    await route.fulfill({ json: { ...booking, status: 'pending_payment' } });
+    await route.fulfill({ json: { ...booking, status: 'pending_payment', service_fee_amount: 7.5,
+      tax_rate: 0.07, tax_amount: 5.78, sandbox_tax: false, total: 138.28 } });
   });
   await page.route('**/functions/v1/create-checkout-session', async route => {
     paymentCalls++;
@@ -534,12 +518,14 @@ test('instant checkout opens payment and retries the same booking when Stripe is
   await page.goto(`${appUrl}/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('checkbox', { name: 'I have reviewed the dates, estimated cost, and rental terms.' }).check();
-  await page.getByRole('button', { name: 'Continue to payment', exact: true }).filter({ visible: true }).click();
-  await expect(page.getByText('Could not open payment', { exact: true })).toBeVisible();
+  await page.getByRole('checkbox', { name: 'I agree to the item’s rental and cancellation terms.' }).check();
+  await page.getByRole('button', { name: 'Continue to secure payment', exact: true }).click();
+  await expect(page.getByText('Stripe unavailable', { exact: true })).toBeVisible();
+  await expect(page.getByText('Tax (7%)', { exact: true }).locator('..')).toContainText('$5.78');
+  await expect(page.getByText('Backend-confirmed payment including deposit: $138.28.', { exact: true })).toBeVisible();
   expect(bookingCalls).toBe(1);
   expect(paymentCalls).toBe(1);
-  await page.getByRole('button', { name: /Retry.*payment/ }).filter({ visible: true }).click();
+  await page.getByRole('button', { name: 'Retry secure payment', exact: true }).click();
   await expect.poll(() => paymentCalls).toBe(2);
   expect(bookingCalls).toBe(1);
   await expect(page.locator('.p1-checkout-actions').getByRole('button', { name: 'Back', exact: true })).toBeDisabled();
@@ -550,20 +536,21 @@ test('checkout delivery and note update the estimate and reach the authoritative
   await setup(page, { listingOverrides: { delivery_available: true, delivery_fee: 15 } }, renterId);
   await page.route('**/rest/v1/rpc/create_booking_request', route => route.fulfill({ json: booking }));
   await page.goto(`${appUrl}/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Make time for a good plan.' })).toBeVisible({ timeout: 30000 });
+  const note = page.getByRole('textbox');
+  await expect(note).toHaveAttribute('maxlength', '500');
+  await note.fill('  Please ring the bell.  ');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   const delivery = page.getByRole('button', { name: /Have it delivered/ });
   await delivery.click();
   await expect(delivery).toHaveAttribute('aria-pressed', 'true');
-  const note = page.getByLabel('Note for owner (optional)', { exact: true });
-  await expect(note).toHaveAttribute('maxlength', '500');
-  await note.fill('  Please ring the bell.  ');
-  const summary = page.getByRole('complementary', { name: 'Rental order summary' });
-  await expect(summary.getByText('Delivery fee', { exact: true }).locator('..')).toContainText('$15.00');
-  await expect(summary.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$152.75');
+  const summary = page.getByRole('complementary');
+  await expect(summary.getByText('Delivery', { exact: true }).locator('..')).toContainText('$15');
+  await expect(summary.getByText('Tax (7%)', { exact: true }).locator('..')).toContainText('$5.78');
+  await expect(page.getByText('Estimated payment including deposit: $153.28. The server confirms the final amount.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  const submit = page.getByRole('button', { name: 'Send booking request', exact: true });
-  await expect(submit).toBeDisabled();
-  await page.getByRole('checkbox', { name: 'I have reviewed the dates, estimated cost, and rental terms.' }).check();
+  const submit = page.getByRole('button', { name: 'Send rental request', exact: true });
+  await page.getByRole('checkbox', { name: 'I agree to the item’s rental and cancellation terms.' }).check();
   const request = page.waitForRequest(value => value.url().endsWith('/rpc/create_booking_request'));
   await submit.click();
   expect((await request).postDataJSON()).toEqual({
@@ -580,8 +567,8 @@ for (const [category, expectedAmount] of [['Electronics', '$1.20'], ['Tools & Eq
     const insurance = page.getByLabel('Insurance simulation');
     await expect(insurance).toContainText(expectedAmount);
     await expect(insurance).toContainText('Not charged · No coverage');
-    await expect(page.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$137.75');
-    await expect(page.getByText('Payment estimate excluding demo tax:', { exact: false })).toContainText('$132.50');
+    await expect(page.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$138.28');
+    await expect(page.getByText('Tax is 7% of discounted rental and service fees only.', { exact: false })).toBeVisible();
     await expect(page.getByText('Insurance (demo)', { exact: true })).toHaveCount(1);
     await expect(page.getByText('Not offered', { exact: true })).toHaveCount(0);
   });

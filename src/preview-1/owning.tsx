@@ -7,6 +7,7 @@ import { availabilityProblem, href, usePreview } from './state';
 import { Action, Avatar, Button, Dropdown, Empty, ErrorNote, Field, Modal, PageHead, SectionHead, Tag, money } from './ui';
 import type { UiBooking } from '@/lib/bookings';
 import type { BankPayoutStatus, DbPayoutRow } from '@/lib/payouts';
+import { ListingNegotiationSettings } from '@/components/listing-negotiation-settings';
 
 export interface LiveOwner {
   items: Listing[];
@@ -178,6 +179,7 @@ function DemoPayouts() {
 }
 
 function LiveOwnerView({ live, listingView }: { live: LiveOwner; listingView: boolean }) {
+  const [biddingId, setBiddingId] = useState<string | null>(null);
   const [tab, setTab] = useState('All');
   const [availabilityId, setAvailabilityId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Avail>({ start: '', end: '', blocked: [] });
@@ -187,7 +189,7 @@ function LiveOwnerView({ live, listingView }: { live: LiveOwner; listingView: bo
   const [reason, setReason] = useState('');
   const [extras, setExtras] = useState(false);
   const [dateError, setDateError] = useState<string | null>(null);
-  const rows = live.items.filter(l => tab === 'All' || (tab === 'Live' ? l.listingStatus === 'published' : tab === 'Paused' ? l.listingStatus === 'archived' : l.listingStatus === 'pending_approval'));
+  const rows = live.items.filter(l => tab === 'All' || (tab === 'Live' ? l.available : tab === 'Paused' ? l.listingStatus === 'archived' : l.listingStatus === 'pending_approval'));
   const pending = live.bookings.filter(r => r.status === 'requested');
   const earned = live.bookings.filter(r => ['confirmed', 'active', 'return_pending', 'completed'].includes(r.status)).reduce((sum, r) => sum + r.subtotal, 0);
   async function openDates(id: string) {
@@ -200,14 +202,17 @@ function LiveOwnerView({ live, listingView }: { live: LiveOwner; listingView: bo
     {live.error && <ErrorNote>{live.error}<Button variant="secondary" disabled={live.busy} onClick={live.retry}>Retry</Button></ErrorNote>}
     {live.notice && <p role="status" className="p1-info-copy">{live.notice}</p>}
     {live.loading && <p role="status">Loading your owner workspace…</p>}
-    {!listingView && <><div className="p1-owner-metrics"><div><span>Rental earnings</span><strong>{live.loading || live.error ? '—' : money(earned)}</strong><small>Owner rental share · not bank payouts</small></div><div className="p1-metric-accent"><span>Waiting on you</span><strong>{pending.length}</strong><small>Requests ready to review</small></div><div><span>Your listings</span><strong>{live.items.filter(l => l.listingStatus === 'published').length}</strong><small>Live in the marketplace</small></div></div>
+    {!listingView && <><div className="p1-owner-metrics"><div><span>Rental earnings</span><strong>{live.loading || live.error ? '—' : money(earned)}</strong><small>Owner rental share · not bank payouts</small></div><div className="p1-metric-accent"><span>Waiting on you</span><strong>{pending.length}</strong><small>Requests ready to review</small></div><div><span>Your listings</span><strong>{live.items.filter(l => l.available).length}</strong><small>Live in the marketplace</small></div></div>
       <section className="p1-owner-requests"><SectionHead title="The next handoffs" description="A quick response keeps a good plan moving." /><div className="p1-request-queue">{live.bookings.map(r => <article key={r.id}><Avatar src={r.counterpartAvatar ?? ''} name={r.counterpartName} size={44} /><div><strong>{r.counterpartName}</strong><p>{r.listingTitle}</p><small>{rangeLabel(r.startDate, r.endDate)} · {money(r.subtotal)} owner share</small></div>{r.status === 'requested' ? <div className="p1-actions"><Button disabled={live.busy} onClick={() => void live.decide(r.id, true)}>Approve</Button><Button disabled={live.busy} variant="quiet" onClick={() => setDeclining(r.id)}>Decline</Button></div> : <Tag tone={r.status === 'rejected' || r.status === 'cancelled' ? 'neutral' : 'good'}>{r.status === 'pending_payment' ? 'Approved · payment next' : r.status.split('_').join(' ')}</Tag>}</article>)}</div></section></>}
     <section><SectionHead title={listingView ? 'Your inventory' : 'Gear with a second job'}>{!listingView && <Action to="listings" variant="quiet">Manage all listings <ArrowRight size={16} aria-hidden="true" /></Action>}</SectionHead>
       {listingView && <div className="p1-tabs p1-space-bottom" aria-label="Listing status">{['All', 'Live', 'Paused', 'In review'].map(t => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)}>{t}</button>)}</div>}
-      <div className="p1-owner-listings">{rows.map(l => <article key={l.id} className="p1-owner-item">{l.images[0] ? <img src={l.images[0]} alt={l.title} /> : <div className="p1-photo-placeholder"><Upload aria-hidden="true" /></div>}<div className="p1-owner-item-body"><Tag tone={l.listingStatus === 'published' ? 'good' : l.listingStatus === 'pending_approval' ? 'pending' : 'neutral'}>{l.listingStatus === 'published' ? 'Live' : l.listingStatus === 'pending_approval' ? 'In review' : l.listingStatus === 'archived' ? 'Paused' : l.listingStatus}</Tag><h3>{l.title || 'Untitled draft'}</h3><p>{money(l.pricePerDay)} / day</p><p className="p1-muted"><CalendarDays size={14} aria-hidden="true" />{rangeLabel(l.availabilityStart ?? '', l.availabilityEnd ?? '')}</p><div className="p1-actions p1-wrap"><Action to="create" id={l.id} variant="secondary">Edit listing</Action><Button disabled={live.busy} variant="secondary" onClick={() => void openDates(l.id)}>Availability</Button>{['published', 'archived'].includes(l.listingStatus ?? '') && <Button disabled={live.busy} variant="quiet" onClick={() => void live.toggle(l)}>{l.listingStatus === 'published' ? 'Pause' : 'Resume'}</Button>}</div></div></article>)}</div>
+      <div className="p1-owner-listings">{rows.map(l => <article key={l.id} className="p1-owner-item">{l.images[0] ? <img src={l.images[0]} alt={l.title} /> : <div className="p1-photo-placeholder"><Upload aria-hidden="true" /></div>}<div className="p1-owner-item-body"><Tag tone={l.available ? 'good' : l.listingStatus === 'pending_approval' ? 'pending' : 'neutral'}>{l.listingStatus === 'published' && l.availabilityExpired ? 'Expired' : l.listingStatus === 'published' ? 'Live' : l.listingStatus === 'pending_approval' ? 'In review' : l.listingStatus === 'archived' ? 'Paused' : l.listingStatus}</Tag><h3>{l.title || 'Untitled draft'}</h3><p>{money(l.pricePerDay)} / day</p><p className="p1-muted"><CalendarDays size={14} aria-hidden="true" />{rangeLabel(l.availabilityStart ?? '', l.availabilityEnd ?? '')}</p>{l.listingStatus === 'published' && l.availabilityExpired && <p className="p1-muted">Hidden from search. Update availability to make this listing available again.</p>}<div className="p1-actions p1-wrap"><Action to="create" id={l.id} variant="secondary">Edit listing</Action><Button disabled={live.busy} variant="secondary" onClick={() => void openDates(l.id)}>Availability</Button>{l.available && <Button disabled={live.busy} variant="secondary" onClick={() => setBiddingId(l.id)}>Bidding settings</Button>}{['published', 'archived'].includes(l.listingStatus ?? '') && <Button disabled={live.busy} variant="quiet" onClick={() => void live.toggle(l)}>{l.listingStatus === 'published' ? 'Pause' : 'Resume'}</Button>}</div></div></article>)}</div>
       {!live.loading && !live.error && !rows.length && <Empty title="Give your gear a second job." body="List something you already own. You stay in control of its price and dates."><Action to="create">List an item</Action></Empty>}
     </section>
     <Button variant="secondary" onClick={() => setExtras(true)}>Rental management & additional controls</Button>
+    <Modal open={Boolean(biddingId)} onClose={() => setBiddingId(null)} title="Bidding settings" description="Schedule competitive bidding and review its saved dates.">
+      {biddingId && <ListingNegotiationSettings listingId={biddingId} />}
+    </Modal>
     <Modal open={extras} onClose={() => { setExtras(false); live.retry(); }} title="Manage your rentals and listings" description="Messages, pickup, returns, reviews, settlement, removal, discounts and promotions.">{extras && live.extras}</Modal>
     <Modal open={Boolean(availabilityId)} onClose={() => { if (!live.busy) setAvailabilityId(null); }} title="Keep your dates in shape." description="Choose a window up to 30 days and block individual days. Confirmed rentals stay protected.">
       {dateError && <ErrorNote>{dateError}<Button onClick={() => availabilityId && void openDates(availabilityId)}>Retry dates</Button></ErrorNote>}

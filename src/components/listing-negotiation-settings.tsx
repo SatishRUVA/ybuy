@@ -3,8 +3,8 @@ import { useAuth } from '@/auth-context';
 import { Alert, Button } from '@/components/ui';
 import { ListingAuctionPreferences } from '@/components/listing-auction-preferences';
 import { fetchListingById, type DbListingRow } from '@/lib/listings';
-import { getListingAuction, listingAuctionError, type ListingAuction, type ListingAuctionPreferences as AuctionPreferences } from '@/lib/listing-auctions';
-import { saveListingNegotiation } from '@/lib/listing-flow';
+import { auctionPublicationMessage, getListingAuction, listingAuctionError, type ListingAuction, type ListingAuctionPreferences as AuctionPreferences } from '@/lib/listing-auctions';
+import { saveAuctionPreferences } from '@/lib/listing-flow';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import '@/pages/production-workflows.css';
 
@@ -41,21 +41,16 @@ export function ListingNegotiationSettings({ listingId, onSaved }: { listingId: 
       const start = listing.availability_start ?? '';
       const end = listing.availability_end ?? '';
       const auctionPreferences = { ...preferences, start_date: preferences.enabled ? preferences.start_date : null, end_date: preferences.enabled ? preferences.end_date : null,
-        bidding_starts_at: preferences.enabled ? new Date(Date.now() + 60_000).toISOString() : null };
+        bidding_starts_at: preferences.enabled ? preferences.bidding_starts_at ?? null : null,
+        bidding_ends_at: preferences.enabled ? preferences.bidding_ends_at ?? null : null };
       const invalid = !auction && listingAuctionError(auctionPreferences, start, end);
       if (invalid) throw new Error(invalid);
-      // The shared RPC also receives legacy offer terms; keep them unchanged rather than erase history.
-      const result = await saveListingNegotiation(listingId, listing.revision!, {
-        negotiation_enabled: listing.negotiation_enabled,
-        offer_minimum_daily: listing.offer_minimum_daily ?? null,
-        offer_maximum_daily: listing.offer_maximum_daily ?? null,
-        offer_target_daily: listing.offer_target_daily ?? null,
-        offer_start_date: listing.offer_start_date ?? null,
-        offer_end_date: listing.offer_end_date ?? null,
-        offer_expiration_hours: listing.offer_expiration_hours ?? null,
-      }, auctionPreferences);
+      const result = await saveAuctionPreferences(listingId, listing.revision!, auctionPreferences);
       setListing({ ...listing, revision: result.revision });
-      setAuction(await getListingAuction(listingId));
+      const savedAuction = await getListingAuction(listingId);
+      if (preferences.enabled && !savedAuction) throw new Error('Your settings were saved, but the auction was not confirmed. Reload your listing before continuing.');
+      if (savedAuction) auctionPublicationMessage(savedAuction);
+      setAuction(savedAuction);
       setSaved(true); onSaved?.();
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not save rental settings. Your entries are kept.'); }
     finally { setBusy(false); }
@@ -79,7 +74,10 @@ export function ListingNegotiationSettings({ listingId, onSaved }: { listingId: 
       {flag.error && <Alert tone="error">{flag.error}</Alert>}
       {!flag.loading && !flag.enabled && !flag.error && <p className="text-xs text-sec">Competitive bidding is currently disabled.</p>}
       {auction && <p className="text-xs text-sec">Auction {auction.status.replace(/_/g, ' ')}. This auction cannot be restarted or rescheduled.</p>}
-      {saved && <p role="status" className="text-sm text-accent">Rental settings saved.</p>}
+      {saved && <div role="status" className="p1-info">
+        <p className="font-semibold">{auction ? auctionPublicationMessage(auction) : 'Bidding settings saved. Regular rentals remain available.'}</p>
+        {auction && <a className="mt-2 inline-flex min-h-11 items-center font-semibold text-accent underline" href={`/auction/${listingId}`}>Manage your auction</a>}
+      </div>}
       <div className="p1-dialog-footer">
         <Button loading={busy} disabled={locked || flag.loading || !flag.enabled} onClick={() => void save()}>Save changes</Button>
         <p className="text-xs leading-relaxed text-sec">Bidding changes take effect after you save. Regular bookings remain available outside auction dates.</p>

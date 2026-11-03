@@ -2,6 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react';
 import { auctions, conversations, currentUser, listings as fixtures, myBookings, needRequests, rentalRequests, type Listing } from '@/data';
 import { addDays, defaultAvail, eachDay, lockedDays, parseIso, toIso, todayIso, type Avail } from '../preview/dates';
 import { DEFAULT_SEARCH, type SearchState } from '../preview/ctx';
+import { mandatoryNotice, noticeCategory, type PreviewNotificationCategory } from './notification-data';
 
 export const pages = [
   ['home', 'Home', 'Discover'], ['search', 'Browse rentals', 'Discover'], ['listing', 'Item details', 'Discover'],
@@ -42,7 +43,7 @@ export interface DemoBooking {
 }
 export interface DemoBid { id: string; amount: number; mine: boolean }
 export interface BidRoom { bids: DemoBid[]; count: number; closes: number; phase: 'live' | 'decision' | 'payment' | 'confirmed'; selected?: string }
-export interface Notice { id: string; title: string; body: string; read: boolean; to: PageName; itemId?: string }
+export interface Notice { id: string; title: string; body: string; read: boolean; to: PageName; itemId?: string; createdAt?: string; category?: PreviewNotificationCategory; mandatory?: boolean }
 
 export function availabilityProblem(avail: Avail, locked: string[] = []): string | null {
   const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && toIso(parseIso(value)) === value;
@@ -78,16 +79,34 @@ function useStore() {
   }])));
   const [profile, setProfile] = useState({ name: currentUser.name, bio: currentUser.bio, email: 'john@example.com', phone: '(214) 555-0123', updates: true });
   const [signedIn, setSignedIn] = useState(true);
-  const [notices, setNotices] = useState<Notice[]>([
-    { id: 'n1', title: 'Your pickup is coming up', body: 'Check your dates and arrange pickup with the owner.', read: false, to: 'renter' },
-    { id: 'n2', title: 'A new request is waiting', body: 'Review your next rental request in the owner workspace.', read: false, to: 'owner' },
-    { id: 'n3', title: 'New message from Alex', body: 'The camera kit is ready when you are.', read: false, to: 'messages' },
-  ]);
+  const [mutedNotificationCategories, setMutedNotificationCategories] = useState<PreviewNotificationCategory[]>([]);
+  const [notices, setNotices] = useState<Notice[]>(() => {
+    const time = (days: number, hour: number) => {
+      const date = new Date();
+      date.setDate(date.getDate() - days); date.setHours(hour, 0, 0, 0);
+      return date.toISOString();
+    };
+    return [
+      { id: 'n1', title: 'New booking request', body: 'A renter requested your Sony camera. Review the dates in your workspace.', read: false, to: 'owner', createdAt: time(0, 10) },
+      { id: 'n2', title: 'You have the winning bid', body: 'Complete payment before your deadline to secure this rental.', read: false, to: 'auction', itemId: 'a1', category: 'bidding', mandatory: true, createdAt: time(0, 9) },
+      { id: 'n3', title: 'New message from Alex', body: 'The camera kit is ready when you are.', read: false, to: 'messages', createdAt: time(0, 8) },
+      { id: 'n4', title: 'Nearby renter needs camping gear', body: 'An item request in Irving may match your tent.', read: false, to: 'requests', createdAt: time(1, 18) },
+      { id: 'n5', title: 'Booking confirmed', body: 'Your rental dates are confirmed. Arrange pickup with the owner.', read: false, to: 'renter', createdAt: time(1, 16) },
+      { id: 'n6', title: 'Listing ready for review', body: 'Your drill listing is waiting for its publication review.', read: true, to: 'listings', createdAt: time(1, 14) },
+      { id: 'n7', title: 'Payment received', body: 'Your rental payment is confirmed. You can review it in your workspace.', read: false, to: 'payouts', createdAt: time(1, 12) },
+      { id: 'n8', title: 'Your pickup is coming up', body: 'Check your dates and arrange pickup with the owner.', read: true, to: 'renter', createdAt: time(3, 10) },
+      { id: 'n9', title: 'A new bid was placed', body: 'Your camera auction has new activity. Open the room to see the current price.', read: true, to: 'auction', itemId: 'a1', createdAt: time(3, 9) },
+      { id: 'n10', title: 'Your listing is published', body: 'Your camping tent is ready for its next good plan.', read: true, to: 'listings', createdAt: time(4, 10) },
+      { id: 'n11', title: 'Support case updated', body: 'There is a new update on your rental support case.', read: false, to: 'profile', category: 'safety', createdAt: time(4, 9) },
+      { id: 'n12', title: 'Make room for a new plan', body: 'Explore a few ideas for your next weekend outdoors.', read: true, to: 'search', category: 'promotions', createdAt: time(5, 10) },
+    ];
+  });
   const [feedback, setFeedback] = useState<{ message: string; party: boolean; id: number } | null>(null);
   const notify = (message: string, party = false) => setFeedback({ message, party, id: Date.now() });
-  const addNotice = (title: string, body: string, to: PageName, itemId?: string) => setNotices((prev) => [
-    { id: crypto.randomUUID(), title, body, to, itemId, read: false }, ...prev,
-  ]);
+  const addNotice = (title: string, body: string, to: PageName, itemId?: string, options?: Pick<Notice, 'category' | 'mandatory'>) => {
+    const notice: Notice = { id: crypto.randomUUID(), title, body, to, itemId, ...options, read: false, createdAt: new Date().toISOString() };
+    if (mandatoryNotice(notice) || !mutedNotificationCategories.includes(noticeCategory(notice))) setNotices(prev => [notice, ...prev]);
+  };
   const lockedFor = (id: string) => [...new Set([
     ...(fixtures.some((l) => l.id === id) ? lockedDays(id) : []),
     ...bookings.filter((b) => b.listingId === id && ['upcoming', 'active'].includes(b.status)).flatMap((b) => eachDay(b.start, b.end)),
@@ -126,6 +145,7 @@ function useStore() {
     threads, setThreads, rooms, setRooms, profile, setProfile, signedIn, setSignedIn, notices, setNotices,
     requestMatches, setRequestMatches, userStatuses, setUserStatuses, adminSettings, setAdminSettings, claimStatuses, setClaimStatuses,
     feedback, setFeedback, notify, addNotice,
+    mutedNotificationCategories, setMutedNotificationCategories,
   };
 }
 type Store = ReturnType<typeof useStore>;

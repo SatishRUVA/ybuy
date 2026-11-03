@@ -4,7 +4,7 @@ import { runInNewContext } from 'node:vm';
 import { rejects } from 'node:assert/strict';
 import ts from 'typescript';
 import { insuranceAmountCents } from '../src/lib/insurance-pricing';
-import { demoTaxCents } from '../src/lib/demo-tax';
+import { bookingTaxCents } from '../src/lib/booking-tax';
 import type { ServerBookingPrice, SandboxPricingPolicy } from '../supabase/functions/_shared/checkout-pricing';
 import type { TaxAddress, TaxRequest } from '../supabase/functions/_shared/tax-provider';
 
@@ -87,6 +87,7 @@ test('ordinary booking requests do not require the optional owner-promo RPC', as
     expect(await exports.createBookingRequest!({ ...params, promotionCode })).toEqual({ id: 'booking-test' });
     expect(calls.at(-1)).toEqual({ fn: 'create_booking_request', args: {
       p_listing_id: params.listingId, p_start_date: params.startDate, p_end_date: params.endDate, p_quantity: 1,
+      p_delivery_mode: 'pickup', p_renter_note: null,
     } });
   }
   await rejects(exports.createBookingRequest!({ ...params, promotionCode: ' SAVE10 ' }), /Promo function unavailable/);
@@ -94,14 +95,98 @@ test('ordinary booking requests do not require the optional owner-promo RPC', as
   expect(calls).toHaveLength(4);
 });
 
-test('display-only demo tax rounds seven percent of discounted rental to cents', () => {
-  expect(demoTaxCents(25)).toBe(175);
-  expect(demoTaxCents(75)).toBe(525);
-  expect(demoTaxCents(60)).toBe(420);
-  expect(demoTaxCents(0.5)).toBe(4);
-  expect(demoTaxCents(0)).toBe(0);
+test('default tax rounds discounted rental plus service fees, excluding all other charges', () => {
+  expect(bookingTaxCents(25)).toBe(175);
+  expect(bookingTaxCents(75)).toBe(525);
+  expect(bookingTaxCents(60)).toBe(420);
+  expect(bookingTaxCents(0.5)).toBe(4);
+  expect(bookingTaxCents(0)).toBe(0);
+  expect(bookingTaxCents(60, 6)).toBe(462);
+  expect(bookingTaxCents(0.07, 0)).toBe(0);
+  expect(bookingTaxCents(0.07, 0.01)).toBe(1);
+  expect(bookingTaxCents(0.49, 0.01)).toBe(4);
+  expect(bookingTaxCents(0, 0.5)).toBe(4);
   for (const value of [-1, NaN, Infinity, Number.MAX_SAFE_INTEGER]) {
-    expect(() => demoTaxCents(value)).toThrow();
+    expect(() => bookingTaxCents(value)).toThrow();
+    expect(() => bookingTaxCents(0, value)).toThrow();
+  }
+});
+
+test('actual checkout edge refuses sandbox tax with live keys before creating a session', () => {
+  const source = readFileSync('supabase\\functions\\create-checkout-session\\index.ts', 'utf8');
+  const helper = source.slice(source.indexOf('export function checkoutAmountCents('), source.indexOf('Deno.serve('));
+  const output = ts.transpileModule(helper, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const exports: { checkoutAmountCents?: (booking: { total: unknown; sandbox_tax?: boolean; tax_amount?: unknown; tax_rate?: unknown }, key: string) => number } = {};
+  runInNewContext(output, { exports, moneyToCents });
+  const amount = exports.checkoutAmountCents!;
+  for (const key of ['sk_test_fixture', 'rk_test_fixture']) {
+    expect(amount({ total: '70.62', sandbox_tax: true, tax_amount: '4.62', tax_rate: '0.07' }, key)).toBe(7062);
+    expect(amount({ total: '0.01', sandbox_tax: true, tax_amount: 0 }, key)).toBe(1);
+  }
+  for (const key of ['sk_live_fixture', 'rk_live_fixture', 'invalid', '']) {
+    expect(() => amount({ total: 1, sandbox_tax: true, tax_amount: 0 }, key)).toThrow('test-mode');
+  }
+  for (const key of ['sk_live_fixture', 'rk_live_fixture', 'sk_test_fixture', 'rk_test_fixture']) {
+    expect(amount({ total: '70.62', sandbox_tax: false, tax_amount: '4.62', tax_rate: '0.07' }, key)).toBe(7062);
+  }
+  expect(amount({ total: '10.29' }, 'sk_live_fixture')).toBe(1029);
+  for (const total of [0, -1, NaN, Infinity, '1.001', '1.00000001', '90071992547409.92', null, {}]) {
+    expect(() => amount({ total }, 'sk_test_fixture')).toThrow();
+  }
+  expect(source.indexOf('const amountCents = checkoutAmountCents(booking, stripeSecret)'))
+    .toBeLessThan(source.indexOf('await stripe.checkout.sessions.create('));
+  expect(source).toContain("select('*, listing:listings(title)')");
+  expect(source).toContain('unit_amount: amountCents');
+});
+
+test('checkout handler charges normal tax with live or test keys but blocks historical sandbox tax on live keys', async () => {
+  const source = readFileSync('supabase\\functions\\create-checkout-session\\index.ts', 'utf8');
+  const output = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  for (const [key, sandboxTax, taxAmount, expectedStatus] of [
+    ['sk_live_fixture', true, 0, 500], ['rk_live_fixture', true, 1.54, 500],
+    ['sk_test_fixture', true, 1.54, 200], ['rk_test_fixture', true, 1.54, 200],
+    ['sk_live_fixture', false, 0, 200], ['sk_live_fixture', false, 1.54, 200],
+    ['rk_live_fixture', false, 1.54, 200], ['sk_test_fixture', false, 1.54, 200],
+  ] as const) {
+    let calls = 0;
+    let chargedCents: number | undefined;
+    let handler: ((req: Request) => Promise<Response>) | undefined;
+    const booking = { id: 'booking-test', renter_id: 'renter-test', status: 'pending_payment',
+      total: '42.54', sandbox_tax: sandboxTax, tax_amount: taxAmount, tax_rate: taxAmount > 0 || sandboxTax ? 0.07 : 0,
+      listing: { title: 'Test camera' } };
+    const client = {
+      auth: { getUser: async () => ({ data: { user: { id: 'renter-test' } }, error: null }) },
+      from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: booking, error: null }) }) }) }),
+      rpc: async (name: string) => ({ error: null, data: name === 'has_active_session' ? true : {
+        status: 'pending_payment', expires_at: '2026-11-02T15:00:00Z', server_now: '2026-11-02T14:00:00Z',
+      } }),
+    };
+    class MockStripe {
+      checkout = { sessions: { create: async (params: { line_items: { price_data: { unit_amount: number } }[] }) => {
+        calls++; chargedCents = params.line_items[0].price_data.unit_amount;
+        return { id: 'cs_mock', url: 'https://example.test/checkout', status: 'open' };
+      } } };
+    }
+    runInNewContext(output, {
+      exports: {}, Response, console: { error: () => {} },
+      Deno: { env: { get: (name: string) => name === 'STRIPE_SECRET_KEY' ? key : 'fixture' },
+        serve: (fn: (req: Request) => Promise<Response>) => { handler = fn; } },
+      require: (name: string) => name.startsWith('npm:stripe') ? { default: MockStripe }
+        : name.startsWith('npm:@supabase') ? { createClient: () => client }
+          : name.endsWith('checkout-pricing.ts') ? { moneyToCents }
+            : { withCors: (fn: unknown) => fn, trustedOrigin: () => 'http://localhost:5174' },
+    });
+    const response = await handler!(new Request('http://localhost/checkout', {
+      method: 'POST', headers: { Authorization: 'Bearer fixture', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookingId: 'booking-test' }),
+    }));
+    expect(response.status).toBe(expectedStatus);
+    expect(calls).toBe(expectedStatus === 200 ? 1 : 0);
+    if (calls) expect(chargedCents).toBe(4254);
   }
 });
 

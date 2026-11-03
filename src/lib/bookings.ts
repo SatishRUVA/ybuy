@@ -25,6 +25,7 @@ interface DbBookingListing {
 
 export interface DbBookingRow {
   id: string;
+  booking_reference?: string;
   listing_id: string;
   renter_id: string;
   owner_id: string;
@@ -41,17 +42,28 @@ export interface DbBookingRow {
   renter_note?: string | null;
   service_fee_amount: number;
   insurance_amount: number;
+  tax_amount?: number;
+  tax_rate?: number;
+  sandbox_tax?: boolean;
   deposit: number;
+  deposit_collection_model?: 'captured' | 'authorization';
+  deposit_hold_consent_at?: string | null;
   total: number;
   created_at: string;
-  listing: DbBookingListing;
-  renter: DbBookingProfile;
-  owner: DbBookingProfile;
+  listing: DbBookingListing | null;
+  renter: DbBookingProfile | null;
+  owner: DbBookingProfile | null;
+  agreement?: { snapshot: {
+    listing: { title: string; photos: string[] };
+    owner_name: string;
+    renter_name: string;
+  } } | null;
 }
 
 const BOOKING_SELECT = `
   *,
   listing:listings(id, title, listing_images(url, sort_order)),
+  agreement:rental_agreements(snapshot),
   renter:profiles!renter_id(id, full_name, avatar_url),
   owner:profiles!owner_id(id, full_name, avatar_url)
 `;
@@ -75,6 +87,7 @@ export async function fetchBookingPickup(bookingId: string): Promise<BookingPick
 
 export interface UiBooking {
   id: string;
+  bookingReference: string | null;
   listingId: string;
   listingTitle: string;
   listingImage: string;
@@ -93,7 +106,11 @@ export interface UiBooking {
   renterNote: string | null;
   serviceFeeAmount: number;
   insuranceAmount: number;
+  taxAmount: number;
+  taxRate: number;
+  sandboxTax: boolean;
   deposit: number;
+  depositCollectionModel: 'captured' | 'authorization';
   total: number;
   isOwner: boolean;
   counterpartId: string;
@@ -102,15 +119,16 @@ export interface UiBooking {
 const PLACEHOLDER_IMAGE = 'https://images.pexels.com/photos/163069/box-cardboard-package-moving-163069.jpeg?auto=compress&cs=tinysrgb&w=200&h=200&fit=crop';
 
 export function toUiBooking(row: DbBookingRow, currentUserId: string): UiBooking {
-  const isOwner = row.owner.id === currentUserId;
+  const isOwner = row.owner_id === currentUserId;
   const counterpart = isOwner ? row.renter : row.owner;
   const sortedImages = [...(row.listing?.listing_images ?? [])].sort((a, b) => a.sort_order - b.sort_order);
   return {
     id: row.id,
+    bookingReference: row.booking_reference ?? null,
     listingId: row.listing_id,
-    listingTitle: row.listing?.title ?? 'Listing',
+    listingTitle: row.listing?.title ?? row.agreement?.snapshot.listing.title ?? 'Unavailable listing',
     listingImage: sortedImages[0]?.url ?? PLACEHOLDER_IMAGE,
-    counterpartName: counterpart?.full_name ?? 'User',
+    counterpartName: counterpart?.full_name ?? (isOwner ? row.agreement?.snapshot.renter_name : row.agreement?.snapshot.owner_name) ?? 'Unavailable account',
     counterpartAvatar: counterpart?.avatar_url ?? null,
     startDate: row.start_date,
     endDate: row.end_date,
@@ -125,7 +143,11 @@ export function toUiBooking(row: DbBookingRow, currentUserId: string): UiBooking
     renterNote: row.renter_note ?? null,
     serviceFeeAmount: row.service_fee_amount,
     insuranceAmount: Number(row.insurance_amount ?? 0),
+    taxAmount: Number(row.tax_amount ?? 0),
+    taxRate: Number(row.tax_rate ?? 0),
+    sandboxTax: row.sandbox_tax === true,
     deposit: row.deposit,
+    depositCollectionModel: row.deposit_collection_model ?? 'captured',
     total: row.total,
     isOwner,
     counterpartId: counterpart?.id ?? (isOwner ? row.renter_id : row.owner_id),
@@ -137,7 +159,7 @@ export async function fetchBookingById(id: string, currentUserId: string): Promi
   if (error) throw new Error(error.message);
   if (!data) return null;
   const row = data as unknown as DbBookingRow;
-  row.listing.listing_images = await signListingImages(row.listing.listing_images);
+  if (row.listing) row.listing.listing_images = await signListingImages(row.listing.listing_images);
   return toUiBooking(row, currentUserId);
 }
 
@@ -150,7 +172,7 @@ export async function fetchBookingsAsRenter(currentUserId: string): Promise<UiBo
   if (error) throw error;
   return Promise.all((data ?? []).map(async (value) => {
     const row = value as unknown as DbBookingRow;
-    row.listing.listing_images = await signListingImages(row.listing.listing_images);
+    if (row.listing) row.listing.listing_images = await signListingImages(row.listing.listing_images);
     return toUiBooking(row, currentUserId);
   }));
 }
@@ -164,7 +186,7 @@ export async function fetchBookingsAsOwner(currentUserId: string): Promise<UiBoo
   if (error) throw error;
   return Promise.all((data ?? []).map(async (value) => {
     const row = value as unknown as DbBookingRow;
-    row.listing.listing_images = await signListingImages(row.listing.listing_images);
+    if (row.listing) row.listing.listing_images = await signListingImages(row.listing.listing_images);
     return toUiBooking(row, currentUserId);
   }));
 }
@@ -207,14 +229,6 @@ export async function cancelBooking(bookingId: string): Promise<DbBookingRow> {
   return callBookingRpc('cancel_booking', { p_booking_id: bookingId });
 }
 
-export async function markBookingActive(bookingId: string): Promise<DbBookingRow> {
-  return callBookingRpc('mark_booking_active', { p_booking_id: bookingId });
-}
-
 export async function startBookingReturn(bookingId: string): Promise<DbBookingRow> {
   return callBookingRpc('start_booking_return', { p_booking_id: bookingId });
-}
-
-export async function completeBookingReturn(bookingId: string): Promise<DbBookingRow> {
-  return callBookingRpc('complete_booking_return', { p_booking_id: bookingId });
 }

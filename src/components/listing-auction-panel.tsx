@@ -59,7 +59,7 @@ export function ListingAuctionPanel({ listingId }: { listingId: string }) {
     <header className="flex items-start gap-3 bg-accent-soft px-5 py-4">
       <Gavel size={21} aria-hidden="true" className="text-accent mt-0.5" /><div>
         <h2 id="competitive-auction-title" className="text-lg font-bold text-main">Competitive bidding</h2>
-        <p className="text-xs text-sec mt-1">Anonymous bids for a fixed rental period. No payment is taken when bidding.</p>
+        <p className="text-xs text-sec mt-1">Renter identities stay private from other bidders. No payment is taken when bidding.</p>
       </div>
     </header>
     <div className="p-5">
@@ -84,6 +84,18 @@ export function ListingAuctionPanel({ listingId }: { listingId: string }) {
                 <span className="ml-auto text-sec">{bid.bid_count} {bid.bid_count === 1 ? 'bid' : 'bids'}</span>
               </li>)}</ol>}
           </div>
+          {!auction.is_owner && user && <div>
+            <h3 className="text-sm font-bold mb-2">Your bid history</h3>
+            <p className="text-xs text-sec mb-2">{auction.my_rank ? `Your current rank is #${auction.my_rank}.` : 'You are not currently ranked among eligible bids.'}</p>
+            {auction.my_bids.length ? <ol className="space-y-2">
+              {auction.my_bids.map(bid => <li key={bid.id} className="flex flex-wrap items-center justify-between gap-2 rounded-card bg-subtle p-3 text-xs">
+                <time dateTime={bid.submitted_at}>{new Date(bid.submitted_at).toLocaleString()}</time>
+                <strong>${bid.daily_rate.toFixed(2)}/day</strong>
+                <span>{bid.selected ? 'Selected' : bid.passed ? 'Payment window expired' : bid.is_current ? 'Current bid' : 'Earlier bid'}</span>
+                {bid.rank !== null && <span>#{bid.rank}</span>}
+              </li>)}
+            </ol> : <p className="text-xs text-sec">You have not placed a bid in this auction.</p>}
+          </div>}
           {auction.is_owner ? <p className="text-xs text-sec">Owners choose the winner from the separate Bidding section. Selecting a winner closes bidding and starts a one-hour payment window.</p> :
             auction.my_booking_id && auction.status === 'awaiting_payment' ? <div role="status" className="space-y-3">
               <Alert tone="success" title="Your bid was selected">Complete payment before the deadline. Availability and payment verification still apply.</Alert>
@@ -95,7 +107,7 @@ export function ListingAuctionPanel({ listingId }: { listingId: string }) {
                 <Field label="Your competitive bid per day (USD)" htmlFor="auction-bid-rate">
                   <input id="auction-bid-rate" required type="number" step="0.01" min={auction.minimum_next_bid} max={100000} inputMode="decimal" value={rate}
                     disabled={busy || auction.my_bid_count >= 3} onChange={event => setRate(event.target.value)} className={fieldClass()} />
-                    <p className="mt-2 text-xs text-sec">Minimum next bid: ${auction.minimum_next_bid.toFixed(2)}/day. Increase the current top bid by at least $1/day.</p>
+                    <p className="mt-2 text-xs text-sec">Minimum next bid: ${auction.minimum_next_bid.toFixed(2)}/day. The platform-configured increase is ${auction.minimum_increment.toFixed(2)}/day.</p>
                 </Field>
                 <Button type="submit" className="w-full" disabled={busy || !!error || auction.my_bid_count >= 3} loading={busy} loadingLabel="Placing bid...">Place bid</Button>
               </form> : !user && open ? <Button className="w-full" onClick={openSignIn}>Sign in to bid</Button> :
@@ -104,8 +116,8 @@ export function ListingAuctionPanel({ listingId }: { listingId: string }) {
         <aside aria-label="How competitive bidding works" className="rounded-card bg-subtle p-4 text-xs text-sec">
           <h3 className="font-bold text-main mb-4">What happens next?</h3>
           <ol className="space-y-5">
-            <li className="flex gap-3"><Gavel size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Bidding ends</strong><p className="mt-1">A bid in the final 2 minutes adds 2 minutes, up to 10 minutes. Closing never passes the day-before-pickup cutoff. Only the top 3 bids are shown anonymously.</p></div></li>
-            <li className="flex gap-3"><UserRound size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Owner selects a winner</strong><p className="mt-1">Owners can select any eligible top bid while bidding is open. Selection closes bidding immediately.</p></div></li>
+            <li className="flex gap-3"><Gavel size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Bidding ends</strong><p className="mt-1">A bid in the final 2 minutes adds 2 minutes, up to 10 minutes. Closing stays at least 2 hours before pickup. Renters see the top 3 bids anonymously.</p></div></li>
+            <li className="flex gap-3"><UserRound size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Owner selects a winner</strong><p className="mt-1">After bidding closes, the owner has one hour to select any eligible bidder. Otherwise the highest eligible bid is selected automatically.</p></div></li>
             <li className="flex gap-3"><Clock3 size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Winner pays within 1 hour</strong><p className="mt-1">If unpaid, the next eligible bidder is offered the rental. Dates and capacity are checked again.</p></div></li>
             <li className="flex gap-3"><ShieldCheck size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Booking confirmed</strong><p className="mt-1">Only after successful payment verification. Bidding alone never confirms a rental.</p></div></li>
           </ol>

@@ -4,8 +4,25 @@
 import Stripe from 'npm:stripe@17';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { trustedOrigin, withCors } from '../_shared/cors.ts';
+import { moneyToCents } from '../_shared/checkout-pricing.ts';
 
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!);
+const stripeSecret = Deno.env.get('STRIPE_SECRET_KEY')!;
+const stripe = new Stripe(stripeSecret);
+
+export function checkoutAmountCents(booking: { total: unknown; sandbox_tax?: boolean; tax_amount?: unknown; tax_rate?: unknown }, secret: string): number {
+  if (booking.sandbox_tax === true
+    && !/^(sk_test_|rk_test_)/.test(secret)) {
+    throw new Error('Sandbox tax bookings require a Stripe test-mode key');
+  }
+  if (typeof booking.total !== 'string' && typeof booking.total !== 'number') {
+    throw new Error('Booking total must be a positive safe integer amount in cents');
+  }
+  const cents = moneyToCents(booking.total);
+  if (!Number.isSafeInteger(cents) || cents <= 0) {
+    throw new Error('Booking total must be a positive safe integer amount in cents');
+  }
+  return cents;
+}
 
 Deno.serve(withCors(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -37,12 +54,33 @@ Deno.serve(withCors(async (req) => {
     // re-check renter_id + status server-side before ever creating a charge.
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
-      .select('id, renter_id, status, total, listing:listings(title)')
+      .select('*, listing:listings(title)')
       .eq('id', bookingId)
       .single();
 
     if (bookingError || !booking) return json({ error: 'Booking not found' }, 404);
     if (booking.renter_id !== userData.user.id) return json({ error: 'Only the renter can pay for this booking' }, 403);
+    const amountCents = checkoutAmountCents(booking, stripeSecret);
+    let stripeCustomerId: string | undefined;
+    if (booking.deposit_collection_model === 'authorization' && Number(booking.deposit) > 0) {
+      if (!booking.deposit_hold_consent_at) return json({ error: 'Security-deposit consent is required before payment.' }, 409);
+      const { data: savedCustomer, error: savedCustomerError } = await supabase.from('renter_stripe_customers')
+        .select('stripe_customer_id,default_payment_method_id').eq('renter_id', userData.user.id).maybeSingle();
+      const { data: depositAuthorization, error: authorizationError } = await supabase.from('booking_deposit_authorizations')
+        .select('status,stripe_payment_method_id,authorized_amount,capture_before,is_claim_authorization')
+        .eq('booking_id', bookingId).order('attempt', { ascending: false }).limit(1).maybeSingle();
+      if (savedCustomerError || authorizationError) {
+        console.error('Deposit setup verification failed', savedCustomerError?.message ?? authorizationError?.message);
+        return json({ error: 'Could not verify saved deposit payment details. Retry setup before paying.' }, 503);
+      }
+      if (!savedCustomer?.default_payment_method_id || !depositAuthorization?.stripe_payment_method_id
+        || depositAuthorization.status !== 'authorized' || depositAuthorization.is_claim_authorization
+        || Number(depositAuthorization.authorized_amount) < Number(booking.deposit)
+        || !depositAuthorization.capture_before || Date.parse(depositAuthorization.capture_before) <= Date.now()) {
+        return json({ error: 'Authorize the security deposit before paying the rental total.' }, 409);
+      }
+      stripeCustomerId = savedCustomer.stripe_customer_id;
+    }
     const { data: reservation,error: reservationError } = await supabase.rpc('get_checkout_reservation', { p_booking_id: bookingId });
     if (reservationError) {
       console.error('Checkout reservation check failed',reservationError.message);
@@ -59,16 +97,17 @@ Deno.serve(withCors(async (req) => {
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      ...(stripeCustomerId ? { customer: stripeCustomerId } : {}),
       line_items: [{
         price_data: {
           currency: 'usd',
-          unit_amount: Math.round(Number(booking.total) * 100),
+          unit_amount: amountCents,
           product_data: { name: listingTitle },
         },
         quantity: 1,
       }],
-      metadata: { booking_id: booking.id },
-      payment_intent_data: { metadata: { booking_id: booking.id } },
+      metadata: { booking_id: booking.id, purpose: 'booking_payment' },
+      payment_intent_data: { metadata: { booking_id: booking.id, purpose: 'booking_payment' } },
       success_url: `${appOrigin}/confirmation/${booking.id}`,
       cancel_url: `${appOrigin}/confirmation/${booking.id}`,
     }, { idempotencyKey: `checkout:${booking.id}:v1` });

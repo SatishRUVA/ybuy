@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { ChevronLeft, ChevronRight, Heart, Star, Zap, ImageOff, BadgeCheck } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, Heart, Star, Zap, ImageOff, BadgeCheck, Package, Truck } from 'lucide-react';
 import type { Listing } from '@/data';
 import { Badge } from '@/components/ui';
 import { ProtectionBadge } from '@/components/trust';
@@ -35,7 +35,7 @@ function RatingLine({ listing }: { listing: Listing }) {
     <div className="flex shrink-0 items-center gap-1 text-xs">
       {listing.reviewCount > 0 ? (
         <>
-          <Star size={12} className="fill-[var(--star)] text-[var(--star)]" />
+          <Star size={12} className="p1-rating-star" fill="currentColor" />
           <span className="font-semibold text-main tnum">{listing.rating.toFixed(1)}</span>
           <span className="text-sec">({listing.reviewCount})</span>
         </>
@@ -101,13 +101,17 @@ export function ListingCard({ listing, onClick, favorited, favoriteBusy, onToggl
       </a>
       <FavoriteButton liked={liked} onToggle={toggleLiked} busy={favoriteBusy} />
       {listing.instantBooking && <span className="p1-instant"><Zap size={12} aria-hidden="true" /> Instant booking</span>}
+      {listing.available && listing.images.length > 0 && <span className="p1-photo-count" aria-label={`${listing.images.length} listing photos`}>1/{listing.images.length}</span>}
       {!listing.available && <Badge tone="neutral" className="absolute bottom-2 right-2 bg-card">Booked</Badge>}
       </div>
         <div className="p1-item-body">
           <div className="p1-item-category"><span>{listing.category}</span><RatingLine listing={listing} /></div>
           <a href={`/listing/${encodeURIComponent(listing.id)}`} className="p1-item-title" onClick={(event) => handleListingLinkClick(event, onClick)}>{listing.title}</a>
           <OwnerLine listing={listing} />
-          <p className="p1-item-price"><strong>${listing.pricePerDay}</strong><span>/ day</span></p>
+          <div className="p1-card-handoff"><span><Package size={14} aria-hidden="true" />Local Pickup</span>
+            {listing.deliveryAvailable && <span><Truck size={15} aria-hidden="true" />Delivery</span>}</div>
+          <div className="p1-card-bottom"><p className="p1-item-price"><strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(listing.pricePerDay)}</strong><span>/ day</span></p>
+            <a href={`/listing/${encodeURIComponent(listing.id)}`} className="p1-button p1-button-primary" onClick={(event) => handleListingLinkClick(event, onClick)}>View Details <ArrowRight size={16} aria-hidden="true" /></a></div>
             {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
         </div>
     </article>

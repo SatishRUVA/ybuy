@@ -10,6 +10,7 @@ import { fetchBankPayoutStatus, fetchPayoutsByOwner, startConnectOnboarding } fr
 import { fetchUnavailableDates } from '@/lib/availability';
 import { saveOwnerAvailability } from '@/lib/owner-availability';
 import { listingAvailabilityError } from '@/lib/listing-availability';
+import { useUtcDay } from '@/lib/use-utc-day';
 import { supabase } from '@/lib/supabase';
 import { getOrCreateConversation, sendMessage, MESSAGE_MAX_LENGTH } from '@/lib/messages';
 import { assertPlainText } from '@/lib/text-safety';
@@ -41,6 +42,7 @@ async function fetchOwnerInventory(userId: string) {
 }
 
 function ConnectedOwner({ userId, listingView }: { userId: string; listingView: boolean }) {
+  const utcDay = useUtcDay();
   const [items, setItems] = useState<Listing[]>([]);
   const [bookings, setBookings] = useState<UiBooking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,7 +60,7 @@ function ConnectedOwner({ userId, listingView }: { userId: string; listingView: 
       if (active) { setItems(listings); setBookings(rentals.filter(b => b.isOwner)); }
     }).catch(reason => { if (active) setError(message(reason)); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [userId, retry]);
+  }, [userId, retry, utcDay]);
 
   async function refresh() {
     const [listings, rentals] = await Promise.all([fetchOwnerInventory(userId), fetchBookingsAsOwner(userId)]);

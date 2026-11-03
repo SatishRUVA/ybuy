@@ -35,7 +35,7 @@ export function ItemRequestsSection() {
       open={target !== null}
       onOpenChange={(open) => { if (!open) setTarget(null); }}
       title={`Close "${target?.title ?? 'item request'}"?`}
-      description="The request will no longer be visible to owners. Pending offers and counteroffers will be cancelled."
+      description="The request will no longer be visible to owners. Existing bookings remain unchanged."
       confirmLabel="Close request"
       danger
       onConfirm={async (reason) => {
