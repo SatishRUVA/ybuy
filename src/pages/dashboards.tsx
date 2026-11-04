@@ -268,7 +268,10 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
 
   const handleCancel = (id: string) => run(id, async () => { await cancelBooking(id); reload(); }, 'Could not cancel this booking.');
   const handleStartCheckIn = (id: string) =>
-    run(id, async () => { await startBookingPickup(id); navigate({ name: 'check-in', id }); }, 'Could not start pickup.');
+    run(id, async () => {
+      if (!bookings?.find(booking => booking.id === id)?.paymentFirst) await startBookingPickup(id);
+      navigate({ name: 'check-in', id });
+    }, 'Could not start pickup.');
   const handleStartReturn = (id: string) =>
     run(id, async () => { await startBookingReturn(id); navigate({ name: 'check-out', id }); }, 'Could not start the return.');
   const handlePayNow = (id: string) =>
@@ -358,7 +361,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
                 )}
                 {booking.status === 'confirmed' && (
                   <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id)}>
-                    I'm Here – Start Pickup
+                    {booking.paymentFirst ? 'Pre-check-in: choose a slot' : "I'm Here – Start Pickup"}
                   </Button>
                 )}
                 {booking.status === 'active' && (

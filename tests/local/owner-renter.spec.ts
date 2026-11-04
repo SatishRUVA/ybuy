@@ -1,6 +1,7 @@
 import { expect, test, type Cookie, type Page } from '@playwright/test';
 import { computeTotpForTest } from '../../api/_lib/access-session.js';
 import { execSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { createClient } from '@supabase/supabase-js';
 import { loadTestActors, type TestActor } from './test-accounts';
 
@@ -157,9 +158,13 @@ test(`pair ${pair}: ${pair === 5 ? 'instant booking' : 'owner approval'} flow re
   const renterContext = await browser.newContext();
   const ownerPage = await ownerContext.newPage();
   const renterPage = await renterContext.newPage();
+  const imagePath = `${listingId}/synthetic-camera.png`;
   try {
+    const image = await readFile(new URL('../../src/assets/offer-demo-camera.png', import.meta.url));
+    expect((await ownerApi.storage.from('listing-images').upload(imagePath, image, { contentType: 'image/png' })).error).toBeNull();
+    const imageUrl = ownerApi.storage.from('listing-images').getPublicUrl(imagePath).data.publicUrl;
     expect((await ownerApi.from('listing_images').insert({
-      listing_id: listingId, url: 'https://example.test/local-e2e-camera.jpg', sort_order: 0,
+      listing_id: listingId, url: imageUrl, sort_order: 0,
     })).error).toBeNull();
     expect((await ownerApi.from('listing_pickup_locations').insert({
       listing_id: listingId, owner_id: owner.id, address: 'Private test pickup', city: 'Dallas',
@@ -291,6 +296,7 @@ test(`pair ${pair}: ${pair === 5 ? 'instant booking' : 'owner approval'} flow re
       expect(bookings.error, 'Lifecycle booking fixture cleanup').toBeNull();
       const removed = await admin.from('listings').delete().eq('id', listingId);
       expect(removed.error, 'Lifecycle listing fixture cleanup').toBeNull();
+      expect((await admin.storage.from('listing-images').remove([imagePath])).error).toBeNull();
     }
     await ownerApi.auth.signOut({ scope: 'local' });
     await renterApi.auth.signOut({ scope: 'local' });

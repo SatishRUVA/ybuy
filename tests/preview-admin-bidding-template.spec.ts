@@ -148,7 +148,7 @@ async function setupMutationPage(page: import('@playwright/test').Page, kind: 'a
 }
 
 test('Preview admin keeps native templates and delegates changes to real protected operations', async () => {
-  const source = await readFile(new URL('../src/components/preview-administration.tsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/admin/preview-administration.tsx', import.meta.url), 'utf8');
   for (const markup of ['p1-work-page', 'p1-admin-metrics', 'p1-admin-overview', 'p1-moderation-list', 'p1-member-list', 'p1-report-bars']) {
     expect(source).toContain(`className="${markup}"`);
   }
@@ -198,24 +198,11 @@ test('native BidRoom keeps a failed bid draft and retries the same authorized bi
   expect(calls.bids[0].p_idempotency_key).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/i));
 });
 
-test('native admin moderation shows permission rejection and retries the protected publication RPC', async ({ page }) => {
+test('customer admin routes point to the separate portal without issuing protected mutations', async ({ page }) => {
   const calls = await setupMutationPage(page, 'admin');
   await page.goto(`${appUrl}/admin/moderation`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Review listing' }).waitFor({ state: 'visible', timeout: 20_000 });
-  await page.getByRole('button', { name: 'Review listing' }).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('heading', { name: listing.title })).toBeVisible();
-  await dialog.getByRole('textbox', { name: 'Reason for approval' }).fill('Reviewed current listing details');
-
-  await dialog.getByRole('button', { name: 'Approve listing' }).click();
-  await expect(dialog.getByRole('alert')).toContainText('Permission denied by test fixture');
-  await expect(dialog.getByRole('heading', { name: listing.title })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Review listing' })).toBeVisible();
-
-  await dialog.getByRole('button', { name: 'Approve listing' }).click();
-  await expect(page.getByText('The queue is clear.')).toBeVisible();
-  expect(calls.approvals).toEqual([
-    { p_listing_id: listingId, p_revision: 3, p_reason: 'Reviewed current listing details' },
-    { p_listing_id: listingId, p_revision: 3, p_reason: 'Reviewed current listing details' },
-  ]);
+  await expect(page.getByRole('heading', { name: 'Administration has moved' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open YBuy administration' })).toHaveAttribute('href', 'https://ybuy-admin.vercel.app');
+  await expect(page.getByRole('button', { name: 'Review listing' })).toHaveCount(0);
+  expect(calls.approvals).toEqual([]);
 });

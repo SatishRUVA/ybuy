@@ -55,7 +55,7 @@ export function PreviewRentals() {
   return <Rentals live={{
     bookings: bookings.map((booking) => ({
       id: booking.id, bookingReference: booking.bookingReference, listingId: booking.listingId, title: booking.listingTitle, image: booking.listingImage,
-      start: booking.startDate, end: booking.endDate, total: booking.total - booking.deposit, ownerName: booking.counterpartName,
+      start: booking.startDate, end: booking.endDate, total: booking.depositCollectionModel === 'authorization' ? booking.total : booking.total - booking.deposit, ownerName: booking.counterpartName,
       status: STATUSES[booking.status], label: LABELS[booking.status],
       pickup: booking.deliveryMode === 'delivery' ? 'Delivery. Arrange the handoff in messages.' : 'The private pickup address is available after verified confirmation.',
       cancellation: 'Cancellation is checked by the server. Any refund or deposit release requires verified settlement.',
@@ -106,10 +106,11 @@ function RentalDetails({ booking }: { booking: UiBooking }) {
   }, [userId, booking.id, booking.status, attempt]);
   return <details><summary>Agreement, payment & rental tools</summary>
     <p>Booking reference: {booking.bookingReference ?? 'Not assigned'}</p>
-    <p>Rental ${booking.subtotal.toFixed(2)} · service ${booking.serviceFeeAmount.toFixed(2)} · delivery ${booking.deliveryFeeAmount.toFixed(2)} · insurance ${booking.insuranceAmount.toFixed(2)} · deposit ${booking.deposit.toFixed(2)} · total ${booking.total.toFixed(2)}</p>
+    <p>Rental ${booking.subtotal.toFixed(2)} · service ${booking.serviceFeeAmount.toFixed(2)} · delivery ${booking.deliveryFeeAmount.toFixed(2)} · insurance ${booking.insuranceAmount.toFixed(2)} · rental total ${(booking.depositCollectionModel === 'authorization' ? booking.total : booking.total - booking.deposit).toFixed(2)}</p>
+    <p>Separate security-deposit transaction: ${booking.deposit.toFixed(2)} {booking.depositCollectionModel === 'authorization' ? 'temporary hold, not part of rental payment' : 'legacy charged deposit'}.</p>
     {(booking.taxRate > 0 || booking.sandboxTax) && <p>{booking.sandboxTax ? 'Tax (7% test)' : 'Tax (7%)'}: ${booking.taxAmount.toFixed(2)} · Included in the stored total.</p>}
     {booking.renterNote && <p>Note for owner: {booking.renterNote}</p>}
-    <BookingPickup bookingId={booking.id} status={booking.status} />
+    <BookingPickup bookingId={booking.id} status={booking.status} paymentFirst={booking.paymentFirst} />
     <RentalAgreement bookingId={booking.id} isOwner={false} />
     {['pending_payment', 'cancelled'].includes(booking.status) && <CheckoutReservation bookingId={booking.id} canPay />}
     {['completed', 'cancelled'].includes(booking.status) && <RentalSettlement bookingId={booking.id} isOwner={false} />}

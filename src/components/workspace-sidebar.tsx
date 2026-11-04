@@ -1,6 +1,6 @@
 import { useRouter, type Route } from '@/router';
 import { useAuth } from '@/auth-context';
-import { useAdminAccess } from '@/lib/admin';
+import { useAdminAccess } from '@/lib/admin-access';
 import { ArrowRight, Compass, Heart, LayoutGrid, List, MessageSquare, ShieldCheck, UserRound, Wallet, Bell, Package, LifeBuoy } from 'lucide-react';
 import './workspace-sidebar.css';
 

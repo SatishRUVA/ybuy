@@ -21,7 +21,7 @@ export interface MarketplaceStore {
   distance: (item: Listing) => number;
   rentalQuote: (item: Listing, days: number) => { rental: number; fee: number; insurance?: number; tax?: number };
   checkout?: {
-    create: (params: { listingId: string; startDate: string; endDate: string; deliveryMode: 'pickup' | 'delivery'; renterNote: string }) => Promise<{ id: string; paymentRequired: boolean; taxAmount: number; sandboxTax: boolean; rentalTotal: number; total: number }>;
+    create: (params: { listingId: string; startDate: string; endDate: string; deliveryMode: 'pickup' | 'delivery'; renterNote: string }) => Promise<{ id: string; paymentRequired: boolean; taxAmount: number; sandboxTax: boolean; rentalTotal: number; total: number; deposit?: number }>;
     pay: (id: string) => Promise<void>;
     options?: ReactNode;
   };

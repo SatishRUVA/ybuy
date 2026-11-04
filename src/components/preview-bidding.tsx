@@ -300,7 +300,7 @@ export function PreviewBidRoom({ id }: { id: string }) {
     </>}>
       <div className="p1-bid-price"><span>{auction.top_bids.length ? 'Top daily bid' : 'Starting daily price'}</span><strong>{money(top)}</strong>
         <small>{auction.my_bid_count} of 3 of your bids used</small></div>
-      {auction.is_owner && maySelect && <div className="p1-info-copy"><h2>Review your bidders</h2><p>Choose an eligible renter during the one-hour decision window. Payment must still be verified before the rental is confirmed.</p>
+      {auction.is_owner && maySelect && <div className="p1-info-copy"><h2>Review your bidders</h2><p>Choose an eligible renter before bidding closes. Undecided bidding expires. Payment must still be verified before the rental is confirmed.</p>
         <Button variant="secondary" onClick={() => navigate({ name: 'bidding' })}>Open My auctions</Button></div>}
       {!auction.is_owner && auction.status === 'open' && user && (leading ? <Tag tone="lime">You’re currently leading</Tag> : <Tag tone="neutral">Your next bid could be the one</Tag>)}
       {!auction.is_owner && mayBid && user && <form onSubmit={event => void submit(event)}>
@@ -319,7 +319,7 @@ export function PreviewBidRoom({ id }: { id: string }) {
       {auction.status === 'completed' && auction.my_booking_id && <Button onClick={() => navigate({ name: 'confirmation', id: auction.my_booking_id! })}>View booking</Button>}
       {!auction.is_owner && auction.status === 'scheduled' && <p className="p1-muted">Bidding opens at the scheduled time. You can place up to three bids after it opens.</p>}
       {!auction.is_owner && ['ended', 'cancelled'].includes(auction.status) && <p className="p1-muted">This auction is closed. No further bids can be placed.</p>}
-      {auction.is_owner && auction.status === 'owner_selection' && !maySelect && <p className="p1-muted">The owner decision window has closed. The highest eligible renter is being selected automatically.</p>}
+      {auction.is_owner && auction.status === 'owner_selection' && !maySelect && <p className="p1-muted">Bidding has closed. No bidder will be selected automatically.</p>}
       <h2>Top bids <span className="p1-muted">(anonymous)</span></h2>
       {auction.top_bids.length ? auction.top_bids.map(bid => <div className="p1-bid-row" key={bid.id}>
         <span>Eligible bid {bid.rank}</span><b>{money(bid.daily_rate)} / day · {bid.bid_count} {bid.bid_count === 1 ? 'bid' : 'bids'}</b>

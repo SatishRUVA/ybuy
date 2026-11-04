@@ -6,7 +6,6 @@ import { useAuth } from '@/auth-context';
 import type { Category } from '@/data';
 import { fetchCategories, toUiCategory, createDraftListing, deleteOwnerListing, uploadListingPhoto, removeListingImageUrl, saveListingImageOrder, fetchListingById, fetchOwnerPickup } from '@/lib/listings';
 import { getListingFlowPolicy, saveListingFlow, type ListingFlowPolicy, type ListingFlowDetails } from '@/lib/listing-flow';
-import { EMPTY_AUCTION_PREFERENCES, type ListingAuctionPreferences as AuctionPreferences } from '@/lib/listing-auctions';
 import { moderateListingContent, type ListingFlag } from '@/lib/listing-ai';
 import { LISTING_RULES, LISTING_FIELD_IDS, ITEM_STEP_FIELDS, parseMoney, validateListing, type ListingField } from '@/lib/listing-rules';
 import { todayIso, addDaysIso } from '@/lib/geo';
@@ -16,11 +15,11 @@ import { PickupLocation, type PickupLocationValue } from '@/main-site/components
 import { ListingPhotoEditor } from '@/main-site/components/listing-photo-editor';
 import { ListingNegotiationSettings } from '@/main-site/components/listing-negotiation-settings';
 import { ListingAvailabilityPicker } from '@/main-site/components/listing-availability-picker';
-import { ListingAuctionPreferences } from '@/main-site/components/listing-auction-preferences';
 import { LISTING_MAX_AVAILABLE_DAYS, listingAvailabilityError } from '@/lib/listing-availability';
 import { SuccessFeedback } from '@/main-site/components/success-feedback';
 import { ListingAiSkeleton, Skeleton } from '@/main-site/components/skeleton';
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from '@/main-site/components/shadcn/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/main-site/components/shadcn/dialog';
 import { EMPTY_ITEM_DETAILS, listingItemDetailsError, type ListingItemDetails } from '@/lib/listing-item-details';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { calculateRentalPricing } from '@/lib/rental-pricing';
@@ -46,7 +45,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   const { navigate } = useRouter();
   const { profile } = useAuth();
   const durationDiscountFlag = useFeatureFlag('duration_discounts');
-    const biddingFlag = useFeatureFlag('bidding');
+  const biddingFlag = useFeatureFlag('bidding');
   const reducedMotion = useReducedMotion();
   const [form, setForm] = useState<Form>(EMPTY_FORM);
   const priceForPreview = parseMoney(form.price) ?? 0;
@@ -57,7 +56,6 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   const [photos, setPhotos] = useState<string[]>([]);
   const [pickup, setPickup] = useState(EMPTY_PICKUP);
   const [pickupConfirmed, setPickupConfirmed] = useState(false);
-    const [auctionPreferences, setAuctionPreferences] = useState<AuctionPreferences>(EMPTY_AUCTION_PREFERENCES);
   const [policy, setPolicy] = useState<ListingFlowPolicy | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [sourceRequest, setSourceRequest] = useState<MainItemRequest | null>(null);
@@ -80,6 +78,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   const [notice, setNotice] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [biddingDialogOpen, setBiddingDialogOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const versionRef = useRef(0);
   const [savedVersion, setSavedVersion] = useState(0);
@@ -318,10 +317,9 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
           location_label: [pickup.city, pickup.state].filter(Boolean).join(', '),
           instant_booking: current.instant, delivery_available: current.delivery, available_quantity: current.quantity,
           delivery_fee: current.delivery ? parseMoney(current.deliveryFee || '0')! : 0,
-          availability_start: current.start, availability_end: current.end,
+          availability_start: current.start,           availability_end: current.end,
           availability_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           item_details: current.itemDetails,
-                  ...(auctionPreferences.enabled ? { auction_preferences: auctionPreferences } : {}),
         };
         const stepKeys: (keyof ListingFlowDetails)[][] = [
           [],
@@ -346,6 +344,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
             : result.status === 'suspended' ? 'Changes saved. This listing remains suspended.' : 'Listing changes saved.');
         if (publish) {
           if (result.status !== 'published' && result.status !== 'pending_approval') throw new Error('The backend has not confirmed publication. Your listing has not been marked live.');
+          if (status !== 'published' && result.status === 'published' && biddingFlag.enabled) setBiddingDialogOpen(true);
           setCompleted(true);
           if (resumeKey) {
             try { localStorage.removeItem(resumeKey); } catch (error) { console.warn('Could not clear the saved draft pointer.', error); }
@@ -573,7 +572,19 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
       : <Surface className="p-6 sm:p-10"><ShieldCheck aria-hidden="true" size={32} className="text-accent mb-4" />
         <h1 className="text-2xl font-bold text-main">Submitted for review</h1><p role="status" className="text-sec mt-2">Your listing is not live yet. Review its status from My listings.</p>
         <p className="mt-4 font-semibold">{form.title}</p><Button className="mt-6" onClick={() => navigate({ name: 'owner-dashboard' })}>My listings</Button></Surface>}
-    {status === 'published' && <ListingNegotiationSettings listingId={listingId!} />}
+    {status === 'published' && editId && !biddingDialogOpen && <ListingNegotiationSettings listingId={listingId!} />}
+    {status === 'published' && biddingDialogOpen && <Dialog open={biddingDialogOpen} onOpenChange={setBiddingDialogOpen}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Your listing is live</DialogTitle>
+          <DialogDescription>Set up competitive bidding now, or do it later by editing your listing.</DialogDescription>
+        </DialogHeader>
+        <ListingNegotiationSettings listingId={listingId!} />
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setBiddingDialogOpen(false)}>Do this later</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>}
     {status === 'published' && sourceRequest && <RequestFulfillment request={sourceRequest} publishedListingId={listingId!} />}
     {status === 'pending_approval' && sourceRequest && <div className="space-y-3">
       <p className="text-sm text-sec">Return after approval to notify the renter; pending listings cannot be linked or advertised as available.</p>
@@ -865,22 +876,20 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                 <p className="text-xs text-sec">The exact pickup address stays private until an eligible booking is confirmed. Availability, payment verification, return, and deposit rules apply to every rental. Saved offer settings take effect only after publication.</p>
                 {blockingFlags.length > 0 && <Alert tone="error" title="Resolve policy concerns before publishing">{blockingFlags.map((flag) => flag.reason).join(' ')} <Button variant="secondary" onClick={() => setStep(2)}>Review details</Button></Alert>}
                 <div className="rounded-card-lg border border-app bg-subtle p-4 text-xs text-sec"><ShieldCheck aria-hidden="true" size={18} className="text-accent mb-2" />{policy.high_value_threshold === null || Number(form.value) > policy.high_value_threshold ? 'This declared value requires administrative review. The listing will not be marked live until approved.' : 'Publication is confirmed only after the server checks your photos, content, location and listing policy.'}</div>
-                {!editId && biddingFlag.enabled && (policy.high_value_threshold === null || !form.value.trim() || Number(form.value) > policy.high_value_threshold)
-                  ? <Alert tone="info" title="Bidding is available after listing approval">This listing needs administrative review before it can go live. You can enable bidding after approval from My listings.</Alert>
-                  : biddingFlag.enabled && (!editId || status === 'draft')
-                    ? <ListingAuctionPreferences value={auctionPreferences} start={form.start} end={form.end} askingPrice={priceForPreview || null}
-                      disabled={saving || working} onChange={setAuctionPreferences} />
-                    : biddingFlag.error
-                      ? <Alert tone="error" title="Bidding settings unavailable">{biddingFlag.error}</Alert>
-                      : !biddingFlag.loading && !biddingFlag.enabled
-                        ? <p className="text-xs text-sec">Competitive bidding is currently unavailable.</p>
+                {biddingFlag.error
+                  ? <Alert tone="error" title="Bidding settings unavailable">{biddingFlag.error}</Alert>
+                  : !biddingFlag.loading && !biddingFlag.enabled
+                    ? <p className="text-xs text-sec">Competitive bidding is currently unavailable.</p>
+                    : biddingFlag.enabled && status === 'draft'
+                      ? <Alert tone="info" title="Bidding is available after publication">
+                        {policy.high_value_threshold === null || !form.value.trim() || Number(form.value) > policy.high_value_threshold
+                          ? 'This listing needs administrative approval before it can go live. After approval, edit the live listing to configure bidding.'
+                          : 'Publish this listing first. Once it is live, edit the listing to configure bidding for selected rental dates.'}
+                      </Alert>
+                      : biddingFlag.enabled && status === 'pending_approval'
+                        ? <Alert tone="info" title="Bidding is available after approval">Once your listing is approved and live, edit it to configure bidding for selected rental dates.</Alert>
                         : null}
                 </div>
-                  {status === 'published' && auctionPreferences.enabled && <Alert tone="success" title={auctionPreferences.starts_immediately ? 'Your listing is live and bidding is open' : 'Your listing is live and bidding is scheduled'}>
-                    {auctionPreferences.starts_immediately
-                      ? 'Renters can bid on your selected rental dates now.'
-                      : `Bidding opens ${auctionPreferences.bidding_starts_at ? new Date(auctionPreferences.bidding_starts_at).toLocaleString() : 'at the scheduled time'}.`}
-                  </Alert>}
                   {status === 'published' && <ListingNegotiationSettings listingId={listingId!} />}
               </>}
             </motion.fieldset>

@@ -59,6 +59,7 @@ export interface DbListingRow {
   owner_verified: boolean;
   available_quantity: number;
   auction_enabled?: boolean;
+  auction_date_flexible?: boolean;
   auction_opening_daily_rate?: number | null;
   auction_start_date?: string | null;
   auction_end_date?: string | null;
@@ -89,7 +90,7 @@ function storedListingImageUrl(url: string): string {
   return path ? supabase.storage.from('listing-images').getPublicUrl(path).data.publicUrl : url;
 }
 
-async function signListingImageUrl(url: string): Promise<string> {
+export async function signListingImageUrl(url: string): Promise<string> {
   const path = listingImagePath(url);
   if (!path) return url;
   const { data, error } = await supabase.storage.from('listing-images').createSignedUrl(path, 3600);
@@ -526,7 +527,7 @@ export async function enrichListingsWithRatings(listings: Listing[]): Promise<Li
         rating: s.rating,
         reviewCount: s.count,
         rentalCount: s.count,
-        owner: { ...l.owner, rating: s.rating, rentals: s.count },
+        owner: { ...l.owner, rating: s.rating, rentals: s.count, missedAuctionDecisionCount: s.missedDecisionCount },
       };
     });
   } catch (error) {

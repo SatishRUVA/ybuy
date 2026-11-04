@@ -136,7 +136,12 @@ function LocalProfilePicker() {
       const response = await fetch('/api/access/verify', {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }),
       });
-      if (!response.ok) throw new Error('Could not verify tester access. Check your authenticator code and retry.');
+      if (!response.ok) {
+        const data: unknown = await response.json().catch(() => null);
+        const message = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
+          ? data.error : `Tester verification failed (${response.status}).`;
+        throw new Error(message);
+      }
       setCode('');
       setAttempt(value => value + 1);
     } catch (error) {

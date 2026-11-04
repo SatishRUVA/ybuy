@@ -8,6 +8,8 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-admin
+dist-customer
 dist-ssr
 *.local
 test-accounts.json
@@ -29,7 +31,8 @@ test-accounts.json
 .claude
 .github
 docs
-scripts
+/scripts/*
+!/scripts/seed-local-test-users.mjs
 playwright-*-report/
 test-results*/
 .tmp-auction/

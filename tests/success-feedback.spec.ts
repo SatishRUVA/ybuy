@@ -157,7 +157,7 @@ async function setup(page: Page, scenario: Scenario = {}) {
   let draft = { ...listing, owner_id: session.user.id, status: 'draft', revision: 1, estimated_value: null as number | null,
     brand: '', model: '',
     item_condition: null as string | null, available_quantity: 1, instant_booking: false, delivery_available: false, delivery_fee: 0,
-    availability_start: today, availability_end: exclusiveEnd.toISOString().slice(0, 10), negotiation_enabled: false,
+    availability_start: scenario.listingStart ?? today, availability_end: exclusiveEnd.toISOString().slice(0, 10), negotiation_enabled: false,
     offer_start_date: null as string | null, offer_end_date: null as string | null, offer_expiration_hours: null as number | null,
     listing_images: [] as { url: string; sort_order: number }[] };
   if (scenario.auctionSupported) Object.assign(draft, { auction_enabled: false, auction_start_date: null, auction_end_date: null });
@@ -257,11 +257,13 @@ async function setup(page: Page, scenario: Scenario = {}) {
       const { p_auction: auction } = req.postDataJSON();
       draft = { ...draft, revision: draft.revision + 1 };
       Object.assign(draft, { auction_enabled: auction.enabled, auction_start_date: auction.start_date, auction_end_date: auction.end_date,
+        auction_date_flexible: auction.date_flexible,
         auction_bidding_starts_at: auction.bidding_starts_at, auction_bidding_ends_at: auction.bidding_ends_at });
       if (auction.enabled) scheduledAuction = {
           id: '60000000-0000-4000-8000-000000000001', listing_id: listingId, status: 'scheduled',
           start_date: auction.start_date, end_date: auction.end_date, starts_at: auction.bidding_starts_at, ends_at: auction.bidding_ends_at,
-          selection_deadline: new Date(Date.parse(auction.bidding_ends_at) + 3600000).toISOString(),
+          date_flexible: auction.date_flexible,
+          selection_deadline: auction.bidding_ends_at,
           payment_deadline: null, server_now: new Date().toISOString(), minimum_increment: 1, minimum_next_bid: draft.price_per_day,
           top_bids: [], my_bids: [], my_rank: null, owner_bids: [], selected_payment_status: null, owner_decision_missed_at: null,
           my_bid_count: 0, my_daily_rate: null, my_booking_id: null, selected_bid_id: null, is_owner: true,
@@ -1210,8 +1212,8 @@ test('advisory guideline warnings stay visible without blocking manual editing',
 test('publication waits for the server and offers view, manage and share actions', async ({ page }, testInfo) => {
   let release!: () => void;
   const publishDelay = new Promise<void>((resolve) => { release = resolve; });
-  await setup(page, { publishDelay });
-  await fillListing(page);
+  await setup(page, { publishDelay, readyDraft: true });
+  await reviewReadyDraft(page);
   await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Saving...', exact: true })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -1319,19 +1321,22 @@ test('bidding moves after publication and owner management restores the bidding 
     if (request.url().includes('/rpc/owner_save_listing_flow')) saves.push(request.postDataJSON().p_details);
     if (request.url().includes('/rpc/owner_configure_listing_negotiation')) negotiationSaves.push(request.postDataJSON());
   });
-  await setup(page, { auctionSupported: true, readyDraft: true });
+  await setup(page, { auctionSupported: true, readyDraft: true, listingStart: '2026-11-04' });
   await reviewReadyDraft(page);
-  await expect(page.getByRole('switch', { name: 'Enable competitive bidding' })).toHaveCount(0);
+  await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toHaveCount(0);
+  await expect(page.getByText('Bidding is available after publication', { exact: true })).toBeVisible();
   await expect(page.getByRole('switch', { name: 'Allow rental offers' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Your listing is live!' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your listing is live', exact: true })).toBeVisible();
   await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toBeEnabled();
   await expect(page.getByRole('switch', { name: 'Allow rental offers' })).toHaveCount(0);
   await page.getByRole('switch', { name: 'Enable live bidding' }).check();
+  await expect(page.getByText('Renters choose their pickup and return dates within your bidding availability window.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Choose a complete auction rental period inside your listing availability.' })).toBeVisible();
   const bidding = page.locator('#listing-auction');
-  for (const [label, date] of [['Pickup', 'November 5, 2026'], ['Return', 'November 8, 2026']]) {
+  for (const [label, date] of [['Earliest pickup', 'November 5, 2026'], ['Latest return', 'November 8, 2026']]) {
     await bidding.getByRole('button', { name: new RegExp(`^${label}`) }).click();
     await bidding.getByRole('button', { name: new RegExp(date) }).click();
   }
@@ -1348,18 +1353,25 @@ test('bidding moves after publication and owner management restores the bidding 
   const times = await page.evaluate(() => ({
     bidding_starts_at: new Date('2026-11-02T10:00').toISOString(), bidding_ends_at: new Date('2026-11-04T22:00').toISOString(),
   }));
-  expect(negotiationSaves.at(-1)?.p_auction).toMatchObject({ enabled: true, start_date: '2026-11-05', end_date: '2026-11-08', ...times });
+  expect(negotiationSaves.at(-1)?.p_auction).toMatchObject({ enabled: true, date_flexible: true, start_date: '2026-11-05', end_date: '2026-11-08', ...times });
   for (const width of [1440, 375]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`post-publication-negotiation-${width}.png`), fullPage: true });
   }
   await page.goto(`${appUrl}/dashboard?tab=lending`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'My listings', exact: true }).click();
+  await page.getByText('More options', { exact: true }).click();
   await page.getByRole('button', { name: 'Bidding settings', exact: true }).click();
   await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toBeChecked();
-  await expect(page.locator('#listing-auction').getByRole('button', { name: /^Pickup/ })).toContainText('Nov 5, 2026');
+  await expect(page.locator('#listing-auction').getByRole('button', { name: /^Earliest pickup/ })).toContainText('Nov 5, 2026');
   await expect(page.getByLabel('Bidding opens', { exact: true })).toHaveValue('2026-11-02T10:00');
   await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+  await page.goto(`${appUrl}/edit-listing/${listingId}`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('list', { name: 'Listing progress' })).toBeVisible({ timeout: 60_000 });
+  const steps = await page.getByRole('list', { name: 'Listing progress' }).getByRole('listitem').count();
+  for (let step = 2; step < steps; step++) await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toBeChecked();
 });
 
 test('renter auction waits for scheduled opening, shows anonymous ranks and preserves retry keys', async ({ page }) => {

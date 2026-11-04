@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { CalendarDays, ChevronUp, Flame, Package, Pause, Play, Tag, Zap } from 'lucide-react';
 import { Alert, Button } from '@/main-site/components/ui';
-import { supabase } from '@/lib/supabase';
+import { getTopListingBids } from '@/lib/listing-auctions';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { BIDDING_SAMPLES } from '@/lib/bidding-samples';
 import { useRouter } from '@/router';
@@ -81,25 +81,17 @@ export function BiddingTicker() {
     if (!enabled) return;
     let active = true;
     async function refresh() {
-      const response = await supabase.rpc('get_top_listing_bids');
-      if (!active) return;
-      if (response.error) {
-        setError(response.error.message);
+      try {
+        const rows = await getTopListingBids();
+        if (!active) return;
+        setError(null);
+        setRows(rows);
+        setNow(Date.now());
+      } catch (error) {
+        if (!active) return;
+        setError(error instanceof Error ? error.message : 'Could not load live bidding photos.');
         setRows([]);
-        return;
       }
-      if (!Array.isArray(response.data) || response.data.length > 24
-        || response.data.some(row => !row || typeof row.listing_id !== 'string' || typeof row.title !== 'string'
-          || !Number.isFinite(row.daily_rate) || row.daily_rate <= 0
-          || !Number.isFinite(Date.parse(row.expires_at)) || !Number.isFinite(Date.parse(row.start_date))
-          || !Number.isFinite(Date.parse(row.end_date)) || (row.image_url !== null && typeof row.image_url !== 'string'))) {
-        setError('The live bidding feed returned an invalid result.');
-        setRows([]);
-        return;
-      }
-      setError(null);
-      setRows(response.data as TopBid[]);
-      setNow(Date.now());
     }
     void refresh();
     const poll = window.setInterval(() => void refresh(), 15000);

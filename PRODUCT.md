@@ -27,6 +27,9 @@ Renters discover by item, category, location, distance, dates, and filters; insp
 - Preserve the existing Vite, React, TypeScript, routing, Supabase APIs, database schemas, authentication, authorization, RLS, Stripe payment verification, notifications, listing approval rules, booking lifecycle, and bidding rules.
 - Keep backend integrations authoritative; do not replace them with mock data.
 - Keep exactly two booking paths: regular booking and competitive bidding. Do not introduce private offers or counteroffers.
+- Owners can configure competitive bidding only after a listing is live; they can enable it later by editing the published listing.
+- The owner's bidding dates define an availability window, not a mandatory full-period rental. Renters choose pickup and exclusive return dates within that window. Overlapping bids are ranked by total rental value (daily bid multiplied by rental days); available non-overlapping periods can both win only when the owner selects them.
+- Owners must select eligible bidders before bidding closes. There is no post-close owner decision grace period and no automatic bidder selection or payment-expiry fallback. Undecided bidding expires at closing. Missed-decision records and counts are admin-only and never appear on marketplace ratings or owner profiles; review stars are unchanged.
 - Keep owner and renter capabilities available without treating them as exclusive account roles.
 - Preserve existing validation, loading, empty, error, and access-gated states while redesigning their presentation.
 - Treat local synthetic fixtures as test data, not evidence of real customer activity or marketplace demand.

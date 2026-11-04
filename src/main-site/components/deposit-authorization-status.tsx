@@ -4,7 +4,9 @@ import {
   createDepositAuthorizationSession, createDepositSetupSession,
   fetchBookingDepositAuthorization, fetchBookingDepositAuthorizationEvents, fetchBookingDepositClaim,
   type BookingDepositAuthorization, type BookingDepositAuthorizationEvent,
+  recordDepositHoldConsent,
 } from '@/lib/security-deposit';
+import { fetchBookingPrecheckin, type BookingPrecheckin } from '@/lib/booking-precheckin';
 
 const STATUS_LABEL: Record<BookingDepositAuthorization['status'], string> = {
   setup_required: 'Card setup needed', scheduled: 'Authorization due before pickup', authorizing: 'Authorization in progress',
@@ -12,8 +14,8 @@ const STATUS_LABEL: Record<BookingDepositAuthorization['status'], string> = {
   capturing: 'Approved deduction processing', captured: 'Approved deduction captured', expired: 'Authorization expired', failed: 'Authorization failed', superseded: 'Replaced by a newer authorization',
 };
 
-export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel, isOwner }: {
-  bookingId: string; deposit: number; collectionModel: 'captured' | 'authorization'; isOwner: boolean;
+export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel, isOwner, paymentFirst = false }: {
+  bookingId: string; deposit: number; collectionModel: 'captured' | 'authorization'; isOwner: boolean; paymentFirst?: boolean;
 }) {
   const [authorization, setAuthorization] = useState<BookingDepositAuthorization | null>(null);
   const [events, setEvents] = useState<BookingDepositAuthorizationEvent[]>([]);
@@ -22,21 +24,32 @@ export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [precheckin, setPrecheckin] = useState<BookingPrecheckin | null>(null);
+  const [consent, setConsent] = useState(false);
+
+  useEffect(() => {
+    if (!paymentFirst) return;
+    const timer = window.setInterval(() => setAttempt(value => value + 1),15000);
+    return () => window.clearInterval(timer);
+  }, [bookingId,paymentFirst]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
-    void Promise.all([fetchBookingDepositAuthorization(bookingId),fetchBookingDepositClaim(bookingId)]).then(async ([next,nextClaim]) => {
+    void Promise.all([fetchBookingDepositAuthorization(bookingId),fetchBookingDepositClaim(bookingId),
+      paymentFirst ? fetchBookingPrecheckin(bookingId) : Promise.resolve(null)]).then(async ([next,nextClaim,nextPrecheckin]) => {
+      const nextEvents = next ? await fetchBookingDepositAuthorizationEvents(next.id) : [];
       if (!active) return;
       setAuthorization(next);
       setClaim(nextClaim);
-      setEvents(next ? await fetchBookingDepositAuthorizationEvents(next.id) : []);
+      setPrecheckin(nextPrecheckin);
+      setEvents(nextEvents);
     }).catch(reason => {
       if (active) setError(reason instanceof Error ? reason.message : 'Could not load deposit authorization status.');
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [bookingId, attempt]);
+  }, [bookingId, attempt, paymentFirst]);
 
   if (deposit <= 0) return null;
   if (collectionModel === 'captured') return <Alert tone="warning" title="Legacy charged deposit">
@@ -46,6 +59,10 @@ export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel
   async function startSetup() {
     setBusy(true); setError(null);
     try {
+      if (paymentFirst && !precheckin?.consented) {
+        if (!consent) throw new Error('Agree to the separate security hold before continuing.');
+        await recordDepositHoldConsent(bookingId);
+      }
       const url = await createDepositSetupSession(bookingId);
       if (url) window.location.href = url;
       else setAttempt(value => value + 1);
@@ -56,6 +73,10 @@ export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel
   async function authorize() {
     setBusy(true); setError(null);
     try {
+      if (paymentFirst && !precheckin?.consented) {
+        if (!consent) throw new Error('Agree to the separate security hold before continuing.');
+        await recordDepositHoldConsent(bookingId);
+      }
       const result = await createDepositAuthorizationSession(bookingId);
       if (result.url) window.location.href = result.url;
       else setAttempt(value => value + 1);
@@ -75,7 +96,8 @@ export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel
     </div>
     {loading && <p role="status" className="text-xs text-sec">Checking deposit authorization…</p>}
     {!loading && !authorization && <p className="text-xs text-warning">Authorization record is not available. Contact support before pickup.</p>}
-    {authorization?.status === 'authorized' && <p role="status" className="text-sm text-success">Pickup is deposit-ready. The hold expires {authorization.capture_before ? new Date(authorization.capture_before).toLocaleString() : 'at the card network deadline'}.</p>}
+    {authorization?.status === 'authorized' && <p role="status" className="text-sm text-success">{!paymentFirst || precheckin?.deposit_ready
+      ? 'The security hold is ready.' : 'The recorded hold does not yet meet pre-check-in requirements. Refresh its status before handoff.'} The hold expires {authorization.capture_before ? new Date(authorization.capture_before).toLocaleString() : 'at the card network deadline'}.</p>}
     {authorization?.status === 'released' && <p role="status" className="text-sm text-success">The uncaptured deposit hold has been released.</p>}
     {authorization?.status === 'captured' && <p role="status" className="text-sm text-sec">Captured amount: ${Number(authorization.captured_amount).toFixed(2)}.</p>}
     {claim && <p className="text-xs text-sec">Damage claim: {claim.status.replace(/_/g,' ')}{claim.approved_amount !== null ? ` · approved $${Number(claim.approved_amount).toFixed(2)}` : ` · requested $${Number(claim.requested_amount).toFixed(2)}`}</p>}
@@ -89,8 +111,13 @@ export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel
         </li>)}
       </ol>
     </details>}
-    {!isOwner && needsSetup && <Button size="sm" disabled={busy} loading={busy} onClick={() => void startSetup()}>Set up payment method</Button>}
-    {!isOwner && needsAuthorization && !needsSetup && <Button size="sm" disabled={busy} loading={busy} onClick={() => void authorize()}>
+    {paymentFirst && !isOwner && precheckin?.can_authorize && !precheckin.consented && <label className="flex items-start gap-2 text-sm text-sec">
+      <input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1" />
+      I agree to the separate temporary security hold and any separately approved damage claim.
+    </label>}
+    {paymentFirst && !precheckin?.can_authorize && <p className="text-sm text-sec">Complete rental payment and agree a slot in pre-check-in. Deposit setup opens 24 hours before that time.</p>}
+    {!isOwner && needsSetup && (!paymentFirst || precheckin?.can_authorize) && <Button size="sm" disabled={busy || (paymentFirst && !precheckin?.consented && !consent)} loading={busy} onClick={() => void startSetup()}>Set up payment method</Button>}
+    {!isOwner && needsAuthorization && !needsSetup && (!paymentFirst || precheckin?.can_authorize) && <Button size="sm" disabled={busy || (paymentFirst && !precheckin?.consented && !consent)} loading={busy} onClick={() => void authorize()}>
       {authorization?.status === 'authorizing' || authorization?.status === 'requires_action' ? 'Continue secure authorization' : 'Authorize deposit'}
     </Button>}
     {isOwner && authorization?.status !== 'authorized' && authorization?.status !== 'released'

@@ -287,6 +287,82 @@ service would be required to enforce dimensions authoritatively.
 
 ## Local validation
 
+### Renter-selected auction dates
+
+Migrations `20261103000007_renter_date_auctions.sql`,
+`20261103000008_owner_required_auction_winners.sql`, and
+`20261103000009_required_renter_date_windows.sql` are additive. **All winners must be chosen
+by the owner before bidding closes**. There is no owner decision grace period and
+no automatic winner or unpaid-winner fallback in either mode. New auctions always
+allow renters to choose a subrange of the owner's dates. This is not an owner
+opt-in; older clients sending `date_flexible: false` are normalized to true when
+creating an auction. Invalid non-boolean values remain rejected.
+The persisted listing field is `auction_date_flexible`; the auction response
+field is `date_flexible`. Migration 09 upgrades still-scheduled/open, unselected
+auctions whose closing time has not passed, preserving every existing bid's dates
+and value. Auctions with selected bookings and historical closed auctions retain
+their original mode. Owners cannot reconfigure an existing auction.
+
+Flexible bids require `p_start_date` and `p_end_date` in
+`place_listing_auction_bid`, alongside the existing listing ID, daily rate,
+idempotency key and deposit-hold consent. End dates are exclusive. Dates must fit
+the owner's auction window and available inventory. Three attempts are shared
+across all ranges in one auction; retries must retain the original dates/rate.
+
+The leaderboard orders eligible bids by descending `total_value`
+(`daily_rate * (end_date - start_date)`), with submission time and bid ID breaking
+ties. Overlapping winners are mutually exclusive even for multi-unit listings;
+nonoverlapping ranges can each win. Rank is display information, never winner
+selection. Flexible owners may choose eligible disjoint bids while bidding is
+open; their first selection does not close bidding or prevent further choices
+before the original closing deadline. Fixed-period owner selection still closes
+that auction and starts its single winner's payment window.
+
+`get_listing_auction(p_listing_id)` returns all ranked flexible bids, plus
+`participant_count` and `total_bid_count`. Top, personal and owner bids include
+`start_date`, `end_date`, `total_value` and `selected`. Personal and owner bids also
+include `booking_id`, `payment_deadline` and `payment_status` (`pending`, `paid`,
+`expired`, or null before selection); public top bids never expose booking IDs.
+The three-argument overload additionally accepts `p_start_date` and `p_end_date`
+and filters top bids to overlapping ranges. Its `minimum_next_bid` is the exact
+daily rate, rounded up to cents, required to exceed the highest nonpassed
+overlapping total by the configured daily increment times the selected days.
+Without overlaps (or without a date filter), the flexible minimum is the opening
+daily rate.
+
+Each winner has its own booking/payment deadline. Renter checkout should use
+`my_booking_id`, `my_payment_deadline`, and `my_payment_status`, or the per-bid
+fields when one renter wins multiple nonoverlapping ranges. Flexible auctions do
+not populate the legacy singular `selected_bid_id` or `payment_deadline`.
+Aggregate flexible status remains `open` until bidding closes, then becomes
+`awaiting_payment` until all surviving owner-selected winners have successful
+payments, and finally `completed` (or `ended` if none survive). Without any owner
+selection the auction expires immediately at closing; retrieval advances expired
+auctions as well as the minute-based lifecycle worker. A failed winner's range is
+not released until its checkout session is closed. A replacement requires another
+explicit owner choice before closing, never automatic selection. Late payments
+after replacement are recorded as support-review exceptions.
+
+Owner nondecisions create admin-only audit events. Migration
+`20261103000010_admin_only_auction_decisions.sql` restricts decision-event reads
+and auction count/flag fields to active administrators with `config.manage`.
+Public and owner responses omit counts and flags and return a null missed timestamp.
+`get_owner_rating_stats` returns zero for non-admin missed counts, without changing
+the actual review average or its always-zero adjustment. Marketplace pages never
+display decision counts, even when visited by an administrator. Existing
+administrator event exclusions remain available.
+
+The separate administrator portal provides **Super admin > Missed bidding decisions**
+(`/admin/auction-decisions`). Migration `20261103000011_admin_auction_decision_list.sql`
+adds the `config.manage`-protected, server-paginated `admin_list_auction_decisions`
+RPC. Its read-only table shows owner, listing, closing and detection times,
+eligible bids, attributable owner miss count, and any audit exclusion.
+
+`supabase\tests\renter_date_auctions.sql` uses rollback-only fixtures and covers
+configuration, range validation, overlap quotes, independent winners/payment
+windows, retries, capacity, session closure, late receipts, notifications and
+fixed-period compatibility.
+
 ### Photo analysis reliability
 
 `analyze-listing-photo` authenticates the active owner and verifies that signed

@@ -110,7 +110,7 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
   const insuranceAmount = insuranceFlag.enabled ? insuranceAmountCents(listing.declaredValue, days) / 100 : 0;
   const isTaxDemo = createdBooking?.sandbox_tax === true;
   const tax = createdBooking ? Number(createdBooking.tax_amount ?? 0) : bookingTaxCents(rental, serviceFee) / 100;
-  const paymentEstimate = rental + serviceFee + insuranceAmount + deliveryFee + listing.deposit;
+  const paymentEstimate = rental + serviceFee + insuranceAmount + deliveryFee;
   const total = createdBooking ? Number(createdBooking.total) : paymentEstimate + tax;
 
   async function handleConfirm() {
@@ -266,25 +266,22 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
               <span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount + deliveryFee)}</span>
             </div>
           </div>
-          {listing.deposit > 0 && (
-            <div className="mt-4 pt-4 border-t border-app">
-              <div className="flex justify-between items-center text-sm">
-                <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Refundable security deposit</span>
-                <span className="font-semibold text-main tnum">${formatMoney(listing.deposit)}</span>
-              </div>
-              <p className="text-xs text-muted mt-1.5 leading-relaxed">
-                Paid with your rental, not held on your card. Refunded after the owner confirms the return and any disputes are resolved.
-              </p>
-            </div>
-          )}
-          <div className="flex justify-between gap-3 text-sm text-sec mt-4">
-            <span>Security hold</span><span>No card hold placed</span>
-          </div>
           <div className="flex justify-between text-sm font-semibold text-main mt-3 pt-3 border-t border-app">
             <span>{createdBooking ? 'Backend-confirmed total' : 'Estimated total'}</span><span className="tnum">${formatMoney(total)}</span>
           </div>
           <p className="text-xs text-sec mt-2">{createdBooking ? 'Stored tax and total confirmed by the backend.' : 'Tax is 7% of discounted rental and service fees only. The server confirms the final amount.'}</p>
-          <p className="text-xs text-sec mt-2 leading-relaxed">Includes rental, service fee{insuranceFlag.enabled ? ', insurance' : ''}, refundable deposit and tax.</p>
+          <p className="text-xs text-sec mt-2 leading-relaxed">Includes rental, applicable fees, insurance and tax only. The security hold is separate.</p>
+          {listing.deposit > 0 && (
+            <div className="mt-4 pt-4 border-t border-app">
+              <div className="flex justify-between items-center text-sm">
+                <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Separate security hold at pre-check-in</span>
+                <span className="font-semibold text-main tnum">${formatMoney(listing.deposit)}</span>
+              </div>
+              <p className="text-xs text-muted mt-1.5 leading-relaxed">
+                Not included in rental payment. Propose a slot after paying; the owner approves it. Authorize this temporary hold within 24 hours before pickup or delivery.
+              </p>
+            </div>
+          )}
         </aside></div>
       </div>
     </div>
@@ -339,9 +336,9 @@ export function ConfirmationPage({ id }: { id: string }) {
         if (cancelled) return;
         setBooking(next);
         if (next?.status === 'confirmed') {
-          const confirmedPayment = await fetchConfirmedPayment(id);
+          const confirmedPayment = await fetchConfirmedPayment(id, next.total);
           if (cancelled) return;
-          if (!confirmedPayment || confirmedPayment.currency !== 'USD' || confirmedPayment.amount !== Math.round(next.total * 100)) {
+          if (!confirmedPayment) {
             throw new Error('Payment could not be verified against this booking. Check status again before continuing.');
           }
           setPayment(confirmedPayment);
@@ -406,17 +403,18 @@ export function ConfirmationPage({ id }: { id: string }) {
     description={confirmed ? 'Your payment is verified and your rental is confirmed. All that’s left is the adventure.'
       : booking.status === 'confirmed' ? 'Confirmation is not complete until the backend payment receipt is verified.' : NEXT_STEP[booking.status]}
     status={status} pending={!confirmed} item={{ title: booking.listingTitle, image: booking.listingImage }}
-    start={booking.startDate} end={booking.endDate} total={booking.total - booking.deposit}
+    start={booking.startDate} end={booking.endDate} total={booking.depositCollectionModel === 'authorization' ? booking.total : booking.total - booking.deposit}
     feedback={<>{confirmationError && <ErrorNote>{confirmationError}</ErrorNote>}
       {(booking.status === 'pending_payment' || confirmationError) && <PreviewButton variant="secondary" disabled={checking} onClick={() => setRefresh((value) => value + 1)}>Check status again</PreviewButton>}
     </>}
-    actions={<><PreviewAction to={booking.isOwner ? 'owner' : 'renter'}>View my rentals</PreviewAction>
+    actions={<>{booking.paymentFirst && confirmed && <PreviewButton onClick={() => navigate({ name: 'check-in', id: booking.id })}>Pre-check-in: choose a slot</PreviewButton>}
+      <PreviewAction to={booking.isOwner ? 'owner' : 'renter'}>View my rentals</PreviewAction>
       <PreviewButton variant="secondary" onClick={() => { void handleMessageOwner(); }}><MessageSquare size={17} aria-hidden="true" /> Message {booking.isOwner ? 'renter' : 'owner'}</PreviewButton></>}
-    note={<>{confirmed && payment ? `Paid ${payment.currency} ${(payment.amount / 100).toFixed(2)}. ` : 'Check booking details for the next step. '}
+    note={<>{confirmed && payment ? `Paid ${payment.currency} ${payment.amount.toFixed(2)}. ` : 'Check booking details for the next step. '}
       <PreviewButton variant="quiet" onClick={() => setDetailsOpen(true)}>Booking details</PreviewButton>
       <Modal open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Booking details" description="Payment, pickup, agreement and settlement.">
         {(booking.status === 'pending_payment' || booking.status === 'cancelled') && <CheckoutReservation bookingId={booking.id} canPay={!booking.isOwner} />}
-        <BookingPickup bookingId={booking.id} status={booking.status} />
+        <BookingPickup bookingId={booking.id} status={booking.status} paymentFirst={booking.paymentFirst} />
         <RentalAgreement bookingId={booking.id} isOwner={booking.isOwner} />
         <Surface id="booking-summary" tabIndex={-1} className="p1-panel text-left mb-6 space-y-3 text-sm">
           <p className="text-xs text-sec">Booking reference: {booking.bookingReference ?? 'Not assigned'}</p>
@@ -429,19 +427,20 @@ export function ConfirmationPage({ id }: { id: string }) {
           {booking.deliveryFeeAmount > 0 && <div className="flex justify-between"><span className="text-sec">Delivery fee</span><span className="font-semibold text-main tnum">${booking.deliveryFeeAmount.toFixed(2)}</span></div>}
           {booking.insuranceAmount > 0 && <div className="flex justify-between"><span className="text-sec">Insurance</span><span className="font-semibold text-main tnum">${booking.insuranceAmount.toFixed(2)}</span></div>}
           {(booking.taxRate > 0 || booking.sandboxTax) && <Row label={booking.sandboxTax ? 'Tax (7% test)' : 'Tax (7%)'} value={booking.taxAmount} />}
-          <div className="flex justify-between"><span className="text-sec">Rental charge after discount</span><span className="font-semibold text-main tnum">${booking.subtotal + booking.serviceFeeAmount + booking.deliveryFeeAmount}</span></div>
+          <div className="flex justify-between"><span className="text-sec">Rental charge after discount</span><span className="font-semibold text-main tnum">${(booking.depositCollectionModel === 'authorization' ? booking.total : booking.total - booking.deposit).toFixed(2)}</span></div>
           {booking.renterNote && <div className="pt-2 border-t border-app"><p className="text-sec">Note for owner</p><p className="text-main mt-1 whitespace-pre-wrap">{booking.renterNote}</p></div>}
-          {booking.deposit > 0 && (
-            <div className="flex justify-between">
-              <span className="text-sec">Security deposit (charged)</span>
-              <span className="font-semibold text-warning tnum">${booking.deposit}</span>
-            </div>
-          )}
           <div className="flex justify-between pt-3 border-t border-app">
             <span className="text-sec">Status</span>
             <span className="font-semibold text-main">{booking.status.replace('_', ' ')}</span>
           </div>
         </Surface>
+        {booking.deposit > 0 && <Surface className="p-4 mb-4 text-left">
+          <h3 className="font-semibold text-main">Separate security-deposit transaction</h3>
+          <p className="mt-2 text-sm text-sec">${booking.deposit.toFixed(2)} {booking.depositCollectionModel === 'authorization'
+            ? 'temporary hold, not included in the rental total. Complete it at pre-check-in before pickup or delivery.'
+            : 'was collected with the original legacy payment; its refund is tracked separately.'}</p>
+        </Surface>}
+        {booking.paymentFirst && booking.status === 'confirmed' && <Button className="mb-4" onClick={() => navigate({ name: 'check-in', id: booking.id })}>Pre-check-in: choose a slot</Button>}
 
         {booking.status === 'completed' && <RentalSettlement bookingId={booking.id} isOwner={booking.isOwner} autoProcess />}
       </Modal></>} />;

@@ -116,7 +116,7 @@ export function OwnerBiddingDashboard({
           </button>;
         })}
       </nav>
-      <p className="text-xs text-sec pb-2">After bidding closes, you have one hour to select an eligible bidder. Otherwise the highest eligible bid is selected automatically.</p>
+      <p className="text-xs text-sec pb-2">Select an eligible bidder before bidding closes. Undecided bidding expires. Bidders are never selected automatically.</p>
     </div>
 
     {error && <Alert tone="error" title="Your auctions could not be loaded">
@@ -127,8 +127,7 @@ export function OwnerBiddingDashboard({
         {filteredAuctions.map(({ listing, auction }) => {
           const status = auctionStatus(auction);
           const deadline = auctionDeadline(auction);
-          const canSelectWinner = auction.status === 'owner_selection'
-            && !!auction.selection_deadline && Date.parse(auction.selection_deadline) > now;
+          const canSelectWinner = auction.status === 'open' && !!auction.ends_at && Date.parse(auction.ends_at) > now;
           const ownerBids = auction.owner_bids ?? [];
           return <article key={auction.id} className="p1-production-bidding-owner">
                 <header className="p1-bid-room-head">
@@ -202,7 +201,6 @@ export function OwnerBiddingDashboard({
                 <h2>A bid is not a booking.</h2>
                 <div className="p1-info"><ShieldCheck size={20} aria-hidden="true" /><p>Choose any eligible bidder when selection is available. Payment verification is still required before a rental is confirmed.</p></div>
                 {auction.selected_payment_status && <p className="p1-muted">Selected renter payment: {auction.selected_payment_status.replace('_', ' ')}.</p>}
-                {auction.owner_decision_missed_at && <p role="status" className="p1-muted">Decision window missed and recorded on {new Date(auction.owner_decision_missed_at).toLocaleString()}.</p>}
               </aside>
             </div>
           </article>;

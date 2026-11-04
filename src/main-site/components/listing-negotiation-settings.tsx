@@ -26,6 +26,7 @@ export function ListingNegotiationSettings({ listingId, onSaved }: { listingId: 
       if (!row || row.owner_id !== user?.id || row.status !== 'published' || !Number.isSafeInteger(row.revision)) throw new Error('Bidding settings require your published listing. Reload its current status before continuing.');
       setListing(row); setAuction(current);
       setPreferences({ enabled: row.auction_enabled ?? false, start_date: row.auction_start_date ?? null, end_date: row.auction_end_date ?? null,
+        date_flexible: current?.date_flexible ?? true,
         starts_immediately: current?.status === 'open',
         opening_daily_rate: row.auction_opening_daily_rate ?? row.price_per_day,
         bidding_starts_at: row.auction_bidding_starts_at ?? null, bidding_ends_at: row.auction_bidding_ends_at ?? null });

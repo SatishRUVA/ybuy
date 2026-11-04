@@ -24,6 +24,10 @@ function next() {
 }
 
 export default async function middleware(request) {
+  if (process.env.YBUY_ADMIN_PORTAL === 'true') {
+    if (new URL(request.url).hostname !== 'ybuy-admin.vercel.app') return new Response('Not found', { status: 404 });
+    return next();
+  }
   if (process.env.YBUY_TEMP_ACCESS_ENABLED !== 'true') return next();
 
   const sessionSecret = process.env.YBUY_ACCESS_SESSION_SECRET;

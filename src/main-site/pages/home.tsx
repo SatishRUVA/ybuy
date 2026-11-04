@@ -34,7 +34,7 @@ export function HomePage() {
   const utcDay = useUtcDay();
   const { enabled: mockBiddingEnabled } = useFeatureFlag('mock_bidding');
   const { navigate } = useRouter();
-  const { user, openSignIn } = useAuth();
+  const { user, profile, openSignIn } = useAuth();
   const { location } = useMarketplaceLocation();
   const [pool, setPool] = useState<Listing[]>([]);
   const [fresh, setFresh] = useState<Listing[]>([]);
@@ -146,10 +146,28 @@ export function HomePage() {
 
   return (
     <div className="animate-fade-in">
-      <Hero
+      {user ? <section className="workspace-home">
+        <Shell>
+          <SectionHeader as="h1" title={profile?.full_name ? `Welcome back, ${profile.full_name.split(' ')[0]}` : 'Your rental workspace'}
+            subtitle="Pick up where you left off, or find something for your next plan." />
+          <div className="workspace-quick-actions" aria-label="Workspace shortcuts">
+            <Button variant="secondary" icon={<Calendar size={18} />} onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>My rentals</Button>
+            <Button variant="secondary" icon={<PackageCheck size={18} />} onClick={() => navigate({ name: 'owner-listings' })}>My listings</Button>
+            <Button variant="secondary" icon={<PackageSearch size={18} />} onClick={() => navigate({ name: 'requests', tab: 'mine' })}>My requests</Button>
+            <Button variant="secondary" icon={<LayoutGrid size={18} />} onClick={() => navigate({ name: 'dashboard', tab: 'lending' })}>Lending activity</Button>
+          </div>
+          <h2 className="mb-3 text-lg font-semibold text-main">Find your next rental</h2>
+          <SearchBar variant="compact" onSearch={p => navigate({
+            name: 'search', q: p.keyword.trim() || undefined,
+            lat: p.location.latitude, lng: p.location.longitude,
+            locationLabel: p.location.source !== 'NONE' ? locationLabel(p.location) : undefined,
+            radius: p.radius, start: p.startDate, end: p.endDate,
+          })} />
+        </Shell>
+      </section> : <Hero
         onSearch={navigate}
         categories={categories.slice(0, 6)}
-      />
+      />}
 
       {error && (
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-6">
@@ -180,7 +198,7 @@ export function HomePage() {
             </button>
           </div>
           <div
-            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9 gap-3 sm:gap-4"
+            className="workspace-category-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9 gap-3 sm:gap-4"
             aria-busy={loading && categories.length === 0}
           >
             {loading && categories.length === 0
@@ -339,8 +357,8 @@ export function HomePage() {
         </Shell>
       )}
 
-      <HowItWorks />
-      <OwnerCta onStart={() => navigate({ name: 'create-listing' })} />
+      {!user && <HowItWorks />}
+      {!user && <OwnerCta onStart={() => navigate({ name: 'create-listing' })} />}
       <Footer onNavigate={navigate} />
     </div>
   );

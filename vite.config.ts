@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { checkVpn, isVpnDetectionEnabled } from './api/_lib/vpn-check.js';
 import { isLocalSupabase, localProfileLogin } from './dev/local-profile-login';
 
@@ -35,11 +36,16 @@ function localVpnCheck({ apiKey, supabaseUrl, anonKey }: {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode, isPreview }) => {
+  if (command === 'serve' && mode === 'development' && !isPreview) {
+    execFileSync(process.execPath, [fileURLToPath(new URL('./dev/configure-local-profiles.mjs', import.meta.url))], { stdio: 'inherit' });
+    mode = 'local-profiles';
+  }
   const env = loadEnv(mode, process.cwd(), '');
   const profileLoginEnabled = mode !== 'e2e' && isLocalSupabase(env.VITE_SUPABASE_URL)
     && Boolean(env.SUPABASE_SERVICE_ROLE_KEY);
   return {
+    mode,
     define: {
       'import.meta.env.VITE_LOCAL_PROFILE_LOGIN': JSON.stringify(profileLoginEnabled),
     },

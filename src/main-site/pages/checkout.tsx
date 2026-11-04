@@ -15,6 +15,7 @@ import { Skeleton } from '@/main-site/components/skeleton';
 import { RentalSettlement } from '@/main-site/components/rental-settlement';
 import { CheckoutReservation } from '@/main-site/components/checkout-reservation';
 import { RentalAgreement } from '@/main-site/components/rental-agreement';
+import { ListingPhoto } from '@/main-site/components/listing-card';
 import { ArrowLeft, CheckCircle2, Calendar, MapPin, Lock, MessageSquare, ShieldCheck } from 'lucide-react';
 import { usePlatformFee } from '@/lib/settings';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
@@ -135,10 +136,10 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
         return;
       }
       if (insuranceFlag.loading || insuranceFlag.error) throw new Error('Insurance pricing could not be verified. Please retry once settings reconnect.');
-      if (deposit > 0 && !depositConsent) throw new Error('Consent is required to save your card for a temporary security-deposit authorization.');
       const booking = createdBooking ?? await createBookingRequest({ listingId: id, startDate: startDate!, endDate: endDate!, quantity, promotionCode: appliedPromotion?.code, deliveryMode });
       if (!createdBooking) setCreatedBooking(booking);
-      if (booking.deposit_collection_model === 'authorization' && Number(booking.deposit) > 0) {
+      if (!booking.payment_first && booking.deposit_collection_model === 'authorization' && Number(booking.deposit) > 0) {
+        if (!depositConsent) throw new Error('Consent is required to save your card for a temporary security-deposit authorization.');
         await recordDepositHoldConsent(booking.id);
         const setupUrl = await createDepositSetupSession(booking.id);
         if (setupUrl) { window.location.href = setupUrl; return; }
@@ -185,7 +186,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
 
         {/* Item */}
         <Surface className="p-4 flex gap-4 mb-4">
-          <img src={listing.images[0]} alt="" className="w-24 h-24 rounded-card object-cover shrink-0 bg-subtle" />
+          <ListingPhoto images={listing.images} className="w-24 h-24 rounded-card object-cover shrink-0 bg-subtle" />
           <div className="flex-1 min-w-0">
             {listing.category && <p className="text-xs font-medium text-accent">{listing.category}</p>}
             <h2 className="font-semibold text-main font-display leading-snug mt-0.5">{listing.title}</h2>
@@ -253,30 +254,26 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
               <span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount + deliveryFeeAmount)}</span>
             </div>
           </div>
-          {deposit > 0 && (
-            <div className="mt-4 pt-4 border-t border-app">
-              <div className="flex justify-between items-center text-sm">
-                <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Temporary security-deposit authorization</span>
-                <span className="font-semibold text-main tnum">${formatMoney(deposit)}</span>
-              </div>
-              <p className="text-xs text-muted mt-1.5 leading-relaxed">This amount is held on your card near pickup, not charged with the booking. Any approved deduction is captured after return inspection; otherwise the hold is released.</p>
-              {!createdBooking && <label className="mt-3 flex min-h-11 items-start gap-2 text-xs text-sec">
-                <input type="checkbox" checked={depositConsent} onChange={event => setDepositConsent(event.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
-                <span>I agree to save this card for the temporary security-deposit authorization and any separately approved claim.</span>
-              </label>}
-            </div>
-          )}
-          <div className="flex justify-between gap-3 text-sm text-sec mt-4">
-            <span>Security hold</span><span>{deposit > 0 ? 'Authorized near pickup; not part of this payment' : 'No hold required'}</span>
-          </div>
           <div className="flex justify-between text-sm font-semibold text-main mt-3 pt-3 border-t border-app">
             <span>{createdBooking ? 'Backend-confirmed total' : 'Estimated total'}</span><span className="tnum">${formatMoney(total)}</span>
           </div>
           <p className="text-xs text-sec mt-2">{createdBooking ? 'Stored tax and total confirmed by the backend.' : 'Tax is 7% of discounted rental and service fees only. The server confirms the final amount.'}</p>
-          <p className="text-xs text-sec mt-2 leading-relaxed">{createdBooking
-            ? 'Final amount confirmed by the backend, including applicable fees, insurance, tax and refundable deposit. Review before continuing to Stripe.'
-            : `Includes rental, service fee${insuranceFlag.enabled ? ', insurance' : ''} and tax. The temporary deposit authorization is separate.`}</p>
+          <p className="text-xs text-sec mt-2 leading-relaxed">Rental payment only, including applicable fees, insurance and tax. The security hold is a separate pre-check-in transaction.</p>
         </Surface>
+
+          {deposit > 0 && (
+            <Surface className="p-5 mb-5">
+              <div className="flex justify-between items-center text-sm">
+                <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Temporary security-deposit authorization</span>
+                <span className="font-semibold text-main tnum">${formatMoney(deposit)}</span>
+              </div>
+              <p className="text-xs text-muted mt-1.5 leading-relaxed">Not included in rental payment. After paying, propose a pickup or delivery slot for owner approval. Authorize this temporary hold within 24 hours before that slot. Only separately approved deductions may be captured; otherwise the hold is released.</p>
+              {createdBooking && !createdBooking.payment_first && <label className="mt-3 flex min-h-11 items-start gap-2 text-xs text-sec">
+                <input type="checkbox" checked={depositConsent} onChange={event => setDepositConsent(event.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
+                <span>I agree to save this card for the temporary security-deposit authorization and any separately approved claim.</span>
+              </label>}
+            </Surface>
+          )}
 
         {promotions.enabled && !paymentBookingId && <Surface className="p-5 mb-5">
           <h2 className="font-semibold text-main font-display mb-2">Promo code</h2>
@@ -365,9 +362,9 @@ export function ConfirmationPage({ id }: { id: string }) {
         if (cancelled) return;
         setBooking(next);
         if (next?.status === 'confirmed') {
-          const confirmedPayment = await fetchConfirmedPayment(id);
+          const confirmedPayment = await fetchConfirmedPayment(id, next.total);
           if (cancelled) return;
-          if (!confirmedPayment || confirmedPayment.currency !== 'USD' || confirmedPayment.amount !== Math.round(next.total * 100)) {
+          if (!confirmedPayment) {
             throw new Error('Payment could not be verified against this booking. Check status again before continuing.');
           }
           setPayment(confirmedPayment);
@@ -437,7 +434,7 @@ export function ConfirmationPage({ id }: { id: string }) {
         {confirmationError && <Alert tone="error" className="mb-4">{confirmationError}</Alert>}
         {(booking.status==='pending_payment' || booking.status==='cancelled') && <CheckoutReservation
           bookingId={booking.id} canPay={!booking.isOwner}
-          requiresDepositAuthorization={booking.depositCollectionModel==='authorization' && booking.deposit>0} />}
+          requiresDepositAuthorization={!booking.paymentFirst && booking.depositCollectionModel==='authorization' && booking.deposit>0} /> }
         {booking.status === 'pending_payment' && (
           <Alert tone="info" title="Payment is not confirmed yet" className="mb-4">
             {checking ? 'Checking for secure backend confirmation. You can leave this page safely.' : 'If you just paid, confirmation may still be processing.'}
@@ -447,7 +444,8 @@ export function ConfirmationPage({ id }: { id: string }) {
           <Button variant="secondary" className="mb-4" loading={checking} onClick={() => setRefresh((value) => value + 1)}>Check status again</Button>
         )}
         {verified && booking.status === 'confirmed' && <SuccessFeedback kind="booking" booking={booking} payment={payment}
-          primary={{ label: 'View Booking Details', onClick: () => document.getElementById('booking-summary')?.focus() }}
+          primary={{ label: booking.paymentFirst ? 'Pre-check-in: choose a slot' : 'View Booking Details',
+            onClick: () => booking.paymentFirst ? navigate({ name: 'check-in', id: booking.id }) : document.getElementById('booking-summary')?.focus() }}
           secondary={{ label: 'View Listing', onClick: () => navigate({ name: 'listing', id: booking.listingId }) }} />}
 
         {!verified && <Surface className="p-4 flex gap-4 mb-3">
@@ -456,7 +454,7 @@ export function ConfirmationPage({ id }: { id: string }) {
             className="w-24 h-24 rounded-card overflow-hidden shrink-0 bg-subtle"
             aria-label={`Open ${booking.listingTitle}`}
           >
-            <img src={booking.listingImage} alt="" className="w-full h-full object-cover" />
+            <ListingPhoto images={[booking.listingImage]} className="w-full h-full object-cover" />
           </button>
           <div className="flex-1 min-w-0">
             <h2 className="font-semibold text-main font-display leading-snug">{booking.listingTitle}</h2>
@@ -467,7 +465,7 @@ export function ConfirmationPage({ id }: { id: string }) {
           </div>
         </Surface>}
 
-        <div className="mb-4"><BookingPickup bookingId={booking.id} status={booking.status} /></div>
+        <div className="mb-4"><BookingPickup bookingId={booking.id} status={booking.status} paymentFirst={booking.paymentFirst} /></div>
         <RentalAgreement bookingId={booking.id} isOwner={booking.isOwner} />
         <Surface id="booking-summary" tabIndex={-1} className="p-5 mb-6 space-y-3 text-sm">
           <p className="text-xs text-sec">Booking reference: {booking.bookingReference ?? 'Not assigned'}</p>
@@ -479,18 +477,19 @@ export function ConfirmationPage({ id }: { id: string }) {
           <div className="flex justify-between"><span className="text-sec">Service fee</span><span className="font-semibold text-main tnum">${booking.serviceFeeAmount}</span></div>
           {booking.insuranceAmount > 0 && <div className="flex justify-between"><span className="text-sec">Insurance</span><span className="font-semibold text-main tnum">${booking.insuranceAmount.toFixed(2)}</span></div>}
           {(booking.taxRate > 0 || booking.sandboxTax) && <Row label={booking.sandboxTax ? 'Tax (7% test)' : 'Tax (7%)'} value={booking.taxAmount} />}
-          <div className="flex justify-between"><span className="text-sec">Rental charge after discount</span><span className="font-semibold text-main tnum">${booking.subtotal + booking.serviceFeeAmount}</span></div>
-          {booking.deposit > 0 && (
-            <div className="flex justify-between">
-              <span className="text-sec">Security deposit (charged)</span>
-              <span className="font-semibold text-warning tnum">${booking.deposit}</span>
-            </div>
-          )}
+          <div className="flex justify-between"><span className="text-sec">Rental charge after discount</span><span className="font-semibold text-main tnum">${formatMoney(booking.depositCollectionModel === 'authorization' ? booking.total : booking.total - booking.deposit)}</span></div>
           <div className="flex justify-between pt-3 border-t border-app">
             <span className="text-sec">Status</span>
             <span className="font-semibold text-main">{booking.status.replace('_', ' ')}</span>
           </div>
         </Surface>
+        {booking.deposit > 0 && <Surface className="p-4 mb-4">
+          <h3 className="font-semibold text-main">Separate security-deposit transaction</h3>
+          <p className="mt-2 text-sm text-sec">${booking.deposit.toFixed(2)} {booking.depositCollectionModel === 'authorization'
+            ? 'temporary hold, not included in the rental total. Complete it at pre-check-in before pickup or delivery.'
+            : 'was collected with the original legacy payment; its refund is tracked separately.'}</p>
+        </Surface>}
+        {booking.paymentFirst && booking.status === 'confirmed' && <Button className="mb-4" onClick={() => navigate({ name: 'check-in', id: booking.id })}>Pre-check-in: choose a slot</Button>}
 
         {booking.status === 'completed' && <RentalSettlement bookingId={booking.id} isOwner={booking.isOwner} autoProcess />}
         <div className="flex flex-col sm:flex-row gap-3">

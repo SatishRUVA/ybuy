@@ -24,14 +24,28 @@ Deno.serve(async request => {
     const safetyHours = setting.get('deposit_reauthorization_safety_hours') || 24;
     const now = new Date();
     const duePickupDate = new Date(now.getTime() + leadHours * 3600000).toISOString().slice(0,10);
+    const slotPickupDate = new Date(now.getTime() + (Math.max(leadHours,24) + 24) * 3600000).toISOString().slice(0,10);
     const { data: bookings, error: bookingError } = await admin.from('bookings')
-      .select('id,renter_id,start_date,end_date,deposit')
+      .select('id,renter_id,start_date,end_date,deposit,payment_first,status')
       .eq('deposit_collection_model','authorization').gt('deposit',0)
-      .in('status',['confirmed','active']).not('deposit_hold_consent_at','is',null)
-      .lte('start_date',duePickupDate).limit(100);
+      .in('status',['confirmed','active']).or('payment_first.eq.true,deposit_hold_consent_at.not.is.null')
+      .lte('start_date',slotPickupDate).limit(100);
     if (bookingError) throw new Error(bookingError.message);
+    const scheduledBookingIds = (bookings ?? []).filter(booking => booking.payment_first && booking.status === 'confirmed').map(booking => booking.id);
+    const slots = new Map<string, { starts_at: string; ends_at: string }>();
+    if (scheduledBookingIds.length > 0) {
+      const { data: approvedSlots, error: slotError } = await admin.from('booking_pickup_slots')
+        .select('booking_id,starts_at,ends_at').in('booking_id', scheduledBookingIds).eq('status','approved');
+      if (slotError) throw new Error(slotError.message);
+      for (const slot of approvedSlots ?? []) slots.set(slot.booking_id, slot);
+    }
     let notified = 0;
     for (const booking of bookings ?? []) {
+      if (!booking.payment_first && booking.start_date > duePickupDate) continue;
+      if (booking.payment_first && booking.status === 'confirmed') {
+        const slot = slots.get(booking.id);
+        if (!slot || Date.parse(slot.starts_at) > now.getTime() + 24 * 3600000 || Date.parse(slot.ends_at) <= now.getTime()) continue;
+      }
       const { data: authorization, error: authorizationError } = await admin.from('booking_deposit_authorizations')
         .select('id,status,capture_before').eq('booking_id',booking.id).order('attempt',{ascending:false}).limit(1).maybeSingle();
       if (authorizationError) throw new Error(authorizationError.message);
@@ -39,7 +53,7 @@ Deno.serve(async request => {
       const captureBefore = authorization.capture_before ? Date.parse(authorization.capture_before) : 0;
       const needsSetup = authorization.status === 'setup_required';
       const initialDue = ['scheduled','failed','expired','released'].includes(authorization.status)
-        && booking.start_date <= duePickupDate;
+        && (booking.payment_first || booking.start_date <= duePickupDate);
       const replacementDue = authorization.status === 'authorized' && captureBefore > 0
         && captureBefore <= now.getTime() + safetyHours * 3600000
         && captureBefore < new Date(`${booking.end_date}T23:59:59Z`).getTime();
@@ -55,7 +69,7 @@ Deno.serve(async request => {
       const eventKey = `deposit-authorization-reminder:${booking.id}:${authorization.id}`;
       const { error } = await admin.rpc('create_notification', {
         p_user_id: booking.renter_id, p_event_key: eventKey, p_category: 'payments',
-        p_title: title, p_body: body, p_destination: `/confirmation/${booking.id}`,
+        p_title: title, p_body: body, p_destination: `/${booking.payment_first ? 'check-in' : 'confirmation'}/${booking.id}`,
       });
       if (error) throw new Error(error.message);
       notified++;

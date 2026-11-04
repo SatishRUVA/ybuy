@@ -415,7 +415,9 @@ function storagePhotoKey(value: string, access: 'public' | 'sign'): string | nul
     const url = new URL(value);
     const supabaseOrigin = new URL(Deno.env.get('SUPABASE_URL')!).origin;
     const prefix = `/storage/v1/object/${access}/listing-images/`;
-    if (url.origin !== supabaseOrigin || !url.pathname.startsWith(prefix)) return null;
+    const storageOrigin = Deno.env.get('LISTING_STORAGE_ORIGIN');
+    const configuredOrigin = storageOrigin ? new URL(storageOrigin).origin : supabaseOrigin;
+    if ((url.origin !== supabaseOrigin && url.origin !== configuredOrigin) || !url.pathname.startsWith(prefix)) return null;
     return decodeURIComponent(url.pathname.slice(prefix.length));
   } catch {
     return null;

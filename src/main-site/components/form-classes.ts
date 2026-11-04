@@ -9,4 +9,4 @@ const FIELD_BASE =
   'disabled:cursor-not-allowed disabled:bg-subtle disabled:text-muted aria-[invalid=true]:border-[var(--error)]';
 
 export const fieldClass = (extra = '') => `${FIELD_BASE} px-3 h-11 ${extra}`;
-export const textareaClass = (extra = '') => `${FIELD_BASE} px-3 py-2.5 resize-none ${extra}`;
+export const textareaClass = (extra = '') => `${FIELD_BASE} min-h-28 px-3 py-2.5 resize-y ${extra}`;

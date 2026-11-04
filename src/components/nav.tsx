@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { MessageSquare, User, Menu, X, Search, Home, PackagePlus, LogOut, Bell, Gavel, ChevronDown } from 'lucide-react';
 import { useRouter, type Route } from '@/router';
 import { useAuth } from '@/auth-context';
-import { useAdminAccess } from '@/lib/admin';
+import { useAdminAccess } from '@/lib/admin-access';
 import { ThemeSwitcher } from '@/components/search';
 import { Alert, Button } from '@/components/ui';
 import { SHOW_DEMO_THEMES } from '@/lib/feature-flags';

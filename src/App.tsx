@@ -14,6 +14,7 @@ import { AccessPage } from '@/pages/access';
 import { VpnNotice } from '@/components/vpn-notice';
 import { BiddingTicker } from '@/components/bidding-ticker';
 import { SHOW_OUT_OF_SCOPE_PAGES, OUT_OF_SCOPE_ROUTES } from '@/lib/feature-flags';
+import { AdminDestination } from '@/components/admin-destination';
 
 const ConfirmationPage = lazy(() => import('@/pages/checkout').then(({ ConfirmationPage: page }) => ({ default: page })));
 const PreviewRentals = lazy(() => import('@/components/preview-rentals').then(({ PreviewRentals: page }) => ({ default: page })));
@@ -36,7 +37,6 @@ const PreviewProfile = lazy(() => import('@/components/preview-account').then(({
 const PreviewBidding = lazy(() => import('@/components/preview-bidding').then(({ PreviewBidding: page }) => ({ default: page })));
 const PreviewBidRoom = lazy(() => import('@/components/preview-bidding').then(({ PreviewBidRoom: page }) => ({ default: page })));
 const GuidelinesPage = lazy(() => import('@/pages/guidelines').then(({ GuidelinesPage: page }) => ({ default: page })));
-const PreviewAdmin = lazy(() => import('@/components/preview-administration').then(({ PreviewAdmin: page }) => ({ default: page })));
 
 function isWorkspaceRoute(route: ReturnType<typeof useRouter>['route']) {
   return ['dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts', 'check-in', 'check-out',
@@ -98,7 +98,7 @@ function AppContent() {
     case 'bidding': page = <PreviewBidding />; break;
     case 'bidding-detail':
     case 'auction': page = <PreviewBidRoom key={route.id} id={route.id} />; break;
-    case 'admin': page = <RequireAuth><PreviewAdmin section={route.section} /></RequireAuth>; break;
+    case 'admin': page = <AdminDestination />; break;
     case 'guidelines': page = <GuidelinesPage />; break;
     default: page = <PreviewMarketplace />; break;
   }

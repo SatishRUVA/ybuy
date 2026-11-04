@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/auth-context';
 import { useRouter, type Route } from '@/router';
-import { useAdminAccess } from '@/lib/admin';
+import { useAdminAccess } from '@/lib/admin-access';
 import { NOTIFICATIONS_CHANGED, subscribeToNotifications, unreadNotificationCount } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 import { HOSTED_PROFILE_LOGIN, PROFILE_LOGIN } from '@/lib/local-profile-login';

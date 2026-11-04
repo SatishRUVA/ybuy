@@ -156,6 +156,7 @@ test('checkout handler charges normal tax with live or test keys but blocks hist
     let chargedCents: number | undefined;
     let handler: ((req: Request) => Promise<Response>) | undefined;
     const booking = { id: 'booking-test', renter_id: 'renter-test', status: 'pending_payment',
+      payment_first: true, deposit: 50, deposit_collection_model: 'authorization', deposit_hold_consent_at: null,
       total: '42.54', sandbox_tax: sandboxTax, tax_amount: taxAmount, tax_rate: taxAmount > 0 || sandboxTax ? 0.07 : 0,
       listing: { title: 'Test camera' } };
     const client = {
@@ -167,6 +168,7 @@ test('checkout handler charges normal tax with live or test keys but blocks hist
     };
     class MockStripe {
       checkout = { sessions: { create: async (params: { line_items: { price_data: { unit_amount: number } }[] }) => {
+        expect(params.line_items).toHaveLength(1);
         calls++; chargedCents = params.line_items[0].price_data.unit_amount;
         return { id: 'cs_mock', url: 'https://example.test/checkout', status: 'open' };
       } } };

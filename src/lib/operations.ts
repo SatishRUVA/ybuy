@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import type { Paged } from '@/lib/admin';
+import { ADMIN_PORTAL } from '@/lib/admin-portal';
+import type { Paged } from '@/admin/api';
 
 export const formText = (data: FormData, key: string) => String(data.get(key) ?? '').trim();
 
@@ -54,7 +55,7 @@ export const CASE_CATEGORIES = {
 } as const;
 
 export function listCases(kind: CaseKind, search: string, status: string, priority: string, staff: boolean, limit: number, offset: number) {
-  return operationRpc<Paged<CaseRow>>(staff ? 'admin_list_cases' : 'list_my_cases', {
+  return operationRpc<Paged<CaseRow>>(ADMIN_PORTAL && staff ? 'admin_list_cases' : 'list_my_cases', {
     p_kind: kind, p_search: search || null, p_status: status === 'all' ? null : status,
     p_priority: priority === 'all' ? null : priority, p_limit: limit, p_offset: offset,
   });
@@ -78,10 +79,10 @@ export async function getCase(id: string): Promise<CaseDetail> {
     deadline_policy_unresolved: data.deadline_policy_unresolved,
   };
 }
-export const createCase = (kind: CaseKind, data: FormData, staff: boolean) => operationRpc<CaseRow>(staff ? 'admin_create_case' : 'create_case', {
+export const createCase = (kind: CaseKind, data: FormData, staff: boolean) => operationRpc<CaseRow>(ADMIN_PORTAL && staff ? 'admin_create_case' : 'create_case', {
   p_kind: kind, p_subject: formText(data, 'subject'), p_body: formText(data, 'description'),
   p_category: formText(data, 'category'), p_booking_id: formText(data, 'booking_id') || null,
-  ...(staff ? { p_participant_id: formText(data, 'participant_id'), p_reason: formText(data, 'reason') } : {}),
+  ...(ADMIN_PORTAL && staff ? { p_participant_id: formText(data, 'participant_id'), p_reason: formText(data, 'reason') } : {}),
 });
 
 export const updateCase = (id: string, data: FormData) => operationRpc('admin_update_case', {
@@ -157,7 +158,7 @@ export const savePromotion = (id: string | null, form: FormData) => operationRpc
   }, p_reason: formText(form, 'reason'),
 });
 export async function getWallet(userId?: string): Promise<Wallet> {
-  if (userId) {
+  if (ADMIN_PORTAL && userId) {
     const data = await operationRpc<Omit<Wallet, 'entries'> & { rows: CreditEntry[] }>('admin_credit_history', { p_user_id: userId, p_limit: 100, p_offset: 0 });
     return { available: data.available, balance: data.balance, reserved: data.reserved, entries: data.rows };
   }

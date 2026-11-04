@@ -103,14 +103,14 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
     let cancelled = false;
     setReviewsError(false);
     fetchReviewsForUser(listing.owner.id)
-      .then(({ reviews, rating, reviewCount }) => {
+      .then(({ reviews, rating, reviewCount, missedDecisionCount }) => {
         if (cancelled) return;
         setListing((prev) => (prev ? {
           ...prev,
           reviews,
           rating,
           reviewCount,
-          owner: { ...prev.owner, rating, rentals: reviewCount },
+          owner: { ...prev.owner, rating, rentals: reviewCount, missedAuctionDecisionCount: missedDecisionCount },
         } : prev));
       })
       .catch(() => { if (!cancelled) setReviewsError(true); });
@@ -219,7 +219,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
   const serviceFee = Math.round(rental * feePct * 100) / 100;
   const insuranceAmount = insuranceFlag.enabled ? insuranceAmountCents(listing.declaredValue, days, quantity) / 100 : 0;
   const tax = bookingTaxCents(rental, serviceFee) / 100;
-  const paymentEstimate = rental + serviceFee + insuranceAmount + listing.deposit;
+  const paymentEstimate = rental + serviceFee + insuranceAmount;
   const total = paymentEstimate + tax;
   const datesValid = Boolean(startDate && endDate && startDate >= todayIso() && endDate > startDate && days <= MAX_BOOKING_RANGE_DAYS
     && (!listing.availabilityStart || startDate >= listing.availabilityStart)
@@ -332,7 +332,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       {datesValid && <div key={`${days}-${listing.pricePerDay}`} className="listing-rental-estimate mt-4 space-y-3 text-sm animate-cross-fade" aria-label="Price breakdown">
         <div>
           <h2 className="text-sm font-bold text-main">{isOwner ? '1-day price preview' : 'Estimated rental cost'}</h2>
-          <p className="text-xs text-sec mt-1">Before the refundable deposit</p>
+          <p className="text-xs text-sec mt-1">Rental payment only; security hold is separate</p>
         </div>
         {rentalPricing.packageKind ? <>
           <PriceRow label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} package · ${rentalPricing.packageDays} days · ${quantity} units`} value={listing.pricePerDay * quantity * rentalPricing.packageDays} />
@@ -352,9 +352,9 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       <div className="listing-deposit-box mt-4 flex gap-3">
         <ShieldCheck size={26} className="shrink-0 text-accent mt-0.5" aria-hidden="true" />
         <div>
-          <h2 className="text-sm font-bold text-main">Refundable security deposit</h2>
+          <h2 className="text-sm font-bold text-main">Separate security hold at pre-check-in</h2>
           <p className="mt-1 font-bold text-accent tnum">${formatMoney(listing.deposit)}</p>
-          <p className="text-xs text-sec mt-2 leading-relaxed">{listing.deposit > 0 ? 'Paid with your rental, not held on your card. Refunded after the owner confirms the return and any disputes are resolved.' : 'No security deposit is required for this item.'}</p>
+          <p className="text-xs text-sec mt-2 leading-relaxed">{listing.deposit > 0 ? 'Not included in rental payment. Authorize the temporary hold within 24 hours before an owner-approved pickup or delivery slot.' : 'No security deposit is required for this item.'}</p>
         </div>
       </div>
       <div className="mt-4 flex justify-between gap-3 text-sm text-sec">
@@ -363,7 +363,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       {datesValid && <div className="mt-4 flex justify-between gap-3 text-sm font-bold text-main">
         <span>Estimated total</span><span className="tnum">${formatMoney(total)}</span>
       </div>}
-      <p className="text-xs text-sec mt-2">Includes rental, service fee{insuranceFlag.enabled ? ', insurance' : ''}, refundable deposit and estimated tax. Review the backend-confirmed total before paying.</p>
+      <p className="text-xs text-sec mt-2">Includes rental, service fee{insuranceFlag.enabled ? ', insurance' : ''} and estimated tax only. Review the backend-confirmed total before paying.</p>
       {!isOwner && <><Button fullWidth size="lg" className="mt-5" disabled={!canBook} onClick={goToCheckout}>
         {listing.instantBooking ? 'Book instantly' : 'Request to book'}
       </Button>

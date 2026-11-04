@@ -28,7 +28,7 @@ import { Rating } from '@/main-site/components/trust';
 import { SuccessNotice } from '@/main-site/components/success-feedback';
 import {
   Calendar, ChevronRight, Package, CheckCircle2, AlertCircle,
-  Inbox, Star, X, CalendarCog, Wallet, MessageSquare, CreditCard, Search, Bell, Trash2,
+  Inbox, Star, X, CalendarCog, MessageSquare, CreditCard, Search, Bell, Trash2,
 } from 'lucide-react';
 
 const PAID_OUT_ELIGIBLE_STATUSES: UiBooking['status'][] = ['confirmed', 'active', 'return_pending', 'completed'];
@@ -65,25 +65,14 @@ function formatRange(start: string, end: string): string {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-/** Compact numeric summary. Value first, because that's what the eye is scanning for. */
-function StatCard({ icon: Icon, label, value, highlight, onClick }: {
-  icon: typeof Calendar; label: string; value: string | number; highlight?: boolean; onClick?: () => void;
+function StatCard({ label, value }: {
+  label: string; value: string | number;
 }) {
-  const Tag = onClick ? 'button' : 'div';
   return (
-    <Tag
-      onClick={onClick}
-      className={`p-4 rounded-card-lg border text-left w-full transition-colors duration-fast ${
-        highlight ? 'bg-accent-soft border-accent' : 'bg-card border-app'
-      } ${onClick ? 'hover:border-strong' : ''}`}
-    >
-      <div className="flex items-center justify-between">
-        <Icon size={18} className={highlight ? 'text-accent' : 'text-sec'} />
-        {onClick && <ChevronRight size={15} className="text-muted" />}
-      </div>
-      <p className="text-2xl font-bold text-main font-display mt-2.5 tnum">{value}</p>
-      <p className="text-xs text-sec mt-0.5">{label}</p>
-    </Tag>
+    <div className="rental-stat">
+      <p className="text-sm text-sec">{label}</p>
+      <p className="text-2xl font-semibold text-main mt-1 tnum">{value}</p>
+    </div>
   );
 }
 
@@ -97,7 +86,7 @@ function BookingRow({
   children?: React.ReactNode;
 }) {
   return (
-    <Surface className="p-3.5">
+    <Surface className="rental-booking-row p-4">
       <div className="flex gap-3.5">
         <button
           onClick={onOpen}
@@ -127,9 +116,9 @@ function BookingRow({
           <p className="text-xs text-sec mt-1">Booking reference: {booking.bookingReference ?? 'Not assigned'}</p>
         </div>
       </div>
-      {['confirmed', 'active', 'return_pending'].includes(booking.status) && <div className="mt-3.5"><BookingPickup bookingId={booking.id} status={booking.status} /></div>}
+      {['confirmed', 'active', 'return_pending'].includes(booking.status) && <div className="mt-3.5"><BookingPickup bookingId={booking.id} status={booking.status} paymentFirst={booking.paymentFirst} /></div>}
       {booking.deposit > 0 && <div className="mt-3.5"><DepositAuthorizationStatus bookingId={booking.id} deposit={booking.deposit}
-        collectionModel={booking.depositCollectionModel} isOwner={booking.isOwner} /></div>}
+        collectionModel={booking.depositCollectionModel} isOwner={booking.isOwner} paymentFirst={booking.paymentFirst} /></div>}
       {(children || onMessage) && (
         <div className="flex flex-wrap items-center gap-2 mt-3.5 pt-3.5 border-t border-app">
           {children}
@@ -142,51 +131,37 @@ function BookingRow({
   );
 }
 
-export function BookingsPage({ initialTab = 'renting' }: { initialTab?: 'renting' | 'lending' }) {
+export function BookingsPage({ initialTab = 'renting', ownerView }: {
+  initialTab?: 'renting' | 'lending';
+  ownerView?: 'listings' | 'earnings';
+}) {
   const { route, navigate } = useRouter();
-  const [rentingAttention, setRentingAttention] = useState(0);
-  const [lendingRequests, setLendingRequests] = useState(0);
   const tab = route.name === 'owner-dashboard' ? 'lending'
     : route.name === 'renter-dashboard' ? 'renting'
       : route.name === 'dashboard' ? route.tab ?? initialTab : initialTab;
 
-  function selectTab(nextTab: 'renting' | 'lending') {
-    navigate({ name: 'dashboard', tab: nextTab });
-  }
-
+  const active = ownerView ?? tab;
+  const title = ownerView === 'listings' ? 'My listings' : ownerView === 'earnings' ? 'Earnings & payouts'
+    : tab === 'renting' ? 'My rentals' : 'Lending activity';
+  const subtitle = ownerView === 'listings' ? 'Your inventory, pricing, and available dates.'
+    : ownerView === 'earnings' ? 'Rental income, Stripe transfers, and bank payout status.'
+      : tab === 'renting' ? 'Keep track of your requests, pickups, and returns.' : 'Review requests and keep every handoff on track.';
   return (
-    <div className="pb-20 md:pb-10">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-9">
-        <SectionHeader as="h1" title="Bookings" subtitle="Your rentals and the items you lend, in one place." className="mb-5" />
-        <div className="grid grid-cols-2 gap-1 p-1 rounded-card-lg bg-subtle" role="tablist" aria-label="Booking activity">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'renting'}
-            onClick={() => selectTab('renting')}
-            className={`h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${tab === 'renting' ? 'bg-card text-main shadow-xs' : 'text-sec hover:text-main'}`}
-          >
-            Renting
-            {rentingAttention > 0 && <span className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-warning-soft px-1.5 py-0.5 text-xs font-bold text-warning tnum">{rentingAttention}</span>}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'lending'}
-            onClick={() => selectTab('lending')}
-            className={`h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${tab === 'lending' ? 'bg-card text-main shadow-xs' : 'text-sec hover:text-main'}`}
-          >
-            Lending
-            {lendingRequests > 0 && <span className="ml-2 text-xs font-semibold text-accent tnum">· {lendingRequests} {lendingRequests === 1 ? 'request' : 'requests'}</span>}
-          </button>
-        </div>
+    <div className="rental-workspace">
+      <div className="rental-page-header">
+        <SectionHeader as="h1" title={title} subtitle={subtitle}
+          action={ownerView !== 'earnings' ? <Button onClick={() => navigate({ name: tab === 'renting' && !ownerView ? 'search' : 'create-listing' })}>
+            {tab === 'renting' && !ownerView ? 'Browse rentals' : 'List an item'}
+          </Button> : undefined} />
       </div>
-      <div role="tabpanel" aria-label="Renting" hidden={tab !== 'renting'}>
-        <RenterDashboard onAttentionCount={setRentingAttention} />
-      </div>
-      <div role="tabpanel" aria-label="Lending" hidden={tab !== 'lending'}>
-        <OwnerDashboard onRequestCount={setLendingRequests} />
-      </div>
+      <nav className="rental-workspace-tabs" aria-label="Rental workspace">
+        <button type="button" aria-current={active === 'renting' ? 'page' : undefined} onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>My rentals</button>
+        <button type="button" aria-current={active === 'lending' ? 'page' : undefined} onClick={() => navigate({ name: 'dashboard', tab: 'lending' })}>Lending activity</button>
+        <button type="button" aria-current={active === 'listings' ? 'page' : undefined} onClick={() => navigate({ name: 'owner-listings' })}>My listings</button>
+        <button type="button" aria-current={active === 'earnings' ? 'page' : undefined} onClick={() => navigate({ name: 'owner-payouts' })}>Earnings & payouts</button>
+      </nav>
+      {ownerView ? <OwnerDashboard key={ownerView} view={ownerView} />
+        : tab === 'renting' ? <RenterDashboard /> : <OwnerDashboard />}
     </div>
   );
 }
@@ -244,7 +219,10 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
 
   const handleCancel = (id: string) => run(id, async () => { await cancelBooking(id); reload(); }, 'Could not cancel this booking.');
   const handleStartCheckIn = (id: string) =>
-    run(id, async () => { await startBookingPickup(id); navigate({ name: 'check-in', id }); }, 'Could not start pickup.');
+    run(id, async () => {
+      if (!bookings?.find(booking => booking.id === id)?.paymentFirst) await startBookingPickup(id);
+      navigate({ name: 'check-in', id });
+    }, 'Could not start pickup.');
   const handleStartReturn = (id: string) =>
     run(id, async () => { await startBookingReturn(id); navigate({ name: 'check-out', id }); }, 'Could not start the return.');
   const handlePayNow = (id: string) =>
@@ -268,13 +246,20 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
   }
 
   return (
-    <div className="animate-fade-in pb-20 md:pb-10">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+    <div className="rental-dashboard">
+      <div>
         {actionError && <Alert tone="error" className="mb-4">{actionError}</Alert>}
         {successNotice && <SuccessNotice key={successNotice.eventKey} eventKey={successNotice.eventKey} onDismiss={() => setSuccessNotice(null)}>{successNotice.message}</SuccessNotice>}
         {loadError && <Alert tone="warning" className="mb-4">{loadError}</Alert>}
 
-        {/* Attention first - the dashboard's real job */}
+        <div className="rental-stats rental-stats-four">
+          <StatCard label="Upcoming" value={bookings === null ? '-' : upcoming.length} />
+          <StatCard label="Active now" value={bookings === null ? '-' : active.length} />
+          <StatCard label="Completed" value={bookings === null ? '-' : past.filter((b) => b.status === 'completed').length} />
+          <StatCard label="Your rating" value={trustScore === null ? '-' : trustScore.count > 0 ? trustScore.rating.toFixed(1) : 'New'} />
+        </div>
+        <div className={`rental-activity-grid ${needsAttention.length > 0 || bookings === null ? '' : 'rental-activity-single'}`}>
+        <div className="rental-attention">
         {bookings === null ? (
           <div className="grid gap-2 mb-6"><Skeleton className="h-16 w-full" rounded="rounded-card-lg" /></div>
         ) : needsAttention.length > 0 && (
@@ -303,7 +288,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
                       </Button>
                     ) : kind === 'checkin' ? (
                       <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id)}>
-                        I'm Here – Start Pickup
+                        {booking.paymentFirst ? 'Pre-check-in: choose a slot' : "I'm Here – Start Pickup"}
                       </Button>
                     ) : kind === 'return' ? (
                       <Button size="sm" variant="secondary" loading={busyId === booking.id} onClick={() => void handleStartReturn(booking.id)}>
@@ -321,26 +306,16 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
           </section>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-7">
-          <StatCard icon={Calendar} label="Upcoming" value={upcoming.length} />
-          <StatCard icon={Package} label="Active now" value={active.length} />
-          <StatCard icon={CheckCircle2} label="Completed" value={past.filter((b) => b.status === 'completed').length} />
-          <StatCard
-            icon={Star}
-            label="Your rating"
-            value={trustScore === null ? '…' : trustScore.count > 0 ? `${trustScore.rating.toFixed(1)}★` : 'New'}
-          />
         </div>
-
-        <div className="flex items-center gap-1 mb-4 p-1 rounded-card-lg bg-subtle w-fit max-w-full overflow-x-auto no-scrollbar">
+        <section className="rental-panel rental-history">
+        <h2 className="text-base font-semibold text-main mb-4">Rental activity</h2>
+        <div className="rental-filters">
           {(['requests', 'upcoming', 'active', 'past', ...(SHOW_OUT_OF_SCOPE_PAGES ? ['claims' as const] : [])] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               aria-pressed={tab === t}
-              className={`h-9 px-4 rounded-full text-sm font-semibold capitalize whitespace-nowrap transition-colors duration-fast ${
-                tab === t ? 'bg-card text-main shadow-xs' : 'text-sec hover:text-main'
-              }`}
+              className="capitalize"
             >
               <span className="capitalize">{t}</span>
               {t !== 'claims' && sectionCounts[t] > 0 && <span className="ml-1.5 text-xs tnum">{sectionCounts[t]}</span>}
@@ -373,6 +348,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
           </div>
         ) : tabData.length === 0 ? (
           <EmptyState
+            className="rental-empty"
             icon={tab === 'past' ? <CheckCircle2 size={20} /> : <Search size={20} />}
             title={
               tab === 'requests' ? 'No rental requests'
@@ -408,7 +384,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
                 )}
                 {booking.status === 'confirmed' && (
                   <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id)}>
-                    I'm Here – Start Pickup
+                    {booking.paymentFirst ? 'Pre-check-in: choose a slot' : "I'm Here – Start Pickup"}
                   </Button>
                 )}
                 {booking.status === 'active' && (
@@ -434,6 +410,8 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
             ))}
           </div>
         )}
+        </section>
+        </div>
       </div>
 
       {reviewTarget && (
@@ -447,18 +425,21 @@ function AttentionRow({ image, title, detail, action }: {
   image?: string; title: string; detail: string; action: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 p-3 rounded-card-lg bg-card border border-[color-mix(in_srgb,var(--accent)_35%,var(--border))]">
+    <div className="rental-attention-row">
       {image && <img src={image} alt="" className="w-11 h-11 rounded-card object-cover shrink-0 bg-subtle" />}
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-sm text-main truncate">{title}</p>
-        <p className="text-xs text-sec truncate">{detail}</p>
+        <p className="text-xs text-sec mt-1">{detail}</p>
       </div>
       <div className="shrink-0">{action}</div>
     </div>
   );
 }
 
-export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: number) => void } = {}) {
+export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
+  onRequestCount?: (count: number) => void;
+  view?: 'activity' | 'listings' | 'earnings';
+} = {}) {
   const utcDay = useUtcDay();
   const { navigate } = useRouter();
   const { user } = useAuth();
@@ -487,33 +468,45 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
   const [negotiationListing, setNegotiationListing] = useState<Listing | null>(null);
   const [removingListings, setRemovingListings] = useState(false);
   const [removalError, setRemovalError] = useState<string | null>(null);
+  const [activityTab, setActivityTab] = useState<'upcoming' | 'active' | 'past'>('upcoming');
 
   function reload() {
     if (!user) return;
     setLoadError(null);
-    fetchBookingsAsOwner(user.id).then((rows) => {
-      setBookings(rows);
-      const completedIds = rows.filter((b) => b.status === 'completed').map((b) => b.id);
-      fetchReviewedBookingIds(user.id, completedIds).then(setReviewedBookingIds).catch(() => {});
-    }).catch((err: unknown) => { setBookings([]); setLoadError(err instanceof Error ? err.message : 'Could not load your bookings.'); });
-    fetchListingsByOwner(user.id).then((rows) => {
-      const listings = rows.map(toUiListing);
-      setMyListings(listings);
-      setAvailabilityListingId((current) => current || listings[0]?.id || '');
-    }).catch(() => setMyListings([]));
-    fetchPayoutsByOwner(user.id).then(setPayouts).catch((err: unknown) => {
-      setActionError(err instanceof Error ? err.message : 'Could not verify your Stripe transfers.');
-    });
-    fetchBankPayoutStatus().then((result) => {
-      setBankPayoutConnected(result.connected);
-      setBankPayouts(result.payouts);
-      setBankPayoutError(null);
-    }).catch((err: unknown) => {
-      setBankPayoutError(err instanceof Error ? err.message : 'Could not load your Stripe bank payout status.');
-    });
+    if (view !== 'listings') {
+      fetchBookingsAsOwner(user.id).then((rows) => {
+        setBookings(rows);
+        if (view === 'activity') {
+          const completedIds = rows.filter((b) => b.status === 'completed').map((b) => b.id);
+          fetchReviewedBookingIds(user.id, completedIds).then(setReviewedBookingIds).catch(() => {});
+        }
+      }).catch((err: unknown) => { setBookings([]); setLoadError(err instanceof Error ? err.message : 'Could not load your bookings.'); });
+    }
+    if (view === 'listings') {
+      fetchListingsByOwner(user.id).then((rows) => {
+        const listings = rows.map(toUiListing);
+        setMyListings(listings);
+        setAvailabilityListingId((current) => current || listings[0]?.id || '');
+      }).catch((err: unknown) => {
+        setMyListings([]);
+        setLoadError(err instanceof Error ? err.message : 'Could not load your listings.');
+      });
+    }
+    if (view === 'earnings') {
+      fetchPayoutsByOwner(user.id).then(setPayouts).catch((err: unknown) => {
+        setActionError(err instanceof Error ? err.message : 'Could not verify your Stripe transfers.');
+      });
+      fetchBankPayoutStatus().then((result) => {
+        setBankPayoutConnected(result.connected);
+        setBankPayouts(result.payouts);
+        setBankPayoutError(null);
+      }).catch((err: unknown) => {
+        setBankPayoutError(err instanceof Error ? err.message : 'Could not load your Stripe bank payout status.');
+      });
+    }
   }
 
-  useEffect(reload, [user, utcDay]);
+  useEffect(reload, [user, utcDay, view]);
 
   const all = useMemo(() => bookings ?? [], [bookings]);
   const pending = all.filter((b) => b.status === 'requested');
@@ -656,15 +649,21 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
   }
 
   return (
-    <div className="animate-fade-in pb-20 md:pb-10">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+    <div className="rental-dashboard">
+      <div>
         {actionError && <Alert tone="error" className="mb-4">{actionError}</Alert>}
         {listingNotice && <Alert tone="success" className="mb-4">{listingNotice}</Alert>}
         {successNotice && <SuccessNotice key={successNotice.eventKey} eventKey={successNotice.eventKey} onDismiss={() => setSuccessNotice(null)}>{successNotice.message}</SuccessNotice>}
         {loadError && <Alert tone="warning" className="mb-4">{loadError}</Alert>}
 
-        {/* Requests waiting on the owner */}
-        <section className="mb-7">
+        {view === 'activity' && <>
+        <div className="rental-stats">
+          <StatCard label="To review" value={bookings === null ? '-' : pending.length} />
+          <StatCard label="Upcoming" value={bookings === null ? '-' : upcomingRentals.length} />
+          <StatCard label="Out on rental" value={bookings === null ? '-' : activeRentals.length} />
+        </div>
+        <div className="rental-activity-grid">
+        <section className="rental-panel">
           <h2 className="flex items-center gap-2 text-sm font-bold text-main mb-2.5">
             <Inbox size={15} className="text-accent" />
             Incoming requests
@@ -673,7 +672,11 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
           {bookings === null ? (
             <BookingRowSkeleton />
           ) : pending.length === 0 ? (
-            <p className="text-sm text-sec">Nothing needs a decision right now.</p>
+            <div className="rental-quiet-state">
+              <h3 className="text-base font-semibold text-main">You're all caught up</h3>
+              <p className="text-sm text-sec mt-2">New rental requests appear here, ready for your approval.</p>
+              <Button className="mt-4" variant="secondary" onClick={() => navigate({ name: 'owner-listings' })}>Manage listings</Button>
+            </div>
           ) : (
             <div className="space-y-2.5">
               {pending.map((booking) => (
@@ -712,9 +715,19 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
           )}
         </section>
 
-        {(upcomingRentals.length > 0 || myListings === null || (myListings?.length ?? 0) > 0) && <section className="mb-8">
-          <SectionHeader as="h3" title="Upcoming rentals" className="mb-3" />
-          {upcomingRentals.length === 0 ? <p className="text-sm text-sec">No upcoming rentals.</p> : (
+        <section className="rental-panel rental-history">
+        <h2 className="text-base font-semibold text-main mb-4">Rental activity</h2>
+        <div className="rental-filters">
+          {(['upcoming', 'active', 'past'] as const).map(filter => (
+            <button key={filter} type="button" aria-pressed={activityTab === filter} onClick={() => setActivityTab(filter)}>
+              {filter === 'upcoming' ? 'Upcoming' : filter === 'active' ? 'Active' : 'Past'}
+              <span className="ml-2 tnum">{bookings === null ? '-' : { upcoming: upcomingRentals, active: activeRentals, past: pastRentals }[filter].length}</span>
+            </button>
+          ))}
+        </div>
+        {activityTab === 'upcoming' && <section>
+          <h3 className="sr-only">Upcoming rentals</h3>
+          {bookings === null ? <BookingListSkeleton count={2} /> : upcomingRentals.length === 0 ? <div className="rental-quiet-state"><h4 className="text-base font-semibold text-main">No upcoming rentals</h4><p className="text-sm text-sec mt-2">Approved bookings will appear here with their pickup details.</p><Button className="mt-4" variant="ghost" onClick={() => navigate({ name: 'requests', tab: 'browse' })}>Explore nearby requests <ChevronRight size={16} /></Button></div> : (
             <div className="space-y-2.5">
               {upcomingRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
@@ -726,9 +739,9 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
           )}
         </section>}
 
-        {(activeRentals.length > 0 || myListings === null || (myListings?.length ?? 0) > 0) && <section className="mb-8">
-          <SectionHeader as="h3" title="Active rentals" className="mb-3" />
-          {activeRentals.length === 0 ? <p className="text-sm text-sec">No active rentals.</p> : (
+        {activityTab === 'active' && <section>
+          <h3 className="sr-only">Active rentals</h3>
+          {bookings === null ? <BookingListSkeleton count={2} /> : activeRentals.length === 0 ? <div className="rental-quiet-state"><p className="text-sm text-sec">Nothing is out on rental right now. Picked-up items appear here until they're returned.</p></div> : (
             <div className="space-y-2.5">
               {activeRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
@@ -740,9 +753,9 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
           )}
         </section>}
 
-        {(pastRentals.length > 0 || myListings === null || (myListings?.length ?? 0) > 0) && <section className="mb-8">
-          <SectionHeader as="h3" title="Past rentals" className="mb-3" />
-          {pastRentals.length === 0 ? <p className="text-sm text-sec">Past rentals will appear here.</p> : (
+        {activityTab === 'past' && <section>
+          <h3 className="sr-only">Past rentals</h3>
+          {bookings === null ? <BookingListSkeleton count={2} /> : pastRentals.length === 0 ? <div className="rental-quiet-state"><p className="text-sm text-sec">Completed, cancelled, and declined rentals are kept here for your records.</p></div> : (
             <div className="space-y-2.5">
               {pastRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
@@ -755,11 +768,13 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
             </div>
           )}
         </section>}
-
-        <section className="mb-8">
+        </section>
+        </div>
+        </>}
+        {view === 'listings' && <section className="mb-8">
           <SectionHeader
             as="h3"
-            title="My listings"
+            title="Inventory"
             className="mb-3"
           />
           {!!myListings?.length && (
@@ -799,9 +814,9 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
               onAction={() => navigate({ name: 'create-listing' })}
             />
           ) : (
-            <div className="grid sm:grid-cols-2 gap-3">
+            <div className="rental-inventory">
               {myListings.map((listing) => (
-                <Surface key={listing.id} className="p-3 flex gap-3.5">
+                <Surface key={listing.id} className="rental-inventory-row p-4 flex gap-4">
                   {selectingListings ? (
                     <label className="relative w-20 h-20 rounded-card overflow-hidden shrink-0 bg-subtle cursor-pointer">
                       <img src={listing.images[0]} alt="" className="w-full h-full object-cover" />
@@ -828,6 +843,9 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
                     {!selectingListings && (
                       <div className="flex flex-wrap gap-1 mt-1.5">
                       <Button size="sm" variant="secondary" onClick={() => navigate({ name: 'edit-listing',id: listing.id })}>Edit listing</Button>
+                      <details className="rental-listing-tools">
+                      <summary>More options</summary>
+                      <div className="rental-listing-tools-body">
                       <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} className="text-error hover:bg-error-soft" onClick={() => setRemovalTarget([listing])}>
                         Remove listing
                       </Button>
@@ -838,15 +856,17 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
                         <OwnerPromotionControl listingId={listing.id} onSaved={reload} />
                       </>}
                       </div>
+                      </details>
+                      </div>
                     )}
                   </div>
                 </Surface>
               ))}
             </div>
           )}
-        </section>
+        </section>}
 
-        {(myListings?.length ?? 0) > 0 && <section className="mb-8">
+        {view === 'listings' && (myListings?.length ?? 0) > 0 && <section className="mb-8">
           <SectionHeader as="h3" title="Availability" className="mb-3" />
           {myListings === null ? (
             <Skeleton className="h-11 w-full max-w-xl" />
@@ -863,13 +883,16 @@ export function OwnerDashboard({ onRequestCount }: { onRequestCount?: (count: nu
           )}
         </section>}
 
-        {(myListings?.length ?? 0) > 0 && <section className="mb-8">
+        {view === 'earnings' && <section className="mb-8">
           <SectionHeader as="h3" title="Earnings" className="mb-3" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <StatCard icon={Wallet} label="Earned to date" value={`$${earned.toLocaleString()}`} />
-            <StatCard icon={CheckCircle2} label="Transferred to Stripe" value={`$${paidOut.toLocaleString()}`} />
-            <StatCard icon={Calendar} label="Upcoming & active" value={upcomingRentals.length + activeRentals.length} />
-          </div>
+          {bookings === null ? <div role="status" aria-busy="true" className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <span className="sr-only">Loading rental earnings</span>
+            <Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" />
+          </div> : loadError ? <Alert tone="warning">Earnings totals are unavailable until rental history can be loaded.</Alert> : <div className="rental-stats">
+            <StatCard label="Earned to date" value={`$${earned.toLocaleString()}`} />
+            <StatCard label="Transferred to Stripe" value={`$${paidOut.toLocaleString()}`} />
+            <StatCard label="Upcoming & active" value={upcomingRentals.length + activeRentals.length} />
+          </div>}
           {paidOut > 0 && (
             <Alert tone="success" className="mt-3">
               <span className="tnum">${paidOut.toLocaleString()}</span> of <span className="tnum">${earned.toLocaleString()}</span> transferred to Stripe. This does not confirm a bank payout.

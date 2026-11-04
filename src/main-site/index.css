@@ -634,7 +634,7 @@ html:has(.listing-detail) { scroll-padding-bottom: calc(11rem + env(safe-area-in
 .listing-section-nav a { display: flex; align-items: center; min-height: 48px; padding: 10px 14px; white-space: nowrap; font-size: 12px; font-weight: 600; color: var(--text-secondary); border-bottom: 2px solid transparent; }
 .listing-section-nav a:hover, .listing-section-nav a:focus-visible { color: var(--accent); border-bottom-color: var(--accent); }
 .listing-trust-strip { padding-bottom: 16px; border-bottom: 1px solid var(--border); }
-.listing-booking-bar { box-shadow: 0 -4px 20px #1028280a; }
+.listing-booking-bar { box-shadow: 0 -4px 20px #0000000a; }
 .listing-detail :is(button, a, input) { scroll-margin-block: 7rem 12rem; }
 .listing-image-gallery { display: grid; gap: 10px; }
 .listing-image-main { aspect-ratio: 4 / 3; }
@@ -659,56 +659,52 @@ html:has(.listing-detail) { scroll-padding-bottom: calc(11rem + env(safe-area-in
   .listing-booking-sticky { position: static; }
 }
 .bid-banner {
-  --bid-ink: #0c192c;
-  --bid-green: #00775b;
-  --bid-muted: #637383;
+  --bid-ink: var(--text);
+  --bid-green: var(--accent);
+  --bid-muted: var(--text-secondary);
   position: relative;
   isolation: isolate;
   margin: 0;
   width: 100%;
   color: var(--bid-ink);
-  background: radial-gradient(ellipse at 2% 12%, #c3f8e9, transparent 48%), linear-gradient(120deg, #e1fbf3, #f8fcfc 57%, #c4f6e8);
-  box-shadow: inset 0 0 0 2px #ffffffb3, 0 22px 48px -24px #00775b40;
+  background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 2px #ffffffb3, 0 22px 48px -24px #00000040;
   overflow: hidden;
   color-scheme: light;
 }
 .bid-banner-inner { display: flex; align-items: center; gap: 12px; height: 100px; padding: 8px 56px 8px 12px; }
 .bid-banner-inner[hidden] { display: none; }
 .bid-banner-error { flex: 1; min-width: 0; max-height: 100%; overflow-y: auto; }
-.bid-banner-sleeve { position: absolute; inset: 0 0 auto auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; width: 44px; height: 100px; border-left: 1px solid #71dcc1; background: #d3f5e9; color: var(--bid-green); font-size: 10px; font-weight: 700; }
-.bid-banner-sleeve:hover { background: #b9eedb; }
+.bid-banner-sleeve { position: absolute; inset: 0 0 auto auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; width: 44px; height: 100px; border-left: 1px solid var(--border-strong); background: var(--ybuy-gray-200); color: var(--bid-green); font-size: 10px; font-weight: 700; }
+.bid-banner-sleeve:hover { background: var(--ybuy-gray-300); }
 .bid-banner-sleeve:focus-visible { outline: 2px solid var(--bid-green); outline-offset: -4px; }
 .bid-banner-collapsed { height: 0; overflow: visible; z-index: 20; background: transparent; box-shadow: none; }
 .bid-banner-motion { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 26px; border-radius: 4px; color: var(--bid-green); }
 .bid-banner-motion:focus-visible { outline: 2px solid var(--bid-green); outline-offset: -2px; }
 .bid-banner-collapsed::before, .bid-banner-collapsed::after { display: none; }
 .bid-banner-collapsed .bid-banner-sleeve { inset: 0 auto auto 0; flex-direction: row; gap: 8px; width: auto; height: 44px; padding: 0 24px 0 16px; border: 0; border-radius: 0 0 12px 0; font-size: 11px; }
-.bid-banner-collapsed .bid-banner-sleeve::before { content: ""; position: absolute; inset: 0 0 auto auto; border-top: 12px solid #76c9ae; border-left: 12px solid transparent; }
+.bid-banner-collapsed .bid-banner-sleeve::before { content: ""; position: absolute; inset: 0 0 auto auto; border-top: 12px solid var(--ybuy-gray-400); border-left: 12px solid transparent; }
 .bid-banner::before, .bid-banner::after { content: ""; position: absolute; z-index: -1; pointer-events: none; }
-.bid-banner::before { width: 180px; height: 190px; left: 80px; bottom: -120px; border-radius: 50%; transform: rotate(-35deg); background: linear-gradient(90deg, #3ad2ae55, #ffffff70); }
-.bid-banner::after { width: 130px; height: 160px; right: -40px; bottom: -110px; border-radius: 50%; transform: rotate(40deg); background: #39d1ad38; }
-.bid-banner-heading { position: relative; flex: 0 0 200px; min-width: 0; padding-inline: 8px 12px; border-right: 1px solid #71dcc1; }
-.bid-banner-heading::after { content: ""; position: absolute; right: 12px; top: 4px; width: 28px; height: 28px; background: radial-gradient(circle, #4bd2b14d 1px, transparent 2px) 0 0 / 10px 10px; pointer-events: none; }
+.bid-banner::before, .bid-banner::after { display: none; }
+.bid-banner-heading { position: relative; flex: 0 0 200px; min-width: 0; padding-inline: 8px 12px; border-right: 1px solid var(--border-strong); }
 .bid-banner-heading h2 { font-size: 16px; line-height: 1.25; color: var(--bid-ink); font-weight: 700; }
 .bid-banner-live { display: flex; align-items: center; gap: 8px; min-height: 26px; font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--bid-green); white-space: nowrap; animation: bid-live-glow 2.4s ease-out infinite; }
-.bid-banner-live > span { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: #05bf91; animation: bid-heartbeat 2.4s ease-out infinite; }
+.bid-banner-live > span { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--accent); animation: bid-heartbeat 2.4s ease-out infinite; }
 .bid-banner-subtitle { margin-top: 3px; color: var(--bid-muted); font-size: 10px; line-height: 1.3; }
-.bid-banner-demo { display: inline-block; margin-top: 3px; padding: 2px 9px; border-radius: 999px; color: #fff; background: linear-gradient(115deg, #00876b, #00664f); font-size: 9px; font-weight: 700; letter-spacing: .04em; }
+.bid-banner-demo { display: inline-block; margin-top: 3px; padding: 2px 9px; border-radius: 999px; color: var(--accent-text); background: var(--accent); font-size: 9px; font-weight: 700; letter-spacing: .04em; }
 .bid-banner-viewport { flex: 1; min-width: 0; overflow: hidden; border-radius: 12px; scrollbar-width: none; }
 .bid-banner-viewport::-webkit-scrollbar { display: none; }
 .bid-banner-track { display: flex; width: max-content; min-width: 200%; animation: bid-news-scroll 42s linear infinite; }
 .bid-banner-group { display: flex; flex: 1 0 auto; align-items: center; gap: 10px; padding-right: 10px; }
 .bid-banner-item { flex: 0 0 300px; min-width: 0; }
-.bid-card { position: relative; display: grid; grid-template-columns: 48px minmax(0, 1fr); grid-template-rows: 18px 48px; align-items: center; gap: 4px 10px; height: 84px; padding: 6px 10px; border: 1px solid #e2f1ef; border-radius: 12px; background: #fffffff5; color: var(--bid-ink); transition: border-color var(--motion-standard), background-color var(--motion-standard); }
-a.bid-card:hover { background: #fff; border-color: #65cdb0; }
+.bid-card { position: relative; display: grid; grid-template-columns: 48px minmax(0, 1fr); grid-template-rows: 18px 48px; align-items: center; gap: 4px 10px; height: 84px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); color: var(--bid-ink); transition: border-color var(--motion-standard), background-color var(--motion-standard); }
+a.bid-card:hover { background: var(--bg-card); border-color: var(--border-strong); }
 .bid-card:focus-visible, .bid-banner-viewport:focus-visible, .bid-banner-live:focus-visible { outline: 2px solid var(--bid-green); outline-offset: -3px; }
-.bid-card-rank { grid-area: 1 / 1; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--bid-green); background: #e1f7f0; font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bid-card-rank { grid-area: 1 / 1; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--bid-green); background: var(--bg-subtle); font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .bid-card-badge { grid-area: 1 / 2; justify-self: end; display: inline-flex; align-items: center; gap: 3px; max-width: 100%; padding: 2px 7px; border-radius: 999px; font-size: 8px; line-height: 1.5; font-weight: 700; white-space: nowrap; }
 .bid-card-badge svg { width: 10px; height: 10px; }
-.bid-card-badge-hot { color: #b84900; background: #fff4ed; }
-.bid-card-badge-popular { color: #006ca9; background: #edf8ff; }
-.bid-card-badge-deal { color: var(--bid-green); background: #eafaf4; }
-.bid-card-image { grid-area: 2 / 1; display: grid; place-items: center; width: 48px; height: 48px; background: #f4f6f5; color: var(--bid-green); border-radius: 8px; overflow: hidden; }
+.bid-card-badge-hot, .bid-card-badge-popular, .bid-card-badge-deal { color: var(--text); background: var(--bg-subtle); }
+.bid-card-image { grid-area: 2 / 1; display: grid; place-items: center; width: 48px; height: 48px; background: var(--bg-subtle); color: var(--bid-green); border-radius: 8px; overflow: hidden; }
 .bid-card-image img { width: 100%; height: 100%; object-fit: cover; }
 .bid-card-content { grid-area: 2 / 2; display: grid; grid-template-rows: 14px 12px 18px; gap: 2px; min-width: 0; overflow: hidden; }
 .bid-card-title { display: block; font-size: 12px; font-weight: 600; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -720,13 +716,13 @@ a.bid-card:hover { background: #fff; border-color: #65cdb0; }
 @keyframes bid-news-scroll { to { transform: translateX(-50%); } }
 @keyframes bid-live-glow {
   0%, 42%, 100% { text-shadow: 0 0 0 transparent; }
-  12%, 30% { text-shadow: 0 0 10px #05bf9180; }
+  12%, 30% { text-shadow: 0 0 10px #00000080; }
 }
 @keyframes bid-heartbeat {
-  0%, 42%, 100% { box-shadow: 0 0 0 0 #05bf9100; }
-  12% { box-shadow: 0 0 0 5px #05bf9126, 0 0 12px #05bf9170; }
-  22% { box-shadow: 0 0 0 2px #05bf911a; }
-  30% { box-shadow: 0 0 0 7px #05bf911a, 0 0 12px #05bf9170; }
+  0%, 42%, 100% { box-shadow: 0 0 0 0 #00000000; }
+  12% { box-shadow: 0 0 0 5px #00000026, 0 0 12px #00000070; }
+  22% { box-shadow: 0 0 0 2px #0000001a; }
+  30% { box-shadow: 0 0 0 7px #0000001a, 0 0 12px #00000070; }
 }
 .bid-banner-stopped .bid-banner-track, .bid-banner-viewport:focus-within .bid-banner-track { animation: none; transform: none; min-width: 0; width: max-content; }
 .bid-banner-stopped .bid-banner-copy, .bid-banner-viewport:focus-within .bid-banner-copy { display: none; }

@@ -107,7 +107,7 @@ export function PreviewMarketplace() {
         listings = row ? [toUiListing(row)] : [];
         if (row) {
           const [dates, reviews] = await Promise.all([fetchUnavailableDates(listingId), fetchReviewsForUser(row.owner_id)]);
-          listings[0] = { ...listings[0], ...reviews };
+          listings[0] = { ...listings[0], ...reviews, owner: { ...listings[0].owner, rating: reviews.rating, rentals: reviews.reviewCount, missedAuctionDecisionCount: reviews.missedDecisionCount } };
           if (active) {
             setAvailability({ [listingId]: {
               start: row.availability_start ?? todayIso(), end: row.availability_end ?? addDays(todayIso(), LISTING_SCHEDULING_DAYS),
@@ -139,7 +139,7 @@ export function PreviewMarketplace() {
         const ratings = await fetchOwnerRatings(listings.map((item) => item.owner.id));
         listings = listings.map((item) => {
           const rating = ratings.get(item.owner.id);
-          return rating ? { ...item, rating: rating.rating, reviewCount: rating.count } : item;
+          return rating ? { ...item, rating: rating.rating, reviewCount: rating.count, owner: { ...item.owner, rating: rating.rating, rentals: rating.count, missedAuctionDecisionCount: rating.missedDecisionCount } } : item;
         });
         if (catalogSearch?.sort === 'rating') listings.sort((a, b) => b.rating - a.rating);
       }
@@ -224,7 +224,9 @@ export function PreviewMarketplace() {
         const booking = await createBookingRequest({ ...params, quantity: route.name === 'checkout' ? route.quantity : undefined, promotionCode: appliedPromotion?.code });
         return { id: booking.id, paymentRequired: booking.status === 'pending_payment',
           taxAmount: Number(booking.tax_amount ?? 0), sandboxTax: booking.sandbox_tax === true,
-          rentalTotal: Number(booking.total) - Number(booking.deposit), total: Number(booking.total) };
+          deposit: Number(booking.deposit),
+          rentalTotal: Number(booking.total) - (booking.deposit_collection_model === 'authorization' ? 0 : Number(booking.deposit)),
+          total: Number(booking.total) };
       },
       pay: async (id) => { window.location.assign(await createCheckoutSession(id)); },
       options: promotions.enabled ? <Button variant="quiet" onClick={() => setOptionsOpen(true)}>Promo code</Button> : undefined,

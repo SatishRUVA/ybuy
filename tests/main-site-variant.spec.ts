@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import type { ListingAuction } from '../src/lib/listing-auctions';
 
 test.skip(process.env.VITE_SITE_VARIANT !== 'main', 'Run with playwright.main-site.config.ts and VITE_SITE_VARIANT=main.');
@@ -364,6 +365,24 @@ for (const width of [390, 1440]) {
 }
 
 async function prepare(page: Page, authenticated = false) {
+  if (process.env.TEST_PROTECTION_COOKIE_JAR) {
+    const url = process.env.TEST_FRONTEND_URL;
+    if (!url) throw new Error('Protected bundle testing requires TEST_FRONTEND_URL.');
+    const cookies = readFileSync(process.env.TEST_PROTECTION_COOKIE_JAR, 'utf8').split(/\r?\n/).flatMap(line => {
+      if (!line || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) return [];
+      const fields = line.replace(/^#HttpOnly_/, '').split('\t');
+      if (fields.length !== 7) throw new Error('Invalid provider cookie record.');
+      return [{ name: fields[5], value: fields[6], url, httpOnly: line.startsWith('#HttpOnly_'), secure: true }];
+    });
+    if (!cookies.length) throw new Error('Provider protection cookie was not issued.');
+    await page.context().addCookies(cookies);
+  }
+  if (process.env.TEST_COMPILED_ENTRY) {
+    const entry = process.env.TEST_COMPILED_ENTRY;
+    await page.route('**/*', route => route.request().resourceType() === 'document'
+      ? route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module" src="/assets/${entry}"></script></body></html>` })
+      : route.fallback());
+  }
   await page.addInitScript(() => localStorage.setItem('rental-theme', 'preview-one'));
   await page.route('**/*', route => route.request().resourceType() === 'image'
     ? route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#D8F0E8"/></svg>' })
@@ -384,7 +403,10 @@ async function prepare(page: Page, authenticated = false) {
   await page.route('**/rest/v1/**', route => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('/feature_flags')) {
-      return route.fulfill({ json: [{ key: 'bidding', enabled: true }, { key: 'mock_bidding', enabled: false }] });
+      return route.fulfill({ json: [
+        { key: 'bidding', enabled: true }, { key: 'mock_bidding', enabled: false },
+        { key: 'item_requests', enabled: true },
+      ] });
     }
     if (url.pathname.endsWith('/app_settings')) return route.fulfill({
       json: { value: url.searchParams.get('key') === 'eq.platform_fee_pct' ? 0.1 : ['US'] },
@@ -407,6 +429,7 @@ async function prepare(page: Page, authenticated = false) {
       return route.fulfill({ json: listing });
     }
     if (url.pathname.endsWith('/search_available_listings')) return route.fulfill({ json: { rows: [], total: 0 } });
+    if (url.pathname.endsWith('/get_nearby_item_requests')) return route.fulfill({ json: { rows: [], total: 0 } });
     return route.fulfill({ json: [], headers: { 'content-range': '0-0/0' } });
   });
   if (authenticated) {
@@ -432,6 +455,430 @@ async function prepare(page: Page, authenticated = false) {
   }
 }
 
+test('main-site skip link moves keyboard focus past navigation', async ({ page }) => {
+  await prepare(page);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'What do you need to rent?', exact: true })).toBeVisible();
+  await page.keyboard.press('Tab');
+  const skipLink = page.getByRole('link', { name: 'Skip to content', exact: true });
+  await expect(skipLink).toBeFocused();
+  await expect(skipLink).toBeInViewport();
+  await expect(skipLink).toHaveCSS('outline-style', 'solid');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('main')).toBeFocused();
+});
+
+for (const width of [320, 390, 640, 768, 1024, 1280, 1440]) {
+  test(`main-site authenticated header has no clipped or overlapping controls at ${width}px`, async ({ page }) => {
+    await prepare(page, true);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const header = page.getByRole('banner');
+    await expect(header.getByRole('button', { name: 'Saved items', exact: true })).toBeVisible();
+    const menu = header.getByRole('button', { name: 'Open menu', exact: true });
+    if (width < 1280) await expect(menu).toBeVisible();
+    else await expect(menu).toBeHidden();
+
+    const controls = await header.getByRole('button').evaluateAll(buttons => buttons
+      .filter(button => button.getClientRects().length > 0)
+      .map(button => {
+        const rect = button.getBoundingClientRect();
+        return { label: button.getAttribute('aria-label') ?? button.textContent, left: rect.left, right: rect.right };
+      }));
+    for (const [index, control] of controls.entries()) {
+      expect(control.left, control.label ?? '').toBeGreaterThanOrEqual(0);
+      expect(control.right, control.label ?? '').toBeLessThanOrEqual(width);
+      if (index > 0) expect(control.left, control.label ?? '').toBeGreaterThanOrEqual(controls[index - 1].right);
+    }
+  });
+}
+
+test('main-site menu scrolls within a short viewport and preserves keyboard navigation', async ({ page }, testInfo) => {
+  await prepare(page, true);
+  await page.setViewportSize({ width: 390, height: 480 });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Saved items', exact: true })).toBeVisible();
+  const trigger = page.getByRole('button', { name: 'Open menu', exact: true });
+  const menu = page.getByRole('dialog', { name: 'Navigation', exact: true });
+  await trigger.click();
+  await expect(menu).toBeVisible();
+  await expect(page.locator('body')).toHaveCSS('overflow', 'hidden');
+  await expect(menu.getByRole('button', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page');
+  const bounds = await menu.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(480);
+  expect(await menu.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+  const signOut = menu.getByRole('button', { name: 'Sign out', exact: true });
+  await signOut.scrollIntoViewIfNeeded();
+  await expect(signOut).toBeInViewport();
+  await signOut.focus();
+  await page.keyboard.press('Tab');
+  await expect(menu.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(menu.getByRole('button', { name: 'Home', exact: true })).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath('main-site-menu-short-viewport.png'), animations: 'disabled' });
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden');
+
+  await trigger.click();
+  await menu.getByRole('button', { name: 'Home', exact: true }).click();
+  await expect(menu).toBeHidden();
+  await trigger.click();
+  await menu.getByRole('button', { name: 'Browse', exact: true }).click();
+  await expect(page).toHaveURL(/\/search(?:\?|$)/);
+  await expect(menu).toBeHidden();
+  await trigger.click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(menu).toBeHidden();
+  await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden');
+});
+
+for (const authenticated of [false, true]) {
+  test(`main-site menu hands focus to sign-in when authenticated=${authenticated}`, async ({ page }) => {
+    await prepare(page, authenticated);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const header = page.getByRole('banner');
+    if (authenticated) await expect(header.getByRole('button', { name: 'Saved items', exact: true })).toBeVisible();
+    else await expect(header.getByRole('button', { name: 'Sign in / Join', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+    const menu = page.getByRole('dialog', { name: 'Navigation', exact: true });
+    await menu.getByRole('button', { name: authenticated ? 'Switch account' : 'Sign in / Join', exact: true }).click();
+    await expect(menu).toBeHidden();
+    const signIn = page.getByRole('dialog', { name: authenticated ? 'Use another account' : 'Welcome to YBuy', exact: true });
+    await expect(signIn).toBeVisible();
+    await expect.poll(() => signIn.evaluate(element => element.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press('Tab');
+    await expect.poll(() => signIn.evaluate(element => element.contains(document.activeElement))).toBe(true);
+  });
+}
+
+test.describe('main-site touch controls', () => {
+  test.use({ hasTouch: true, viewport: { width: 768, height: 900 } });
+
+  test('small shared buttons retain 44px touch targets on tablets', async ({ page }) => {
+    await prepare(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const signIn = page.getByRole('banner').getByRole('button', { name: 'Sign in / Join', exact: true });
+    await expect(signIn).toBeVisible();
+    expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+    const bounds = await signIn.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.width).toBeGreaterThanOrEqual(44);
+    expect(bounds!.height).toBeGreaterThanOrEqual(44);
+  });
+});
+
+test('main-site request form supports long text without a competing floating action', async ({ page }) => {
+  await prepareJourney(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/need-something', { waitUntil: 'domcontentloaded' });
+  const description = page.getByLabel('Description', { exact: false });
+  await expect(description).toBeVisible();
+  await expect(description).toHaveCSS('resize', 'vertical');
+  const bounds = await description.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.height).toBeGreaterThanOrEqual(112);
+  await description.fill('A long description of the item I need for a community gathering.');
+  await expect(description).toHaveValue('A long description of the item I need for a community gathering.');
+  await expect(page.getByRole('button', { name: 'List an item', exact: true }).filter({ visible: true })).toHaveCount(0);
+});
+
+test('main-site lazy routes show an announced skeleton instead of a blank page', async ({ page }) => {
+  await prepare(page);
+  let releaseChunk!: () => void;
+  const heldChunk = new Promise<void>(resolve => { releaseChunk = resolve; });
+  await page.route(/\/assets\/guidelines-[^/]+\.js$/, async route => {
+    await heldChunk;
+    await route.continue();
+  });
+  try {
+    await page.goto('/guidelines', { waitUntil: 'domcontentloaded' });
+    const loading = page.getByRole('status').filter({ hasText: 'Loading page...' });
+    await expect(loading).toBeVisible();
+    await expect(loading).toHaveAttribute('aria-busy', 'true');
+  } finally {
+    releaseChunk();
+  }
+  await expect(page.getByRole('heading', { name: 'Community guidelines', exact: true })).toBeVisible();
+  await expect(page.getByText('Loading page...', { exact: true })).toBeHidden();
+});
+
+for (const width of [390, 1280, 1440]) {
+  test(`workspace navigation organizes customer page families at ${width}px`, async ({ page }, testInfo) => {
+    await prepare(page, true);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Welcome back, Main', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'What do you need to rent?', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Find your next rental', exact: true })).toBeVisible();
+    const sidebar = page.getByRole('complementary', { name: 'Your workspace', exact: true });
+    const drawer = page.getByRole('dialog', { name: 'Navigation', exact: true });
+    if (width >= 1280) await expect(sidebar).toBeVisible();
+    else await expect(sidebar).toBeHidden();
+
+    for (const [label, url, heading] of [
+      ['My rentals', '/dashboard?tab=renting', 'My rentals'],
+      ['Lending activity', '/dashboard?tab=lending', 'Lending activity'],
+      ['My listings', '/dashboard/listings', 'My listings'],
+      ['Earnings & payouts', '/payouts', 'Earnings & payouts'],
+      ['Messages', '/messages', 'Messages'],
+      ['Notifications', '/notifications', 'Notifications'],
+      ['Saved items', '/favorites', 'Saved items'],
+      ['Profile & settings', '/profile', 'Your profile'],
+    ]) {
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
+      await expect(page).toHaveURL(url);
+      await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
+      const rentalPage = url.startsWith('/dashboard') || url === '/payouts';
+      if (rentalPage) {
+        await expect(sidebar).toHaveCount(0);
+        await expect(page.getByRole('navigation', { name: 'Rental workspace' }).getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-current', 'page');
+      } else if (width >= 1280) {
+        await expect(sidebar.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-current', 'page');
+        const content = await page.getByRole('main').boundingBox();
+        const rail = await sidebar.boundingBox();
+        expect(content).not.toBeNull();
+        expect(rail).not.toBeNull();
+        expect(content!.x).toBeGreaterThanOrEqual(rail!.x + rail!.width);
+      } else {
+        await expect(drawer).toBeHidden();
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (url === '/dashboard/listings') {
+        await expect(page.getByRole('heading', { name: 'Incoming requests', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('heading', { name: 'Earnings', exact: true })).toHaveCount(0);
+      }
+      if (url === '/payouts') {
+        await expect(page.getByRole('heading', { name: 'Earnings', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'My listings', exact: true })).toHaveCount(0);
+      }
+    }
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath(`workspace-profile-${width}.png`), animations: 'disabled' });
+  });
+}
+
+for (const width of [390, 768, 1440]) {
+  test(`rental workspace keeps navigation and activity compact at ${width}px`, async ({ page }, testInfo) => {
+    await prepare(page, true);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/dashboard?tab=lending', { waitUntil: 'domcontentloaded' });
+    const navigation = page.getByRole('navigation', { name: 'Rental workspace', exact: true });
+    await expect(page.getByRole('heading', { name: 'Lending activity', exact: true })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Your workspace' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Incoming requests', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Rental activity', exact: true })).toBeVisible();
+    await expect(page.locator('header').getByRole('button', { name: 'List an item', exact: true })).toBeHidden();
+    await expect(page.locator('button.fixed[aria-label="List an item"]')).toBeHidden();
+    const activity = page.locator('.rental-history');
+    await activity.getByRole('button', { name: /^Active/ }).click();
+    await expect(activity).toContainText('Nothing is out on rental right now.');
+    await activity.getByRole('button', { name: /^Past/ }).click();
+    await expect(activity).toContainText('kept here for your records');
+    const firstPanel = await page.locator('.rental-panel').first().boundingBox();
+    expect(firstPanel!.y).toBeLessThan(500);
+    if (width === 1440) {
+      const frame = await page.locator('.rental-workspace').boundingBox();
+      expect(Math.abs(frame!.x - (width - frame!.x - frame!.width))).toBeLessThanOrEqual(1);
+      const panels = await page.locator('.rental-panel').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().y));
+      expect(panels[0]).toBe(panels[1]);
+    }
+    await page.screenshot({ path: testInfo.outputPath(`lending-${width}.png`), animations: 'disabled' });
+    await navigation.getByRole('button', { name: 'My rentals', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'My rentals', exact: true })).toBeVisible();
+    await expect(navigation.getByRole('button', { name: 'My rentals', exact: true })).toHaveAttribute('aria-current', 'page');
+    await page.screenshot({ path: testInfo.outputPath(`renting-${width}.png`), animations: 'disabled' });
+    await navigation.getByRole('button', { name: 'My listings', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Inventory', exact: true })).toBeVisible();
+    await navigation.getByRole('button', { name: 'Earnings & payouts', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Earnings', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
+
+test('rental workspace preserves populated booking actions and disclosed inventory tools', async ({ page }, testInfo) => {
+  await prepare(page, true);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route('**/rest/v1/bookings?*', route => {
+    const owner = new URL(route.request().url()).searchParams.has('owner_id');
+    return route.fulfill({ json: [{
+      id: '80000000-0000-4000-8000-000000000001', booking_reference: 'YBUY-TEST',
+      listing_id: listingId, owner_id: owner ? userId : listing.owner_id, renter_id: owner ? listing.owner_id : userId,
+      start_date: futureDate(2), end_date: futureDate(4), quantity: 1, status: 'requested',
+      daily_rate: 25, days: 3, subtotal: 75, service_fee_amount: 0, insurance_amount: 0, deposit: 0, total: 75,
+      created_at: new Date().toISOString(),
+      listing: { id: listingId, title: listing.title, listing_images: [] },
+      renter: { id: userId, full_name: 'Maya Patel', avatar_url: null },
+      owner: { id: listing.owner_id, full_name: 'Noah Anderson', avatar_url: null },
+    }] });
+  });
+  await page.route('**/rest/v1/listings?*', route => route.fulfill({ json: [{
+    ...listing, owner_id: userId, availability_start: futureDate(1), availability_end: futureDate(25),
+  }] }));
+  await page.goto('/dashboard?tab=lending', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'Accept request', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Decline', exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('lending-populated.png'), animations: 'disabled' });
+  const navigation = page.getByRole('navigation', { name: 'Rental workspace' });
+  await navigation.getByRole('button', { name: 'My rentals', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'View rental', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('renting-populated.png'), animations: 'disabled' });
+  await navigation.getByRole('button', { name: 'My listings', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Edit listing', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove listing', exact: true })).toBeHidden();
+  await page.locator('.rental-listing-tools summary').click();
+  await expect(page.getByRole('button', { name: 'Remove listing', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Manage dates', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Select listings', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: `Select ${listing.title}`, exact: true })).toBeVisible();
+  await page.getByRole('checkbox', { name: `Select ${listing.title}`, exact: true }).check();
+  await expect(page.getByRole('button', { name: 'Remove selected (1)', exact: true })).toBeEnabled();
+});
+
+test('workspace keeps creation and checkout flows free of competing navigation', async ({ page }) => {
+  await prepareJourney(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (const url of ['/create-listing', '/need-something', `/checkout/${listingId}`]) {
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('button', { name: 'Back to bookings', exact: true })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Your workspace', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Open menu', exact: true })).toHaveCount(0);
+    await expect(page.locator('.workspace-focused')).toBeVisible();
+  }
+});
+
+for (const owner of [false, true]) {
+  test(`pre-check-in ${owner ? 'owner approves' : 'renter proposes'} a separate handoff slot`, async ({ page }, testInfo) => {
+    await prepare(page, true);
+    const bookingId = '80000000-0000-4000-8000-000000000010';
+    const startsAt = `${futureDate(2)}T12:00:00.000Z`;
+    let slot: { starts_at: string; ends_at: string; time_zone: string; status: string } | null = owner
+      ? { starts_at: startsAt, ends_at: `${futureDate(2)}T12:30:00.000Z`, time_zone: 'UTC', status: 'proposed' } : null;
+    let mutation: Record<string, unknown> | null = null;
+    let canAuthorize = false;
+    let authorizationStatus = 'setup_required';
+    await page.route('**/rest/v1/bookings?*', route => route.fulfill({ json: {
+      id: bookingId, booking_reference: 'YB-TEST', payment_first: true,
+      listing_id: listingId, owner_id: owner ? userId : listing.owner_id, renter_id: owner ? listing.owner_id : userId,
+      start_date: futureDate(2), end_date: futureDate(4), quantity: 1, status: 'confirmed',
+      daily_rate: 25, days: 2, subtotal: 50, service_fee_amount: 5, insurance_amount: 0,
+      deposit: 24, total: 58.85, deposit_collection_model: 'authorization', created_at: new Date().toISOString(),
+      listing: { id: listingId, title: listing.title, listing_images: [] },
+      renter: { id: owner ? listing.owner_id : userId, full_name: 'Test renter' },
+      owner: { id: owner ? userId : listing.owner_id, full_name: 'Test owner' },
+    } }));
+    await page.route('**/rest/v1/rpc/get_booking_handoff', route => route.fulfill({ json: {
+      booking_id: bookingId, booking_status: 'confirmed', start_date: futureDate(2), end_date: futureDate(4),
+      is_owner: owner, status: null, pickup_arrived_at: null, actual_pickup_at: null,
+      actual_return_at: null, return_initiated_at: null, pickup: null, return: null, events: [], cases: [],
+    } }));
+    await page.route('**/rest/v1/rpc/get_booking_precheckin', route => route.fulfill({ json: {
+      payment_first: true, slot, server_now: new Date().toISOString(), can_authorize: canAuthorize,
+      handoff_ready: false, deposit_ready: false, consented: false, delivery_mode: 'pickup',
+    } }));
+    await page.route('**/rest/v1/booking_deposit_authorizations?*', route => route.fulfill({ json: [{
+      id: '80000000-0000-4000-8000-000000000011', booking_id: bookingId, status: authorizationStatus,
+      authorized_amount: 24, captured_amount: 0, attempt: 1,
+    }] }));
+    await page.route('**/rest/v1/rpc/propose_booking_pickup_slot', route => {
+      mutation = route.request().postDataJSON();
+      slot = { starts_at: String(mutation!.p_starts_at), ends_at: startsAt, time_zone: String(mutation!.p_time_zone), status: 'proposed' };
+      return route.fulfill({ json: null });
+    });
+    await page.route('**/rest/v1/rpc/respond_to_booking_pickup_slot', route => {
+      mutation = route.request().postDataJSON();
+      slot = { ...slot!, status: 'approved' };
+      return route.fulfill({ json: null });
+    });
+    await page.goto(`/check-in/${bookingId}`, { waitUntil: 'networkidle' });
+    await expect(page.getByRole('heading', { name: 'Pre-check-in for pickup', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Set up payment method', exact: true })).toBeHidden();
+    if (owner) {
+      await page.getByRole('button', { name: 'Approve slot', exact: true }).click();
+      await expect(page.getByText('Deposit authorization opens 24 hours before the agreed slot.', { exact: false })).toBeVisible();
+      expect(mutation).toMatchObject({ p_booking_id: bookingId, p_starts_at: startsAt, p_approve: true });
+    } else {
+      await page.getByLabel('Proposed pickup time', { exact: true }).fill(`${futureDate(2)}T12:00`);
+      await page.getByRole('button', { name: 'Propose slot', exact: true }).click();
+      await expect(page.getByText('Waiting for the owner to approve this time.', { exact: true })).toBeVisible();
+      const timeZone = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+      const expectedTime = await page.evaluate(value => new Date(value).toISOString(), `${futureDate(2)}T12:00`);
+      expect(mutation).toMatchObject({ p_booking_id: bookingId, p_time_zone: timeZone });
+      expect(Date.parse(String(mutation!.p_starts_at))).toBe(Date.parse(expectedTime));
+      slot = { ...slot!, status: 'approved' };
+      canAuthorize = true;
+      authorizationStatus = 'scheduled';
+      await page.route('**/rest/v1/rpc/record_deposit_hold_consent', route => route.fulfill({ json: null }));
+      await page.route('**/functions/v1/create-deposit-authorization-session', route => route.fulfill({
+        status: 400, json: { error: 'Test bank declined the authorization' },
+      }));
+      await page.reload({ waitUntil: 'networkidle' });
+      const authorize = page.getByRole('button', { name: 'Authorize deposit', exact: true });
+      await expect(authorize).toBeDisabled();
+      await page.getByRole('checkbox', { name: /I agree to the separate temporary security hold/ }).check();
+      await expect(authorize).toBeEnabled();
+      await authorize.click();
+      await expect(page.getByText('Test bank declined the authorization', { exact: false })).toBeVisible();
+      await expect(page.getByRole('button', { name: /Start Pickup/ })).toBeDisabled();
+    }
+
+    await page.screenshot({ path: testInfo.outputPath('precheckin-desktop.png'), animations: 'disabled', fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('precheckin-mobile.png'), animations: 'disabled', fullPage: true });
+  });
+}
+
+test('preview customer checkout keeps the backend rental total and separate security hold', async ({ page }) => {
+  test.skip(process.env.TEST_CUSTOMER_VARIANT !== 'default', 'Requires the compiled second customer interface.');
+  await prepare(page, true);
+  await page.route('**/rest/v1/rpc/get_listing_unavailable_dates', route => route.fulfill({ json: { blocked: [], booked: [] } }));
+  await page.route('**/rest/v1/listings?*', route => route.fulfill({ json: {
+    ...listing, instant_booking: true, available_quantity: 1, item_condition: 'good', estimated_value: 200,
+    availability_start: futureDate(1), availability_end: futureDate(25),
+  } }));
+  await page.route('**/rest/v1/rpc/create_booking_request', route => route.fulfill({ json: {
+    id: '80000000-0000-4000-8000-000000000010', status: 'pending_payment',
+    total: 58.85, deposit: 50, tax_amount: 3.85, sandbox_tax: false,
+    payment_first: true, deposit_collection_model: 'authorization',
+  } }));
+  await page.route('**/functions/v1/create-checkout-session', route => route.fulfill({
+    status: 503, json: { error: 'Test payment service unavailable' },
+  }));
+  await page.goto(`/checkout/${listingId}?start=${futureDate(2)}&end=${futureDate(4)}`, { waitUntil: 'networkidle' });
+  await expect(page.getByRole('heading', { name: 'Make time for a good plan.', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('checkbox', { name: /I agree to the item/ }).check();
+  await page.getByRole('button', { name: 'Continue to secure payment', exact: true }).click();
+  await expect(page.getByText('Test payment service unavailable', { exact: false })).toBeVisible();
+  const summary = page.getByRole('complementary');
+  await expect(summary.getByText('Rental total', { exact: true }).locator('..')).toContainText('$58.85');
+  await expect(summary.getByRole('region', { name: 'Separate security hold' })).toContainText('$50');
+  await expect(summary).not.toContainText('including deposit');
+});
+
+test('workspace owner activity does not fetch hidden renter or Stripe panels', async ({ page }) => {
+  await prepare(page, true);
+  const requests: string[] = [];
+  page.on('request', request => requests.push(request.url()));
+  await page.goto('/dashboard?tab=lending', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Incoming requests', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Manage listings', exact: true })).toBeVisible();
+  expect(requests.some(url => url.includes('/functions/v1/'))).toBe(false);
+  expect(requests.some(url => url.includes('/listings?'))).toBe(false);
+  await expect(page.getByRole('heading', { name: 'My listings', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Manage listings', exact: true }).click();
+  await expect(page).toHaveURL('/dashboard/listings');
+  await expect(page.getByRole('heading', { name: 'My listings', exact: true, level: 1 })).toBeVisible();
+});
+
 test('main-site date range stays clear on desktop and mobile', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-10T18:00:00.000Z') });
   await prepare(page);
@@ -439,8 +886,6 @@ test('main-site date range stays clear on desktop and mobile', async ({ page }) 
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    if (width < 640) await page.getByRole('button', { name: /Search rentals/ }).click();
-
     const trigger = page.locator('button.p1-date-trigger:visible, button.calendar-trigger:visible').first();
     await expect(trigger).toBeVisible();
     await trigger.click();
@@ -459,9 +904,9 @@ test('main-site date range stays clear on desktop and mobile', async ({ page }) 
     await expect(pickup).toHaveAttribute('data-range-start', '');
     await expect(middle).toHaveAttribute('aria-pressed', 'true');
     await expect(returnDate).toHaveAttribute('data-range-end', '');
-    await expect(pickup).toHaveCSS('background-color', 'rgb(14, 124, 102)');
-    await expect(middle).toHaveCSS('background-color', 'rgb(216, 240, 232)');
-    await expect(returnDate).toHaveCSS('background-color', 'rgb(14, 124, 102)');
+    await expect(pickup).toHaveCSS('background-color', 'rgb(17, 17, 17)');
+    await expect(middle).toHaveCSS('background-color', 'rgb(245, 245, 245)');
+    await expect(returnDate).toHaveCSS('background-color', 'rgb(17, 17, 17)');
 
     await calendar.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(calendar).toHaveCount(0);
@@ -513,7 +958,7 @@ for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     for (const [url, heading] of [
       ['/', 'What do you need to rent?'],
-      ['/search', 'Nothing matches those filters'],
+      ['/search', "Couldn't find what you need?"],
       [`/listing/${listingId}`, listing.title],
       ['/bidding', 'Live bidding'],
     ]) {
@@ -552,14 +997,22 @@ for (const width of [390, 768, 1440]) {
     await prepare(page, true);
     await page.setViewportSize({ width, height: 900 });
     for (const [url, heading] of [
-      ['/dashboard', 'Bookings'],
-      ['/dashboard?tab=lending', 'Bookings'],
+      ['/dashboard', 'My rentals'],
+      ['/dashboard?tab=lending', 'Lending activity'],
       ['/create-listing', 'Create a listing'],
       ['/notifications', 'Notifications'],
       ['/bidding', 'Live bidding'],
+      ['/favorites', 'Saved items'],
+      ['/messages', 'Messages'],
+      ['/requests', 'Item requests'],
+      ['/need-something', 'Request an item'],
+      ['/profile', 'Your profile'],
+      ['/guidelines', 'Community guidelines'],
     ]) {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+      await expect(page.getByRole('main')).toHaveCount(1);
+      await expect(page.getByRole('link', { name: 'Skip to content', exact: true })).toHaveAttribute('href', '#main-content');
       if (url === '/bidding') {
         await page.getByRole('button', { name: 'My auctions', exact: true }).click();
         await expect(page.getByRole('heading', { name: 'Owner — Bidding', exact: true })).toBeVisible();

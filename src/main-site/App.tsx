@@ -11,10 +11,14 @@ import { OutOfScopePage } from '@/main-site/pages/out-of-scope';
 import { AccessPage } from '@/main-site/pages/access';
 import { BiddingTicker } from '@/main-site/components/bidding-ticker';
 import { VpnNotice } from '@/main-site/components/vpn-notice';
+import { PageLoading } from '@/main-site/components/skeleton';
+import { WorkspaceSidebar } from '@/main-site/components/workspace-navigation';
 import { SHOW_OUT_OF_SCOPE_PAGES, OUT_OF_SCOPE_ROUTES } from '@/lib/feature-flags';
 import { UUID_RE } from '@/lib/text-safety';
+import { AdminDestination } from '@/components/admin-destination';
 import './index.css';
 import './theme.css';
+import './workspace.css';
 
 const SearchPage = lazy(() => import('@/main-site/pages/search').then(({ SearchPage: page }) => ({ default: page })));
 const ListingPage = lazy(() => import('@/main-site/pages/listing').then(({ ListingPage: page }) => ({ default: page })));
@@ -42,28 +46,27 @@ const BiddingPage = lazy(() => import('@/main-site/pages/bidding').then(({ Biddi
 const BiddingDetailPage = lazy(() => import('@/main-site/pages/bidding').then(({ BiddingDetailPage: page }) => ({ default: page })));
 const AuctionPage = lazy(() => import('@/main-site/pages/bidding').then(({ AuctionPage: page }) => ({ default: page })));
 const GuidelinesPage = lazy(() => import('@/main-site/pages/guidelines').then(({ GuidelinesPage: page }) => ({ default: page })));
-const AdminPage = lazy(() => import('@/main-site/pages/admin/admin-page').then(({ AdminPage: page }) => ({ default: page })));
 
 function AppContent() {
   const { route } = useRouter();
   const { user } = useAuth();
+  const skipLink = <a href="#main-content" className="skip-link">Skip to content</a>;
+  const focused = ['checkout', 'confirmation', 'create-listing', 'edit-listing', 'need-something', 'check-in', 'check-out'].includes(route.name);
+  const rentalWorkspace = ['dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts'].includes(route.name);
+  const workspace = Boolean(user) && !focused && !rentalWorkspace;
 
   if (route.name === 'access') return <AccessPage />;
 
   if (route.name === 'admin') {
-    return (
-      <>
-        <RequireAuth><Suspense fallback={<div className="min-h-[50vh]" />}><AdminPage section={route.section} /></Suspense></RequireAuth>
-        <SignInDialog />
-      </>
-    );
+    return <AdminDestination />;
   }
 
   if (OUT_OF_SCOPE_ROUTES.has(route.name) && !SHOW_OUT_OF_SCOPE_PAGES) {
     return (
-      <div className="min-h-screen bg-app">
+      <div className="min-h-dvh flex flex-col bg-app">
+        {skipLink}
         <Header />
-        <main className="pb-[calc(4rem_+_env(safe-area-inset-bottom))] md:pb-0"><OutOfScopePage /></main>
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-[calc(4rem_+_env(safe-area-inset-bottom))] md:pb-0"><OutOfScopePage /></main>
         <BottomNav />
         <SignInDialog />
       </div>
@@ -91,8 +94,8 @@ function AppContent() {
     case 'dashboard': page = <RequireAuth><BookingsPage initialTab={route.tab ?? 'renting'} /></RequireAuth>; break;
     case 'renter-dashboard': page = <RequireAuth><BookingsPage initialTab="renting" /></RequireAuth>; break;
     case 'owner-dashboard': page = <RequireAuth><BookingsPage initialTab="lending" /></RequireAuth>; break;
-    case 'owner-listings':
-    case 'owner-payouts': page = <RequireAuth><BookingsPage initialTab="lending" /></RequireAuth>; break;
+    case 'owner-listings': page = <RequireAuth><BookingsPage initialTab="lending" ownerView="listings" /></RequireAuth>; break;
+    case 'owner-payouts': page = <RequireAuth><BookingsPage initialTab="lending" ownerView="earnings" /></RequireAuth>; break;
     case 'create-listing': page = <RequireAuth><CreateListingPage key={route.requestId ?? 'new'} requestId={route.requestId} /></RequireAuth>; break;
     case 'edit-listing': page = <RequireAuth><CreateListingPage key={`${route.id}:${route.requestId ?? ''}`} editId={route.id} requestId={route.requestId} /></RequireAuth>; break;
     case 'check-in': page = <RequireAuth><CheckInPage id={route.id} /></RequireAuth>; break;
@@ -122,11 +125,21 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen bg-app">
-      <Header />
-      <BiddingTicker />
-      <main className="pb-[calc(4rem_+_env(safe-area-inset-bottom))] md:pb-0"><Suspense fallback={<div className="min-h-[50vh]" />}>{<div key={`${user?.id ?? 'anonymous'}:${route.name}`} className="animate-page-fade">{page}</div>}</Suspense></main>
-      <BottomNav />
+    <div className="min-h-dvh flex flex-col bg-app">
+      {skipLink}
+      <Header workspace={workspace} focused={focused} />
+      <div className={workspace ? 'workspace-body' : focused ? 'workspace-focused' : 'min-w-0 flex-1'}>
+        {workspace && <WorkspaceSidebar />}
+        <div className="workspace-content">
+          {!focused && ['home', 'search', 'bidding', 'bidding-detail', 'auction'].includes(route.name) && <BiddingTicker />}
+          <main id="main-content" tabIndex={-1} className="min-w-0 pb-[calc(4rem_+_env(safe-area-inset-bottom))] md:pb-0">
+            <Suspense fallback={<PageLoading />}>
+              <div key={`${user?.id ?? 'anonymous'}:${route.name}`} className="animate-page-fade">{page}</div>
+            </Suspense>
+          </main>
+        </div>
+      </div>
+      {!focused && <BottomNav />}
       <SignInDialog />
     </div>
   );

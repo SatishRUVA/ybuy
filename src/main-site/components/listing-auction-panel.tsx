@@ -1,16 +1,38 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Clock3, Crown, Gavel, ShieldCheck, UserRound } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock3, Crown, Gavel, ShieldCheck, UserRound } from 'lucide-react';
 import { Alert, Button, Field } from '@/main-site/components/ui';
 import { fieldClass } from '@/main-site/components/form-classes';
 import { useAuth } from '@/auth-context';
 import { useRouter } from '@/router';
 import { getListingAuction, placeListingAuctionBid, type ListingAuction } from '@/lib/listing-auctions';
 import { auctionCountdown } from '@/lib/auction-countdown';
+import { DateBiddingPanel } from '@/main-site/components/date-bidding-panel';
+import { MonthGrid } from '@/main-site/components/date-range-picker';
+import { todayIso } from '@/lib/geo';
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Could not load competitive bidding. Please retry.';
 const deadlineLabel = (iso: string | null) => iso ? new Date(iso).toLocaleString() : 'Not started';
+const NO_DATES = new Set<string>();
 
-export function ListingAuctionPanel({ listingId, deposit = 0 }: { listingId: string; deposit?: number }) {
+function FixedAuctionCalendar({ start, end }: { start: string; end: string }) {
+  const [month, setMonth] = useState(() => new Date(`${start.slice(0, 7)}-01T12:00:00`));
+  const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+  return <section aria-label="Auction rental calendar" className="rounded-card border border-app p-3">
+    <h3 className="text-sm font-bold">Rental dates</h3>
+    <p className="mt-1 text-xs text-sec">These dates are fixed by the owner. All bids cover pickup {start} to return {end}; the return date is not a charged rental day.</p>
+    <div className="my-3 flex items-center justify-between gap-2">
+      <Button variant="ghost" aria-label="Previous rental month" disabled={monthKey <= start.slice(0, 7)} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1, 12))}><ChevronLeft size={18} /></Button>
+      <p aria-live="polite" className="text-sm font-semibold">{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</p>
+      <Button variant="ghost" aria-label="Next rental month" disabled={monthKey >= end.slice(0, 7)} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1, 12))}><ChevronRight size={18} /></Button>
+    </div>
+    <fieldset disabled aria-label="Fixed rental period">
+      <MonthGrid monthDate={month} todayStr={todayIso()} minDate={start} maxDate={end} draftStart={start} draftEnd={end}
+        bookedDates={NO_DATES} blockedDates={NO_DATES} onPick={() => {}} showMonthLabel={false} rangeView />
+    </fieldset>
+  </section>;
+}
+
+export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0 }: { listingId: string; deposit?: number; listedPrice?: number }) {
   const { user, openSignIn } = useAuth();
   const { navigate } = useRouter();
   const [auction, setAuction] = useState<ListingAuction | null>(null);
@@ -23,9 +45,11 @@ export function ListingAuctionPanel({ listingId, deposit = 0 }: { listingId: str
   const serverOffset = useRef(0);
   const pendingBid = useRef<{ rate: number; key: string } | null>(null);
   const mounted = useRef(true);
+  const dateFlexible = useRef(false);
   const apply = useCallback((value: ListingAuction | null) => {
     if (!mounted.current) return;
     if (value) serverOffset.current = Date.parse(value.server_now) - Date.now();
+    dateFlexible.current = value?.date_flexible === true;
     setAuction(value); setError(null); setLoading(false);
   }, []);
   const refresh = useCallback(async () => {
@@ -36,7 +60,7 @@ export function ListingAuctionPanel({ listingId, deposit = 0 }: { listingId: str
     mounted.current = true;
     setLoading(true); setAuction(null); setError(null);
     void refresh();
-    const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 10000);
+    const timer = window.setInterval(() => { if (!document.hidden && !dateFlexible.current) void refresh(); }, 10000);
     const tick = window.setInterval(() => setNow(Date.now() + serverOffset.current), 1000);
     return () => { mounted.current = false; window.clearInterval(timer); window.clearInterval(tick); };
   }, [refresh, user?.id]);
@@ -57,6 +81,7 @@ export function ListingAuctionPanel({ listingId, deposit = 0 }: { listingId: str
   }
   const deadline = auction?.status === 'scheduled' ? auction.starts_at ?? null : auction?.status === 'owner_selection' ? auction.selection_deadline : auction?.status === 'awaiting_payment' ? auction.payment_deadline : auction?.ends_at ?? null;
   const open = auction?.status === 'open' && !!deadline && Date.parse(deadline) > now;
+  if (auction?.date_flexible) return <DateBiddingPanel listingId={listingId} deposit={deposit} listedPrice={listedPrice} initialAuction={auction} />;
   return <section id="competitive-auction" aria-labelledby="competitive-auction-title" className="scroll-mt-24 rounded-card-lg border border-app overflow-hidden">
     <header className="flex items-start gap-3 bg-accent-soft px-5 py-4">
       <Gavel size={21} aria-hidden="true" className="text-accent mt-0.5" /><div>
@@ -78,7 +103,7 @@ export function ListingAuctionPanel({ listingId, deposit = 0 }: { listingId: str
             </div>
           </div>
           <p className="text-xs text-sec">Rental pickup {auction.start_date} &middot; return {auction.end_date} &middot; 1 unit</p>
-          {(auction.owner_missed_decision_count ?? 0) > 0 && <p className="text-xs text-warning">Owner missed {auction.owner_missed_decision_count} auction decision window{auction.owner_missed_decision_count === 1 ? '' : 's'}.</p>}
+          <FixedAuctionCalendar key={`${auction.start_date}:${auction.end_date}`} start={auction.start_date} end={auction.end_date} />
           <div><h3 className="text-sm font-bold mb-2">Top 3 bids <span className="text-xs font-normal text-sec">(anonymous)</span></h3>
             {auction.top_bids.length === 0 ? <p className="text-xs text-sec py-3">No bids yet. The opening bid starts at ${auction.minimum_next_bid.toFixed(2)}/day.</p> :
               <ol className="space-y-2" aria-label="Anonymous top bids">{auction.top_bids.map(bid => <li key={bid.id} className="flex flex-wrap items-center gap-2 rounded-card bg-subtle p-3 text-xs">
@@ -124,8 +149,8 @@ export function ListingAuctionPanel({ listingId, deposit = 0 }: { listingId: str
           <h3 className="font-bold text-main mb-4">What happens next?</h3>
           <ol className="space-y-5">
             <li className="flex gap-3"><Gavel size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Bidding ends</strong><p className="mt-1">A bid in the final 2 minutes adds 2 minutes, up to 10 minutes. Closing stays at least 2 hours before pickup. Renters see the top 3 bids anonymously.</p></div></li>
-            <li className="flex gap-3"><UserRound size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Owner selects a winner</strong><p className="mt-1">The owner may select any eligible bidder before bidding closes or during the {auction.owner_decision_hours ?? 1}-hour decision window. Otherwise the highest eligible bid is selected automatically.</p></div></li>
-            <li className="flex gap-3"><Clock3 size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Winner pays within {auction.winner_payment_hours ?? 1} hours</strong><p className="mt-1">If unpaid, the next eligible bidder is offered the rental. Dates and capacity are checked again.</p></div></li>
+            <li className="flex gap-3"><UserRound size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Owner must select a winner</strong><p className="mt-1">The owner must choose before bidding closes. Without a decision, bidding expires. The system never selects a bidder automatically.</p></div></li>
+            <li className="flex gap-3"><Clock3 size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Winner pays within {auction.winner_payment_hours ?? 1} hours</strong><p className="mt-1">Unpaid selections expire. Another bidder is never selected automatically. Dates and capacity are checked again.</p></div></li>
             <li className="flex gap-3"><ShieldCheck size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Booking confirmed</strong><p className="mt-1">Only after successful payment verification. Bidding alone never confirms a rental.</p></div></li>
           </ol>
         </aside>

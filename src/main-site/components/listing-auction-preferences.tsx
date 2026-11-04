@@ -66,7 +66,7 @@ export function ListingAuctionPreferences({ value, start, end, askingPrice, disa
     <div className="flex items-start gap-3">
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent-soft text-accent"><Gavel size={19} aria-hidden="true" /></span>
       <div className="flex-1 pt-0.5"><h3 id="listing-auction-title" className="text-base font-semibold text-main">Live bidding</h3>
-        <p id="auction-preferences-help" className="mt-1 text-sm leading-relaxed text-sec">Choose the rental dates and schedule bidders compete for. Closing must leave a one-hour owner decision window and one-hour payment deadline before pickup.</p></div>
+        <p id="auction-preferences-help" className="mt-1 text-sm leading-relaxed text-sec">Choose the rental dates and bidding schedule. You must select eligible bidders before bidding closes. Keep the required payment buffer before pickup.</p></div>
       <div className="flex min-h-11 items-center"><Switch aria-label="Enable live bidding" aria-describedby="auction-preferences-help" checked={value.enabled}
         disabled={disabled} onCheckedChange={enabled => onChange({
           ...value,
@@ -79,7 +79,8 @@ export function ListingAuctionPreferences({ value, start, end, askingPrice, disa
         })} /></div>
     </div>
     {value.enabled && <fieldset disabled={disabled} className="space-y-4 border-t border-app pt-4">
-      <p className="text-sm text-sec">After bidding closes, owners have the platform-configured decision window to select an eligible bidder. The winner then has the configured payment window. The platform sets the minimum bid increase. Bids in the final 2 minutes can extend closing by up to 10 minutes.</p>
+      <p className="text-sm text-main">{value.date_flexible === false && disabled ? 'This historical auction has fixed rental dates.' : 'Renters choose their pickup and return dates within your bidding availability window.'} Overlapping bids compete by total rental value; available non-overlapping periods can both win.</p>
+      <p className="text-sm text-sec">Select eligible bidders before bidding closes. Without a decision, bidding expires. Selected renters have the configured payment window. Bids in the final 2 minutes can extend closing by up to 10 minutes.</p>
       {value.starts_immediately
         ? <p role="status" className="rounded-card bg-accent-soft p-3 text-sm text-main">Bidding opens as soon as you save. Set a closing time at least 10 minutes from now and at least two hours before pickup.</p>
         : immediateEligible
@@ -94,10 +95,10 @@ export function ListingAuctionPreferences({ value, start, end, askingPrice, disa
       </label>
       <div className="grid grid-cols-2 gap-3" aria-label="Auction rental dates">
         <button type="button" aria-pressed={!choosingReturn} onClick={() => setChoosingReturn(false)} className={`rounded-xl border p-3 text-left transition ${!choosingReturn ? 'border-accent bg-accent-soft' : 'border-app bg-card hover:border-accent/50'}`}>
-          <span className="block text-xs font-semibold uppercase tracking-wide text-sec">Pickup</span><span className="mt-1 block text-sm font-bold text-main">{label(pickup)}</span>
+          <span className="block text-xs font-semibold uppercase tracking-wide text-sec">{value.date_flexible ? 'Earliest pickup' : 'Pickup'}</span><span className="mt-1 block text-sm font-bold text-main">{label(pickup)}</span>
         </button>
         <button type="button" aria-pressed={choosingReturn} onClick={() => setChoosingReturn(true)} className={`rounded-xl border p-3 text-left transition ${choosingReturn ? 'border-accent bg-accent-soft' : 'border-app bg-card hover:border-accent/50'}`}>
-          <span className="block text-xs font-semibold uppercase tracking-wide text-sec">Return</span><span className="mt-1 block text-sm font-bold text-main">{label(returnDate)}</span>
+          <span className="block text-xs font-semibold uppercase tracking-wide text-sec">{value.date_flexible ? 'Latest return' : 'Return'}</span><span className="mt-1 block text-sm font-bold text-main">{label(returnDate)}</span>
         </button>
       </div>
       {validStart ? <>
@@ -127,7 +128,7 @@ export function ListingAuctionPreferences({ value, start, end, askingPrice, disa
         </div>
         <p className="text-xs text-sec">Bidding must close at least 2 hours before pickup. Late bids may extend closing by up to 10 minutes.</p>
       </> : <p className="text-sm text-sec">Set listing availability before enabling bidding.</p>}
-      {pickup && returnDate && <p role="status" className="rounded-xl bg-accent-soft p-3 text-sm text-main">Bids cover <strong>{label(pickup)} – {label(returnDate)}</strong>. The rest of your listing dates stay available for regular bookings.</p>}
+      {pickup && returnDate && <p role="status" className="rounded-xl bg-accent-soft p-3 text-sm text-main">{value.date_flexible ? 'Renters can choose dates within ' : 'Bids cover '}<strong>{label(pickup)} – {label(returnDate)}</strong>. The rest of your listing dates stay available for regular bookings.</p>}
     </fieldset>}
     {error && <p id="listing-auction-error" role="alert" className="text-xs text-error">{error}</p>}
   </section>;

@@ -14,6 +14,23 @@ const suggestion = {
 };
 const providerResponse = (value: unknown) => Response.json({ choices: [{ message: { content: JSON.stringify(value) } }] });
 
+test('listing photo validation accepts the configured browser storage origin but rejects unrelated origins', () => {
+  const { storagePhotoKey } = runInNewContext(`${compiled}\n({ storagePhotoKey });`, {
+    Deno: { serve() {}, env: { get(key: string) {
+      return key === 'SUPABASE_URL' ? 'http://kong:8000' : key === 'LISTING_STORAGE_ORIGIN' ? 'http://127.0.0.1:54321' : undefined;
+    } } },
+    withCors: (handler: unknown) => handler,
+    URL,
+  });
+  const path = '/storage/v1/object/sign/listing-images/listing/photo.jpg?token=test';
+  expect(storagePhotoKey(`http://127.0.0.1:54321${path}`, 'sign')).toBe('listing/photo.jpg');
+  expect(storagePhotoKey(`http://localhost:54321${path}`, 'sign')).toBeNull();
+  expect(storagePhotoKey(`http://kong:8000${path}`, 'sign')).toBe('listing/photo.jpg');
+  expect(storagePhotoKey(`http://127.0.0.1:54322${path}`, 'sign')).toBeNull();
+  expect(storagePhotoKey(`https://untrusted.example${path}`, 'sign')).toBeNull();
+  expect(storagePhotoKey(`http://localhost:54321${path}`, 'public')).toBeNull();
+});
+
 function runtime(fetch: typeof globalThis.fetch) {
   const timeouts: number[] = [];
   const hooks: {

@@ -23,7 +23,7 @@ Deno.serve(withCors(async (req) => {
       return json({ error: 'A valid booking is required.' }, 400);
     }
     const { data: booking, error: bookingError } = await anon.from('bookings')
-      .select('id,renter_id,status,deposit,deposit_collection_model,deposit_hold_consent_at')
+      .select('id,renter_id,status,deposit,deposit_collection_model,deposit_hold_consent_at,payment_first')
       .eq('id', body.bookingId).maybeSingle();
     if (bookingError || !booking || booking.renter_id !== user.id) return json({ error: 'Booking not found.' }, 404);
     if (booking.deposit_collection_model !== 'authorization' || Number(booking.deposit) <= 0
@@ -32,6 +32,10 @@ Deno.serve(withCors(async (req) => {
     }
 
     const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { error: precheckinError } = await admin.rpc('require_booking_precheckin', {
+      p_booking_id: booking.id, p_renter_id: user.id,
+    });
+    if (precheckinError) return json({ error: precheckinError.message }, 409);
     const { data: authorizationRow, error: authorizationError } = await admin.from('booking_deposit_authorizations')
       .select('id,attempt,setup_attempt,status,stripe_checkout_session_id,stripe_customer_id,stripe_payment_method_id')
       .eq('booking_id', booking.id).order('attempt', { ascending: false }).limit(1).maybeSingle();
@@ -80,8 +84,8 @@ Deno.serve(withCors(async (req) => {
         metadata: { purpose: 'security_deposit_setup', booking_id: booking.id, renter_id: user.id },
       },
       metadata: { purpose: 'security_deposit_setup', booking_id: booking.id, renter_id: user.id },
-      success_url: `${trustedOrigin(req)}/confirmation/${booking.id}?deposit_setup=complete`,
-      cancel_url: `${trustedOrigin(req)}/confirmation/${booking.id}?deposit_setup=cancelled`,
+      success_url: `${trustedOrigin(req)}/${booking.payment_first ? 'check-in' : 'confirmation'}/${booking.id}?deposit_setup=complete`,
+      cancel_url: `${trustedOrigin(req)}/${booking.payment_first ? 'check-in' : 'confirmation'}/${booking.id}?deposit_setup=cancelled`,
     }, { idempotencyKey: `deposit-setup:${booking.id}:${authorizationRow.setup_attempt}` });
     if (setupSession.livemode || !setupSession.url) throw new Error('Stripe did not return a sandbox card-setup URL.');
     const { error: saveSessionError } = await admin.from('booking_deposit_authorizations')

@@ -64,7 +64,7 @@ export function ListingAuctionPreferences({ value, start, end, disabled, error, 
     <div className="flex items-start gap-3">
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent-soft text-accent"><Gavel size={19} aria-hidden="true" /></span>
       <div className="flex-1 pt-0.5"><h3 id="listing-auction-title" className="text-base font-semibold text-main">Live bidding</h3>
-        <p id="auction-preferences-help" className="mt-1 text-sm leading-relaxed text-sec">Choose the rental dates and schedule bidders compete for. Closing must leave a one-hour owner decision window and one-hour payment deadline before pickup.</p></div>
+        <p id="auction-preferences-help" className="mt-1 text-sm leading-relaxed text-sec">Choose the rental dates and bidding schedule. You must select an eligible bidder before bidding closes. Keep the required payment buffer before pickup.</p></div>
       <div className="flex min-h-11 items-center"><Switch aria-label="Enable live bidding" aria-describedby="auction-preferences-help" checked={value.enabled}
         disabled={disabled} onCheckedChange={enabled => onChange({
           ...value,

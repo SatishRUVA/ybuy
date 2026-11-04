@@ -19,6 +19,7 @@ export interface OwnerReviewsResult {
   reviews: Review[];
   rating: number;
   reviewCount: number;
+  missedDecisionCount: number;
 }
 
 /** Fetches all reviews left for a given user (as the reviewee), newest first, plus the average rating. */
@@ -38,8 +39,8 @@ export async function fetchReviewsForUser(userId: string): Promise<OwnerReviewsR
     date: new Date(r.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
     text: r.body?.split('\u2014').join('-') ?? '',
   }));
-  const rating = (await fetchOwnerRatings([userId])).get(userId)?.rating ?? 0;
-  return { reviews, rating, reviewCount: reviews.length };
+  const stats = (await fetchOwnerRatings([userId])).get(userId);
+  return { reviews, rating: stats?.rating ?? 0, reviewCount: reviews.length, missedDecisionCount: stats?.missedDecisionCount ?? 0 };
 }
 
 /** Booking ids (among the given set) that the current user has already reviewed - used to hide the "leave a review" button. */

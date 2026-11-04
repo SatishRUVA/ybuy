@@ -74,6 +74,7 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
   const desktopLocRef = useRef<HTMLDivElement>(null);
   const mobileLocRef = useRef<HTMLDivElement>(null);
   const locationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const locationMenuWasOpen = useRef(false);
 
   useEffect(() => {
     if (variant !== 'hero' || location.source !== 'NONE') return;
@@ -103,9 +104,10 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
     if (showLocMenu) {
       const container = window.matchMedia('(min-width: 640px)').matches ? desktopLocRef.current : mobileLocRef.current;
       container?.querySelector('input')?.focus();
-    } else {
+    } else if (locationMenuWasOpen.current) {
       locationTriggerRef.current?.focus();
     }
+    locationMenuWasOpen.current = showLocMenu;
   }, [showLocMenu]);
 
   useEffect(() => {

@@ -42,7 +42,7 @@ export default async function handler(request) {
         && user.app_metadata.local_test_fixture === 'ybuy-local-lifecycle-v1'));
       if (data.users.length < 1000) break;
     }
-    const { data: admins, error: adminError } = await db.from('admin_users').select('user_id').in('user_id', users.map(user => user.id));
+    const { data: admins, error: adminError } = await db.from('admin_users').select('user_id, role, active').in('user_id', users.map(user => user.id));
     if (adminError) throw adminError;
     const allowed = users.filter(user => !admins.some(admin => admin.user_id === user.id));
     if (request.method === 'GET') return json(200, allowed.map(user => ({
@@ -52,7 +52,7 @@ export default async function handler(request) {
     let body;
     try { body = await request.json(); } catch { return json(400, { error: 'Choose a valid test profile.' }); }
     const user = allowed.find(user => user.id === body?.id);
-    if (!user) return json(403, { error: 'Only approved non-administrator test accounts can be selected.' });
+    if (!user) return json(403, { error: 'Only approved test accounts with their configured roles can be selected.' });
     const { data, error } = await db.auth.admin.generateLink({ type: 'magiclink', email: user.email });
     if (error) throw error;
     if (data.user.id !== user.id || !data.properties.hashed_token) throw new Error('Test account token did not match.');

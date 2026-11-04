@@ -10,6 +10,7 @@ export interface User {
   bio: string;
   onTimeReturns: number;
   unresolvedClaims: number;
+  missedAuctionDecisionCount?: number;
 }
 
 export interface Component {

@@ -78,7 +78,7 @@ test('named admin dropdown preserves FormData, selected state and focus return',
   await page.goto(`${appUrl}/access`);
   await page.evaluate(async () => {
     const { mountComponent, createElement } = await import('/tests/component-mount.tsx');
-    const { ChoiceField } = await import('/src/pages/admin/operation-form.tsx');
+    const { ChoiceField } = await import('/src/components/operations/operation-form.tsx');
     mountComponent('form', { id: 'operation-test', children:
       createElement(ChoiceField, { name: 'status', label: 'Moderation status', value: 'pending', options: ['pending', 'approved', 'rejected'] }) });
   });

@@ -85,6 +85,10 @@ export const themes: Theme[] = [
       '--favorite': 'var(--ybuy-favorite)',
       '--radius-lg': '0.875rem',
       '--radius-xl': '1.25rem',
+      '--shadow-xs': '0 1px 2px rgb(0 0 0 / 5%)',
+      '--shadow-card': '0 1px 2px rgb(0 0 0 / 4%), 0 2px 6px -2px rgb(0 0 0 / 6%)',
+      '--shadow-hover': '0 2px 4px -2px rgb(0 0 0 / 6%), 0 12px 28px -8px rgb(0 0 0 / 14%)',
+      '--shadow-pop': '0 4px 8px -4px rgb(0 0 0 / 8%), 0 24px 56px -16px rgb(0 0 0 / 24%)',
     },
     {
       '--font-sans': "'Inter', system-ui, -apple-system, sans-serif",

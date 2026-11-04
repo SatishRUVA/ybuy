@@ -48,6 +48,7 @@ export interface DbBookingRow {
   deposit: number;
   deposit_collection_model?: 'captured' | 'authorization';
   deposit_hold_consent_at?: string | null;
+  payment_first?: boolean;
   total: number;
   created_at: string;
   listing: DbBookingListing | null;
@@ -111,6 +112,7 @@ export interface UiBooking {
   sandboxTax: boolean;
   deposit: number;
   depositCollectionModel: 'captured' | 'authorization';
+  paymentFirst?: boolean;
   total: number;
   isOwner: boolean;
   counterpartId: string;
@@ -148,6 +150,7 @@ export function toUiBooking(row: DbBookingRow, currentUserId: string): UiBooking
     sandboxTax: row.sandbox_tax === true,
     deposit: row.deposit,
     depositCollectionModel: row.deposit_collection_model ?? 'captured',
+    paymentFirst: row.payment_first === true,
     total: row.total,
     isOwner,
     counterpartId: counterpart?.id ?? (isOwner ? row.renter_id : row.owner_id),

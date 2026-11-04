@@ -21,6 +21,12 @@ test('main-site local sign-in exposes the Profile selector', async ({ page }) =>
   await expect(select.locator('optgroup[label="Renters"] option')).toHaveCount(10);
   await expect(select.locator('optgroup[label="Admin"] option')).toHaveCount(1);
   await expect(select.locator('optgroup[label="Super Admin"] option')).toHaveCount(1);
+  await expect(dialog.getByLabel('Password', { exact: true })).toHaveCount(0);
+  await select.selectOption({ label: 'Maya Patel - Owner' });
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome back, Maya', exact: true })).toBeVisible();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Welcome back, Maya', exact: true })).toBeVisible();
 });
 
 test('shared palette matches approved core, category and status colors', async ({ page }) => {

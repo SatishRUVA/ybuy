@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { supabase } from '@/lib/supabase';
-import { listFlags } from '@/lib/admin';
+import { listFlags } from '@/admin/api';
 import { createFeatureFlagStore } from '@/lib/feature-flag-store';
 
 const store = createFeatureFlagStore({

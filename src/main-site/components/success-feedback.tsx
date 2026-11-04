@@ -32,7 +32,7 @@ function Confetti({ eventKey }: { eventKey: string }) {
           '--particle-size': `${5 + index % 4}px`,
           animationDelay: `${(index % 8) * 35}ms`,
           borderRadius: index % 3 === 0 ? '50%' : '1px',
-          '--particle-color': ['var(--accent)', 'var(--success)', 'var(--accent-soft)', 'var(--success-soft)', 'var(--star)'][index % 5],
+          '--particle-color': ['#3157E1', '#22C55E', '#FACC15', '#F472B6', '#A78BFA'][index % 5],
         } as CSSProperties}><i /></span>;
       })}
     </div>
@@ -128,7 +128,7 @@ export function SuccessFeedback(props: SuccessFeedbackProps) {
                 <p className="mt-1 text-xs text-sec">With {booking.counterpartName}</p>
               </div>
             </div>
-            <p className="mt-4 border-t border-app pt-3 text-xs text-sec">Booking reference <span className="block mt-1 text-main break-all">{booking.id}</span></p>
+            {booking.bookingReference && <p className="mt-4 border-t border-app pt-3 text-xs text-sec">Booking reference <span className="block mt-1 text-main">{booking.bookingReference}</span></p>}
           </div>
         )}
         {payment && (

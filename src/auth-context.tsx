@@ -269,7 +269,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await fetch(PROFILE_ENDPOINT, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }),
       });
-      if (!response.ok) throw new Error('Could not select this local profile. Check local Supabase and try again.');
+      if (!response.ok) {
+        const body: unknown = await response.json();
+        throw new Error(body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+          ? body.error : 'Could not select this test profile. Please retry.');
+      }
       const data: unknown = await response.json();
       if (!data || typeof data !== 'object' || !('tokenHash' in data) || typeof data.tokenHash !== 'string') {
         throw new Error('Local sign-in returned an invalid response.');
@@ -283,7 +287,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSignInOpen(false);
     } catch (err) {
       console.error('Local profile selection failed:', err instanceof Error ? err.message : 'Unknown error');
-      setError('Could not switch to this local profile. Check local Supabase and try again.');
+      setError(err instanceof Error ? err.message : 'Could not switch to this test profile. Please retry.');
     } finally {
       signingOut.current = false;
       setAuthBusy(null);

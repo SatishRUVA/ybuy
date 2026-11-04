@@ -62,7 +62,7 @@ Deno.serve(withCors(async (req) => {
     if (booking.renter_id !== userData.user.id) return json({ error: 'Only the renter can pay for this booking' }, 403);
     const amountCents = checkoutAmountCents(booking, stripeSecret);
     let stripeCustomerId: string | undefined;
-    if (booking.deposit_collection_model === 'authorization' && Number(booking.deposit) > 0) {
+    if (!booking.payment_first && booking.deposit_collection_model === 'authorization' && Number(booking.deposit) > 0) {
       if (!booking.deposit_hold_consent_at) return json({ error: 'Security-deposit consent is required before payment.' }, 409);
       const { data: savedCustomer, error: savedCustomerError } = await supabase.from('renter_stripe_customers')
         .select('stripe_customer_id,default_payment_method_id').eq('renter_id', userData.user.id).maybeSingle();

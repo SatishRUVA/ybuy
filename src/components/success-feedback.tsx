@@ -128,7 +128,7 @@ export function SuccessFeedback(props: SuccessFeedbackProps) {
                 <p className="mt-1 text-xs text-sec">With {booking.counterpartName}</p>
               </div>
             </div>
-            <p className="mt-4 border-t border-app pt-3 text-xs text-sec">Booking reference <span className="block mt-1 text-main break-all">{booking.id}</span></p>
+            {booking.bookingReference && <p className="mt-4 border-t border-app pt-3 text-xs text-sec">Booking reference <span className="block mt-1 text-main">{booking.bookingReference}</span></p>}
           </div>
         )}
         {payment && (

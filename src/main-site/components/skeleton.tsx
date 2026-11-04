@@ -6,6 +6,19 @@ export function Skeleton({ className = '', rounded = 'rounded-card' }: { classNa
   return <div className={`skeleton ${rounded} ${className}`} />;
 }
 
+export function PageLoading() {
+  return (
+    <div role="status" aria-busy="true" className="mx-auto min-h-[50dvh] w-full max-w-[1400px] space-y-5 px-4 py-8 sm:px-6">
+      <p className="text-sm font-medium text-sec">Loading page...</p>
+      <div aria-hidden="true" className="space-y-4">
+        <Skeleton className="h-8 w-2/3 max-w-sm" />
+        <Skeleton className="h-4 w-full max-w-lg" />
+        <Skeleton className="h-48 w-full" rounded="rounded-card-lg" />
+      </div>
+    </div>
+  );
+}
+
 export function ListingAiSkeleton() {
   return (
     <div role="status" aria-label="Generating AI suggestions" aria-live="polite" aria-busy="true" className="space-y-3 rounded-card border border-app p-4">

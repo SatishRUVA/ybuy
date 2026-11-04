@@ -1,9 +1,11 @@
 import { supabase } from '@/lib/supabase';
 import { assertUuid, UUID_RE } from '@/lib/text-safety';
 import { addDaysIso } from '@/lib/geo';
+import { signListingImageUrl } from '@/lib/listings';
 
 export interface ListingAuctionPreferences {
   enabled: boolean;
+  date_flexible?: boolean;
   starts_immediately?: boolean;
   opening_daily_rate?: number | null;
   start_date: string | null;
@@ -57,6 +59,9 @@ export interface AuctionBid {
   rank: number;
   daily_rate: number;
   bid_count: number;
+  start_date?: string;
+  end_date?: string;
+  total_value?: number;
 }
 
 export interface MyAuctionBid {
@@ -68,6 +73,12 @@ export interface MyAuctionBid {
   is_current: boolean;
   rank: number | null;
   selected: boolean;
+  start_date?: string;
+  end_date?: string;
+  total_value?: number;
+  booking_id?: string | null;
+  payment_deadline?: string | null;
+  payment_status?: 'pending' | 'paid' | 'expired' | null;
 }
 
 export interface OwnerAuctionBid extends MyAuctionBid {
@@ -101,6 +112,8 @@ export interface ListingAuction {
   my_bids: MyAuctionBid[];
   owner_bids: OwnerAuctionBid[] | null;
   my_booking_id: string | null;
+  my_payment_deadline?: string | null;
+  my_payment_status?: 'pending' | 'paid' | 'expired' | null;
   selected_bid_id: string | null;
   selected_payment_status: 'pending' | 'paid' | 'expired' | null;
   owner_decision_missed_at: string | null;
@@ -108,16 +121,31 @@ export interface ListingAuction {
   owner_decision_hours?: number;
   winner_payment_hours?: number;
   is_owner: boolean;
+  date_flexible?: boolean;
+  participant_count?: number;
+  total_bid_count?: number;
 }
 
 function auctionResult(data: unknown): ListingAuction | null {
   if (data === null) return null;
   const value = data as ListingAuction;
+  // SQL equality returns null when selected_bid_id is null (no winner yet).
+  const validSelection = (selected: unknown) => typeof selected === 'boolean'
+    || (selected === null && value.selected_bid_id === null);
+  const validPayment = (bid: MyAuctionBid) =>
+    (bid.booking_id === undefined || bid.booking_id === null || (typeof bid.booking_id === 'string' && UUID_RE.test(bid.booking_id)))
+    && (bid.payment_deadline === undefined || bid.payment_deadline === null || Number.isFinite(Date.parse(bid.payment_deadline)))
+    && (bid.payment_status === undefined || bid.payment_status === null || ['pending', 'paid', 'expired'].includes(bid.payment_status));
+  const validPeriod = (bid: AuctionBid | MyAuctionBid) => value.date_flexible !== true
+    || (typeof bid.start_date === 'string' && typeof bid.end_date === 'string'
+      && /^\d{4}-\d{2}-\d{2}$/.test(bid.start_date) && /^\d{4}-\d{2}-\d{2}$/.test(bid.end_date)
+      && bid.start_date >= value.start_date && bid.end_date <= value.end_date && bid.end_date > bid.start_date
+      && Number.isFinite(bid.total_value) && Number(bid.total_value) > 0);
   if (!value || typeof value.id !== 'string' || typeof value.listing_id !== 'string'
     || !['scheduled', 'open', 'owner_selection', 'awaiting_payment', 'completed', 'ended', 'cancelled'].includes(value.status)
     || !Array.isArray(value.top_bids) || value.top_bids.length > 3
     || value.top_bids.some(bid => !bid || typeof bid.id !== 'string' || !Number.isInteger(bid.rank) || bid.rank < 1 || bid.rank > 3
-      || !Number.isFinite(bid.daily_rate) || bid.daily_rate <= 0 || !Number.isInteger(bid.bid_count) || bid.bid_count < 1 || bid.bid_count > 3)
+      || !Number.isFinite(bid.daily_rate) || bid.daily_rate <= 0 || !Number.isInteger(bid.bid_count) || bid.bid_count < 1 || bid.bid_count > 3 || !validPeriod(bid))
     || !Number.isFinite(value.minimum_increment) || value.minimum_increment <= 0
     || !Number.isFinite(value.minimum_next_bid) || value.minimum_next_bid <= 0 || !Number.isInteger(value.my_bid_count)
     || value.my_bid_count < 0 || value.my_bid_count > 3 || typeof value.is_owner !== 'boolean'
@@ -125,47 +153,66 @@ function auctionResult(data: unknown): ListingAuction | null {
     || !Array.isArray(value.my_bids) || value.my_bids.length > 3
     || value.my_bids.some(bid => !bid || typeof bid.id !== 'string' || !Number.isFinite(bid.daily_rate) || bid.daily_rate <= 0
       || !Number.isFinite(Date.parse(bid.submitted_at)) || !Number.isInteger(bid.bid_count) || bid.bid_count < 1 || bid.bid_count > 3
-      || typeof bid.passed !== 'boolean' || typeof bid.is_current !== 'boolean' || typeof bid.selected !== 'boolean'
-      || !(bid.rank === null || (Number.isInteger(bid.rank) && bid.rank > 0)))
+      || typeof bid.passed !== 'boolean' || typeof bid.is_current !== 'boolean' || !validSelection(bid.selected)
+      || !(bid.rank === null || (Number.isInteger(bid.rank) && bid.rank > 0)) || !validPeriod(bid) || !validPayment(bid))
     || (value.is_owner ? !Array.isArray(value.owner_bids) : value.owner_bids !== null)
     || (Array.isArray(value.owner_bids) && value.owner_bids.some(bid => !bid || typeof bid.id !== 'string'
       || !Number.isFinite(bid.daily_rate) || bid.daily_rate <= 0 || !Number.isFinite(Date.parse(bid.submitted_at))
       || !Number.isInteger(bid.bid_count) || bid.bid_count < 1 || bid.bid_count > 3
-      || typeof bid.passed !== 'boolean' || typeof bid.is_current !== 'boolean' || typeof bid.selected !== 'boolean'
+      || typeof bid.passed !== 'boolean' || typeof bid.is_current !== 'boolean' || !validSelection(bid.selected)
       || typeof bid.eligible !== 'boolean' || !(bid.rank === null || (Number.isInteger(bid.rank) && bid.rank > 0))
       || !bid.renter || typeof bid.renter.id !== 'string' || typeof bid.renter.full_name !== 'string'
       || (bid.renter.avatar_url !== null && typeof bid.renter.avatar_url !== 'string')
       || (bid.renter.rating !== null && (!Number.isFinite(bid.renter.rating) || bid.renter.rating < 0 || bid.renter.rating > 5))
-      || !Number.isInteger(bid.renter.review_count) || bid.renter.review_count < 0))
+      || !Number.isInteger(bid.renter.review_count) || bid.renter.review_count < 0 || !validPeriod(bid) || !validPayment(bid)))
     || typeof value.start_date !== 'string' || typeof value.end_date !== 'string'
     || !/^\d{4}-\d{2}-\d{2}$/.test(value.start_date) || !/^\d{4}-\d{2}-\d{2}$/.test(value.end_date) || value.end_date <= value.start_date
     || (value.my_daily_rate !== null && (!Number.isFinite(value.my_daily_rate) || value.my_daily_rate <= 0))
     || [value.ends_at, value.selection_deadline, value.payment_deadline].some(date => date !== null && !Number.isFinite(Date.parse(date)))
     || [value.my_booking_id, value.selected_bid_id].some(id => id !== null && typeof id !== 'string')
     || (value.selected_payment_status !== null && !['pending', 'paid', 'expired'].includes(value.selected_payment_status))
+    || (value.my_payment_status !== undefined && value.my_payment_status !== null && !['pending', 'paid', 'expired'].includes(value.my_payment_status))
+    || (value.my_payment_deadline !== undefined && value.my_payment_deadline !== null && !Number.isFinite(Date.parse(value.my_payment_deadline)))
     || (value.owner_decision_missed_at !== null && !Number.isFinite(Date.parse(value.owner_decision_missed_at)))
     || (value.owner_missed_decision_count !== undefined && (!Number.isInteger(value.owner_missed_decision_count) || value.owner_missed_decision_count < 0))
-    || (value.owner_decision_hours !== undefined && (!Number.isInteger(value.owner_decision_hours) || value.owner_decision_hours < 1))
+    || (value.owner_decision_hours !== undefined && (!Number.isInteger(value.owner_decision_hours) || value.owner_decision_hours !== 0))
     || (value.winner_payment_hours !== undefined && (!Number.isInteger(value.winner_payment_hours) || value.winner_payment_hours < 1))
     || (value.starts_at !== undefined && !Number.isFinite(Date.parse(value.starts_at)))
+    || (value.date_flexible !== undefined && typeof value.date_flexible !== 'boolean')
+    || [value.participant_count, value.total_bid_count].some(count => count !== undefined && (!Number.isSafeInteger(count) || Number(count) < 0))
     || !Number.isFinite(Date.parse(value.server_now))) throw new Error('Could not verify the current auction. Please retry.');
-  return value;
+  return {
+    ...value,
+    my_bids: value.my_bids.map(bid => ({ ...bid, selected: bid.selected === true })),
+    owner_bids: value.owner_bids?.map(bid => ({ ...bid, selected: bid.selected === true })) ?? null,
+  };
 }
 
-export async function getListingAuction(listingId: string): Promise<ListingAuction | null> {
+export async function getListingAuction(listingId: string, range?: { start: string; end: string }): Promise<ListingAuction | null> {
   assertUuid(listingId, 'listing id');
-  const { data, error } = await supabase.rpc('get_listing_auction', { p_listing_id: listingId });
+  if (range && (!/^\d{4}-\d{2}-\d{2}$/.test(range.start) || !/^\d{4}-\d{2}-\d{2}$/.test(range.end)
+    || !Number.isFinite(Date.parse(range.start)) || !Number.isFinite(Date.parse(range.end)) || range.end <= range.start)) {
+    throw new Error('Choose a valid pickup and return date.');
+  }
+  const { data, error } = await supabase.rpc('get_listing_auction', {
+    p_listing_id: listingId, ...(range ? { p_start_date: range.start, p_end_date: range.end } : {}),
+  });
   if (error) throw new Error(error.message);
   return auctionResult(data);
 }
 
-export async function placeListingAuctionBid(listingId: string, dailyRate: number, idempotencyKey: string, depositHoldConsent = false): Promise<ListingAuction> {
+export async function placeListingAuctionBid(listingId: string, dailyRate: number, idempotencyKey: string, depositHoldConsent = false, range?: { start: string; end: string }): Promise<ListingAuction> {
   assertUuid(listingId, 'listing id');
   assertUuid(idempotencyKey, 'idempotency key');
   if (!Number.isFinite(dailyRate) || dailyRate <= 0 || Math.abs(Math.round(dailyRate * 100) - dailyRate * 100) > 0.0000001) throw new Error('Enter a positive daily price with at most two decimal places.');
+  if (range && (!/^\d{4}-\d{2}-\d{2}$/.test(range.start) || !/^\d{4}-\d{2}-\d{2}$/.test(range.end)
+    || !Number.isFinite(Date.parse(range.start)) || !Number.isFinite(Date.parse(range.end)) || range.end <= range.start)) {
+    throw new Error('Choose a valid pickup and return date.');
+  }
   const { data, error } = await supabase.rpc('place_listing_auction_bid', {
     p_listing_id: listingId, p_daily_rate: dailyRate, p_idempotency_key: idempotencyKey,
     p_deposit_hold_consent: depositHoldConsent,
+    ...(range ? { p_start_date: range.start, p_end_date: range.end } : {}),
   });
   if (error) throw new Error(error.message);
   const result = auctionResult(data);
@@ -201,6 +248,35 @@ export interface AuctionFeed {
   categories: { id: string; name: string; count: number }[];
 }
 
+export interface TopListingBid {
+  listing_id: string;
+  title: string;
+  daily_rate: number;
+  start_date: string;
+  end_date: string;
+  expires_at: string;
+  image_url: string | null;
+}
+
+async function signAuctionImages<T extends { image_url: string | null }>(rows: T[]): Promise<T[]> {
+  return Promise.all(rows.map(async row => ({
+    ...row, image_url: row.image_url === null ? null : await signListingImageUrl(row.image_url),
+  })));
+}
+
+export async function getTopListingBids(): Promise<TopListingBid[]> {
+  const { data, error } = await supabase.rpc('get_top_listing_bids');
+  if (error) throw new Error(error.message);
+  if (!Array.isArray(data) || data.length > 24
+    || data.some(row => !row || typeof row.listing_id !== 'string' || typeof row.title !== 'string'
+      || !Number.isFinite(row.daily_rate) || row.daily_rate <= 0
+      || !Number.isFinite(Date.parse(row.expires_at)) || !Number.isFinite(Date.parse(row.start_date))
+      || !Number.isFinite(Date.parse(row.end_date)) || (row.image_url !== null && typeof row.image_url !== 'string'))) {
+    throw new Error('The live bidding feed returned an invalid result.');
+  }
+  return signAuctionImages(data as TopListingBid[]);
+}
+
 export async function getListingAuctionFeed(categoryId: string | null, offset = 0): Promise<AuctionFeed> {
   if (categoryId !== null) assertUuid(categoryId, 'category id');
   if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Choose a valid auction page.');
@@ -220,5 +296,5 @@ export async function getListingAuctionFeed(categoryId: string | null, offset = 
       || !Number.isSafeInteger(category.count) || category.count < 1)) {
     throw new Error('Could not verify the live auction results. Please retry.');
   }
-  return value;
+  return { ...value, items: await signAuctionImages(value.items) };
 }

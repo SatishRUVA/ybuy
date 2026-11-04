@@ -495,20 +495,22 @@ test('listing dates recalculate default tax and preserve it through checkout nav
   await expect(page.getByText('Service fee', { exact: true })).toHaveCount(1);
   await expect(page.getByText(/Service fee \(/)).toHaveCount(0);
   await expect(page.getByText('Tax (7%)', { exact: true }).locator('..')).toContainText('$5.78');
-  await expect(page.getByText('Estimated payment including deposit: $138.28. The server confirms the final amount.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Estimated rental payment: $88.28. Security hold not included.', { exact: true })).toBeVisible();
   await expect(page.getByText('Tax is 7% of discounted rental and service fees only.', { exact: false })).toBeVisible();
   expect(new URL(page.url()).searchParams.has('start')).toBe(true);
 });
 
 test('instant checkout opens payment and retries the same booking when Stripe is unavailable', async ({ page }) => {
   test.slow();
+  await page.clock.setFixedTime(new Date('2026-11-02T12:00:00Z'));
   await setup(page, { listingOverrides: { instant_booking: true } }, renterId);
   let bookingCalls = 0;
   let paymentCalls = 0;
   await page.route('**/rest/v1/rpc/create_booking_request', async route => {
     bookingCalls++;
     await route.fulfill({ json: { ...booking, status: 'pending_payment', service_fee_amount: 7.5,
-      tax_rate: 0.07, tax_amount: 5.78, sandbox_tax: false, total: 138.28 } });
+      tax_rate: 0.07, tax_amount: 5.78, sandbox_tax: false, total: 88.28,
+      payment_first: true, deposit_collection_model: 'authorization' } });
   });
   await page.route('**/functions/v1/create-checkout-session', async route => {
     paymentCalls++;
@@ -522,7 +524,8 @@ test('instant checkout opens payment and retries the same booking when Stripe is
   await page.getByRole('button', { name: 'Continue to secure payment', exact: true }).click();
   await expect(page.getByText('Stripe unavailable', { exact: true })).toBeVisible();
   await expect(page.getByText('Tax (7%)', { exact: true }).locator('..')).toContainText('$5.78');
-  await expect(page.getByText('Backend-confirmed payment including deposit: $138.28.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Backend-confirmed rental payment: $88.28. Security hold not included.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Separate security hold' })).toContainText('$50');
   expect(bookingCalls).toBe(1);
   expect(paymentCalls).toBe(1);
   await page.getByRole('button', { name: 'Retry secure payment', exact: true }).click();
@@ -533,6 +536,7 @@ test('instant checkout opens payment and retries the same booking when Stripe is
 
 test('checkout delivery and note update the estimate and reach the authoritative booking RPC', async ({ page }) => {
   test.slow();
+  await page.clock.setFixedTime(new Date('2026-11-02T12:00:00Z'));
   await setup(page, { listingOverrides: { delivery_available: true, delivery_fee: 15 } }, renterId);
   await page.route('**/rest/v1/rpc/create_booking_request', route => route.fulfill({ json: booking }));
   await page.goto(`${appUrl}/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, { waitUntil: 'domcontentloaded' });
@@ -547,7 +551,7 @@ test('checkout delivery and note update the estimate and reach the authoritative
   const summary = page.getByRole('complementary');
   await expect(summary.getByText('Delivery', { exact: true }).locator('..')).toContainText('$15');
   await expect(summary.getByText('Tax (7%)', { exact: true }).locator('..')).toContainText('$5.78');
-  await expect(page.getByText('Estimated payment including deposit: $153.28. The server confirms the final amount.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Estimated rental payment: $103.28. Security hold not included.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   const submit = page.getByRole('button', { name: 'Send rental request', exact: true });
   await page.getByRole('checkbox', { name: 'I agree to the item’s rental and cancellation terms.' }).check();

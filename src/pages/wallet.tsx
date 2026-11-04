@@ -1,5 +1,5 @@
 import { Alert, Button } from '@/components/ui';
-import { WalletPanel } from '@/pages/admin/promotions';
+import { WalletPanel } from '@/components/operations/wallet';
 import { WorkspaceHeader } from '@/components/account-workspace';
 import { useRouter } from '@/router';
 

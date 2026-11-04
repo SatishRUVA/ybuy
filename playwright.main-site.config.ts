@@ -8,9 +8,10 @@ export default defineConfig(base, {
   use: { baseURL: 'http://localhost:5186' },
   webServer: {
     ...base.webServer,
-    command: 'npx vite preview --host localhost --port 5186 --strictPort',
+    command: 'pnpm exec vite preview --host localhost --port 5186 --strictPort',
     url: 'http://localhost:5186',
     reuseExistingServer: false,
+    timeout: 180_000,
     env: { ...base.webServer?.env, VITE_SITE_VARIANT: 'main' },
   },
 });

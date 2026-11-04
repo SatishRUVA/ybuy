@@ -28,17 +28,17 @@ values ('b3000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-00000000
  'Private pickup','Dallas','TX','75201','US',32.8,-96.8);
 update public.listings set status='published' where id='b3000000-0000-4000-8000-000000000001';
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,
- service_fee_pct,service_fee_amount,deposit,total,status)
+ service_fee_pct,service_fee_amount,deposit,total,status,payment_first)
 values
  ('b4000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000001',
   'b0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000002',
-  current_date+1,current_date+3,10,2,20,.1,2,50,72,'pending_payment'),
+  current_date+1,current_date+3,10,2,20,.1,2,50,72,'pending_payment',false),
  ('b4000000-0000-4000-8000-000000000002','b3000000-0000-4000-8000-000000000001',
   'b0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000002',
-  current_date+10,current_date+12,10,2,20,.1,2,50,72,'pending_payment'),
+  current_date+10,current_date+12,10,2,20,.1,2,50,72,'pending_payment',false),
  ('b4000000-0000-4000-8000-000000000003','b3000000-0000-4000-8000-000000000001',
   'b0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000002',
-  current_date+20,current_date+22,10,2,20,.1,2,50,72,'pending_payment');
+  current_date+20,current_date+22,10,2,20,.1,2,50,72,'pending_payment',false);
 select public.confirm_booking_payment(id,'cs_handoff_1','pi_handoff_1',total)
 from public.bookings where id='b4000000-0000-4000-8000-000000000001';
 select public.confirm_booking_payment(id,'cs_handoff_2','pi_handoff_2',total)
@@ -46,10 +46,10 @@ from public.bookings where id='b4000000-0000-4000-8000-000000000002';
 select public.confirm_booking_payment(id,'cs_handoff_3','pi_handoff_3',total)
 from public.bookings where id='b4000000-0000-4000-8000-000000000003';
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,
- service_fee_pct,service_fee_amount,deposit,total,status,deposit_collection_model)
+ service_fee_pct,service_fee_amount,deposit,total,status,deposit_collection_model,payment_first)
 values ('b4000000-0000-4000-8000-000000000004','b3000000-0000-4000-8000-000000000001',
  'b0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000002',
- current_date+23,current_date+25,10,2,20,.1,2,50,23.54,'return_pending','authorization');
+ current_date+23,current_date+25,10,2,20,.1,2,50,23.54,'return_pending','authorization',false);
 
 create temporary table handoff_test_codes(kind text primary key, code text not null, wrong_code text);
 grant select,insert,update on handoff_test_codes to authenticated;

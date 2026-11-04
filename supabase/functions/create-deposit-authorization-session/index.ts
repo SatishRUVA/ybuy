@@ -23,6 +23,10 @@ Deno.serve(withCors(async request => {
       return json({ error: 'A valid booking is required.' }, 400);
     }
     const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { error: precheckinError } = await admin.rpc('require_booking_precheckin', {
+      p_booking_id: body.bookingId, p_renter_id: user.id,
+    });
+    if (precheckinError) return json({ error: precheckinError.message }, 409);
     let prepared = await admin.rpc('prepare_booking_deposit_authorization', {
       p_booking_id: body.bookingId, p_renter_id: user.id,
     });
@@ -76,7 +80,7 @@ Deno.serve(withCors(async request => {
       }
     }
     const { data: booking, error: bookingError } = await admin.from('bookings')
-      .select('listing:listings(title)').eq('id', body.bookingId).single();
+      .select('payment_first,listing:listings(title)').eq('id', body.bookingId).single();
     if (bookingError || !booking) throw new Error('Booking not found.');
     const title = (booking.listing as { title?: string } | null)?.title ?? 'Rental';
     const amount = Math.round(row.authorized_amount * 100);
@@ -91,8 +95,8 @@ Deno.serve(withCors(async request => {
         setup_future_usage: 'off_session',
         metadata: { purpose: 'security_deposit_authorization', booking_id: body.bookingId, deposit_authorization_id: row.id },
       },
-      success_url: `${trustedOrigin(request)}/confirmation/${body.bookingId}?deposit_authorization=complete`,
-      cancel_url: `${trustedOrigin(request)}/confirmation/${body.bookingId}?deposit_authorization=cancelled`,
+      success_url: `${trustedOrigin(request)}/${booking.payment_first ? 'check-in' : 'confirmation'}/${body.bookingId}?deposit_authorization=complete`,
+      cancel_url: `${trustedOrigin(request)}/${booking.payment_first ? 'check-in' : 'confirmation'}/${body.bookingId}?deposit_authorization=cancelled`,
     }, { idempotencyKey: row.idempotency_key });
     if (session.livemode || !session.url) throw new Error('Stripe did not return a sandbox authorization URL.');
     const bound = await admin.rpc('bind_deposit_authorization_checkout_session', {

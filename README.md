@@ -1,5 +1,95 @@
 # ybuy
 
+## Rental-first pre-check-in
+
+New customer bookings use `payment_first=true` and a separate authorization
+deposit. Checkout charges rental, applicable fees, insurance and tax only.
+Signed Stripe webhook receipts remain the authority for payment confirmation;
+return URL parameters never mark a booking paid.
+
+After payment, the renter proposes a 30-minute pickup or delivery slot on the
+rental start date, specifying their IANA time zone. The owner approves or
+declines it. An approved slot is locked; contact support to reschedule.
+Card setup and consent to the temporary security hold open 24 hours before
+the approved slot and close at its end. No deposit is captured at checkout.
+An adequate, unexpired hold (or a zero-deposit booking) unlocks the private
+handoff address during that window, so the renter can plan travel. Arrival and
+owner handoff start additionally require the current agreed slot.
+
+Both customer interfaces share pre-check-in at `/check-in/:bookingId`.
+Rental totals and security-hold transactions are displayed separately;
+customer references use the human-readable booking reference, not a UUID.
+Existing bookings keep their original payment sequence and immutable agreement
+snapshots. The sequence flag cannot be changed to bypass the handoff gates.
+Active-rental authorization renewals and approved-claim handling remain separate.
+
+Backend installation requires migration
+`20261103000005_rental_first_precheckin` and the response-shape follow-up
+`20261103000006_precheckin_empty_slot_response`, plus the matching
+`create-checkout-session`, `create-deposit-setup-session`,
+`create-deposit-authorization-session`, and `process-deposit-authorizations`
+functions. Deploy only to the explicitly authorized test project
+`jzyjmsixfuwzfnntewqn`; do not use the repository's implicit Supabase link.
+Rollback-only SQL fixtures simulate receipts and holds without calling Stripe.
+
+### Test release verification
+
+Installed the migration and its four matching Edge Functions on the explicit
+test backend. The verified main and Preview-adapted customer builds are live at
+`https://ybuy-e2e-test.vercel.app` and `https://ybuy-redesign-v1.vercel.app`.
+No production or administrator deployment was changed.
+
+All 31 rental-first and 60 legacy handoff SQL assertions passed again after
+deployment. All 32 focused pricing/settlement tests passed, including rental-first
+checkout with a nonzero deposit and no saved card; the handler sends one rental
+line item only. Both compiled customer bundles passed renter proposal, owner
+approval, timing/consent gates, explicit bank-error and disabled-pickup checks.
+The active Preview checkout also preserved the exact backend rental total and
+displayed the hold separately. Frontend typecheck passed; targeted lint had no
+errors (the existing mixed-export Fast Refresh warning remains).
+
+The follow-up migration returns `"slot": null` when no slot has been proposed,
+rather than a composite object with null fields. A real database response
+regression verifies that new bookings can load the initial pre-check-in state.
+
+Both live test aliases serve the verified handoff bundles. Browser-callable
+functions accept preflights from both test origins and reject signed-out calls;
+the worker rejects missing credentials and the webhook rejects unsigned requests.
+Browser workflow checks mocked authenticated backend responses and financial
+providers. A real signed-in rental-first Stripe payment/hold round trip remains
+to be exercised; this release did not charge, authorize, capture or refund funds.
+
+## Test-backend handoff repair (November 3, 2026)
+
+Applied `20261103000001_owner_renter_handoff` and
+`20261103000002_seed_existing_booking_handoffs` atomically to the explicit test
+project `jzyjmsixfuwzfnntewqn`, with both versions recorded in migration history.
+The deployed frontend previously called missing pickup and handoff RPCs.
+The repair installs the complete inspection/OTP workflow and initializes
+existing active/return-pending handoffs without inventing pickup timestamps.
+
+Rollback-only validation passed all 60 existing handoff SQL assertions before
+deployment. Post-deployment checks confirmed both migrations, authenticated RPC
+permissions, and REST schema-cache resolution: anonymous pickup/handoff calls
+now receive permission-denied responses instead of missing-function errors.
+Booking `YB-26-000070` remains confirmed; no pickup or return was performed for
+the user. Production was not changed. Signed-in hosted UI verification remains
+outstanding.
+
+### Inspection storage permission follow-up
+
+Applied `20261103000004_booking_inspection_storage_permissions` to the same
+test backend. The handoff migration revoked authenticated execution of
+`can_access_booking_inspection_photo`, despite authenticated storage policies
+calling it. PostgreSQL policy evaluation therefore blocked listing-photo reads
+with a helper permission error. The follow-up grants execution only to
+`authenticated`; anonymous access remains denied and the helper's session,
+participant, path, and inspection checks are unchanged.
+
+The rollback-only storage regression test passed before and after deployment.
+An authenticated RLS check also confirmed the affected listing image remains
+readable. No storage objects, booking records, or production settings changed.
+
 ## Test-backend deposit function repair (November 3, 2026)
 
 The test backend `jzyjmsixfuwzfnntewqn` had the deposit database migrations
@@ -23,7 +113,88 @@ signature (400). All 32 focused checkout-pricing and rental-settlement tests
 passed. Authenticated card setup, authorization, payment, and signed webhook
 delivery were not exercised in this repair; no provider transaction was made.
 
+### Deposit webhook subscription repair (November 3, 2026)
+
+The Stripe sandbox endpoint for this test backend also requires these events,
+in addition to its existing Checkout, refund, and transfer subscriptions:
+
+- `payment_intent.amount_capturable_updated`
+- `payment_intent.succeeded`
+- `payment_intent.canceled`
+- `payment_intent.payment_failed`
+- `payment_intent.requires_action`
+
+Without them, a successful manual-capture security hold remains `authorizing`
+in YBuy and blocks the separate rental payment. The enabled sandbox endpoint
+was updated to include all five events without removing its existing events.
+Stripe then redelivered the original hold event for booking `YB-26-000069`
+using its configured signing secret. The backend recorded the $60 hold as
+`authorized`, including its provider expiry, and changed the confirmation gate
+from `awaiting_authorization` to `awaiting_payment`.
+
+The completed card-setup and hold sessions are not rental charges. At repair
+verification, this booking had no rental Checkout Session or payment receipt;
+the $14.84 rental payment remained due. No charge, capture, or manual booking
+confirmation was performed. No frontend deployment or secret change was needed.
+For missed events, use Stripe's authenticated event resend rather than marking
+bookings paid or assuming a local webhook signing secret matches the hosted one.
+
+Confirmation receipt checks use major currency units for both `payments.amount`
+and `bookings.total`, comparing both amounts in rounded cents. A dollar receipt
+must never be compared directly to a cent total. Both confirmation pages share
+this validation and keep missing, unsettled, wrong-currency, or mismatched
+receipts unverified. Separate authorization deposits are labeled as refundable
+holds rather than charges and excluded from the displayed rental charge.
+
 ## Main-site renter request journey
+
+The main-site interface is black, white, and neutral gray, using neutral tokens
+and bidding surfaces rather than a page-wide grayscale filter. Photos and
+celebration confetti retain their colors. Other themes and Preview 1 are unchanged.
+Status meaning remains available through text and icons, not color alone.
+
+Main-site pages share a keyboard skip link, a flexible content landmark, and an
+announced skeleton while lazy routes load. Navigation uses the full desktop row
+from 1280px; smaller viewports use the existing Radix sheet with focus trapping,
+Escape dismissal, focus return, body-scroll locking, and internally scrollable
+content. Shared small buttons keep 44px touch targets on phones and coarse-pointer
+devices, and long-text form controls can be resized vertically. The listing
+shortcut is hidden during both listing edits and request creation so it does not
+compete with form actions. These changes do not affect the default UI or previews,
+and the separately managed admin destination is unchanged.
+
+Signed-in main-site customers use a workspace-first layout: a persistent desktop
+sidebar (1280px+) groups Discover, Rent, Lend, and Account, and the mobile menu
+uses the same destinations. Visitors retain the public marketplace home.
+The signed-in home prioritizes rental, inventory, request, and lending shortcuts
+above discovery instead of replaying the marketing hero.
+
+Owner/renter pages use a centered, full-width workspace without the global sidebar.
+A compact underline navigation connects My rentals, Lending activity, My listings,
+and Earnings & payouts. Shared metric strips replace individual KPI cards; owner
+requests sit beside a filterable rental list, and secondary listing tools are
+disclosed under More options instead of filling every inventory row.
+
+Lending activity stays at `/dashboard?tab=lending`; inventory and availability
+have their own `/dashboard/listings` page, and earnings and Stripe payout status
+live at `/payouts`. Only the selected renting/lending panel is mounted, and owner
+pages load the data needed for their section. Existing booking actions, listing
+editing, and payout verification remain unchanged.
+
+Creation, checkout, confirmation, and pickup/return pages use a focused layout
+with a route back to bookings and no sidebar, bidding ticker, mobile bottom
+navigation, or floating listing action. Discovery grids and search controls
+respond to the width remaining beside the workspace sidebar.
+
+Listing photos remain in the private `listing-images` bucket. Both auction feeds
+and bidding ribbons sign stored image URLs with the same helper as listing cards
+and details; a stored `/object/public/` URL is not directly readable from this
+private bucket. Signing failures are displayed as feed errors rather than hidden.
+Cards and checkout photos try the remaining listing photos if one fails, then
+show an explicit "Photo unavailable" state. Lifecycle fixtures now upload the
+bundled synthetic camera image instead of inserting a nonexistent `example.test`
+URL. Existing photos locked by an outstanding rental and immutable agreement
+snapshots must not be rewritten to repair test data.
 
 The `VITE_SITE_VARIANT=main` build keeps the restored green main-site components,
 layouts and palette. The request journey is main-site-only; Preview 1's adapters
@@ -376,7 +547,8 @@ pages, navigation, controls, cards, dialogs, layout rules and global stylesheet.
 It reuses current marketplace APIs and authentication, not the old backend.
 The restored bidding screens retain scheduled opening/closing times, configured
 increments, renter-only bid history/rank, owner full history/profiles/ratings,
-and the one-hour post-close winner-selection window. Both UUID auction URL forms
+and owner-only winner selection before bidding closes. There is no post-close
+decision window or automatic winner selection. Both UUID auction URL forms
 use real bidding; sample auction IDs and empty-feed samples require `mock_bidding`.
 Leave the setting unset on `ybuy-redesign-v1` to preserve its redesign.
 The entry points load their own stylesheets so Preview 1 styles cannot override
@@ -430,13 +602,76 @@ Hosted passwordless test-profile selection is restricted to
 server-only `YBUY_TOTP_SECRET`, `YBUY_ACCESS_SESSION_SECRET` and
 `SUPABASE_SERVICE_ROLE_KEY`. The existing authenticator verifier grants a signed,
 HttpOnly, two-hour tester cookie; both listing and selecting profiles require it.
-Only the existing marked `owner1`-`owner5` and `renter1`-`renter5` synthetic
-accounts are allowed, and any account in `admin_users` is excluded.
+Only marked `owner1`-`owner5` and `renter1`-`renter5` synthetic accounts are allowed.
+Any fixture with administrator access is excluded, even when its role is inactive.
 No accounts, permissions or emails are created by the picker. Keep the site-wide
 `YBUY_TEMP_ACCESS_ENABLED` flag separate; missing tester configuration fails closed.
 The top-right avatar opens a compact anchored dropdown with Sign out and, in
 enabled test environments, Switch profile. It does not open a modal; workspace
 links remain in the existing navigation.
+
+### Dedicated administrator test portal
+
+`https://ybuy-admin.vercel.app/` is a separate Vercel deployment from the same
+repository and the same isolated `jzyjmsixfuwzfnntewqn` test backend.
+Build it with `VITE_SITE_VARIANT=admin`; administrator pages and RPCs live under
+`src/admin`. Customer builds no longer import administrator dashboards. Shared
+claims, support, wallet and read-only role lookup stay available to customers;
+staff case controls are compiled only into the admin build. Customer `/admin`
+routes link to the dedicated portal.
+
+Configure these production environment variables **only on the admin project**:
+
+- `VITE_SITE_VARIANT=admin`, `VITE_TEST_ENVIRONMENT=true`, `YBUY_ADMIN_PORTAL=true`.
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for the isolated test backend,
+  plus server-only `SUPABASE_SERVICE_ROLE_KEY`.
+- Separate server-only `YBUY_ADMIN_TOTP_SECRET` and `YBUY_SUPER_ADMIN_TOTP_SECRET`
+  (distinct Base32 seeds of at least 32 characters), plus a separate
+  `YBUY_ADMIN_ACCESS_SESSION_SECRET` (at least 32 characters).
+- `YBUY_TEMP_ACCESS_ENABLED=false`, `YBUY_TEST_PROFILE_LOGIN=false` and
+  `VITE_TEST_PROFILE_LOGIN=false`; the customer authenticator is not used here.
+
+Select Admin or Super Admin, enter that role's authenticator code, then choose
+a profile. Admin codes unlock only `admin@example.test`; Super Admin codes
+unlock only `super-admin@example.test`. Both accounts must carry the
+`ybuy-local-lifecycle-v1` fixture marker and their matching active database role.
+Switching within the verified role does not ask for another code. Changing roles
+requires locking access and entering the other role's code. Tokens are signed
+with a host-and-role-specific key and kept in a host-only HttpOnly, Secure,
+SameSite=Strict cookie for up to two hours. Supabase sessions on the portal are
+memory-only; profile selection is required again after a reload.
+
+Apply `20261103000003_admin_portal_login_limit.sql` to the **test backend only**.
+It limits verification to five attempts per hashed IP in five minutes across
+both roles and all server instances. Database counter access is service-only.
+Profile selection rechecks active roles on every request; database RPC permission
+checks remain authoritative. The role code gates test profile issuance, not
+Supabase MFA or the lifetime of an already-issued Supabase access token.
+Shared role authenticators are for synthetic testing, never production admin MFA.
+Keep enrollment seeds private and out of Git; rotating a role seed should also
+rotate the admin signing secret to invalidate existing portal cookies.
+
+Validation:
+
+```powershell
+node --test tests\admin-portal-access.test.mjs tests\hosted-profile-gate.test.mjs tests\hosted-profile-list.test.mjs
+$env:VITE_SITE_VARIANT='admin'
+npx vite build --outDir dist-admin --manifest
+npx playwright test --config playwright.admin.config.ts --reporter=list
+$env:VITE_SITE_VARIANT='main'
+npx vite build --outDir dist-customer --manifest
+node --test tests\admin-bundle-separation.test.mjs
+```
+
+The admin portal was deployed on November 3, 2026 as
+`dpl_Hv2HAKmdsfg6FN2RJMKq2gLkEHX6`. Both roles were verified with real TOTP codes,
+real Supabase profile sign-in, permission-filtered dashboard navigation,
+same-role profile switching without another code, and the mobile navigation.
+The persistent rate limiter was checked against the isolated hosted database.
+Typecheck, focused lint (no errors), both variant builds, four Node regression
+tests and two compiled-browser tests passed. Customer deployment changes were
+intentionally left local at the user's request; existing customer sites were
+not redeployed as part of this admin rollout.
 
 The essential TypeScript check and production build pass. The local Vite server
 responds at `http://localhost:5174`. All 24 Preview views (including six admin
@@ -824,7 +1059,7 @@ Start Docker Desktop, then run:
 ```powershell
 pnpm exec supabase start
 pnpm exec supabase migration up --local
-pnpm dev:local
+pnpm dev
 ```
 
 Click **Login**, then select a named profile from the **Profile** dropdown:
@@ -835,6 +1070,13 @@ existing mobile menu also offers Switch account and Sign out.
 Loopback development skips the hosted `/access` security-code screen and returns
 to its requested destination. Production and hosted site-access verification
 remain unchanged.
+
+Normal `pnpm dev` startup at `http://localhost:5174/` always uses the isolated
+local profile setup and fails explicitly if local Supabase is not running.
+`pnpm dev:local` remains an explicit alias for this setup. Builds, preview servers,
+and explicit `--mode e2e` runs do not invoke local profile configuration. Unchanged
+local configuration is not rewritten, so starting another dev process does not
+trigger an environment-file restart of the running app.
 
 This mode configures the ignored `.env.local-profiles.local` file from the running
 local Supabase CLI. Existing hosted environment files and lifecycle test accounts
@@ -930,6 +1172,11 @@ The account script has an explicit `--hosted-test` mode restricted to that exact
 test project. Supply `API_URL`, `ANON_KEY` and `SERVICE_ROLE_KEY` JSON through stdin
 from that project's CLI output; never use production keys. Hosted passwords are
 saved to Git-ignored `ybuy-hosted-test-accounts.local` and differ from local ones.
+Pass `--with-admins` to `scripts/seed-local-test-users.mjs --hosted-test` to
+create the two marked administrator fixtures and grant their database roles.
+This explicitly enables privileged tester access; use only the isolated test project.
+Existing fixture credentials are preserved, and subsequent seed runs retain the
+added administrators.
 `--with-listings` creates/reuses five published synthetic camera listings for
 manual testing, using authenticated Owner APIs rather than a simulated backend.
 They are persistent fixtures, not proof that the listing wizard passed.
@@ -1018,8 +1265,13 @@ Renters explore auctions and place bids on the dedicated
 bid form or leaderboard. Renters see the anonymous top three and their own bid
 history and current rank; competing renter identities remain private. Owners see
 all bids, bidder profiles, ratings, payment state and the decision deadline in My
-auctions. After bidding closes, owners have one hour to select any eligible bidder;
-the highest eligible bid is selected automatically if the window expires. The
+auctions. Owners must choose eligible bidders before bidding closes; undecided
+bidding expires immediately. Missed-decision counts and audit records are
+admin-only, never displayed beside marketplace ratings. Review stars are unchanged. The system never selects a bidder
+automatically, including after a winner fails to pay. Flexible-date auctions
+allow renters to choose their own pickup and exclusive return dates inside the
+owner's window. Overlapping bids compete by total rental value, while owners
+can select multiple non-overlapping rentals when inventory permits. The
 minimum bid increase is configured in Admin global settings.
 Regular bookings can coexist with open bidding. Pending booking requests do not
 reserve auction capacity, while a confirmed overlapping booking closes the
@@ -1117,6 +1369,16 @@ set `RESEND_FROM_EMAIL`, `PUBLIC_APP_URL`, and a controlled
 ```powershell
 npx supabase functions serve --env-file .env.local
 ```
+
+Keep this command running for local AI listing analysis as well. The ignored
+`.env.local` file must contain the server-only `OPENROUTER_API_KEY`. A response
+of `503 {"message":"name resolution failed"}` from `/functions/v1/` can mean
+the local `supabase_edge_runtime_YBuy` container is stopped; check its status
+and rerun the command above to restore the runtime with the local secrets.
+Set `LISTING_STORAGE_ORIGIN=http://127.0.0.1:54321` in `.env.local` when the
+browser uses that local Supabase URL. Function workers do not receive the
+runtime's internal host-port setting. Photo validation accepts this explicit
+origin and still checks each photo against the authenticated owner's listing images.
 
 Email is redirected to `NOTIFICATION_TEST_RECIPIENT` unless the trusted
 Edge Function environment explicitly sets `NOTIFICATION_LIVE_DELIVERY=true`.

@@ -396,7 +396,7 @@ export function SearchPage({
   return (
     <div className="animate-fade-in min-h-screen pb-20 md:pb-8">
       {/* Sticky search + controls */}
-      <div className="sticky top-16 z-[140] glass-surface border-b border-app">
+      <div className="workspace-search-toolbar sticky top-16 z-[140] glass-surface border-b border-app">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 space-y-2.5">
           <SearchBar
             onSearch={handleSearchBarSearch}
@@ -484,14 +484,14 @@ export function SearchPage({
           {/* Filters sidebar */}
           {showFilters && !isMobileFilters && (
             <aside id="desktop-search-filters" className="hidden lg:block w-64 shrink-0">
-              <div className="sticky top-[188px] max-h-[calc(100vh-208px)] overflow-y-auto no-scrollbar pr-1">
+              <div className="workspace-search-filters sticky top-[188px] max-h-[calc(100vh-208px)] overflow-y-auto no-scrollbar pr-1">
                 <FilterPanel {...filterPanelProps} />
               </div>
             </aside>
           )}
 
           {/* Results */}
-          <div className="flex-1 min-w-0">
+          <div className="workspace-results flex-1 min-w-0">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3 mb-4">
               <h1 className="text-lg font-bold text-main font-display" aria-live="polite" aria-atomic="true">
                 {error ? 'Could not load results' : loading ? 'Searching…' : (
@@ -520,13 +520,13 @@ export function SearchPage({
 
             {!error && loading && (
               view === 'list'
-                ? <ListingGridSkeleton count={12} className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4" />
+                ? <ListingGridSkeleton count={12} className="workspace-results-grid grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4" />
                 : <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <ListingCardWideSkeleton key={i} />)}</div>
             )}
 
             {loading ? null : view === 'list' ? (
               <>
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 animate-cross-fade">
+                <div className="workspace-results-grid grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 animate-cross-fade">
                   {filtered.map((listing) => (
                     <ListingCard
                       key={listing.id}
@@ -542,7 +542,7 @@ export function SearchPage({
                 </div>}
               </>
             ) : (
-              <div className="grid xl:grid-cols-[380px_minmax(0,1fr)] gap-3 animate-cross-fade">
+              <div className="workspace-map-grid grid xl:grid-cols-[380px_minmax(0,1fr)] gap-3 animate-cross-fade">
                 <div
                   ref={mapListingsRef}
                   onScroll={(event) => {

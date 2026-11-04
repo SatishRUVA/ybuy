@@ -25,7 +25,7 @@ type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 const BUTTON_BASE =
-  'inline-flex min-w-0 max-w-full items-center justify-center gap-2 font-semibold rounded-card whitespace-normal break-words text-center leading-snug [&>svg]:shrink-0 ' +
+  'ui-button inline-flex min-w-0 max-w-full items-center justify-center gap-2 font-semibold rounded-card whitespace-normal break-words text-center leading-snug [&>svg]:shrink-0 ' +
   'transition-[background-color,border-color,color,box-shadow,transform] duration-fast ease-out ' +
   'active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50';
 
@@ -42,7 +42,7 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
 };
 
 const BUTTON_SIZE: Record<ButtonSize, string> = {
-  sm: 'min-h-9 px-3.5 py-2 text-[13px]',
+  sm: 'min-h-11 sm:min-h-9 px-3.5 py-2 text-[13px]',
   md: 'min-h-11 px-4 py-2.5 text-sm',
   lg: 'min-h-12 px-6 py-3 text-[15px]',
 };
@@ -80,7 +80,7 @@ export function Button({
 export function IconButton({
   label, variant = 'secondary', size = 'md', className = '', children, ...rest
 }: Omit<ButtonProps, 'icon' | 'trailingIcon' | 'loading' | 'fullWidth'> & { label: string }) {
-  const box = size === 'sm' ? 'h-9 w-9' : size === 'lg' ? 'h-12 w-12' : 'h-11 w-11';
+  const box = size === 'sm' ? 'h-11 w-11 sm:h-9 sm:w-9' : size === 'lg' ? 'h-12 w-12' : 'h-11 w-11';
   return (
     <button
       {...rest}

@@ -11,11 +11,12 @@ import { BIDDING_SAMPLES } from '@/lib/bidding-samples';
 import { getListingAuction, getListingAuctionFeed, selectListingAuctionWinner, type AuctionFeed, type ListingAuction } from '@/lib/listing-auctions';
 import { CategoryIcon } from '@/main-site/components/category-icon';
 import { ListingGridSkeleton } from '@/main-site/components/skeleton';
-import { fetchListingById, fetchListingsByOwner, toUiListing } from '@/lib/listings';
+import { enrichListingsWithRatings, fetchListingById, fetchListingsByOwner, toUiListing } from '@/lib/listings';
 import { ListingAuctionPanel } from '@/main-site/components/listing-auction-panel';
 import { UUID_RE } from '@/lib/text-safety';
 import { auctionCountdown } from '@/lib/auction-countdown';
 import type { Listing } from '@/data';
+import { ListingPhoto } from '@/main-site/components/listing-card';
 
 const rentalDate = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const dollars = (amount: number) => amount.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
@@ -118,7 +119,7 @@ function OwnerBiddingDashboard({
           </button>;
         })}
       </nav>
-      <p className="text-xs text-sec pb-2">You can select any eligible bidder before bidding closes or during the decision window. Otherwise the highest eligible bid is selected automatically.</p>
+      <p className="text-xs text-sec pb-2">Select eligible bidders before bidding closes. Without an owner decision, bidding expires. The system never selects bidders automatically.</p>
     </div>
 
     {error && <Alert tone="error" title="Your auctions could not be loaded">
@@ -129,14 +130,13 @@ function OwnerBiddingDashboard({
         {filteredAuctions.map(({ listing, auction }) => {
           const status = auctionStatus(auction);
           const deadline = auctionDeadline(auction);
-          const canSelectWinner = auction.status === 'open' && auction.ends_at !== null && Date.parse(auction.ends_at) > now
-            || auction.status === 'owner_selection' && auction.selection_deadline !== null && Date.parse(auction.selection_deadline) > now;
+          const canSelectWinner = auction.status === 'open' && auction.ends_at !== null && Date.parse(auction.ends_at) > now;
           const ownerBids = auction.owner_bids ?? [];
           return <Surface key={auction.id} className="p-4 sm:p-5">
             <div className="grid md:grid-cols-[minmax(15rem,0.85fr)_minmax(0,1.4fr)] gap-5">
               <div className="min-w-0">
                 <div className="flex items-start gap-3">
-                  <img src={listing.images[0]} alt="" loading="lazy" className="h-20 w-24 rounded-card object-cover bg-subtle shrink-0" />
+                  <ListingPhoto images={listing.images} className="h-20 w-24 rounded-card object-cover bg-subtle shrink-0" />
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={status.tone}>{status.label}</Badge>
@@ -157,8 +157,6 @@ function OwnerBiddingDashboard({
                 </div>
                 <Button size="sm" variant="secondary" className="mt-4" onClick={() => navigate({ name: 'listing', id: listing.id })}>View listing</Button>
                 {auction.selected_payment_status && <p className="mt-3 text-sm text-sec">Selected renter payment: {auction.selected_payment_status}.</p>}
-                {auction.owner_decision_missed_at && <p role="status" className="mt-3 text-sm text-sec">Decision window missed and recorded on {new Date(auction.owner_decision_missed_at).toLocaleString()}.</p>}
-                {(auction.owner_missed_decision_count ?? 0) > 0 && <p role="status" className="mt-2 text-xs text-warning">Missed auction decision windows: {auction.owner_missed_decision_count}</p>}
               </div>
 
               <div className="min-w-0">
@@ -173,6 +171,7 @@ function OwnerBiddingDashboard({
                         <th scope="col" className="py-2 pr-3 font-medium">Bidder</th>
                         <th scope="col" className="py-2 pr-3 font-medium">Rating</th>
                         <th scope="col" className="py-2 pr-3 font-medium">Bid per day</th>
+                        {auction.date_flexible && <th scope="col" className="py-2 pr-3 font-medium">Rental dates / total</th>}
                         <th scope="col" className="py-2 pr-3 font-medium">Submitted</th>
                         <th scope="col" className="py-2 pr-3 font-medium">Bids placed</th>
                         {canSelectWinner && <th scope="col" className="py-2 text-right font-medium">Action</th>}
@@ -191,17 +190,18 @@ function OwnerBiddingDashboard({
                             ? `${bid.renter.rating?.toFixed(1) ?? 'Unrated'} (${bid.renter.review_count})`
                             : 'No reviews'}</td>
                           <td className="py-3 pr-3 font-bold text-main tnum">{dollars(bid.daily_rate)}</td>
+                          {auction.date_flexible && <td className="py-3 pr-3 text-sec">{bid.start_date && bid.end_date && <span className="block">{rentalDate(bid.start_date)} – {rentalDate(bid.end_date)}</span>}<strong>{dollars(bid.total_value ?? 0)}</strong>{bid.payment_status && <span className="block">Payment: {bid.payment_status}{bid.payment_deadline && ` · ${new Date(bid.payment_deadline).toLocaleString()}`}</span>}</td>}
                           <td className="py-3 pr-3 text-sec">{new Date(bid.submitted_at).toLocaleString()}</td>
                           <td className="py-3 pr-3 text-sec tnum">{bid.bid_count} {bid.bid_count === 1 ? 'bid' : 'bids'}</td>
                           {canSelectWinner && <td className="py-3 text-right">
                             <Button
                               size="sm"
                               onClick={() => void onSelectWinner(listing.id, bid.id)}
-                              disabled={!bid.eligible || loading || !!selectingBidId}
+                              disabled={bid.selected || !bid.eligible || loading || !!selectingBidId}
                               loading={selecting}
                               loadingLabel="Selecting..."
                             >
-                              Select winner
+                              {bid.selected ? 'Selected' : 'Select winner'}
                             </Button>
                           </td>}
                         </tr>;
@@ -506,6 +506,7 @@ function RentalAuctionDetail({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  const [activePhoto, setActivePhoto] = useState(0);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -515,7 +516,10 @@ function RentalAuctionDetail({ id }: { id: string }) {
       try {
         if (!UUID_RE.test(id)) throw new Error('This auction link is invalid. Return to Bidding to choose an auction.');
         const row = await fetchListingById(id);
-        if (active) setListing(row?.auction_enabled ? toUiListing(row) : null);
+        if (row?.auction_enabled) {
+          const [enriched] = await enrichListingsWithRatings([toUiListing(row)]);
+          if (active) setListing(enriched);
+        } else if (active) setListing(null);
       } catch (failure) {
         if (active) setError(failure instanceof Error ? failure.message : 'Could not load this auction. Please retry.');
       } finally {
@@ -533,20 +537,23 @@ function RentalAuctionDetail({ id }: { id: string }) {
     </Alert> : !listing ? <EmptyState icon={<Gavel size={24} />} title="Auction not found"
       description="This rental is unavailable or does not have competitive bidding enabled."
       actionLabel="Explore auctions" onAction={() => navigate({ name: 'bidding' })} /> : <>
-      <header className="grid gap-5 sm:grid-cols-[12rem_minmax(0,1fr)] items-center">
-        <AuctionImage url={listing.images[0] ?? null} />
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-display text-main break-words">{listing.title}</h1>
-          <p className="text-sm text-sec mt-2">{listing.category}</p>
-          <p className="text-sm text-sec mt-2">Bid on this rental here. Regular listing details and booking stay separate.</p>
-          <Button variant="secondary" className="mt-4" onClick={() => navigate({ name: 'listing', id })}>View listing details</Button>
-        </div>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(15rem,0.8fr)_minmax(0,2.2fr)]">
+      <header className="min-w-0 space-y-4">
+        <AuctionImage url={listing.images[activePhoto] ?? null} />
+        {listing.images.length > 1 && <div className="flex gap-2 overflow-x-auto pb-2">{listing.images.map((photo, index) => <button key={`${photo}:${index}`} type="button" aria-label={`View photo ${index + 1}`} aria-pressed={activePhoto === index} onClick={() => setActivePhoto(index)} className={`h-16 w-16 shrink-0 overflow-hidden rounded-card border-2 ${activePhoto === index ? 'border-accent' : 'border-app'}`}><img src={photo} alt="" className="h-full w-full object-cover" /></button>)}</div>}
+        <h1 className="text-2xl font-bold font-display text-main break-words">{listing.title}</h1>
+        <p className="text-sm text-sec">{listing.category} · {listing.pickup}</p>
+        <p className="text-sm text-sec">{listing.owner.name} · {listing.owner.rentals ? `${listing.owner.rating.toFixed(1)} stars (${listing.owner.rentals} reviews)` : 'No owner reviews'}</p>
+        <p className="text-sm text-sec whitespace-pre-wrap">{listing.description}</p>
+        <div className="rounded-card border border-app p-4"><p className="text-xs text-sec">Listed rental price</p><p className="mt-1 text-xl font-bold">{dollars(listing.pricePerDay)}<span className="text-sm font-normal text-sec"> / day</span></p></div>
+        <Button variant="secondary" className="w-full" onClick={() => navigate({ name: 'listing', id })}>Book at Listed Price</Button>
       </header>
       {listing.owner.id === user?.id ? <Surface className="p-5 space-y-3">
         <h2 className="text-lg font-semibold text-main">Manage your auction</h2>
         <p className="text-sm text-sec">Review anonymous bids, select a winner, and track payment from your owner dashboard.</p>
         <Button onClick={() => navigate({ name: 'bidding' })}>Manage my auctions</Button>
-      </Surface> : <ListingAuctionPanel key={`${id}:${user?.id ?? 'anonymous'}`} listingId={id} deposit={listing.deposit} />}
+      </Surface> : <ListingAuctionPanel key={`${id}:${user?.id ?? 'anonymous'}`} listingId={id} deposit={listing.deposit} listedPrice={listing.pricePerDay} />}
+      </div>
     </>}
   </div>;
 }

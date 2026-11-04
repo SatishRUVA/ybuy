@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 export interface ConfirmedPayment {
+  /** Amount in major currency units, matching bookings.total. */
   amount: number;
   currency: string;
 }
@@ -32,7 +33,7 @@ export async function fetchCheckoutException(bookingId: string): Promise<{ reaso
 }
 
 /** Only webhook-written, RLS-protected records qualify; never read redirect parameters. */
-export async function fetchConfirmedPayment(bookingId: string): Promise<ConfirmedPayment | null> {
+export async function fetchConfirmedPayment(bookingId: string, bookingTotal: number): Promise<ConfirmedPayment | null> {
   const { data, error } = await supabase.from('payments')
     .select('amount, currency, status')
     .eq('booking_id', bookingId)
@@ -45,6 +46,10 @@ export async function fetchConfirmedPayment(bookingId: string): Promise<Confirme
   const amount = Number(data.amount);
   if (!Number.isFinite(amount) || amount < 0 || !/^[a-z]{3}$/i.test(data.currency)) {
     throw new Error('The confirmed payment details are invalid. Please refresh to retry.');
+  }
+  if (!Number.isFinite(bookingTotal) || bookingTotal < 0 || data.currency.toUpperCase() !== 'USD'
+    || Math.round(amount * 100) !== Math.round(bookingTotal * 100)) {
+    throw new Error('Payment could not be verified against this booking. Check status again before continuing.');
   }
   return { amount, currency: data.currency.toUpperCase() };
 }

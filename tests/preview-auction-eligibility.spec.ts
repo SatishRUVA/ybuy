@@ -31,7 +31,7 @@ test('native bidding controls follow the current server auction state', () => {
 
   expect(canSelectPreviewWinner({ ...auction, is_owner: true }, now)).toBe(true);
   expect(canSelectPreviewWinner({ ...auction, is_owner: true, status: 'owner_selection',
-    selection_deadline: '2026-11-01T13:00:00Z' }, now)).toBe(true);
+    selection_deadline: '2026-11-01T13:00:00Z' }, now)).toBe(false);
   expect(canSelectPreviewWinner({ ...auction, is_owner: false }, now)).toBe(false);
   expect(canSelectPreviewWinner({ ...auction, is_owner: true, status: 'ended' }, now)).toBe(false);
 });

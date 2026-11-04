@@ -80,6 +80,17 @@ function handleListingLinkClick(e: MouseEvent<HTMLAnchorElement>, onClick?: () =
   onClick();
 }
 
+export function ListingPhoto({ images, className }: { images: string[]; className: string }) {
+  const [failed, setFailed] = useState<Set<string>>(new Set());
+  const url = images.find(image => image && !failed.has(image));
+  return url
+    ? <img src={url} alt="" loading="lazy" className={className}
+      onError={() => setFailed(previous => new Set(previous).add(url))} />
+    : <span role="img" aria-label="Photo unavailable" className={`${className} flex flex-col items-center justify-center gap-2 text-sec`}>
+      <ImageOff size={24} aria-hidden="true" /><span className="text-xs">Photo unavailable</span>
+    </span>;
+}
+
 export function ListingCard({ listing, onClick, href, favorited, onToggleFavorite }: { listing: Listing; onClick?: () => void; href?: string; favorited?: boolean; onToggleFavorite?: () => void }) {
   const [likedLocal, setLikedLocal] = useState(false);
   const liked = favorited ?? likedLocal;
@@ -95,10 +106,8 @@ export function ListingCard({ listing, onClick, href, favorited, onToggleFavorit
         className="flex h-full flex-col rounded-[inherit] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-accent"
       >
         <div className="relative aspect-[4/3] overflow-hidden bg-subtle">
-          <img
-            src={listing.images[0]}
-            alt=""
-            loading="lazy"
+          <ListingPhoto
+            images={listing.images}
             className="w-full h-full object-cover zoom-media"
           />
           <div className="absolute top-2.5 left-2.5 flex gap-1.5">
@@ -137,7 +146,7 @@ export function ListingCardWide({ listing, onClick, favorited, onToggleFavorite 
         className="flex min-w-0 flex-1 gap-3.5 rounded-[inherit] pr-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-accent"
       >
         <div className="relative w-28 sm:w-36 shrink-0 overflow-hidden rounded-card aspect-[4/3] bg-subtle self-start">
-          <img src={listing.images[0]} alt="" loading="lazy" className="w-full h-full object-cover zoom-media" />
+          <ListingPhoto images={listing.images} className="w-full h-full object-cover zoom-media" />
         </div>
         <div className="flex min-h-[126px] flex-1 min-w-0 flex-col gap-1">
           <div className="min-w-0">

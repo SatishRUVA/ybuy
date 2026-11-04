@@ -1,5 +1,5 @@
 import { Alert } from '@/main-site/components/ui';
-import { WalletPanel } from '@/main-site/pages/admin/promotions';
+import { WalletPanel } from '@/main-site/components/operations/wallet';
 
 export function WalletPage() {
   return <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
