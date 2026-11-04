@@ -8,12 +8,14 @@ import type { ListingFlowResult } from '@/lib/listing-flow';
 export interface Paged<T> { total: number; rows: T[] }
 
 export interface AuctionDecisionRow {
-  id: string; listing_id: string; listing_title: string; owner_id: string; owner_name: string;
+  id: string; listing_id: string; listing_title: string; owner_id: string; owner_name: string; customer_id: string;
   deadline_at: string; detected_at: string; eligible_bid_count: number; owner_missed_decision_count: number;
   rating_eligible: boolean; exclusion_reason: string | null; exclusion_detail: string | null;
 }
-export const listAuctionDecisions = (limit: number, offset: number) =>
-  rpc<Paged<AuctionDecisionRow>>('admin_list_auction_decisions', { p_limit: limit, p_offset: offset });
+export const listAuctionDecisions = (limit: number, offset: number, filters: { search?: string; ownerId?: string } = {}) =>
+  rpc<Paged<AuctionDecisionRow>>('admin_search_auction_decisions', {
+    p_limit: limit, p_offset: offset, p_search: filters.search ?? null, p_owner_id: filters.ownerId ?? null,
+  });
 
 export interface CheckoutPaymentException {
   id: string;booking_id: string;payment_intent_id: string;amount: number;currency: string;
@@ -50,6 +52,7 @@ export interface PageArgs { search?: string; status?: string; limit: number; off
 export interface AdminUserRow {
   id: string; full_name: string; email: string; phone: string | null; created_at: string;
   customer_id?: string;
+  missed_decision_count?: number; last_missed_decision_at?: string | null;
   restricted_reason: string | null; restricted_at: string | null; listing_count: number; is_admin: boolean;
 }
 export const listUsers = (a: PageArgs) =>

@@ -3,8 +3,13 @@ import { supabase } from '@/lib/supabase';
 const ACTIVE_BOOKING_STATUSES = ['requested', 'pending_payment', 'confirmed', 'active', 'return_pending'];
 
 /** Dates a listing can't be booked for: owner-blocked dates, unioned with dates already covered by an active booking. */
-export async function fetchUnavailableDates(listingId: string): Promise<{ blocked: Set<string>; booked: Set<string> }> {
-  const { data,error }=await supabase.rpc('get_listing_unavailable_dates',{p_listing_id:listingId});
+export async function fetchUnavailableDates(listingId: string, quantity = 1): Promise<{ blocked: Set<string>; booked: Set<string> }> {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+    throw new Error('Choose between 1 and 100 units before checking availability.');
+  }
+  const { data,error }=quantity > 1
+    ? await supabase.rpc('get_listing_unavailable_dates_for_quantity',{p_listing_id:listingId,p_quantity:quantity})
+    : await supabase.rpc('get_listing_unavailable_dates',{p_listing_id:listingId});
   if(error)throw new Error(error.message);
   if(!data || !Array.isArray(data.blocked) || !Array.isArray(data.booked)
     || !data.blocked.every((date:unknown)=>typeof date==='string') || !data.booked.every((date:unknown)=>typeof date==='string')) {

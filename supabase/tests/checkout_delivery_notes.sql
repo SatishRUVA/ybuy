@@ -27,7 +27,7 @@ select throws_ok($$select public.create_booking_request('94000000-0000-4000-8000
 select throws_ok($$select public.create_booking_request('94000000-0000-4000-8000-000000000001',current_date+1,current_date+3,1,'pickup',repeat('x',501))$$,
  '22023','Keep the booking note under 500 characters','Oversized notes are rejected');
 select lives_ok($$select public.create_booking_request('94000000-0000-4000-8000-000000000001',current_date+1,current_date+3,1,'delivery','  Please bring the charger.  ')$$,'Delivery booking uses the real availability and pricing path');
-select is((select total from public.bookings where listing_id='94000000-0000-4000-8000-000000000001'),38.54::numeric,'Delivery fee and tax are included in payable total; deposit is authorized separately');
+select is((select total from public.bookings where listing_id='94000000-0000-4000-8000-000000000001'),42.54::numeric,'Delivery fee, mandatory insurance and tax are included in payable total; deposit is authorized separately');
 select is((select delivery_fee_amount from public.bookings where listing_id='94000000-0000-4000-8000-000000000001'),15::numeric,'Delivery fee is frozen from the listing');
 select is((select renter_note from public.bookings where listing_id='94000000-0000-4000-8000-000000000001'),'Please bring the charger.','Note is trimmed and persisted');
 select is((select (a.snapshot->>'total')::numeric from public.rental_agreements a join public.bookings b on b.id=a.booking_id where b.listing_id='94000000-0000-4000-8000-000000000001'),
@@ -39,14 +39,14 @@ select is((select renter_note from public.bookings where listing_id='94000000-00
 select throws_ok($$select public.create_booking_request('94000000-0000-4000-8000-000000000001',current_date+1,current_date+3,1,'delivery',null)$$,
  '23P01','Listing is not available for the requested dates and quantity','Delivery cannot bypass capacity');
 select lives_ok($$select public.create_booking_request('94000000-0000-4000-8000-000000000001',current_date+4,current_date+6,1,'pickup',repeat('x',500))$$,'Pickup accepts a 500-character note');
-select is((select total from public.bookings where listing_id='94000000-0000-4000-8000-000000000001' and delivery_mode='pickup'),23.54::numeric,'Pickup has no delivery charge and includes tax');
+select is((select total from public.bookings where listing_id='94000000-0000-4000-8000-000000000001' and delivery_mode='pickup'),27.54::numeric,'Pickup has no delivery charge and includes mandatory insurance and tax');
 reset role;
 update public.feature_flags set enabled=true where key='owner_promotions';
 insert into public.owner_promotions(owner_id,listing_id,code,discount_percent) values
  ('91000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001','DELIVERY50',50);
 set local role authenticated;
 select lives_ok($$select public.create_booking_request_with_owner_promo('94000000-0000-4000-8000-000000000001',current_date+7,current_date+9,1,'DELIVERY50','delivery','Promo handoff')$$,'Promotion and delivery share the real booking path');
-select is((select total from public.bookings where listing_id='94000000-0000-4000-8000-000000000001' and owner_promotion_code='DELIVERY50'),26.77::numeric,'Promotion discounts rental and fee, not delivery or tax');
+select is((select total from public.bookings where listing_id='94000000-0000-4000-8000-000000000001' and owner_promotion_code='DELIVERY50'),30.77::numeric,'Promotion discounts rental and fee, not delivery, mandatory insurance or tax');
 reset role;
 update public.feature_flags set enabled=true where key='insurance';
 set local role authenticated;

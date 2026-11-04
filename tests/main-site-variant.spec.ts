@@ -85,7 +85,9 @@ async function prepareJourney(page: Page, owner = false) {
       city: 'Dallas', state: 'TX', postal_code: '75201', country: 'US',
       latitude: 32.78, longitude: -96.8, place_id: 'test-pickup',
     } });
-    if (path.endsWith('/get_listing_unavailable_dates')) return route.fulfill({ json: { booked: [], blocked: [] } });
+    if (path.endsWith('/get_listing_unavailable_dates') || path.endsWith('/get_listing_unavailable_dates_for_quantity')) {
+      return route.fulfill({ json: { booked: [], blocked: [] } });
+    }
     if (path.endsWith('/owner_save_listing_flow')) return route.fulfill({ json: { revision: 2, status: 'draft', deposit: 0 } });
     if (path.endsWith('/notifications')) return route.fulfill({ json: [{
       id: '70000000-0000-4000-8000-000000000001', event_key: `request-match:${requestId}:listing:${listingId}`,
@@ -265,6 +267,36 @@ test('checkout cannot present a default fee or submit a booking when pricing set
   expect(bookingCalls).toBe(0);
 });
 
+test('listing calendar strikes dates without enough inventory for the requested quantity', async ({ page }) => {
+  await prepareJourney(page);
+  const unavailableDate = renterRequest.preferred_start_date;
+  await page.route('**/rest/v1/rpc/get_listing_unavailable_dates_for_quantity', route =>
+    route.fulfill({ json: { blocked: [], booked: [unavailableDate] } }));
+  await page.goto(`/listing/${listingId}?request=${requestId}`);
+
+  await expect(page.getByRole('button', { name: 'Request to book', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: /Choose a date range/ }).click();
+  await expect(page.locator(`[data-date="${unavailableDate}"]`)).toBeDisabled();
+  await expect(page.locator(`[data-date="${unavailableDate}"]`)).toHaveAttribute('title', 'Booked');
+});
+
+test('checkout rechecks unavailable dates and will not submit a stale selection', async ({ page }) => {
+  await prepareJourney(page);
+  const unavailableDate = renterRequest.preferred_start_date;
+  await page.route('**/rest/v1/rpc/get_listing_unavailable_dates_for_quantity', route =>
+    route.fulfill({ json: { blocked: [], booked: [unavailableDate] } }));
+  let bookingCalls = 0;
+  await page.route('**/rpc/create_booking_request', route => {
+    bookingCalls++;
+    return route.fulfill({ json: null });
+  });
+  await page.goto(`/checkout/${listingId}?start=${renterRequest.preferred_start_date}&end=${renterRequest.preferred_end_date}&qty=2`);
+
+  await expect(page.getByRole('status').filter({ hasText: 'Dates unavailable' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send booking request', exact: true })).toBeDisabled();
+  expect(bookingCalls).toBe(0);
+});
+
 for (const width of [390, 1440]) {
   test(`checkout reviews authoritative multi-unit pricing before Stripe at ${width}px`, async ({ page }, testInfo) => {
     await prepareJourney(page);
@@ -278,15 +310,17 @@ for (const width of [390, 1440]) {
       ...listing, category_id: categoryId, estimated_value: 200, instant_booking: true,
       available_quantity: 2, availability_start: futureDate(1), availability_end: futureDate(25),
     } }));
+    await page.route('**/rest/v1/rpc/get_listing_unavailable_dates_for_quantity', route =>
+      route.fulfill({ json: { blocked: [], booked: [] } }));
     const bookingId = '80000000-0000-4000-8000-000000000001';
-    const total = insured ? 187.47 : 179.47;
+    const total = 187.47;
     let bookingCalls = 0;
     let stripeCalls = 0;
     await page.route('**/rpc/create_booking_request', route => {
       bookingCalls++;
       return route.fulfill({ json: {
         id: bookingId, status: 'pending_payment', quantity: 2,
-        subtotal: 100, service_fee_amount: 21, insurance_amount: insured ? 8 : 0,
+        subtotal: 100, service_fee_amount: 21, insurance_amount: 8,
         deposit: 50, total, tax_amount: 8.47, tax_rate: 0.07, sandbox_tax: false,
       } });
     });
@@ -296,13 +330,13 @@ for (const width of [390, 1440]) {
     });
     await page.goto(`/listing/${listingId}?request=${requestId}`);
     const listingInsurance = page.getByText('Insurance', { exact: true }).locator('..');
-    await expect(listingInsurance).toContainText(insured ? '$8.00' : 'Not included');
+    await expect(listingInsurance).toContainText('$8.00');
     const listingFee = page.getByText('Service fee', { exact: true }).locator('..');
     await expect(listingFee).toContainText('$20.00');
     await expect(page.getByText('Tax (7%)', { exact: true }).locator('..')).toContainText('$8.40');
     await page.getByRole('button', { name: 'Book instantly', exact: true }).filter({ visible: true }).first().click();
     const insurance = page.locator('main div.flex').filter({ has: page.locator(':scope > span', { hasText: /^Insurance$/ }) }).last();
-    await expect(insurance).toContainText(insured ? '$8.00' : 'Not included');
+    await expect(insurance).toContainText('$8.00');
     await expect(page.getByText('Service fee', { exact: true }).locator('..')).toContainText('$20.00');
     await expect(page.getByText('Rental quantity: 2 units')).toBeVisible();
     await page.getByRole('button', { name: 'Continue to payment', exact: true }).filter({ visible: true }).click();

@@ -417,7 +417,7 @@ test('listing redesign keeps a single cost-first booking panel and photo-first r
   await expect(panel.getByText('Estimated total', { exact: true }).locator('..')).toContainText('$79.43');
   await expect(panel.getByText('Tax (7%)', { exact: true }).locator('..')).toContainText('$1.93');
   await expect(panel.getByText('Insurance', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Not included', { exact: true })).toBeVisible();
+  await expect(panel.getByText('$2.00', { exact: true })).toBeVisible();
   await expect(panel.getByText('Placeholder', { exact: true })).toHaveCount(0);
   await expect(panel.getByLabel('Insurance simulation')).toHaveCount(0);
   await expect(panel.getByText('In-house demo estimate for this rental.', { exact: true })).toHaveCount(0);

@@ -19,8 +19,6 @@ import { createCheckoutSession } from '@/lib/payments';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
 import { bookingTaxCents } from '@/lib/booking-tax';
 import { Checkout } from '@/preview-1/renting';
-import { Button, ErrorNote, Field, Modal } from '@/preview-1/ui';
-import { quoteOwnerPromotion } from '@/lib/owner-promotions';
 import { Browse, Details, Favorites, Home } from '@/preview-1/marketplace';
 import { MarketplaceProvider, type MarketplaceStore } from '@/preview-1/marketplace-context';
 import { href, type PageName } from '@/preview-1/state';
@@ -56,13 +54,6 @@ export function PreviewMarketplace() {
   const { user, openSignIn } = useAuth();
   const feePct = usePlatformFeePct();
   const discounts = useFeatureFlag('duration_discounts');
-  const insurance = useFeatureFlag('insurance');
-  const promotions = useFeatureFlag('owner_promotions');
-  const [optionsOpen, setOptionsOpen] = useState(false);
-  const [promotionCode, setPromotionCode] = useState('');
-  const [appliedPromotion, setAppliedPromotion] = useState<{ code: string; amount: number } | null>(null);
-  const [promotionError, setPromotionError] = useState<string | null>(null);
-  const [checkingPromotion, setCheckingPromotion] = useState(false);
   const [search, updateSearch] = useState(() => restoredSearch(route));
   const searchRef = useRef(search);
   const [items, setItems] = useState<Listing[]>([]);
@@ -164,7 +155,6 @@ export function PreviewMarketplace() {
 
   function setSearch(patch: Partial<SearchState>) {
     const next = { ...searchRef.current, ...patch };
-    if (next.start !== searchRef.current.start || next.end !== searchRef.current.end) setAppliedPromotion(null);
     searchRef.current = next; updateSearch(next); setPage(0);
     saveSearchState({
       ...savedSearchState(), q: next.q, category: next.cat === 'All' ? undefined : next.cat,
@@ -220,8 +210,7 @@ export function PreviewMarketplace() {
     checkout: {
       create: async (params) => {
         if (!user) throw new Error('Sign in before requesting a rental.');
-        if (insurance.loading || insurance.error) throw new Error('Insurance pricing could not be verified. Please retry once settings reconnect.');
-        const booking = await createBookingRequest({ ...params, quantity: route.name === 'checkout' ? route.quantity : undefined, promotionCode: appliedPromotion?.code });
+        const booking = await createBookingRequest({ ...params, quantity: route.name === 'checkout' ? route.quantity : undefined });
         return { id: booking.id, paymentRequired: booking.status === 'pending_payment',
           taxAmount: Number(booking.tax_amount ?? 0), sandboxTax: booking.sandbox_tax === true,
           deposit: Number(booking.deposit),
@@ -229,7 +218,6 @@ export function PreviewMarketplace() {
           total: Number(booking.total) };
       },
       pay: async (id) => { window.location.assign(await createCheckoutSession(id)); },
-      options: promotions.enabled ? <Button variant="quiet" onClick={() => setOptionsOpen(true)}>Promo code</Button> : undefined,
     },
     contact: (item) => {
       if (!user) { openSignIn(); return; }
@@ -244,10 +232,10 @@ export function PreviewMarketplace() {
         monthlyEnabled: discounts.enabled && item.monthlyDiscountEnabled, monthlyPercent: item.monthlyDiscountPercent,
       });
       if (!days) return { rental: 0, fee: 0, insurance: 0, tax: import.meta.env.VITE_TEST_ENVIRONMENT === 'true' ? 0 : undefined };
-      const rental = appliedPromotion ? Math.max(0, pricing.gross - appliedPromotion.amount) : pricing.subtotal;
+      const rental = pricing.subtotal;
       const fee = Math.round(rental * feePct * 100) / 100;
       return { rental, fee, tax: bookingTaxCents(rental, fee) / 100,
-        insurance: insurance.enabled ? insuranceAmountCents(item.declaredValue, days) / 100 : 0 };
+        insurance: insuranceAmountCents(item.declaredValue, days) / 100 };
     },
     loading, error, retry: () => setRefresh((current) => current + 1), total, hasMore,
     loadMore: () => setPage((current) => current + 1),
@@ -257,18 +245,5 @@ export function PreviewMarketplace() {
       ? loading || error ? <main className="p1-container p1-page"><p role={error ? 'alert' : 'status'}>{error ?? 'Loading rental…'}</p>{error && <button className="p1-button p1-button-secondary" onClick={value.retry}>Try again</button>}</main>
         : route.name === 'checkout' && !validRentalRange(route.startDate ?? '', route.endDate ?? '') ? <main className="p1-container p1-page"><h1>Choose your dates first</h1><a className="p1-button p1-button-secondary" href={href('listing', listingId)}>Back to item</a></main> : <Checkout id={listingId} />
       : routeName === 'listing' && listingId ? <Details id={listingId} /> : <Favorites />}
-    <Modal open={optionsOpen} onClose={() => setOptionsOpen(false)} title="Booking options" description="Apply an owner promo code to this rental.">
-      <Field label="Promo code"><input value={promotionCode} disabled={checkingPromotion} onChange={(event) => setPromotionCode(event.target.value)} /></Field>
-      {promotionError && <ErrorNote>{promotionError}</ErrorNote>}
-      {appliedPromotion && <p role="status">Applied {appliedPromotion.code}. Estimated rental savings: ${appliedPromotion.amount.toFixed(2)}.</p>}
-      <Button disabled={checkingPromotion || !promotionCode.trim()} onClick={() => {
-        if (!listingId) return;
-        setCheckingPromotion(true); setPromotionError(null); setAppliedPromotion(null);
-        void quoteOwnerPromotion({ listingId, code: promotionCode, days: Math.round((Date.parse(search.end) - Date.parse(search.start)) / 86400000), quantity: route.name === 'checkout' ? route.quantity : undefined })
-          .then((quote) => setAppliedPromotion({ code: promotionCode.trim().toUpperCase(), amount: quote.discount_amount }))
-          .catch((reason: unknown) => setPromotionError(reason instanceof Error ? reason.message : 'This promo code is invalid or unavailable.'))
-          .finally(() => setCheckingPromotion(false));
-      }}>{checkingPromotion ? 'Checking…' : 'Apply code'}</Button>
-    </Modal>
   </MarketplaceProvider>;
 }

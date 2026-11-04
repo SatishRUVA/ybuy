@@ -277,6 +277,25 @@ reset role;
 insert into public.admin_users(user_id,role,permissions)
   values('91000000-0000-4000-8000-000000000006','super_admin','{}');
 select pg_temp.date_auction_user(6);
+select is((public.admin_search_auction_decisions(null,'91000000-0000-4000-8000-000000000001',100,0)->>'total')::integer,
+  2,'Per-user decision history returns the same two known audit records');
+select is((public.admin_search_auction_decisions(null,'91000000-0000-4000-8000-000000000002',100,0)->>'total')::integer,
+  0,'Per-user history never returns another owner records');
+select is((public.admin_search_auction_decisions('DATE-AUCTION-1@EXAMPLE.TEST',null,100,0)->>'total')::integer,
+  2,'Decision search matches owner email case-insensitively');
+select is((public.admin_search_auction_decisions(
+  (select customer_id from public.profiles where id='91000000-0000-4000-8000-000000000001'),null,100,0)->>'total')::integer,
+  2,'Decision search matches Customer ID');
+select is((public.admin_search_auction_decisions('94000000-0000-4000-8000-000000000004',null,100,0)->>'total')::integer,
+  1,'Decision search matches listing ID');
+select is((public.admin_search_auction_decisions('unmatched-owner-query',null,100,0)->>'total')::integer,
+  0,'Decision search totals use the same filter as rows');
+select is((public.admin_list_users('date-auction-1@example.test',20,0)->'rows'->0->>'missed_decision_count')::integer,
+  2,'Admin Users search shows the same owner count as decision history');
+select ok((public.admin_list_users('date-auction-1@example.test',20,0)->'rows'->0->>'last_missed_decision_at') is not null,
+  'Admin Users exposes the latest decision audit time');
+select is((public.admin_list_users('date-auction-1@example.test',20,0)->'rows'->0->>'restricted_at'),
+  null::text,'Missed decisions do not automatically restrict the account');
 select is((public.admin_list_auction_decisions(100,0)->'rows'->0->>'owner_id'),
   '91000000-0000-4000-8000-000000000001','Administrator decision list identifies the owner');
 select ok((public.admin_list_auction_decisions(100,0)->'rows'->0) ?& array['listing_title','deadline_at','owner_missed_decision_count'],
@@ -292,6 +311,13 @@ set local role authenticated;
 select is((select count(*)::integer from public.listing_auction_decision_events
   where owner_id='91000000-0000-4000-8000-000000000001'),2,'Authorized administrators retain audit row access');
 reset role;
+insert into public.admin_users(user_id,role,permissions)
+  values('91000000-0000-4000-8000-000000000005','admin',array['users.manage']);
+select pg_temp.date_auction_user(5);
+select ok(not ((public.admin_list_users('date-auction-1@example.test',20,0)->'rows'->0) ? 'missed_decision_count'),
+  'User-management permission alone does not expose private decision counts');
+select throws_ok($$select public.admin_search_auction_decisions(null,null,20,0)$$,
+  '42501','Not authorized','User-management permission alone cannot access decision history');
 select pg_temp.date_auction_user(2);
 select throws_ok($$select public.admin_list_auction_decisions(20,0)$$,
   '42501','Not authorized','Renters cannot access administrator decision list');

@@ -3,7 +3,6 @@ import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import { fetchListingById, toUiListing } from '@/lib/listings';
 import { createBookingRequest, fetchBookingById, type DbBookingRow, type UiBooking } from '@/lib/bookings';
-import { quoteOwnerPromotion } from '@/lib/owner-promotions';
 import { BookingPickup } from '@/components/booking-pickup';
 import { ListingPhoto } from '@/components/listing-card';
 import { getOrCreateConversation } from '@/lib/messages';
@@ -38,18 +37,12 @@ function formatMoney(value: number): string {
 export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate?: string; endDate?: string }) {
   const { navigate, back } = useRouter();
   const feePct = usePlatformFeePct();
-  const promotions = useFeatureFlag('owner_promotions');
   const durationDiscounts = useFeatureFlag('duration_discounts');
-  const insuranceFlag = useFeatureFlag('insurance');
   const [listing, setListing] = useState<Listing | null | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [paymentBookingId, setPaymentBookingId] = useState<string | null>(null);
   const [createdBooking, setCreatedBooking] = useState<DbBookingRow | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [promotionCode, setPromotionCode] = useState('');
-  const [appliedPromotion, setAppliedPromotion] = useState<{ code: string; percent: number; amount: number } | null>(null);
-  const [promotionError, setPromotionError] = useState<string | null>(null);
-  const [checkingPromotion, setCheckingPromotion] = useState(false);
   const [deliveryMode, setDeliveryMode] = useState<'pickup' | 'delivery'>('pickup');
   const [renterNote, setRenterNote] = useState('');
   const [step, setStep] = useState(0);
@@ -103,11 +96,10 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
   const durationDiscount = rentalPricing.discountAmount;
   const selectedRentalOption = rentalPricing.packageKind === 'monthly' ? 'Monthly (30 days)'
     : rentalPricing.packageKind === 'weekly' ? 'Weekly (7 days)' : `${days} ${days === 1 ? 'day' : 'days'}`;
-  const appliedDiscount = appliedPromotion?.amount ?? durationDiscount;
-  const rental = Math.max(0, grossRental - appliedDiscount);
+  const rental = Math.max(0, grossRental - durationDiscount);
   const serviceFee = Math.round(rental * feePct * 100) / 100;
   const deliveryFee = deliveryMode === 'delivery' && listing.deliveryAvailable ? Number(listing.deliveryFee ?? 0) : 0;
-  const insuranceAmount = insuranceFlag.enabled ? insuranceAmountCents(listing.declaredValue, days) / 100 : 0;
+  const insuranceAmount = insuranceAmountCents(listing.declaredValue, days) / 100;
   const isTaxDemo = createdBooking?.sandbox_tax === true;
   const tax = createdBooking ? Number(createdBooking.tax_amount ?? 0) : bookingTaxCents(rental, serviceFee) / 100;
   const paymentEstimate = rental + serviceFee + insuranceAmount + deliveryFee;
@@ -122,12 +114,10 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
         window.location.href = await createCheckoutSession(paymentBookingId);
         return;
       }
-      if (insuranceFlag.loading || insuranceFlag.error) throw new Error('Insurance pricing could not be verified. Please retry once settings reconnect.');
       const booking = await createBookingRequest({
         listingId: id,
         startDate: startDate!,
         endDate: endDate!,
-        promotionCode: appliedPromotion?.code,
         deliveryMode,
         renterNote,
       });
@@ -143,15 +133,6 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
     } finally {
       setSubmitting(false);
     }
-  }
-
-  async function applyPromotion() {
-    setCheckingPromotion(true); setPromotionError(null); setAppliedPromotion(null);
-    try {
-      const quote = await quoteOwnerPromotion({ listingId: id, code: promotionCode, days });
-      setAppliedPromotion({ code: promotionCode.trim().toUpperCase(), percent: quote.discount_percent, amount: quote.discount_amount });
-    } catch (reason) { setPromotionError(reason instanceof Error ? reason.message : 'This promo code is invalid or unavailable.'); }
-    finally { setCheckingPromotion(false); }
   }
 
   return (
@@ -220,20 +201,13 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
               <span>I have reviewed the dates, estimated cost, and rental terms.</span>
             </label>
           </section>}
-          {promotions.enabled && step === 2 && !paymentBookingId && <Surface className="p-5 mt-5">
-            <h2 className="font-semibold text-main font-display mb-2">Promo code</h2>
-            <p className="text-xs text-sec mb-3">Enter a code from the owner. A promo replaces any long-rental discount.</p>
-            <div className="flex gap-2"><input aria-label="Promo code" value={promotionCode} onChange={(event) => { setPromotionCode(event.target.value.toUpperCase()); setAppliedPromotion(null); setPromotionError(null); }} maxLength={24} className={fieldClass('flex-1 min-w-0')} placeholder="Enter code" /><Button variant="secondary" loading={checkingPromotion} disabled={!promotionCode.trim() || submitting} onClick={() => void applyPromotion()}>Apply</Button></div>
-            {promotionError && <Alert tone="error" className="mt-3">{promotionError}</Alert>}
-            {appliedPromotion && <p role="status" className="text-sm text-accent mt-3">{appliedPromotion.code} applied. You save ${formatMoney(appliedPromotion.amount)}.</p>}
-          </Surface>}
           {error && <Alert tone="error" title={paymentBookingId ? 'Could not open payment' : 'Booking not created'} className="mt-5">
             {error}
             {paymentBookingId && <p className="mt-2">Your booking was created. Retry payment below, or open it from Bookings. Do not submit a new booking.</p>}
           </Alert>}
           <div className="p1-actions p1-checkout-actions">
             {step > 0 && <Button variant="secondary" disabled={submitting || Boolean(paymentBookingId)} onClick={() => setStep(value => value - 1)}>Back</Button>}
-            <Button size="lg" loading={submitting} disabled={checkingPromotion || (step === 2 && !reviewedTerms && !paymentBookingId)} loadingLabel={listing.instantBooking ? 'Opening payment…' : 'Sending request…'}
+            <Button size="lg" loading={submitting} disabled={step === 2 && !reviewedTerms && !paymentBookingId} loadingLabel={listing.instantBooking ? 'Opening payment…' : 'Sending request…'}
               onClick={() => step < 2 ? setStep(value => value + 1) : void handleConfirm()}>
               {step < 2 ? 'Continue' : paymentBookingId ? 'Retry secure payment' : listing.instantBooking ? 'Continue to payment' : 'Send booking request'}
               <ArrowRight size={17} aria-hidden="true" />
@@ -249,14 +223,13 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
           <p className="text-sm text-main mt-4">{formatDay(startDate)} → {formatDay(endDate)}</p>
           <h3 className="font-semibold text-main font-display mt-5 mb-4">Price breakdown</h3>
           <div className="space-y-3 text-sm">
-            {appliedPromotion || !rentalPricing.packageKind
+            {!rentalPricing.packageKind
               ? <Row label={`$${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'}`} value={grossRental} />
               : <>
                 <Row label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} package · ${rentalPricing.packageDays} days`} value={listing.pricePerDay * rentalPricing.packageDays} />
                 {durationDiscount > 0 && <Row label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} savings (${rentalPricing.discountPercent}%)`} value={-durationDiscount} />}
                 {rentalPricing.extraDays > 0 && <Row label={`${rentalPricing.extraDays} extra ${rentalPricing.extraDays === 1 ? 'day' : 'days'} × $${formatMoney(listing.pricePerDay)}`} value={listing.pricePerDay * rentalPricing.extraDays} />}
               </>}
-            {appliedPromotion && <Row label={`Owner promo ${appliedPromotion.code} (${appliedPromotion.percent}% off)`} value={-appliedPromotion.amount} />}
             <Row label="Service fee" value={serviceFee} />
             {deliveryFee > 0 && <Row label="Delivery fee" value={deliveryFee} />}
             <InsuranceAmount days={days} replacementValue={listing.declaredValue} />
@@ -373,7 +346,7 @@ export function ConfirmationPage({ id }: { id: string }) {
   if (!booking) {
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center">
-        <h1 className="text-xl font-bold text-main font-display">Booking not found</h1>
+        <h1 className="text-xl font-bold text-main font-display">{confirmationError ? 'Could not verify your booking' : 'Booking not found'}</h1>
         {confirmationError && <Alert tone="error" className="mt-4">{confirmationError}</Alert>}
         <Button className="mt-4" variant="secondary" onClick={() => setRefresh((value) => value + 1)}>Check status again</Button>
         <Button className="mt-6" onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>Go to Bookings</Button>

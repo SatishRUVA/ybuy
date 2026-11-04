@@ -66,7 +66,7 @@ test('pricing foundation typechecks the actual server modules', () => {
   expect(ts.getPreEmitDiagnostics(program).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
 });
 
-test('ordinary booking requests do not require the optional owner-promo RPC', async () => {
+test('booking requests use the standard RPC and ignore legacy promo arguments', async () => {
   const source = readFileSync('src\\lib\\bookings.ts', 'utf8')
     .split('async function callBookingRpc(')[1].split('export async function respondToBookingRequest(')[0];
   const output = ts.transpileModule(`async function callBookingRpc(${source}`, {
@@ -83,15 +83,13 @@ test('ordinary booking requests do not require the optional owner-promo RPC', as
     },
   } });
   const params = { listingId: 'listing-test', startDate: '2026-11-02', endDate: '2026-11-05' };
-  for (const promotionCode of [undefined, '', '   ']) {
+  for (const promotionCode of [undefined, '', '   ', ' SAVE10 ']) {
     expect(await exports.createBookingRequest!({ ...params, promotionCode })).toEqual({ id: 'booking-test' });
     expect(calls.at(-1)).toEqual({ fn: 'create_booking_request', args: {
       p_listing_id: params.listingId, p_start_date: params.startDate, p_end_date: params.endDate, p_quantity: 1,
       p_delivery_mode: 'pickup', p_renter_note: null,
     } });
   }
-  await rejects(exports.createBookingRequest!({ ...params, promotionCode: ' SAVE10 ' }), /Promo function unavailable/);
-  expect(calls.at(-1)).toMatchObject({ fn: 'create_booking_request_with_owner_promo', args: { p_code: 'SAVE10' } });
   expect(calls).toHaveLength(4);
 });
 
@@ -191,6 +189,40 @@ test('checkout handler charges normal tax with live or test keys but blocks hist
     if (calls) expect(chargedCents).toBe(4254);
   }
 });
+
+for (const name of ['create-deposit-setup-session', 'create-deposit-authorization-session']) {
+  test(`${name} distinguishes a database failure from an absent booking`, async () => {
+    const output = ts.transpileModule(readFileSync(`supabase\\functions\\${name}\\index.ts`, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    for (const databaseFailure of [true, false]) {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      const result = async () => ({ data: null, error: databaseFailure ? { message: 'Booking schema is unavailable' } : null });
+      const client = {
+        auth: { getUser: async () => ({ data: { user: { id: 'renter-test' } }, error: null }) },
+        from: () => ({ select: () => ({ eq: () => ({ single: result, maybeSingle: result }) }) }),
+        rpc: async (rpc: string) => ({ error: null, data: rpc === 'has_active_session' ? true : {
+          id: 'authorization-test', booking_id: 'booking-test', idempotency_key: 'fixture',
+          stripe_customer_id: 'cus_fixture', stripe_payment_method_id: 'pm_fixture', authorized_amount: 50,
+        } }),
+      };
+      runInNewContext(output, {
+        exports: {}, Response, console: { error: () => {} },
+        Deno: { env: { get: () => 'fixture' }, serve: (fn: typeof handler) => { handler = fn; } },
+        require: (module: string) => module.startsWith('npm:stripe') ? { default: class {} }
+          : module.startsWith('npm:@supabase') ? { createClient: () => client }
+            : module.endsWith('settlement.ts') ? { requireTestSettlement: () => {} }
+              : { withCors: (fn: unknown) => fn },
+      });
+      const response = await handler!(new Request('http://localhost/deposit', {
+        method: 'POST', headers: { Authorization: 'fixture', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId: '10000000-0000-4000-8000-000000000001' }),
+      }));
+      expect(await response.json()).toEqual({ error: databaseFailure ? 'Booking schema is unavailable' : 'Booking not found.' });
+      expect(response.status).toBe(!databaseFailure && name === 'create-deposit-setup-session' ? 404 : 500);
+    }
+  });
+}
 
 test('USD conversion rejects precision loss, non-finite, negative and unsafe amounts', () => {
   expect(moneyToCents('0.29')).toBe(29);

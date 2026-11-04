@@ -3,7 +3,6 @@ import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import { fetchListingById, toUiListing } from '@/lib/listings';
 import { createBookingRequest, fetchBookingById, type DbBookingRow, type UiBooking } from '@/lib/bookings';
-import { quoteOwnerPromotion } from '@/lib/owner-promotions';
 import { BookingPickup } from '@/main-site/components/booking-pickup';
 import { getOrCreateConversation } from '@/lib/messages';
 import type { Listing } from '@/data';
@@ -19,11 +18,12 @@ import { ListingPhoto } from '@/main-site/components/listing-card';
 import { ArrowLeft, CheckCircle2, Calendar, MapPin, Lock, MessageSquare, ShieldCheck } from 'lucide-react';
 import { usePlatformFee } from '@/lib/settings';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
-import { fieldClass } from '@/main-site/components/form-classes';
 import { calculateRentalPricing } from '@/lib/rental-pricing';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
 import { InsuranceAmount } from '@/main-site/components/insurance-amount';
 import { bookingTaxCents } from '@/lib/booking-tax';
+import { fetchUnavailableDates } from '@/lib/availability';
+import { addDaysIso } from '@/lib/geo';
 import { useUtcDay } from '@/lib/use-utc-day';
 import { createDepositAuthorizationSession, createDepositSetupSession, recordDepositHoldConsent } from '@/lib/security-deposit';
 
@@ -41,19 +41,15 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
   const { navigate, back } = useRouter();
   const fee = usePlatformFee();
   const feePct = fee.pct ?? 0;
-  const promotions = useFeatureFlag('owner_promotions');
   const durationDiscounts = useFeatureFlag('duration_discounts');
-  const insuranceFlag = useFeatureFlag('insurance');
   const [listing, setListing] = useState<Listing | null | undefined>(undefined);
+  const [availabilityStatus, setAvailabilityStatus] = useState<'checking' | 'available' | 'unavailable' | 'error'>('checking');
+  const [availabilityRetry, setAvailabilityRetry] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [paymentBookingId, setPaymentBookingId] = useState<string | null>(null);
   const [createdBooking, setCreatedBooking] = useState<DbBookingRow | null>(null);
   const [deliveryMode, setDeliveryMode] = useState<'pickup' | 'delivery'>('pickup');
   const [error, setError] = useState<string | null>(null);
-  const [promotionCode, setPromotionCode] = useState('');
-  const [appliedPromotion, setAppliedPromotion] = useState<{ code: string; percent: number; amount: number } | null>(null);
-  const [promotionError, setPromotionError] = useState<string | null>(null);
-  const [checkingPromotion, setCheckingPromotion] = useState(false);
   const [depositConsent, setDepositConsent] = useState(false);
 
   useEffect(() => {
@@ -63,6 +59,22 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
       .catch(() => { if (!cancelled) setListing(null); });
     return () => { cancelled = true; };
   }, [id, utcDay]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!startDate || !endDate || endDate <= startDate) {
+      setAvailabilityStatus('unavailable');
+      return () => { cancelled = true; };
+    }
+    setAvailabilityStatus('checking');
+    fetchUnavailableDates(id, quantity).then(({ blocked, booked }) => {
+      if (cancelled) return;
+      const available = !Array.from({ length: Math.round((Date.parse(endDate) - Date.parse(startDate)) / 86400000) }, (_, index) =>
+        addDaysIso(startDate, index)).some((date) => blocked.has(date) || booked.has(date));
+      setAvailabilityStatus(available ? 'available' : 'unavailable');
+    }).catch(() => { if (!cancelled) setAvailabilityStatus('error'); });
+    return () => { cancelled = true; };
+  }, [id, startDate, endDate, quantity, availabilityRetry]);
 
   if (listing === undefined || fee.loading) {
     return (
@@ -114,13 +126,12 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
   const durationDiscount = rentalPricing.discountAmount;
   const selectedRentalOption = rentalPricing.packageKind === 'monthly' ? 'Monthly (30 days)'
     : rentalPricing.packageKind === 'weekly' ? 'Weekly (7 days)' : `${days} ${days === 1 ? 'day' : 'days'}`;
-  const appliedDiscount = appliedPromotion?.amount ?? durationDiscount;
-  const rental = createdBooking ? Number(createdBooking.subtotal) : Math.max(0, grossRental - appliedDiscount);
+  const rental = createdBooking ? Number(createdBooking.subtotal) : Math.max(0, grossRental - durationDiscount);
   const serviceFee = createdBooking ? Number(createdBooking.service_fee_amount) : Math.round(rental * feePct * 100) / 100;
   const deliveryFeeAmount = createdBooking ? Number(createdBooking.delivery_fee_amount ?? 0)
     : deliveryMode === 'delivery' && listing.deliveryAvailable ? Number(listing.deliveryFee ?? 0) : 0;
   const insuranceAmount = createdBooking ? Number(createdBooking.insurance_amount)
-    : insuranceFlag.enabled ? insuranceAmountCents(listing.declaredValue, days, quantity) / 100 : 0;
+    : insuranceAmountCents(listing.declaredValue, days, quantity) / 100;
   const deposit = createdBooking ? Number(createdBooking.deposit) : listing.deposit;
   const isTaxDemo = createdBooking?.sandbox_tax === true;
   const tax = createdBooking ? Number(createdBooking.tax_amount ?? 0) : bookingTaxCents(rental, serviceFee) / 100;
@@ -128,6 +139,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
   const total = createdBooking ? Number(createdBooking.total) : paymentEstimate + tax;
 
   async function handleConfirm() {
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -135,8 +147,12 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
         window.location.href = await createCheckoutSession(paymentBookingId);
         return;
       }
-      if (insuranceFlag.loading || insuranceFlag.error) throw new Error('Insurance pricing could not be verified. Please retry once settings reconnect.');
-      const booking = createdBooking ?? await createBookingRequest({ listingId: id, startDate: startDate!, endDate: endDate!, quantity, promotionCode: appliedPromotion?.code, deliveryMode });
+      if (availabilityStatus !== 'available') {
+        throw new Error(availabilityStatus === 'error'
+          ? 'Availability could not be verified. Please retry before booking.'
+          : 'These dates are not available for the selected quantity. Choose another range.');
+      }
+      const booking = createdBooking ?? await createBookingRequest({ listingId: id, startDate: startDate!, endDate: endDate!, quantity, deliveryMode });
       if (!createdBooking) setCreatedBooking(booking);
       if (!booking.payment_first && booking.deposit_collection_model === 'authorization' && Number(booking.deposit) > 0) {
         if (!depositConsent) throw new Error('Consent is required to save your card for a temporary security-deposit authorization.');
@@ -156,19 +172,12 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
       }
       navigate({ name: 'confirmation', id: booking.id });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the booking request.');
+      const message = err instanceof Error ? err.message : 'Could not create the booking request.';
+      if (/not available for the requested dates and quantity/i.test(message)) setAvailabilityStatus('unavailable');
+      setError(message);
     } finally {
       setSubmitting(false);
     }
-  }
-
-  async function applyPromotion() {
-    setCheckingPromotion(true); setPromotionError(null); setAppliedPromotion(null);
-    try {
-      const quote = await quoteOwnerPromotion({ listingId: id, code: promotionCode, days, quantity });
-      setAppliedPromotion({ code: promotionCode.trim().toUpperCase(), percent: quote.discount_percent, amount: quote.discount_amount });
-    } catch (reason) { setPromotionError(reason instanceof Error ? reason.message : 'This promo code is invalid or unavailable.'); }
-    finally { setCheckingPromotion(false); }
   }
 
   return (
@@ -236,14 +245,13 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
           <div className="space-y-3 text-sm">
             {createdBooking
               ? <Row label={`Rental · ${quantity} ${quantity === 1 ? 'unit' : 'units'}`} value={rental} />
-              : appliedPromotion || !rentalPricing.packageKind
+              : !rentalPricing.packageKind
               ? <Row label={`$${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'} × ${quantity} ${quantity === 1 ? 'unit' : 'units'}`} value={grossRental} />
               : <>
                 <Row label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} package · ${rentalPricing.packageDays} days · ${quantity} units`} value={listing.pricePerDay * quantity * rentalPricing.packageDays} />
                 {durationDiscount > 0 && <Row label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} savings (${rentalPricing.discountPercent}%)`} value={-durationDiscount} />}
                 {rentalPricing.extraDays > 0 && <Row label={`${rentalPricing.extraDays} extra days × $${formatMoney(listing.pricePerDay)} × ${quantity} units`} value={listing.pricePerDay * quantity * rentalPricing.extraDays} />}
               </>}
-            {!createdBooking && appliedPromotion && <Row label={`Owner promo ${appliedPromotion.code} (${appliedPromotion.percent}% off)`} value={-appliedPromotion.amount} />}
             <Row label="Service fee" value={serviceFee} />
             {deliveryFeeAmount > 0 && <Row label="Delivery fee" value={deliveryFeeAmount} />}
             {createdBooking ? <Row label="Insurance" value={insuranceAmount} />
@@ -275,21 +283,24 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
             </Surface>
           )}
 
-        {promotions.enabled && !paymentBookingId && <Surface className="p-5 mb-5">
-          <h2 className="font-semibold text-main font-display mb-2">Promo code</h2>
-          <p className="text-xs text-sec mb-3">Enter a code from the owner. A promo replaces any long-rental discount.</p>
-          <div className="flex gap-2"><input aria-label="Promo code" value={promotionCode} onChange={(event) => { setPromotionCode(event.target.value.toUpperCase()); setAppliedPromotion(null); setPromotionError(null); }} maxLength={24} className={fieldClass('flex-1')} placeholder="Enter code" /><Button variant="secondary" loading={checkingPromotion} disabled={!promotionCode.trim()} onClick={() => void applyPromotion()}>Apply</Button></div>
-          {promotionError && <Alert tone="error" className="mt-3">{promotionError}</Alert>}
-          {appliedPromotion && <p role="status" className="text-sm text-accent mt-3">{appliedPromotion.code} applied. You save ${formatMoney(appliedPromotion.amount)}.</p>}
-        </Surface>}
-
         {error && <Alert tone="error" title={paymentBookingId ? 'Could not open payment' : 'Booking not created'} className="mb-4">
           {error}
           {paymentBookingId && <p className="mt-2">Your booking was created. Retry payment below, or open it from Bookings. Do not submit a new booking.</p>}
         </Alert>}
+        {availabilityStatus !== 'available' && !paymentBookingId && <Alert
+          tone={availabilityStatus === 'unavailable' ? 'warning' : 'info'}
+          title={availabilityStatus === 'checking' ? 'Checking availability' : availabilityStatus === 'unavailable' ? 'Dates unavailable' : 'Could not verify availability'}
+          className="mb-4"
+        >
+          {availabilityStatus === 'checking'
+            ? 'Checking these dates and the selected quantity with the owner’s current availability.'
+            : availabilityStatus === 'unavailable'
+              ? <>These dates are no longer available for the selected quantity. <Button variant="secondary" className="mt-2" onClick={() => navigate({ name: 'listing', id })}>Choose other dates</Button></>
+              : <>Booking is disabled until availability can be verified. <Button variant="secondary" className="mt-2" onClick={() => setAvailabilityRetry((value) => value + 1)}>Retry availability check</Button></>}
+        </Alert>}
 
         <div className="hidden md:block">
-          <Button fullWidth size="lg" loading={submitting} loadingLabel={paymentBookingId ? 'Opening secure payment…' : listing.instantBooking ? 'Booking…' : 'Sending request…'} onClick={handleConfirm}>
+          <Button fullWidth size="lg" loading={submitting} disabled={availabilityStatus !== 'available' && !paymentBookingId} loadingLabel={paymentBookingId ? 'Opening secure payment…' : listing.instantBooking ? 'Booking…' : 'Sending request…'} onClick={handleConfirm}>
             {paymentBookingId ? `Confirm $${formatMoney(total)} and pay` : listing.instantBooking ? 'Continue to payment' : 'Send booking request'}
           </Button>
           <p className="flex items-center justify-center gap-1.5 text-xs text-sec mt-3">
@@ -305,7 +316,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
             <p className="text-lg font-bold text-main tnum">${formatMoney(total)}</p>
             <p className="text-xs text-sec">{createdBooking ? 'Final total · no charge yet' : 'Est. total · no charge yet'}</p>
           </div>
-          <Button className="flex-1" loading={submitting} loadingLabel={paymentBookingId ? 'Opening secure payment…' : listing.instantBooking ? 'Booking…' : 'Sending…'} onClick={handleConfirm}>
+          <Button className="flex-1" loading={submitting} disabled={availabilityStatus !== 'available' && !paymentBookingId} loadingLabel={paymentBookingId ? 'Opening secure payment…' : listing.instantBooking ? 'Booking…' : 'Sending…'} onClick={handleConfirm}>
             {paymentBookingId ? `Confirm $${formatMoney(total)} and pay` : listing.instantBooking ? 'Continue to payment' : 'Send request'}
           </Button>
         </div>
@@ -399,7 +410,7 @@ export function ConfirmationPage({ id }: { id: string }) {
   if (!booking) {
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center">
-        <h1 className="text-xl font-bold text-main font-display">Booking not found</h1>
+        <h1 className="text-xl font-bold text-main font-display">{confirmationError ? 'Could not verify your booking' : 'Booking not found'}</h1>
         {confirmationError && <Alert tone="error" className="mt-4">{confirmationError}</Alert>}
         <Button className="mt-4" variant="secondary" onClick={() => setRefresh((value) => value + 1)}>Check status again</Button>
         <Button className="mt-6" onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>Go to Bookings</Button>

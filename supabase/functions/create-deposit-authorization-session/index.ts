@@ -81,7 +81,8 @@ Deno.serve(withCors(async request => {
     }
     const { data: booking, error: bookingError } = await admin.from('bookings')
       .select('payment_first,listing:listings(title)').eq('id', body.bookingId).single();
-    if (bookingError || !booking) throw new Error('Booking not found.');
+    if (bookingError) throw new Error(bookingError.message);
+    if (!booking) throw new Error('Booking not found.');
     const title = (booking.listing as { title?: string } | null)?.title ?? 'Rental';
     const amount = Math.round(row.authorized_amount * 100);
     if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Deposit amount is invalid.');

@@ -358,6 +358,20 @@ adds the `config.manage`-protected, server-paginated `admin_list_auction_decisio
 RPC. Its read-only table shows owner, listing, closing and detection times,
 eligible bids, attributable owner miss count, and any audit exclusion.
 
+Migration `20261103000012_admin_user_auction_history.sql` adds owner/Customer ID/
+email/listing search through `admin_search_auction_decisions` and private count/
+last-miss fields to `admin_list_users` for `config.manage` administrators only.
+**Users > Bidding history** opens the same decision ledger filtered by owner ID.
+Counts are review indicators, not account restrictions or review-star adjustments.
+Localhost and hosted test environments have independent records; local events
+are not copied or manufactured in hosted databases.
+
+Local checkout also requires migrations `20261103000005` and `20261103000006`
+(rental-first payment and pre-check-in). Missing these while serving current
+Edge Functions can fail booking reads on the absent `payment_first` column.
+Deposit functions report database failures separately from missing bookings;
+apply missing migrations without resetting or deleting existing reservations.
+
 `supabase\tests\renter_date_auctions.sql` uses rollback-only fixtures and covers
 configuration, range validation, overlap quotes, independent winners/payment
 windows, retries, capacity, session closure, late receipts, notifications and

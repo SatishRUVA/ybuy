@@ -25,7 +25,8 @@ Deno.serve(withCors(async (req) => {
     const { data: booking, error: bookingError } = await anon.from('bookings')
       .select('id,renter_id,status,deposit,deposit_collection_model,deposit_hold_consent_at,payment_first')
       .eq('id', body.bookingId).maybeSingle();
-    if (bookingError || !booking || booking.renter_id !== user.id) return json({ error: 'Booking not found.' }, 404);
+    if (bookingError) throw new Error(bookingError.message);
+    if (!booking || booking.renter_id !== user.id) return json({ error: 'Booking not found.' }, 404);
     if (booking.deposit_collection_model !== 'authorization' || Number(booking.deposit) <= 0
       || !booking.deposit_hold_consent_at || !['requested','pending_payment','confirmed'].includes(booking.status)) {
       return json({ error: 'This booking is not ready for deposit card setup.' }, 409);

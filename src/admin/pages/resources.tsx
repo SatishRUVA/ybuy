@@ -5,11 +5,14 @@ import {
   removeReview, setListingSuspension, setUserRestriction,
   listCheckoutExceptions,
   getListingPublicationReview, approveListingPublication,
+  useAdminAccess,
   type ListingPublicationReview,
   type AdminListingRow, type AdminUserRow, type AdminReviewRow,
 } from '@/admin/api';
 import { fmtDate, fmtDay, money, usePagedQuery } from '@/main-site/components/operations/query-utils';
 import { PageHeader, PagedTable, ReasonDialog, SearchBox, StatusBadge, StatusFilter } from '@/main-site/components/operations/shared';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/main-site/components/shadcn/dialog';
+import { AuctionDecisionsSection } from '@/admin/pages/auction-decisions';
 
 const Muted = ({ children }: { children: React.ReactNode }) => <span className="text-xs text-muted block">{children}</span>;
 const Person = ({ name, email }: { name: string; email: string }) => (
@@ -18,7 +21,10 @@ const Person = ({ name, email }: { name: string; email: string }) => (
 const filterArg = (v: string) => (v === 'all' ? undefined : v);
 
 export function UsersSection() {
+  const { access } = useAdminAccess();
+  const canReviewBidding = access?.permissions.includes('config.manage') ?? false;
   const [search, setSearch] = useState('');
+  const [historyUser, setHistoryUser] = useState<AdminUserRow | null>(null);
   const [target, setTarget] = useState<AdminUserRow | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const query = usePagedQuery((limit, offset) => listUsers({ search, limit, offset }), [search]);
@@ -37,17 +43,33 @@ export function UsersSection() {
           { header: 'Listings', cell: (u) => <span className="tnum">{u.listing_count}</span> },
           { header: 'Status', cell: (u) => (
             <div className="flex flex-wrap gap-1">
-              {u.restricted_at ? <Badge tone="error">restricted</Badge> : <Badge tone="success">in good standing</Badge>}
+              {u.restricted_at ? <Badge tone="error">restricted</Badge> : <Badge tone="success">access active</Badge>}
               {u.is_admin && <Badge tone="accent">admin</Badge>}
+              {canReviewBidding && (u.missed_decision_count ?? 0) > 0 && <Badge tone="warning">{u.missed_decision_count} missed bidding decision{u.missed_decision_count === 1 ? '' : 's'}</Badge>}
             </div>
           ) },
           { header: '', className: 'text-right', cell: (u) => (
+            <div className="flex flex-wrap justify-end gap-2">
+            {canReviewBidding && <Button size="sm" variant="secondary" onClick={() => setHistoryUser(u)}>Bidding history</Button>}
             <Button size="sm" variant={u.restricted_at ? 'secondary' : 'danger'} disabled={u.is_admin} onClick={() => setTarget(u)}>
               {u.restricted_at ? 'Reinstate' : 'Restrict'}
             </Button>
+            </div>
           ) },
         ]}
       />
+      <Dialog open={historyUser !== null} onOpenChange={open => { if (!open) setHistoryUser(null); }}>
+        <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>Bidding history: {historyUser?.full_name}</DialogTitle>
+            <DialogDescription>{historyUser?.customer_id} · {historyUser?.restricted_at ? 'Account restricted' : 'Account access active'}. Missed decisions do not automatically restrict an account or change review stars.</DialogDescription>
+          </DialogHeader>
+          {historyUser && <div className="mt-5 min-w-0">
+            {historyUser.last_missed_decision_at && <p className="mb-3 text-sm text-sec">Last recorded missed decision: {fmtDate(historyUser.last_missed_decision_at)}</p>}
+            <AuctionDecisionsSection key={historyUser.id} ownerId={historyUser.id} />
+          </div>}
+        </DialogContent>
+      </Dialog>
       <ReasonDialog
         open={target !== null} onOpenChange={(o) => !o && setTarget(null)} danger={restricting}
         title={`${restricting ? 'Restrict' : 'Reinstate'} ${target?.full_name ?? 'user'}?`}

@@ -205,11 +205,9 @@ export async function createBookingRequest(params: {
   startDate: string;
   endDate: string;
   quantity?: number;
-  promotionCode?: string;
   deliveryMode?: 'pickup' | 'delivery';
   renterNote?: string;
 }): Promise<DbBookingRow> {
-  const code = params.promotionCode?.trim();
   const note = params.renterNote?.trim();
   const args = {
     p_listing_id: params.listingId,
@@ -219,9 +217,7 @@ export async function createBookingRequest(params: {
     p_delivery_mode: params.deliveryMode ?? 'pickup',
     p_renter_note: note ? note : null,
   };
-  return code
-    ? callBookingRpc('create_booking_request_with_owner_promo', { ...args, p_code: code })
-    : callBookingRpc('create_booking_request', args);
+  return callBookingRpc('create_booking_request', args);
 }
 
 export async function respondToBookingRequest(bookingId: string, approve: boolean): Promise<DbBookingRow> {
