@@ -7,6 +7,7 @@ import { Button, Empty, Modal } from './ui';
 import './notification-center.css';
 
 const icons = { bookings: CalendarDays, requests: Search, listings: Layers, bidding: Gavel, payments: CreditCard, messages: MessageSquare, safety: ShieldCheck, promotions: Gift };
+const inboxCategories = previewNotificationCategories.filter(item => item.key !== 'messages');
 const groups = ['Today', 'Yesterday', 'Earlier'] as const;
 export interface NotificationCenterRow extends Pick<Notice, 'id' | 'title' | 'body' | 'read' | 'createdAt' | 'category' | 'mandatory'> {
   destination: string;
@@ -44,14 +45,14 @@ export function PreviewNotificationCenter({ backend }: { backend?: Notifications
 
 function DemoNotificationCenter() {
   const store = usePreview();
-  return <NotificationCenter demo rows={store.notices.map(notice => ({
+  return <NotificationCenter demo rows={store.notices.filter(notice => noticeCategory(notice) !== 'messages').map(notice => ({
     ...notice, category: noticeCategory(notice), mandatory: mandatoryNotice(notice), destination: href(notice.to, notice.itemId),
   }))} loading={false} hasMore={false} loadingMore={false} busy={null} error={null}
     mutedCategories={store.mutedNotificationCategories} preferencesLoading={false} preferencesError={null} preferenceBusy={null}
     onPreferenceChange={(key, enabled) => store.setMutedNotificationCategories(current => enabled ? current.filter(item => item !== key) : [...new Set([...current, key])])}
     onRetryPreferences={() => {}} onRetry={() => {}} onLoadMore={() => {}}
     onMark={async ids => { store.setNotices(current => current.map(row => ids.includes(row.id) ? { ...row, read: true } : row)); return true; }}
-    onMarkAll={() => store.setNotices(current => current.map(row => ({ ...row, read: true })))}
+    onMarkAll={() => store.setNotices(current => current.map(row => noticeCategory(row) === 'messages' ? row : { ...row, read: true }))}
     onOpen={notice => { store.setNotices(current => current.map(row => row.id === notice.id ? { ...row, read: true } : row)); window.location.hash = notice.destination; }} />;
 }
 
@@ -116,10 +117,10 @@ function NotificationCenter({ rows, loading, hasMore, loadingMore, busy, error, 
     </article>;
   };
   return <main className="p1-work-page p1-notification-center">
-    <header className="p1-notification-heading"><span className="p1-notification-heading-icon"><Bell size={27} aria-hidden="true" /></span><div><h1>Notifications</h1><p>Your rentals, requests and messages — all in one place.</p></div></header>
+    <header className="p1-notification-heading"><span className="p1-notification-heading-icon"><Bell size={27} aria-hidden="true" /></span><div><h1>Notifications</h1><p>Your rentals, requests and important account updates.</p></div></header>
     <nav className="p1-notification-tabs" aria-label="Notification categories">
       <button type="button" aria-pressed={category === 'all'} onClick={() => changeCategory('all')}>All updates <span>{rows.length}</span></button>
-      {previewNotificationCategories.map(item => <button key={item.key} type="button" aria-pressed={category === item.key} onClick={() => changeCategory(item.key)}>
+      {inboxCategories.map(item => <button key={item.key} type="button" aria-pressed={category === item.key} onClick={() => changeCategory(item.key)}>
         {item.label}{mutedCategories.includes(item.key) && <BellOff size={12} aria-label="Optional alerts muted" />}<span>{rows.filter(row => row.category === item.key).length}</span>
       </button>)}
     </nav>
@@ -147,7 +148,7 @@ function NotificationCenter({ rows, loading, hasMore, loadingMore, busy, error, 
         const notices = visible.filter(row => noticeDay(row) === group);
         if (!notices.length) return null;
         return <section className="p1-notification-day" key={group} aria-label={`${group} notifications`}><h2>{group}<span>{notices.length}</span></h2>
-          {group === 'Earlier' ? <div className="p1-notification-archive">{previewNotificationCategories.map(item => {
+          {group === 'Earlier' ? <div className="p1-notification-archive">{inboxCategories.map(item => {
             const matches = notices.filter(row => row.category === item.key), Icon = icons[item.key];
             return matches.length > 0 && <details key={item.key}><summary><Icon size={19} aria-hidden="true" /><span><b>{item.label}</b><small>{item.description}</small></span><span>{matches.length}</span></summary>{matches.map(renderNotice)}</details>;
           })}</div> : <div className="p1-center-notice-list">{notices.map(renderNotice)}</div>}

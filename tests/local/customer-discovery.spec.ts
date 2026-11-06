@@ -9,7 +9,7 @@ const cliOptions = { encoding: 'utf8' as const, stdio: ['ignore', 'pipe', 'pipe'
 const hostedApiUrl = 'https://jzyjmsixfuwzfnntewqn.supabase.co';
 const localApiUrl = 'http://localhost:54321';
 const keys = hosted ? JSON.parse(execSync('pnpm exec supabase projects api-keys --project-ref jzyjmsixfuwzfnntewqn --output json', cliOptions)) as { name: string; api_key: string }[] : [];
-const localStatus = hosted ? null : JSON.parse(execSync('pnpm exec supabase status --output json', cliOptions));
+const localStatus = hosted ? null : JSON.parse(execSync('node dev\\supabase-local.mjs status --output json', cliOptions));
 if (localStatus && new URL(localStatus.API_URL).port !== '54321') throw new Error('These fixtures require the isolated local backend.');
 const status = hosted ? {
   API_URL: hostedApiUrl,

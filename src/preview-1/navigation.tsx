@@ -10,8 +10,8 @@ const groups = [
 ] as const;
 
 export interface NavigationProfile { name: string; avatar: string; signedIn: boolean }
-export function PreviewHeader({ route, profile, unread, signIn, extraNavigation, profileSelection = false, signOut, notificationCount = false }: {
-  route: PageName; profile: NavigationProfile; unread: number | null; signIn: () => void; extraNavigation?: ReactNode; profileSelection?: boolean; signOut?: () => Promise<void>; notificationCount?: boolean;
+export function PreviewHeader({ route, profile, unread, unreadMessages = null, signIn, extraNavigation, profileSelection = false, signOut, notificationCount = false }: {
+  route: PageName; profile: NavigationProfile; unread: number | null; unreadMessages?: number | null; signIn: () => void; extraNavigation?: ReactNode; profileSelection?: boolean; signOut?: () => Promise<void>; notificationCount?: boolean;
 }) {
   const [menu, setMenu] = useState(false);
   const [accountMenu, setAccountMenu] = useState(false);
@@ -52,7 +52,11 @@ export function PreviewHeader({ route, profile, unread, signIn, extraNavigation,
       <nav className="p1-main-nav" aria-label="Main navigation">{nav}</nav>
       <div className="p1-header-actions">
         <Action to="create" className="p1-list-link"><Plus size={16} aria-hidden="true" /> List an item</Action>
-        <a className={`p1-icon p1-header-bell ${notificationCount ? 'p1-header-bell-count' : ''}`} href={href('notifications')} aria-label={unread === null ? 'Notifications unavailable' : `${unread} unread notifications`}><Bell size={20} aria-hidden="true" />{unread !== null && unread > 0 && (notificationCount ? <span className="p1-notification-count" aria-hidden="true">{unread > 99 ? '99+' : unread}</span> : <i />)}</a>
+        <a className="p1-icon p1-header-message" href={href('messages')} aria-current={route === 'messages' ? 'page' : undefined}
+          aria-label={unreadMessages === null ? 'Messages, unread count unavailable' : `Messages, ${unreadMessages} unread`}>
+          <MessageSquare size={20} aria-hidden="true" />{unreadMessages !== null && unreadMessages > 0 && <span className="p1-notification-count" aria-hidden="true">{unreadMessages > 99 ? '99+' : unreadMessages}</span>}
+        </a>
+        <a className={`p1-icon p1-header-bell ${notificationCount ? 'p1-header-bell-count' : ''}`} href={href('notifications')} aria-current={route === 'notifications' ? 'page' : undefined} aria-label={unread === null ? 'Notifications unavailable' : `${unread} unread notifications`}><Bell size={20} aria-hidden="true" />{unread !== null && unread > 0 && (notificationCount ? <span className="p1-notification-count" aria-hidden="true">{unread > 99 ? '99+' : unread}</span> : <i />)}</a>
         {profile.signedIn ? <div className="p1-account-dropdown" ref={accountRef} onBlur={event => {
           if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) setAccountMenu(false);
         }}>
@@ -76,7 +80,10 @@ export function PreviewHeader({ route, profile, unread, signIn, extraNavigation,
           if (link && link.getAttribute('href') !== '#account-tools') setMenu(false);
         }
       }}>
-        {nav}{notificationCount && <a href={href('create')}>List an item</a>}<a href={href('renter')}>My rentals</a><a href={href('favorites')}>Saved items</a><a href={href('owner')}>Owner workspace</a><a href={href('messages')}>Messages</a><a href={href('profile')}>Profile & settings</a>{extraNavigation}
+        {nav}{notificationCount && <a href={href('create')}>List an item</a>}<a href={href('renter')}>My rentals</a><a href={href('favorites')}>Saved items</a><a href={href('owner')}>Owner workspace</a>
+        <a href={href('messages')} aria-current={route === 'messages' ? 'page' : undefined}>Messages{unreadMessages !== null && unreadMessages > 0 ? ` (${unreadMessages > 99 ? '99+' : unreadMessages} unread)` : ''}</a>
+        <a href={href('notifications')} aria-current={route === 'notifications' ? 'page' : undefined}>Notifications{unread !== null && unread > 0 ? ` (${unread > 99 ? '99+' : unread} unread)` : ''}</a>
+        <a href={href('profile')}>Profile & settings</a>{extraNavigation}
       </nav>
       {profile.signedIn && profileSelection && <Button variant="secondary" className="p1-full" onClick={() => { setMenu(false); signIn(); }}>Switch test profile</Button>}
     </Modal>

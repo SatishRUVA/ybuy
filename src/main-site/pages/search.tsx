@@ -15,7 +15,7 @@ import { ListingGridSkeleton, ListingCardWideSkeleton } from '@/main-site/compon
 import { Button, Alert, EmptyState } from '@/main-site/components/ui';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/main-site/components/shadcn/dialog';
 import * as Icons from 'lucide-react';
-import { Map as MapIcon, List, SlidersHorizontal, X, Star, Shield, Zap, CheckCircle2, Truck, MapPin, SearchX, Loader2, PackagePlus } from 'lucide-react';
+import { Map as MapIcon, List, SlidersHorizontal, X, Shield, Zap, CheckCircle2, Truck, MapPin, SearchX, Loader2, PackagePlus, LocateFixed, Plus, Minus } from 'lucide-react';
 import { SEARCH_RADII, searchStateParams, saveSearchState, type SearchState, type SearchRadius } from '@/lib/search-state';
 import { useUtcDay } from '@/lib/use-utc-day';
 
@@ -542,7 +542,7 @@ export function SearchPage({
                 </div>}
               </>
             ) : (
-              <div className="workspace-map-grid grid xl:grid-cols-[380px_minmax(0,1fr)] gap-3 animate-cross-fade">
+              <div className="workspace-map-grid grid lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)] gap-4 animate-cross-fade">
                 <div
                   ref={mapListingsRef}
                   onScroll={(event) => {
@@ -550,7 +550,7 @@ export function SearchPage({
                     if (scrollTop > lastMapScrollTopRef.current) setHasUserScrolled(true);
                     lastMapScrollTopRef.current = scrollTop;
                   }}
-                  className="h-[min(42rem,calc(100dvh_-_13rem))] min-h-80 overflow-y-auto overscroll-contain pr-1 space-y-2 no-scrollbar"
+                  className="h-[min(42rem,calc(100dvh_-_15rem))] min-h-96 overflow-y-auto overscroll-contain pr-1 space-y-3 no-scrollbar"
                 >
                   {filtered.map((listing) => (
                     <div
@@ -576,9 +576,10 @@ export function SearchPage({
                 </div>
                 <MapView
                   listings={filtered}
-                  onSelect={(id) => navigate({ name: 'listing', id })}
                   listPreviewId={listPreviewId}
                   onPreviewChange={handleMapPreviewChange}
+                  center={preciseLocation ? [location.latitude!, location.longitude!] : undefined}
+                  onSwitchToList={() => setView('list')}
                 />
               </div>
             )}
@@ -762,81 +763,90 @@ function FilterToggle({ label, icon: Icon, checked, onChange }: { label: string;
   );
 }
 
-function MapView({ listings, onSelect, listPreviewId, onPreviewChange }: {
-  listings: typeof import('@/data').listings;
-  onSelect: (id: string) => void;
+function MapView({ listings, listPreviewId, onPreviewChange, center, onSwitchToList }: {
+  listings: Listing[];
   listPreviewId: string | null;
   onPreviewChange?: (id: string | null) => void;
+  center?: [number, number];
+  onSwitchToList: () => void;
 }) {
   const mapApiKey = (import.meta.env.VITE_MAP_API_KEY as string | undefined)?.trim();
-  const useMapTiler = Boolean(mapApiKey);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
-  const [cardHovered, setCardHovered] = useState(false);
-  const [previewCorner, setPreviewCorner] = useState<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'>('bottom-left');
   const [failed, setFailed] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const markersRef = useRef(new Map<string, import('@/lib/leaflet').LeafletMarker>());
-  const listPreviewIdRef = useRef(listPreviewId);
-  listPreviewIdRef.current = listPreviewId;
+  const markerLabelsRef = useRef(new Map<string, string>());
   const hoverClearTimer = useRef<number | null>(null);
-  const onSelectRef = useRef(onSelect);
+  const onPreviewChangeRef = useRef(onPreviewChange);
   const pinnedIdRef = useRef<string | null>(null);
-  const cardHoveredRef = useRef(false);
-  const located = useMemo(() => listings.filter((l) => l.lat && l.lng), [listings]);
-  const previewListing = listings.find((l) => l.id === (listPreviewId ?? hoveredId ?? pinnedId));
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const activeIdRef = useRef(listPreviewId ?? pinnedId ?? hoveredId);
+  activeIdRef.current = listPreviewId ?? pinnedId ?? hoveredId;
+  const located = useMemo(() => listings.filter((listing) =>
+    Number.isFinite(listing.lat) && Number.isFinite(listing.lng)
+    && Math.abs(listing.lat) <= 90 && Math.abs(listing.lng) <= 180
+    && !(listing.lat === 0 && listing.lng === 0)), [listings]);
+  const locationGroups = useMemo(() => {
+    const groups = new Map<string, Listing[]>();
+    for (const listing of located) {
+      const key = `${listing.lat.toFixed(5)},${listing.lng.toFixed(5)}`;
+      const group = groups.get(key);
+      if (group) group.push(listing);
+      else groups.set(key, [listing]);
+    }
+    return Array.from(groups, ([key, items]) => ({ key, items, lat: items[0].lat, lng: items[0].lng }));
+  }, [located]);
+  const locationGroupsRef = useRef(locationGroups);
+  locationGroupsRef.current = locationGroups;
+  const centerRef = useRef(center);
+  centerRef.current = center;
+  const groupsKey = locationGroups.map(({ key, items }) => `${key}:${items.map((item) => `${item.id},${item.pricePerDay}`).join(',')}`).join('|');
+  const centerLat = center?.[0];
+  const centerLng = center?.[1];
 
   useEffect(() => {
-    onPreviewChange?.(hoveredId ?? pinnedId ?? null);
-  }, [hoveredId, pinnedId, onPreviewChange]);
+    onPreviewChangeRef.current = onPreviewChange;
+  }, [onPreviewChange]);
 
   useEffect(() => {
-    onSelectRef.current = onSelect;
-  }, [onSelect]);
+    onPreviewChangeRef.current?.(pinnedId ?? hoveredId ?? null);
+  }, [hoveredId, pinnedId]);
 
   useEffect(() => {
     pinnedIdRef.current = pinnedId;
   }, [pinnedId]);
 
   useEffect(() => {
-    cardHoveredRef.current = cardHovered;
-  }, [cardHovered]);
+    if (pinnedId && !listings.some((listing) => listing.id === pinnedId)) setPinnedId(null);
+    if (hoveredId && !listings.some((listing) => listing.id === hoveredId)) setHoveredId(null);
+  }, [listings, pinnedId, hoveredId]);
 
   useEffect(() => {
-    const activeId = listPreviewId ?? hoveredId ?? pinnedId;
-    for (const [id, marker] of markersRef.current) {
-      marker.getElement()?.querySelector('.ybuy-price-pin')?.classList.toggle('is-selected', id === activeId);
+    const activeId = listPreviewId ?? pinnedId ?? hoveredId;
+    const activeGroup = locationGroups.find((group) => group.items.some((listing) => listing.id === activeId));
+    for (const [key, marker] of markersRef.current) {
+      marker.getElement()?.querySelector('.ybuy-price-pin')?.classList.toggle('is-selected', key === activeGroup?.key);
     }
-    const markerBounds = activeId && markersRef.current.get(activeId)?.getElement()?.getBoundingClientRect();
-    const mapBounds = containerRef.current?.getBoundingClientRect();
-    if (markerBounds && mapBounds) {
-      const vertical = markerBounds.top - mapBounds.top > mapBounds.height / 2 ? 'top' : 'bottom';
-      const horizontal = markerBounds.left - mapBounds.left > mapBounds.width / 2 ? 'left' : 'right';
-      setPreviewCorner(`${vertical}-${horizontal}`);
-    }
-  }, [listPreviewId, hoveredId, pinnedId]);
+  }, [locationGroups, listPreviewId, hoveredId, pinnedId]);
 
   useEffect(() => {
     let cancelled = false;
     const el = containerRef.current;
-    const markers = markersRef.current;
     if (!el) return;
 
     loadLeaflet()
       .then((L) => {
         if (cancelled || !containerRef.current) return;
 
-        // Reset any prior instance (e.g. when the filtered set changes) before re-rendering.
-        if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
-        markers.clear();
-
-        const map = L.map(containerRef.current, { scrollWheelZoom: false, zoomControl: true });
+        const map = L.map(containerRef.current, { scrollWheelZoom: false, zoomControl: false, keyboard: true });
         mapRef.current = map;
-        const tileUrl = useMapTiler
+        const tileUrl = mapApiKey
           ? `https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${encodeURIComponent(mapApiKey ?? '')}`
           : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-        const attribution = useMapTiler
+        const attribution = mapApiKey
           ? '&copy; OpenStreetMap contributors &copy; MapTiler'
           : '&copy; OpenStreetMap contributors &copy; CARTO';
 
@@ -845,55 +855,16 @@ function MapView({ listings, onSelect, listPreviewId, onPreviewChange }: {
           maxZoom: 20,
         }).addTo(map);
 
-        for (const listing of located) {
-          const icon = L.divIcon({
-            className: 'ybuy-pin-marker',
-            html: `<span class="ybuy-price-pin">$${listing.pricePerDay}</span>`,
-            iconSize: [48, 24],
-            iconAnchor: [24, 12],
-          });
-          const marker = L.marker([listing.lat, listing.lng], { icon }).addTo(map);
-          markers.set(listing.id, marker);
-          marker.getElement()?.querySelector('.ybuy-price-pin')?.classList.toggle('is-selected', listing.id === listPreviewIdRef.current);
-          marker
-            .on('mouseover', () => {
-              if (hoverClearTimer.current) {
-                window.clearTimeout(hoverClearTimer.current);
-                hoverClearTimer.current = null;
-              }
-              setHoveredId(listing.id);
-            })
-            .on('mouseout', () => {
-              hoverClearTimer.current = window.setTimeout(() => {
-                if (!cardHoveredRef.current && pinnedIdRef.current !== listing.id) {
-                  setHoveredId((prev) => (prev === listing.id ? null : prev));
-                }
-              }, 180);
-            })
-            .on('click', () => {
-              setPinnedId(listing.id);
-              setHoveredId(listing.id);
-            });
-        }
-
-        if (located.length > 0) {
-          const bounds = L.latLngBounds(located.map((l) => [l.lat, l.lng] as [number, number]));
-          if (located.length === 1) map.setView([located[0].lat, located[0].lng], 13);
-          else map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-        } else {
-          map.setView([0, 0], 2);
-        }
-        setTimeout(() => {
-          mapRef.current?.invalidateSize();
-          const activeId = listPreviewIdRef.current;
-          const markerBounds = activeId && markers.get(activeId)?.getElement()?.getBoundingClientRect();
-          const mapBounds = containerRef.current?.getBoundingClientRect();
-          if (markerBounds && mapBounds) {
-            const vertical = markerBounds.top - mapBounds.top > mapBounds.height / 2 ? 'top' : 'bottom';
-            const horizontal = markerBounds.left - mapBounds.left > mapBounds.width / 2 ? 'left' : 'right';
-            setPreviewCorner(`${vertical}-${horizontal}`);
-          }
-        }, 0);
+        map.on('click', () => {
+          setPinnedId(null);
+          setHoveredId(null);
+        });
+        const initialCenter = centerRef.current ?? (locationGroupsRef.current[0]
+          ? [locationGroupsRef.current[0].lat, locationGroupsRef.current[0].lng] as [number, number] : undefined);
+        map.setView(initialCenter ?? [0, 0], initialCenter ? 12 : 2);
+        resizeObserverRef.current = new ResizeObserver(() => map.invalidateSize());
+        resizeObserverRef.current.observe(el);
+        setMapReady(true);
       })
       .catch(() => { if (!cancelled) setFailed(true); });
 
@@ -903,67 +874,141 @@ function MapView({ listings, onSelect, listPreviewId, onPreviewChange }: {
         window.clearTimeout(hoverClearTimer.current);
         hoverClearTimer.current = null;
       }
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
-      markers.clear();
     };
-  }, [located]);
+  }, [mapApiKey]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const L = (window as unknown as { L?: import('@/lib/leaflet').Leaflet }).L;
+    if (!L) return;
+    const markers = markersRef.current;
+    const currentGroups = locationGroupsRef.current;
+    const visibleKeys = new Set(currentGroups.map((group) => group.key));
+    for (const [id, marker] of markers) {
+      if (!visibleKeys.has(id)) {
+        marker.remove();
+        markers.delete(id);
+        markerLabelsRef.current.delete(id);
+      }
+    }
+
+    for (const group of currentGroups) {
+      const label = group.items.length === 1 ? `$${group.items[0].pricePerDay}` : `${group.items.length} items`;
+      const iconWidth = group.items.length === 1 ? 58 : 78;
+      const icon = L.divIcon({
+        className: 'ybuy-pin-marker',
+        html: `<span class="ybuy-price-pin${group.items.length > 1 ? ' is-cluster' : ''}">${label}</span>`,
+        iconSize: [iconWidth, 34],
+        iconAnchor: [iconWidth / 2, 17],
+      });
+      const marker = markers.get(group.key);
+      if (marker) {
+        marker.setLatLng([group.lat, group.lng]);
+        if (markerLabelsRef.current.get(group.key) !== label) {
+          marker.setIcon(icon);
+          marker.getElement()?.querySelector('.ybuy-price-pin')?.classList.toggle('is-selected',
+            group.items.some((listing) => listing.id === activeIdRef.current));
+        }
+      } else {
+        const firstItem = group.items[0];
+        const title = group.items.length === 1
+          ? `${firstItem.title}, $${firstItem.pricePerDay} per day`
+          : `${group.items.length} rentals at this approximate pickup area`;
+        const added = L.marker([group.lat, group.lng], {
+          icon, title, alt: title, keyboard: true,
+        }).addTo(map);
+        markers.set(group.key, added);
+        added.getElement()?.querySelector('.ybuy-price-pin')?.classList.toggle('is-selected',
+          group.items.some((listing) => listing.id === activeIdRef.current));
+        added
+          .on('mouseover', () => {
+            if (hoverClearTimer.current) {
+              window.clearTimeout(hoverClearTimer.current);
+              hoverClearTimer.current = null;
+            }
+            setHoveredId(firstItem.id);
+          })
+          .on('mouseout', () => {
+            hoverClearTimer.current = window.setTimeout(() => {
+              if (pinnedIdRef.current !== firstItem.id) {
+                setHoveredId((prev) => (prev === firstItem.id ? null : prev));
+              }
+            }, 180);
+          })
+          .on('click', () => {
+            setPinnedId(firstItem.id);
+            setHoveredId(firstItem.id);
+          });
+      }
+      markerLabelsRef.current.set(group.key, label);
+    }
+
+    if (currentGroups.length > 1) {
+      const bounds = L.latLngBounds(currentGroups.map((group) => [group.lat, group.lng] as [number, number]));
+      map.fitBounds(bounds, { padding: [56, 56], maxZoom: 14 });
+    } else if (currentGroups.length === 1) {
+      map.setView([currentGroups[0].lat, currentGroups[0].lng], 13);
+    } else if (centerLat !== undefined && centerLng !== undefined) {
+      map.setView([centerLat, centerLng], 12);
+    }
+    map.invalidateSize();
+  }, [mapReady, groupsKey, centerLat, centerLng]);
+
+  function fitResults() {
+    const map = mapRef.current;
+    if (!map) return;
+    if (locationGroups.length > 1) {
+      const L = (window as unknown as { L?: import('@/lib/leaflet').Leaflet }).L;
+      if (L) map.fitBounds(L.latLngBounds(locationGroups.map((group) => [group.lat, group.lng] as [number, number])), { padding: [56, 56], maxZoom: 14 });
+    } else if (locationGroups.length === 1) {
+      map.setView([locationGroups[0].lat, locationGroups[0].lng], 13);
+    } else if (center) {
+      map.setView(center, 12);
+    }
+  }
 
   if (failed) {
     return (
       <div className="h-[min(42rem,calc(100dvh_-_13rem))] min-h-80 rounded-card-lg border border-app bg-subtle flex flex-col items-center justify-center gap-2 text-center px-6">
         <MapPin size={24} className="text-accent" />
-        <p className="text-sm text-sec">The map couldn't load. Check your connection, or switch back to list view.</p>
+        <p className="text-sm text-sec">The map couldn’t load. Check your connection, or switch back to list view.</p>
+        <Button size="sm" variant="secondary" onClick={onSwitchToList}>Switch to list</Button>
       </div>
     );
   }
 
   return (
-    <div className="relative h-[min(42rem,calc(100dvh_-_13rem))] min-h-80 rounded-card-lg overflow-hidden border border-app bg-subtle">
-      <div ref={containerRef} className="absolute inset-0 z-0" />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-black/10 z-[350]" />
-
-      {/* Hover/click preview */}
-      {previewListing && (
-        <div
-          className={`absolute ${previewCorner.startsWith('top') ? 'top-[4.5rem]' : 'bottom-3'} ${previewCorner.endsWith('left') ? 'left-3' : 'right-3'} w-[min(19rem,calc(100%-1.5rem))] bg-card rounded-card-lg border border-app shadow-card p-2.5 z-[500]`}
-          onMouseEnter={() => setCardHovered(true)}
-          onMouseLeave={() => {
-            setCardHovered(false);
-            if (!pinnedId) setHoveredId(null);
-          }}
-        >
-          <div className="flex gap-3">
-            <img src={previewListing.images[0]} alt="" className="w-16 h-16 rounded-card object-cover shrink-0" />
-            <div className="flex-1 min-w-0">
-              <h4 className="font-semibold text-sm text-main line-clamp-1">{previewListing.title}</h4>
-              <div className="flex items-center gap-1 text-xs text-sec mt-1">
-                {previewListing.reviewCount > 0 && <><Star size={12} className="fill-[var(--star)] text-[var(--star)]" />{previewListing.rating.toFixed(1)}</>}
-                {Number.isFinite(previewListing.distance) && previewListing.distance > 0 && <span>· {previewListing.distance} mi</span>}
-              </div>
-              <div className="flex items-baseline gap-0.5 mt-1">
-                <span className="font-bold text-main">${previewListing.pricePerDay}</span>
-                <span className="text-xs text-sec">/day</span>
-              </div>
-            </div>
-            <div className="self-center flex flex-col items-end gap-1">
-              <Button size="sm" onClick={() => onSelectRef.current(previewListing.id)}>View</Button>
-              {pinnedId && (
-                <button
-                  onClick={() => { setPinnedId(null); setHoveredId(null); }}
-                  className="text-[11px] text-sec hover:text-main"
-                >
-                  Close
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+    <div className="relative h-[min(42rem,calc(100dvh_-_15rem))] min-h-96 rounded-card-lg overflow-hidden border border-app bg-subtle" role="region" aria-label="Rental map">
+      <div ref={containerRef} className="absolute inset-0 z-0" aria-label="Map of approximate rental pickup locations" />
 
       <div className="absolute top-4 left-4 flex items-center gap-2 px-3 h-9 rounded-full bg-card border border-app shadow-card text-xs font-medium text-sec z-[500]">
         <MapPin size={14} className="text-accent" />
-        Approximate locations until booking is confirmed
+        Approximate pickup areas
       </div>
+      <div className="absolute top-4 right-4 z-[500] grid gap-2" role="group" aria-label="Map controls">
+        <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in on map" title="Zoom in"
+          className="grid h-10 w-10 place-items-center rounded-card border border-app bg-card text-main hover:bg-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+          <Plus size={18} aria-hidden="true" />
+        </button>
+        <button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out on map" title="Zoom out"
+          className="grid h-10 w-10 place-items-center rounded-card border border-app bg-card text-main hover:bg-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+          <Minus size={18} aria-hidden="true" />
+        </button>
+        <button type="button" onClick={fitResults} aria-label="Show all rental results on map" title="Show all results"
+          className="grid h-10 w-10 place-items-center rounded-card border border-app bg-card text-main hover:bg-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+          <LocateFixed size={18} aria-hidden="true" />
+        </button>
+      </div>
+      {locationGroups.length === 0 && (
+        <div className="absolute inset-x-4 bottom-4 z-[500] flex flex-wrap items-center justify-between gap-3 rounded-card-lg border border-app bg-card p-3">
+          <span className="text-sm text-sec">Pickup locations aren’t available for these results.</span>
+          <Button size="sm" variant="secondary" onClick={onSwitchToList}>View list</Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { ListingAuction } from '../src/lib/listing-auctions';
+import { mockSupabaseModule } from './mock-supabase';
 
 test.skip(process.env.VITE_SITE_VARIANT !== 'main', 'Run with playwright.main-site.config.ts and VITE_SITE_VARIANT=main.');
 test.setTimeout(300_000);
@@ -80,6 +81,7 @@ async function prepareJourney(page: Page, owner = false) {
     } });
     if (path.endsWith('/update_request_match_preference')) return route.fulfill({ json: null });
     if (path.endsWith('/listings')) return route.fulfill({ json: item });
+    if (path.endsWith('/get_listing_time_zone')) return route.fulfill({ json: 'America/Chicago' });
     if (path.endsWith('/listing_pickup_locations')) return route.fulfill({ json: {
       address: '123 Test Street, Dallas, TX 75201', street_address: '123 Test Street',
       city: 'Dallas', state: 'TX', postal_code: '75201', country: 'US',
@@ -212,6 +214,9 @@ test('category suggestion comes from published inventory and allows a manual ove
 for (const status of ['published', 'pending_approval'] as const) {
   test(`request-linked publication waits for authoritative ${status} status before notification`, async ({ page }) => {
     await prepareJourney(page, true);
+    await page.route('**/rest/v1/feature_flags*', route => route.fulfill({ json: [
+      { key: 'item_requests', enabled: true }, { key: 'bidding', enabled: false },
+    ] }));
     await page.route('**/rest/v1/listings?**', route => route.fulfill({ json: {
       ...listing, owner_id: userId, category_id: categoryId, status: 'draft', revision: 1,
       available_quantity: 2, item_condition: 'good', estimated_value: 200,
@@ -274,6 +279,7 @@ test('listing calendar strikes dates without enough inventory for the requested 
     route.fulfill({ json: { blocked: [], booked: [unavailableDate] } }));
   await page.goto(`/listing/${listingId}?request=${requestId}`);
 
+  await expect(page.getByRole('heading', { name: listing.title, exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: 'Request to book', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: /Choose a date range/ }).click();
   await expect(page.locator(`[data-date="${unavailableDate}"]`)).toBeDisabled();
@@ -292,7 +298,7 @@ test('checkout rechecks unavailable dates and will not submit a stale selection'
   });
   await page.goto(`/checkout/${listingId}?start=${renterRequest.preferred_start_date}&end=${renterRequest.preferred_end_date}&qty=2`);
 
-  await expect(page.getByRole('status').filter({ hasText: 'Dates unavailable' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Dates unavailable' })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: 'Send booking request', exact: true })).toBeDisabled();
   expect(bookingCalls).toBe(0);
 });
@@ -399,6 +405,9 @@ for (const width of [390, 1440]) {
 }
 
 async function prepare(page: Page, authenticated = false) {
+  if (!process.env.TEST_COMPILED_ENTRY) {
+    await page.route('**/src/lib/supabase.ts*', mockSupabaseModule);
+  }
   if (process.env.TEST_PROTECTION_COOKIE_JAR) {
     const url = process.env.TEST_FRONTEND_URL;
     if (!url) throw new Error('Protected bundle testing requires TEST_FRONTEND_URL.');
@@ -451,6 +460,7 @@ async function prepare(page: Page, authenticated = false) {
       max_delivery_fee: 100, max_estimated_value: 5000, high_value_threshold: 1000,
       offer_below_pct: null, offer_above_pct: null, deposit_rules: [],
     } });
+    if (url.pathname.endsWith('/get_listing_time_zone')) return route.fulfill({ json: 'America/Chicago' });
     if (url.pathname.endsWith('/get_listing_auction_feed')) {
       return route.fulfill({ json: { items: [], categories: [], total: 0 } });
     }
@@ -641,18 +651,36 @@ test('main-site lazy routes show an announced skeleton instead of a blank page',
   await expect(page.getByText('Loading page...', { exact: true })).toBeHidden();
 });
 
-for (const width of [390, 1280, 1440]) {
-  test(`workspace navigation organizes customer page families at ${width}px`, async ({ page }, testInfo) => {
+for (const width of [390, 824, 1440]) {
+  test(`signed-in home keeps the marketplace layout and customer navigation at ${width}px`, async ({ page }, testInfo) => {
     await prepare(page, true);
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Welcome back, Main', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'What do you need to rent?', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Find your next rental', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'What do you need to rent?', exact: true })).toBeVisible();
+    await expect(page.getByRole('search')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Browse by category', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Featured rentals', exact: true })).toBeVisible();
     const sidebar = page.getByRole('complementary', { name: 'Your workspace', exact: true });
     const drawer = page.getByRole('dialog', { name: 'Navigation', exact: true });
-    if (width >= 1280) await expect(sidebar).toBeVisible();
-    else await expect(sidebar).toBeHidden();
+    await expect(sidebar).toHaveCount(0);
+    const header = page.getByRole('banner');
+    const mainNav = header.getByRole('navigation', { name: 'Main', exact: true });
+    if (width >= 768) {
+      await expect(mainNav).toBeVisible();
+      for (const label of ['Home', 'Browse', 'Requests', 'Bidding']) {
+        await expect(mainNav.getByRole('button', { name: label, exact: true })).toBeVisible();
+      }
+      if (width >= 1280) {
+        await expect(mainNav.getByRole('button', { name: 'Bookings', exact: true })).toBeVisible();
+        await expect(mainNav.getByRole('button', { name: 'Messages', exact: true })).toBeVisible();
+      } else {
+        await expect(mainNav.getByRole('button', { name: 'Bookings', exact: true })).toBeHidden();
+        await expect(mainNav.getByRole('button', { name: 'Messages', exact: true })).toBeHidden();
+        await expect(header.getByRole('button', { name: 'Open menu', exact: true })).toBeVisible();
+      }
+    } else {
+      await expect(mainNav).toBeHidden();
+    }
 
     for (const [label, url, heading] of [
       ['My rentals', '/dashboard?tab=renting', 'My rentals'],
@@ -691,6 +719,10 @@ for (const width of [390, 1280, 1440]) {
         await expect(page.getByRole('heading', { name: 'My listings', exact: true })).toHaveCount(0);
       }
     }
+    await page.goto('/search', { waitUntil: 'domcontentloaded' });
+    await expect(sidebar).toHaveCount(0);
+    if (width >= 768) await expect(mainNav).toBeVisible();
+    else await expect(mainNav).toBeHidden();
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
     await page.screenshot({ path: testInfo.outputPath(`workspace-profile-${width}.png`), animations: 'disabled' });
   });
@@ -788,12 +820,14 @@ test('workspace keeps creation and checkout flows free of competing navigation',
 });
 
 for (const owner of [false, true]) {
-  test(`pre-check-in ${owner ? 'owner approves' : 'renter proposes'} a separate handoff slot`, async ({ page }, testInfo) => {
+  test(`check-in ${owner ? 'owner approves' : 'renter proposes'} a separate handoff slot`, async ({ page }, testInfo) => {
     await prepare(page, true);
     const bookingId = '80000000-0000-4000-8000-000000000010';
-    const startsAt = `${futureDate(2)}T12:00:00.000Z`;
-    let slot: { starts_at: string; ends_at: string; time_zone: string; status: string } | null = owner
-      ? { starts_at: startsAt, ends_at: `${futureDate(2)}T12:30:00.000Z`, time_zone: 'UTC', status: 'proposed' } : null;
+    const startsAt = `${futureDate(2)}T17:00:00.000Z`;
+    const proposedSlot = { kind: 'pickup', selected_date: futureDate(2), slot_window: 'afternoon',
+      starts_at: startsAt, ends_at: `${futureDate(2)}T22:00:00.000Z`, time_zone: 'America/New_York',
+      status: 'proposed', note: 'Please have all listed accessories ready.', updated_at: '2026-11-02T10:00:00.000Z' };
+    let slot: typeof proposedSlot | null = owner ? { ...proposedSlot } : null;
     let mutation: Record<string, unknown> | null = null;
     let canAuthorize = false;
     let authorizationStatus = 'setup_required';
@@ -815,36 +849,40 @@ for (const owner of [false, true]) {
     await page.route('**/rest/v1/rpc/get_booking_precheckin', route => route.fulfill({ json: {
       payment_first: true, slot, server_now: new Date().toISOString(), can_authorize: canAuthorize,
       handoff_ready: false, deposit_ready: false, consented: false, delivery_mode: 'pickup',
+      pickup_slot: slot, return_slot: null, pickup_windows: ['morning', 'afternoon'],
+      return_windows: ['evening'], return_rules: ['Return all accessories'], return_note: '',
+      return_handoff_ready: false, time_zone: 'America/New_York',
     } }));
     await page.route('**/rest/v1/booking_deposit_authorizations?*', route => route.fulfill({ json: [{
       id: '80000000-0000-4000-8000-000000000011', booking_id: bookingId, status: authorizationStatus,
       authorized_amount: 24, captured_amount: 0, attempt: 1,
     }] }));
-    await page.route('**/rest/v1/rpc/propose_booking_pickup_slot', route => {
+    await page.route('**/rest/v1/rpc/propose_booking_handoff_slot_at_hour', route => {
       mutation = route.request().postDataJSON();
-      slot = { starts_at: String(mutation!.p_starts_at), ends_at: startsAt, time_zone: String(mutation!.p_time_zone), status: 'proposed' };
+      slot = { ...proposedSlot, note: String(mutation!.p_note) };
       return route.fulfill({ json: null });
     });
-    await page.route('**/rest/v1/rpc/respond_to_booking_pickup_slot', route => {
+    await page.route('**/rest/v1/rpc/respond_to_booking_handoff_slot', route => {
       mutation = route.request().postDataJSON();
       slot = { ...slot!, status: 'approved' };
       return route.fulfill({ json: null });
     });
     await page.goto(`/check-in/${bookingId}`, { waitUntil: 'networkidle' });
-    await expect(page.getByRole('heading', { name: 'Pre-check-in for pickup', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Check-in for pickup', exact: true })).toBeVisible();
+    await expect(page.getByText('All windows use the pickup location timezone: America/New_York.', { exact: true })).toBeVisible();
+    await expect(page.locator('input[type="date"], input[type="datetime-local"]')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Set up payment method', exact: true })).toBeHidden();
     if (owner) {
       await page.getByRole('button', { name: 'Approve slot', exact: true }).click();
-      await expect(page.getByText('Deposit authorization opens 24 hours before the agreed slot.', { exact: false })).toBeVisible();
-      expect(mutation).toMatchObject({ p_booking_id: bookingId, p_starts_at: startsAt, p_approve: true });
+      await expect(page.getByText('Deposit authorization opens 24 hours before the approved window.', { exact: false })).toBeVisible();
+      expect(mutation).toMatchObject({ p_booking_id: bookingId, p_kind: 'pickup', p_approve: true,
+        p_expected_updated_at: proposedSlot.updated_at });
     } else {
-      await page.getByLabel('Proposed pickup time', { exact: true }).fill(`${futureDate(2)}T12:00`);
-      await page.getByRole('button', { name: 'Propose slot', exact: true }).click();
-      await expect(page.getByText('Waiting for the owner to approve this time.', { exact: true })).toBeVisible();
-      const timeZone = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
-      const expectedTime = await page.evaluate(value => new Date(value).toISOString(), `${futureDate(2)}T12:00`);
-      expect(mutation).toMatchObject({ p_booking_id: bookingId, p_time_zone: timeZone });
-      expect(Date.parse(String(mutation!.p_starts_at))).toBe(Date.parse(expectedTime));
+      await page.getByRole('group', { name: 'Afternoon', exact: true }).getByRole('button', { name: '1 pm', exact: true }).click();
+      await page.getByRole('button', { name: proposedSlot.note, exact: true }).click();
+      await page.getByRole('button', { name: 'Send proposal', exact: true }).click();
+      await expect(page.getByText('Waiting for the owner to approve this window.', { exact: true })).toBeVisible();
+      expect(mutation).toEqual({ p_booking_id: bookingId, p_kind: 'pickup', p_slot_window: 'afternoon', p_hour: 13, p_note: proposedSlot.note });
       slot = { ...slot!, status: 'approved' };
       canAuthorize = true;
       authorizationStatus = 'scheduled';
@@ -917,11 +955,21 @@ test('main-site date range stays clear on desktop and mobile', async ({ page }) 
   await page.clock.install({ time: new Date('2026-11-10T18:00:00.000Z') });
   await prepare(page);
 
-  for (const width of [1440, 390]) {
+  for (const width of [1440, 980, 768, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    const trigger = page.locator('button.p1-date-trigger:visible, button.calendar-trigger:visible').first();
+    const trigger = page.locator('button.search-date-trigger:visible, button.calendar-trigger:visible').first();
     await expect(trigger).toBeVisible();
+    if (width >= 640) {
+      await expect(trigger).toHaveCSS('display', 'flex');
+      await expect(trigger).toHaveCSS('align-items', 'center');
+      const icons = await trigger.locator('svg').evaluateAll(elements => elements.map(element => {
+        const { y, height } = element.getBoundingClientRect();
+        return y + height / 2;
+      }));
+      expect(Math.abs(icons[0] - icons[1])).toBeLessThan(1);
+      expect(await trigger.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    }
     await trigger.click();
 
     const calendar = page.getByRole('dialog', { name: 'Choose rental dates' });
@@ -947,6 +995,123 @@ test('main-site date range stays clear on desktop and mobile', async ({ page }) 
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
+});
+
+test('signed-in home shows recent public requests within the selected search radius', async ({ page }) => {
+  await prepare(page, true);
+  await page.addInitScript(() => localStorage.setItem('ybuy-marketplace-location', JSON.stringify({
+    city: 'Irving', state: 'TX', country: 'United States', latitude: 32.814, longitude: -96.9489, source: 'USER_SELECTED',
+  })));
+  const requestFilters: Record<string, unknown>[] = [];
+  await page.route('**/rpc/get_nearby_item_requests', route => {
+    requestFilters.push(route.request().postDataJSON());
+    return route.fulfill({ json: { rows: [{
+      id: '90000000-0000-4000-8000-000000000001', renter_id: '10000000-0000-4000-8000-000000000009',
+      category_id: categoryId, title: 'Rent a camera for the weekend',
+      description: 'Looking for a camera for an event this weekend.',
+      intended_use: null, preferred_start_date: futureDate(8), preferred_end_date: futureDate(10),
+      location_label: 'Irving, TX', location_lat: 32.814, location_lng: -96.9489,
+      radius_miles: 5, max_daily_budget: 40, requested_quantity: 1, specifications: null,
+      additional_notes: null, visibility: 'public', status: 'open', reference_image_paths: [],
+      expires_at: new Date(Date.now() + 10 * 86_400_000).toISOString(),
+      created_at: new Date().toISOString(), categories: { name: 'Cameras' }, distance_miles: 1.2,
+    }], total: 1 } });
+  });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const preview = page.getByRole('button', { name: 'Browse item request: Rent a camera for the weekend', exact: true });
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('1.2 mi away');
+  await expect(preview).toContainText('$40/day max');
+  expect(requestFilters[0]).toMatchObject({
+    p_latitude: 32.814, p_longitude: -96.9489, p_radius_miles: 5, p_sort: 'newest',
+  });
+
+  await page.locator('.search-field-radius button:visible').click();
+  await page.getByRole('option', { name: 'Within 10 miles', exact: true }).click();
+  await expect.poll(() => requestFilters.length).toBeGreaterThanOrEqual(2);
+  expect(requestFilters.at(-1)).toMatchObject({ p_radius_miles: 10 });
+});
+
+test('map groups co-located rentals and keeps the selected result in sync with the list', async ({ page }) => {
+  await prepare(page);
+  const secondListingId = '30000000-0000-4000-8000-000000000002';
+  const rows = [14, 12].map((price, index) => ({
+    ...listing,
+    id: index === 0 ? listingId : secondListingId,
+    category_id: categoryId,
+    price_per_day: price,
+    location_label: 'Irving, TX',
+    location_lat: 32.814,
+    location_lng: -96.9489,
+  }));
+  await page.addInitScript(() => {
+    const leaflet = {
+      map(element: HTMLElement) {
+        return {
+          element,
+          setView() { return this; },
+          fitBounds() { return this; },
+          zoomIn() { return this; },
+          zoomOut() { return this; },
+          invalidateSize() {},
+          remove() { element.replaceChildren(); },
+          on(event: string, handler: () => void) {
+            element.addEventListener(event, handler);
+            return this;
+          },
+        };
+      },
+      tileLayer() { return { addTo() {} }; },
+      divIcon(options: { html: string }) { return options; },
+      latLngBounds() { return {}; },
+      marker(_coordinates: [number, number], options: { icon: { html: string }; title?: string }) {
+        let element: HTMLButtonElement;
+        const marker = {
+          addTo(map: { element: HTMLElement }) {
+            element = document.createElement('button');
+            element.type = 'button';
+            element.className = 'leaflet-marker-icon';
+            element.title = options.title ?? '';
+            element.style.cssText = 'position:absolute;left:50%;top:50%';
+            element.innerHTML = options.icon.html;
+            map.element.append(element);
+            return this;
+          },
+          remove() { element.remove(); return this; },
+          setLatLng() { return this; },
+          setIcon(icon: { html: string }) { element.innerHTML = icon.html; return this; },
+          getElement() { return element; },
+          on(event: string, handler: () => void) {
+            element.addEventListener(event, (e) => {
+              if (event === 'click') e.stopPropagation();
+              handler();
+            });
+            return this;
+          },
+        };
+        return marker;
+      },
+    };
+    Object.assign(window, { L: leaflet });
+    localStorage.setItem('ybuy-marketplace-location', JSON.stringify({
+      city: 'Irving', state: 'TX', country: 'United States',
+      latitude: 32.814, longitude: -96.9489, source: 'USER_SELECTED',
+    }));
+  });
+  await page.route('**/rpc/search_available_listings', route => route.fulfill({
+    json: { rows, total: rows.length },
+  }));
+
+  await page.goto('/search?loc=Irving%2C%20Texas&lat=32.814&lng=-96.9489', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('[data-listing-id]')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Map view', exact: true }).click();
+
+  await expect(page.getByRole('button', { name: '2 items', exact: true })).toBeVisible();
+  await expect(page.locator('.leaflet-marker-icon')).toHaveCount(1);
+  await page.getByRole('button', { name: '2 items', exact: true }).click();
+  await expect(page.locator(`[data-listing-id="${listingId}"]`)).toHaveClass(/ring-accent/);
+  await expect(page.locator(`[data-listing-id="${secondListingId}"]`)).not.toHaveClass(/ring-accent/);
 });
 
 test('main-site build keeps the original homepage and routes to real bidding', async ({ page }) => {

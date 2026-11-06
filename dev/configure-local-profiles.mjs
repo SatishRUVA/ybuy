@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
-const result = spawnSync(process.execPath, ['node_modules\\supabase\\dist\\supabase.js', 'status', '--output', 'json'], { encoding: 'utf8' });
-assert.equal(result.status, 0, 'Start Docker Desktop and run `pnpm exec supabase start` before `pnpm dev:local`.');
+const result = spawnSync(process.execPath, ['dev\\supabase-local.mjs', 'status', '--output', 'json'], { encoding: 'utf8' });
+assert.equal(result.status, 0, `Start Podman Desktop and run \`pnpm supabase:local start\` before \`pnpm dev:local\`.\n${result.stderr}`);
 const status = JSON.parse(result.stdout);
 const url = new URL(status.API_URL);
 assert.ok(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) && url.port === '54321', 'Only isolated local Supabase is allowed.');

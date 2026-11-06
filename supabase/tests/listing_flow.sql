@@ -1,4 +1,5 @@
 begin;
+set local timezone='America/Chicago';
 create extension if not exists pgtap with schema extensions;
 select no_plan();
 
@@ -171,7 +172,7 @@ select throws_ok($$select public.owner_reorder_listing_images('a4000000-0000-400
  '22023','Photo order must include each saved photo exactly once','Partial or forged reorder rejected');
 select lives_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{"description":""}',
- '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":""}',false)$$,
+ '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":"","timeZone":"America/Chicago"}',false)$$,
  'Incomplete description can be saved privately as a draft');
 select throws_ok(format(
  $$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
@@ -186,7 +187,7 @@ select is((select status from public.listings where id='a4000000-0000-4000-8000-
  'Invalid submissions preserve draft status');
 select lives_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{"description":"1234567890"}',
- '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":""}',true)$$,
+ '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":"","timeZone":"America/Chicago"}',true)$$,
  'Owner terms, pickup and publication request commit together');
 select is((select status from public.listings where id='a4000000-0000-4000-8000-000000000001'),'pending_approval','Unconfigured threshold never fabricates approval');
 select throws_ok($$update public.listings set description='' where id='a4000000-0000-4000-8000-000000000001'$$,
@@ -196,7 +197,7 @@ select is(public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
  (select revision::text from public.listings where id='a4000000-0000-4000-8000-000000000001'),'Repeated publish request is idempotent');
 select is(public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{}',
- '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":""}',true)->>'revision',
+ '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":"","timeZone":"America/Chicago"}',true)->>'revision',
  (select revision::text from public.listings where id='a4000000-0000-4000-8000-000000000001'),'Repeated publication with identical pickup is also idempotent');
 select throws_ok($$select public.admin_approve_listing_publication('a4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'Owner cannot approve')$$,
@@ -266,9 +267,9 @@ select throws_ok($$update public.listings set availability_end=current_date+4 wh
 select throws_ok($$update public.listings set available_quantity=1 where id='a4000000-0000-4000-8000-000000000001'$$,
  '23514','Quantity cannot be less than existing reserved and rented units','Owners cannot undercut reserved quantity');
 select throws_ok($$update public.listings set brand='Changed rental item' where id='a4000000-0000-4000-8000-000000000001'$$,
- '23514','Item and delivery detail changes require existing approved rentals to finish','Item changes cannot alter an approved rental');
+ '23514','Item and handoff detail changes require existing approved rentals to finish','Item changes cannot alter an approved rental');
 select throws_ok($$update public.listings set delivery_radius_miles=5 where id='a4000000-0000-4000-8000-000000000001'$$,
- '23514','Item and delivery detail changes require existing approved rentals to finish','Delivery area cannot change underneath an approved rental');
+ '23514','Item and handoff detail changes require existing approved rentals to finish','Delivery area cannot change underneath an approved rental');
 update public.app_settings set value='1000' where key='listing_high_value_threshold';
 update public.listings set price_per_day=11 where id='a4000000-0000-4000-8000-000000000001';
 select ok((select bool_and(daily_rate=10) from public.bookings where listing_id='a4000000-0000-4000-8000-000000000001'),'Existing rentals keep snapshotted daily price');
@@ -309,7 +310,7 @@ set local role authenticated;
 set local request.jwt.claims='{"sub":"a1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"a2000000-0000-4000-8000-000000000001","exp":4102444800}';
 select throws_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000002',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000002'),'{"estimated_value":0,"description":"Camera with a carrying case."}',
- '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":""}',true)$$,
+ '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":"","timeZone":"America/Chicago"}',true)$$,
  '23514','Choose dates from today through 180 days from today','Stale draft cannot publish until availability is corrected');
 select lives_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000002',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000002'),
@@ -317,7 +318,7 @@ select lives_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000
  'Owner can correct a stale draft to a one-day rental window');
 select is(public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000002',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000002'),'{"estimated_value":0,"description":"Camera with a carrying case."}',
- '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":""}',true)->>'status',
+ '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":"","timeZone":"America/Chicago"}',true)->>'status',
  'published','Explicit zero value publishes without value approval');
 select is(public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000002',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000002'),'{"estimated_value":999.99}',null,true)->>'status',

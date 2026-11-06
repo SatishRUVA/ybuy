@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
+import { podman } from '../dev/podman.mjs';
 
 const container = 'supabase_db_YBuy';
 const database = `ybuy_reference_check_${randomBytes(6).toString('hex')}`;
 
 function query(db, sql, onLine, hold = false) {
-  const child = spawn('docker', ['exec', '-i', container, 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', db], { timeout: 180_000 });
+  const child = spawn(podman, ['exec', '-i', container, 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', db], { timeout: 180_000 });
   let output = '';
   let error = '';
   child.stdout.on('data', chunk => {

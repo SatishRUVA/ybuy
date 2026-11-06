@@ -10,7 +10,7 @@ const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
  * between available/blocked by clicking it.
  */
 export function AvailabilityCalendar({
-  bookedDates, blockedDates, editable = false, onToggleDate, monthsAhead = 6, minDate, maxDate,
+  bookedDates, blockedDates, editable = false, onToggleDate, monthsAhead = 6, minDate, maxDate, today: todayStr = todayIso(),
 }: {
   bookedDates: Set<string>;
   blockedDates: Set<string>;
@@ -20,19 +20,19 @@ export function AvailabilityCalendar({
   minDate?: string;
   /** Exclusive end of the owner's selected availability window. */
   maxDate?: string;
+  today?: string;
 }) {
   const [monthOffset, setMonthOffset] = useState(() => {
     if (!minDate) return 0;
     const start = new Date(`${minDate}T12:00:00`);
-    const now = new Date();
+    const now = new Date(`${todayStr}T12:00:00`);
     return Math.max(0, (start.getFullYear() - now.getFullYear()) * 12 + start.getMonth() - now.getMonth());
   });
-  const today = new Date();
+  const today = new Date(`${todayStr}T12:00:00`);
   const viewMonth = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
   const monthLabel = viewMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   const firstWeekday = viewMonth.getDay();
   const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
-  const todayStr = todayIso();
 
   const cells: (string | null)[] = [...Array(firstWeekday).fill(null)];
   for (let day = 1; day <= daysInMonth; day++) {

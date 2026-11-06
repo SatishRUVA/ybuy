@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { readSearchState, searchStateParams, type SearchState } from '@/lib/search-state';
+import { UUID_RE } from '@/lib/text-safety';
 
 export type Route =
   | { name: 'home' }
@@ -165,6 +166,19 @@ function pathToRoute(pathname: string, search: string): Route {
     case 'access': return { name: 'access' };
     default: return { name: 'home' };
   }
+}
+
+export function notificationRoute(destination: string): Route | null {
+  const match = /^([^?#]+)(\?[^#]*)?$/.exec(destination);
+  if (!match) return null;
+  const [, pathname, search = ''] = match;
+  const staticPath = /^\/(dashboard(?:\/(?:listings|owner|renter))?|requests|bidding|profile|payouts|wallet|messages|support|claims)$/;
+  const detail = /^\/(listing|bidding|auction|confirmation|messages|support|claims|check-in|check-out)\/([^/]+)$/.exec(pathname);
+  const matches = /^\/requests\/([^/]+)\/matches$/.exec(pathname);
+  if (!staticPath.test(pathname) && !(detail && UUID_RE.test(detail[2])) && !(matches && UUID_RE.test(matches[1]))) {
+    return null;
+  }
+  return pathToRoute(pathname, search);
 }
 
 function replaceLegacyDashboardPath(nextRoute: Route) {

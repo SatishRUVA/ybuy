@@ -14,6 +14,7 @@ import { useAuth } from '@/auth-context';
 import { usePlatformFee } from '@/lib/settings';
 import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
 import { MAX_BOOKING_RANGE_DAYS, addDaysIso, todayIso } from '@/lib/geo';
+import { pickupToday } from '@/lib/pickup-timezone';
 import { ListingDetailSkeleton } from '@/main-site/components/skeleton';
 import { InsuranceAmount } from '@/main-site/components/insurance-amount';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
@@ -89,7 +90,8 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
         setQuantity(request?.requested_quantity ?? 1);
         setListing(row ? toUiListing(row) : null);
         setCategoryId(row?.category_id ?? null);
-        const start = row?.availability_start && row.availability_start > todayIso() ? row.availability_start : todayIso();
+        const today = row?.pickup_time_zone ? pickupToday(row.pickup_time_zone) : todayIso();
+        const start = row?.availability_start && row.availability_start > today ? row.availability_start : today;
         setStartDate(request?.preferred_start_date ?? start);
         setEndDate(request?.preferred_end_date ?? addDaysIso(start, 1));
       })
@@ -220,7 +222,8 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
   const tax = bookingTaxCents(rental, serviceFee) / 100;
   const paymentEstimate = rental + serviceFee + insuranceAmount;
   const total = paymentEstimate + tax;
-  const datesValid = Boolean(startDate && endDate && startDate >= todayIso() && endDate > startDate && days <= MAX_BOOKING_RANGE_DAYS
+  const today = listing.pickupTimeZone ? pickupToday(listing.pickupTimeZone) : todayIso();
+  const datesValid = Boolean(startDate && endDate && startDate >= today && endDate > startDate && days <= MAX_BOOKING_RANGE_DAYS
     && (!listing.availabilityStart || startDate >= listing.availabilityStart)
     && (!listing.availabilityEnd || endDate <= listing.availabilityEnd));
   const rangeUnavailable = (() => {
@@ -284,6 +287,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
           bookedDates={bookedDates}
           blockedDates={blockedDates}
           minimumDate={listing.availabilityStart}
+          timeZone={listing.pickupTimeZone}
           maximumDate={listing.availabilityEnd}
           onChange={(nextStart, nextEnd) => { setStartDate(nextStart); setEndDate(nextEnd); }}
         />}
@@ -351,7 +355,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       <div className="listing-deposit-box mt-4 flex gap-3">
         <ShieldCheck size={26} className="shrink-0 text-accent mt-0.5" aria-hidden="true" />
         <div>
-          <h2 className="text-sm font-bold text-main">Separate security hold at pre-check-in</h2>
+          <h2 className="text-sm font-bold text-main">Separate security hold at check-in</h2>
           <p className="mt-1 font-bold text-accent tnum">${formatMoney(listing.deposit)}</p>
           <p className="text-xs text-sec mt-2 leading-relaxed">{listing.deposit > 0 ? 'Not included in rental payment. Authorize the temporary hold within 24 hours before an owner-approved pickup or delivery slot.' : 'No security deposit is required for this item.'}</p>
         </div>

@@ -97,7 +97,7 @@ export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel
     {loading && <p role="status" className="text-xs text-sec">Checking deposit authorization…</p>}
     {!loading && !authorization && <p className="text-xs text-warning">Authorization record is not available. Contact support before pickup.</p>}
     {authorization?.status === 'authorized' && <p role="status" className="text-sm text-success">{!paymentFirst || precheckin?.deposit_ready
-      ? 'The security hold is ready.' : 'The recorded hold does not yet meet pre-check-in requirements. Refresh its status before handoff.'} The hold expires {authorization.capture_before ? new Date(authorization.capture_before).toLocaleString() : 'at the card network deadline'}.</p>}
+      ? 'The security hold is ready.' : 'The recorded hold does not yet meet check-in requirements. Refresh its status before handoff.'} The hold expires {authorization.capture_before ? new Date(authorization.capture_before).toLocaleString() : 'at the card network deadline'}.</p>}
     {authorization?.status === 'released' && <p role="status" className="text-sm text-success">The uncaptured deposit hold has been released.</p>}
     {authorization?.status === 'captured' && <p role="status" className="text-sm text-sec">Captured amount: ${Number(authorization.captured_amount).toFixed(2)}.</p>}
     {claim && <p className="text-xs text-sec">Damage claim: {claim.status.replace(/_/g,' ')}{claim.approved_amount !== null ? ` · approved $${Number(claim.approved_amount).toFixed(2)}` : ` · requested $${Number(claim.requested_amount).toFixed(2)}`}</p>}
@@ -115,7 +115,7 @@ export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel
       <input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1" />
       I agree to the separate temporary security hold and any separately approved damage claim.
     </label>}
-    {paymentFirst && !precheckin?.can_authorize && <p className="text-sm text-sec">Complete rental payment and agree a slot in pre-check-in. Deposit setup opens 24 hours before that time.</p>}
+    {paymentFirst && !precheckin?.can_authorize && <p className="text-sm text-sec">Complete rental payment and agree a slot in check-in. Deposit setup opens 24 hours before that time.</p>}
     {!isOwner && needsSetup && (!paymentFirst || precheckin?.can_authorize) && <Button size="sm" disabled={busy || (paymentFirst && !precheckin?.consented && !consent)} loading={busy} onClick={() => void startSetup()}>Set up payment method</Button>}
     {!isOwner && needsAuthorization && !needsSetup && (!paymentFirst || precheckin?.can_authorize) && <Button size="sm" disabled={busy || (paymentFirst && !precheckin?.consented && !consent)} loading={busy} onClick={() => void authorize()}>
       {authorization?.status === 'authorizing' || authorization?.status === 'requires_action' ? 'Continue secure authorization' : 'Authorize deposit'}

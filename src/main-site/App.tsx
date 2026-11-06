@@ -53,7 +53,7 @@ function AppContent() {
   const skipLink = <a href="#main-content" className="skip-link">Skip to content</a>;
   const focused = ['checkout', 'confirmation', 'create-listing', 'edit-listing', 'need-something', 'check-in', 'check-out'].includes(route.name);
   const rentalWorkspace = ['dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts'].includes(route.name);
-  const workspace = Boolean(user) && !focused && !rentalWorkspace;
+  const workspace = Boolean(user) && !['home', 'search'].includes(route.name) && !focused && !rentalWorkspace;
 
   if (route.name === 'access') return <AccessPage />;
 

@@ -3,6 +3,7 @@ import { Calendar, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X, Arro
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { todayIso, addDaysIso, MAX_BOOKING_RANGE_DAYS } from '@/lib/geo';
 import { Overlay } from '@/components/ui';
+import { pickupToday } from '@/lib/pickup-timezone';
 
 type PresetKey = 'custom' | 'today' | 'tomorrow' | 'weekend' | 'next7' | 'next30';
 
@@ -15,8 +16,7 @@ const PRESETS: { key: PresetKey; label: string }[] = [
   { key: 'next30', label: 'Next 30 days' },
 ];
 
-function presetRange(key: PresetKey): { start: string; end: string } {
-  const today = todayIso();
+function presetRange(key: PresetKey, today = todayIso()): { start: string; end: string } {
   switch (key) {
     case 'today': return { start: today, end: addDaysIso(today, 1) };
     case 'tomorrow': { const t = addDaysIso(today, 1); return { start: t, end: addDaysIso(t, 1) }; }
@@ -147,7 +147,7 @@ const NO_DATES: Set<string> = new Set();
 export function DateRangePicker({
   startDate, endDate, onChange,
   mode = 'dual', bookedDates = NO_DATES, blockedDates = NO_DATES,
-  minimumDate, maximumDate,
+  minimumDate, maximumDate, timeZone,
   presentation = 'dialog',
 }: {
   startDate: string;
@@ -158,6 +158,7 @@ export function DateRangePicker({
   blockedDates?: Set<string>;
   minimumDate?: string | null;
   maximumDate?: string | null;
+  timeZone?: string | null;
   presentation?: 'dialog' | 'listing' | 'search';
 }) {
   const [open, setOpen] = useState(false);
@@ -172,7 +173,7 @@ export function DateRangePicker({
   const reduceMotion = useReducedMotion();
   const [position, setPosition] = useState<{ left: number; top: number } | undefined>();
   const compact = presentation === 'listing';
-  const todayStr = todayIso();
+  const todayStr = timeZone ? pickupToday(timeZone) : todayIso();
   const minDate = minimumDate && minimumDate > todayStr ? minimumDate : todayStr;
   const horizon = addDaysIso(todayStr, MAX_BOOKING_RANGE_DAYS);
   const maxDate = maximumDate && maximumDate < horizon ? maximumDate : horizon;
@@ -255,7 +256,7 @@ export function DateRangePicker({
   function handlePreset(key: PresetKey) {
     setActivePreset(key);
     if (key === 'custom') return;
-    const range = presetRange(key);
+    const range = presetRange(key, todayStr);
     setDraftStart(range.start);
     setDraftEnd(range.end);
   }
@@ -274,7 +275,8 @@ export function DateRangePicker({
     setOpen(false);
   }
 
-  const leftMonth = new Date(new Date().getFullYear(), new Date().getMonth() + monthOffset, 1);
+  const calendarToday = parseIsoLocal(todayStr);
+  const leftMonth = new Date(calendarToday.getFullYear(), calendarToday.getMonth() + monthOffset, 1);
   const rightMonth = new Date(leftMonth.getFullYear(), leftMonth.getMonth() + 1, 1);
   const nights = draftStart && draftEnd ? daysBetweenIso(draftStart, draftEnd) : 0;
   const triggerDateLabel = fmtRangeShort(startDate, endDate);
@@ -343,7 +345,7 @@ export function DateRangePicker({
               <button
                 key={preset.key}
                 type="button"
-                disabled={!validRange(presetRange(preset.key).start, presetRange(preset.key).end)}
+                disabled={!validRange(presetRange(preset.key, todayStr).start, presetRange(preset.key, todayStr).end)}
                 onClick={() => handlePreset(preset.key)}
                 className={`calendar-preset${activePreset === preset.key ? ' is-active' : ''}`}
               >

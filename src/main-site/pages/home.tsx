@@ -6,7 +6,7 @@ import {
 import { SearchBar } from '@/main-site/components/search';
 import { ListingCard } from '@/main-site/components/listing-card';
 import { HeroCarousel } from '@/main-site/components/hero-carousel';
-import { Button, SectionHeader, EmptyState, Alert } from '@/main-site/components/ui';
+import { Badge, Button, SectionHeader, EmptyState, Alert } from '@/main-site/components/ui';
 import { ListingGridSkeleton } from '@/main-site/components/skeleton';
 import { CategoryIcon } from '@/main-site/components/category-icon';
 import { useRouter } from '@/router';
@@ -23,8 +23,9 @@ import { useMarketplaceLocation } from '@/location-context';
 import { SHOW_HERO_CATEGORY_PILLS } from '@/lib/feature-flags';
 import { BrandLogo } from '@/main-site/components/brand-logo';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
-import { savedSearchState } from '@/lib/search-state';
+import { savedSearchState, type SearchRadius } from '@/lib/search-state';
 import { useUtcDay } from '@/lib/use-utc-day';
+import { fetchNearbyRequests, type MainItemRequest } from '../request-flow';
 
 /** Size of the single pool the home rails are sliced from - one request, not one per section. */
 const POOL_SIZE = 24;
@@ -33,8 +34,10 @@ const RAIL_SIZE = 8;
 export function HomePage() {
   const utcDay = useUtcDay();
   const { enabled: mockBiddingEnabled } = useFeatureFlag('mock_bidding');
+  const itemRequests = useFeatureFlag('item_requests');
   const { navigate } = useRouter();
-  const { user, profile, openSignIn } = useAuth();
+  const { user, openSignIn } = useAuth();
+  const userId = user?.id;
   const { location } = useMarketplaceLocation();
   const [pool, setPool] = useState<Listing[]>([]);
   const [fresh, setFresh] = useState<Listing[]>([]);
@@ -43,6 +46,10 @@ export function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [retryToken, setRetryToken] = useState(0);
+  const [requestRetryToken, setRequestRetryToken] = useState(0);
+  const [searchRadius, setSearchRadius] = useState<SearchRadius>(() => savedSearchState().radius);
+  const [nearbyRequests, setNearbyRequests] = useState<MainItemRequest[]>([]);
+  const [requestsError, setRequestsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) { setFavoriteIds(new Set()); return; }
@@ -86,6 +93,29 @@ export function HomePage() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [retryToken, utcDay]);
+
+  useEffect(() => {
+    let active = true;
+    const latitude = location.latitude;
+    const longitude = location.longitude;
+    if (!userId || !itemRequests.enabled || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      setNearbyRequests([]);
+      setRequestsError(null);
+      return () => { active = false; };
+    }
+
+    setNearbyRequests([]);
+    setRequestsError(null);
+    void fetchNearbyRequests({
+      latitude, longitude, radius: searchRadius, search: '', categoryId: '', location: '',
+      startDate: '', endDate: '', maxBudget: '', sort: 'newest', page: 0,
+    }).then(({ rows }) => {
+      if (active) setNearbyRequests(rows.slice(0, 4));
+    }).catch((reason: unknown) => {
+      if (active) setRequestsError(reason instanceof Error ? reason.message : 'Could not load nearby requests.');
+    });
+    return () => { active = false; };
+  }, [userId, itemRequests.enabled, location.latitude, location.longitude, searchRadius, requestRetryToken]);
 
   async function handleToggleFavorite(listingId: string) {
     if (!user) { openSignIn(); return; }
@@ -146,28 +176,12 @@ export function HomePage() {
 
   return (
     <div className="animate-fade-in">
-      {user ? <section className="workspace-home">
-        <Shell>
-          <SectionHeader as="h1" title={profile?.full_name ? `Welcome back, ${profile.full_name.split(' ')[0]}` : 'Your rental workspace'}
-            subtitle="Pick up where you left off, or find something for your next plan." />
-          <div className="workspace-quick-actions" aria-label="Workspace shortcuts">
-            <Button variant="secondary" icon={<Calendar size={18} />} onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>My rentals</Button>
-            <Button variant="secondary" icon={<PackageCheck size={18} />} onClick={() => navigate({ name: 'owner-listings' })}>My listings</Button>
-            <Button variant="secondary" icon={<PackageSearch size={18} />} onClick={() => navigate({ name: 'requests', tab: 'mine' })}>My requests</Button>
-            <Button variant="secondary" icon={<LayoutGrid size={18} />} onClick={() => navigate({ name: 'dashboard', tab: 'lending' })}>Lending activity</Button>
-          </div>
-          <h2 className="mb-3 text-lg font-semibold text-main">Find your next rental</h2>
-          <SearchBar variant="compact" onSearch={p => navigate({
-            name: 'search', q: p.keyword.trim() || undefined,
-            lat: p.location.latitude, lng: p.location.longitude,
-            locationLabel: p.location.source !== 'NONE' ? locationLabel(p.location) : undefined,
-            radius: p.radius, start: p.startDate, end: p.endDate,
-          })} />
-        </Shell>
-      </section> : <Hero
+      <Hero
         onSearch={navigate}
         categories={categories.slice(0, 6)}
-      />}
+        radius={searchRadius}
+        onRadiusChange={setSearchRadius}
+      />
 
       {error && (
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-6">
@@ -297,6 +311,45 @@ export function HomePage() {
         </Shell>
       )}
 
+      {user && itemRequests.enabled && (requestsError ? (
+        <Shell className="pt-12 sm:pt-16">
+          <Alert tone="error" title="Could not load nearby requests">
+            {requestsError}
+            <Button size="sm" variant="secondary" className="mt-3" onClick={() => setRequestRetryToken((token) => token + 1)}>Try again</Button>
+          </Alert>
+        </Shell>
+      ) : nearbyRequests.length > 0 && (
+        <Shell className="pt-12 sm:pt-16">
+          <SectionHeader
+            title="Recently requested nearby"
+            subtitle={`Open requests${searchRadius === null ? ' at any distance' : ` within ${searchRadius} miles`} of ${locationLabel(location)}.`}
+            actionLabel="View all requests"
+            onAction={() => navigate({ name: 'requests', tab: 'browse' })}
+            className="mb-5"
+          />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {nearbyRequests.map((request) => (
+              <button
+                key={request.id}
+                type="button"
+                aria-label={`Browse item request: ${request.title}`}
+                onClick={() => navigate({ name: 'requests', tab: 'browse' })}
+                className="min-w-0 rounded-card-lg border border-app bg-card p-4 text-left transition-colors duration-fast hover:border-strong hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <Badge>{request.categories?.name ?? 'Item request'}</Badge>
+                <h3 className="mt-3 line-clamp-2 font-semibold text-main">{request.title}</h3>
+                <p className="mt-2 line-clamp-2 text-sm text-sec">{request.description}</p>
+                <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-xs text-sec">
+                  <span>{formatRequestDates(request.preferred_start_date, request.preferred_end_date)}</span>
+                  {request.distance_miles != null && <span>{request.distance_miles.toFixed(1)} mi away</span>}
+                  {request.max_daily_budget != null && <span>${Number(request.max_daily_budget).toFixed(0)}/day max</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </Shell>
+      ))}
+
       {/* Recently added */}
       {(loading || justAdded.length > 0) && (
         <Shell className="pt-12 sm:pt-16">
@@ -382,10 +435,12 @@ function RailItem({ children }: { children: React.ReactNode }) {
 }
 
 function Hero({
-  categories, onSearch,
+  categories, onSearch, radius, onRadiusChange,
 }: {
   categories: Category[];
   onSearch: ReturnType<typeof useRouter>['navigate'];
+  radius: SearchRadius;
+  onRadiusChange: (radius: SearchRadius) => void;
 }) {
   const [searchDraft] = useState(savedSearchState);
   return (
@@ -418,6 +473,8 @@ function Hero({
               initialStartDate={searchDraft.start}
               initialEndDate={searchDraft.end}
               initialRadius={searchDraft.radius}
+              radius={radius}
+              onRadiusChange={onRadiusChange}
               onSearch={(p) => onSearch({
                 ...savedSearchState(),
                 name: 'search',
@@ -458,6 +515,11 @@ function Hero({
       </div>
     </section>
   );
+}
+
+function formatRequestDates(start: string, end: string) {
+  const format = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `${format(start)} – ${format(end)}`;
 }
 
 function TrustPoint({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/auth-context';
 import { useRouter, type Route } from '@/router';
 import { useAdminAccess } from '@/lib/admin-access';
-import { NOTIFICATIONS_CHANGED, subscribeToNotifications, unreadNotificationCount } from '@/lib/notifications';
+import { NOTIFICATIONS_CHANGED, subscribeToNotifications, unreadMessageCount, unreadNotificationCount } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 import { HOSTED_PROFILE_LOGIN, PROFILE_LOGIN } from '@/lib/local-profile-login';
 import { PreviewFooter, PreviewHeader, PreviewSidebar, AdminLink } from '@/preview-1/navigation';
@@ -32,18 +32,19 @@ export function ProductionPreviewHeader() {
   const { user, profile, openSignIn, signOut, error: authError } = useAuth();
   const access = useAdminAccess();
   const [unread, setUnread] = useState<number | null>(null);
+  const [unreadMessages, setUnreadMessages] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const userId = user?.id;
   useEffect(() => {
     let active = true;
-    setUnread(userId ? null : 0); setError(null);
+    setUnread(userId ? null : 0); setUnreadMessages(userId ? null : 0); setError(null);
     if (!userId) return;
     const refresh = async () => {
       try {
-        const count = await unreadNotificationCount(userId);
-        if (active) { setUnread(count); setError(null); }
+        const [count, messageCount] = await Promise.all([unreadNotificationCount(userId), unreadMessageCount(userId)]);
+        if (active) { setUnread(count); setUnreadMessages(messageCount); setError(null); }
       } catch (reason) {
-        if (active) { setUnread(null); setError(reason instanceof Error ? reason.message : 'Could not load notification count.'); }
+        if (active) { setUnread(null); setUnreadMessages(null); setError(reason instanceof Error ? reason.message : 'Could not load notification counts.'); }
       }
     };
     void refresh();
@@ -55,7 +56,7 @@ export function ProductionPreviewHeader() {
   }, [userId]);
   return <>
     <PreviewHeader key={`${route.name}:${userId ?? 'anonymous'}`} route={pageName(route)} profile={{ name: profile?.full_name ?? 'Your', avatar: profile?.avatar_url ?? '', signedIn: Boolean(user) }}
-      unread={unread} notificationCount signIn={openSignIn} signOut={signOut} profileSelection={PROFILE_LOGIN} extraNavigation={<>{access.access && <AdminLink />}<AccountTools admin={Boolean(access.access)} /></>} />
+      unread={unread} unreadMessages={unreadMessages} notificationCount signIn={openSignIn} signOut={signOut} profileSelection={PROFILE_LOGIN} extraNavigation={<>{access.access && <AdminLink />}<AccountTools admin={Boolean(access.access)} /></>} />
     {error && <div className="p1-container"><ErrorNote>{error}</ErrorNote></div>}
     {authError && <div className="p1-container"><ErrorNote>{authError}</ErrorNote></div>}
   </>;

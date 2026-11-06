@@ -3,8 +3,8 @@ import { AvailabilityCalendar } from '@/components/availability-calendar';
 import { Alert, Button } from '@/components/ui';
 import { fetchUnavailableDates, setDateAvailability } from '@/lib/availability';
 
-export function OwnerBlockedDates({ listingId, start, end, onStateChange }: {
-  listingId: string; start: string; end: string; onStateChange?: (state: { ready: boolean; busy: boolean }) => void;
+export function OwnerBlockedDates({ listingId, start, end, today, onStateChange }: {
+  listingId: string; start: string; end: string; today?: string; onStateChange?: (state: { ready: boolean; busy: boolean }) => void;
 }) {
   const [dates, setDates] = useState<{ booked: Set<string>; blocked: Set<string> } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +50,7 @@ export function OwnerBlockedDates({ listingId, start, end, onStateChange }: {
       {error && <Alert tone="error">{error}<Button variant="secondary" className="mt-2" disabled={busy} onClick={() => setRetry((value) => value + 1)}>Reload dates</Button></Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
       {dates ? <AvailabilityCalendar key={`${start}:${end}`} bookedDates={dates.booked} blockedDates={dates.blocked}
-        minDate={start} maxDate={end} monthsAhead={7} editable={!busy} onToggleDate={(date) => void toggle(date)} />
+        minDate={start} maxDate={end} today={today} monthsAhead={7} editable={!busy} onToggleDate={(date) => void toggle(date)} />
         : !error && <p role="status" className="text-sm text-sec">Loading blocked and booked days...</p>}
       {busy && <p role="status" className="text-sm text-sec">Saving date availability...</p>}
     </section>

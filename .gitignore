@@ -33,6 +33,7 @@ test-accounts.json
 docs
 /scripts/*
 !/scripts/seed-local-test-users.mjs
+!/scripts/backfill-pickup-timezones.mjs
 playwright-*-report/
 test-results*/
 .tmp-auction/

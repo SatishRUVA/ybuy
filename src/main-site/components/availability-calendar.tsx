@@ -10,21 +10,21 @@ const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
  * between available/blocked by clicking it.
  */
 export function AvailabilityCalendar({
-  bookedDates, blockedDates, editable = false, onToggleDate, monthsAhead = 6,
+  bookedDates, blockedDates, editable = false, onToggleDate, monthsAhead = 6, today: todayStr = todayIso(),
 }: {
   bookedDates: Set<string>;
   blockedDates: Set<string>;
   editable?: boolean;
   onToggleDate?: (date: string) => void;
   monthsAhead?: number;
+  today?: string;
 }) {
   const [monthOffset, setMonthOffset] = useState(0);
-  const today = new Date();
+  const today = new Date(`${todayStr}T12:00:00`);
   const viewMonth = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
   const monthLabel = viewMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   const firstWeekday = viewMonth.getDay();
   const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
-  const todayStr = todayIso();
 
   const cells: (string | null)[] = [...Array(firstWeekday).fill(null)];
   for (let day = 1; day <= daysInMonth; day++) {

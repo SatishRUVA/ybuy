@@ -23,7 +23,9 @@ import { insuranceAmountCents } from '@/lib/insurance-pricing';
 import { InsuranceAmount } from '@/main-site/components/insurance-amount';
 import { bookingTaxCents } from '@/lib/booking-tax';
 import { fetchUnavailableDates } from '@/lib/availability';
-import { addDaysIso } from '@/lib/geo';
+import { addDaysIso, todayIso } from '@/lib/geo';
+import { listingAvailabilityError } from '@/lib/listing-availability';
+import { pickupToday } from '@/lib/pickup-timezone';
 import { useUtcDay } from '@/lib/use-utc-day';
 import { createDepositAuthorizationSession, createDepositSetupSession, recordDepositHoldConsent } from '@/lib/security-deposit';
 
@@ -101,7 +103,8 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
     );
   }
 
-  if (!startDate || !endDate) {
+  if (!startDate || !endDate || listingAvailabilityError(startDate, endDate,
+    listing.pickupTimeZone ? pickupToday(listing.pickupTimeZone) : todayIso())) {
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center">
         <h1 className="text-xl font-bold text-main font-display">Choose your dates first</h1>
@@ -266,7 +269,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
             <span>{createdBooking ? 'Backend-confirmed total' : 'Estimated total'}</span><span className="tnum">${formatMoney(total)}</span>
           </div>
           <p className="text-xs text-sec mt-2">{createdBooking ? 'Stored tax and total confirmed by the backend.' : 'Tax is 7% of discounted rental and service fees only. The server confirms the final amount.'}</p>
-          <p className="text-xs text-sec mt-2 leading-relaxed">Rental payment only, including applicable fees, insurance and tax. The security hold is a separate pre-check-in transaction.</p>
+          <p className="text-xs text-sec mt-2 leading-relaxed">Rental payment only, including applicable fees, insurance and tax. The security hold is a separate check-in transaction.</p>
         </Surface>
 
           {deposit > 0 && (
@@ -455,7 +458,7 @@ export function ConfirmationPage({ id }: { id: string }) {
           <Button variant="secondary" className="mb-4" loading={checking} onClick={() => setRefresh((value) => value + 1)}>Check status again</Button>
         )}
         {verified && booking.status === 'confirmed' && <SuccessFeedback kind="booking" booking={booking} payment={payment}
-          primary={{ label: booking.paymentFirst ? 'Pre-check-in: choose a slot' : 'View Booking Details',
+          primary={{ label: booking.paymentFirst ? 'Check-in: choose a slot' : 'View Booking Details',
             onClick: () => booking.paymentFirst ? navigate({ name: 'check-in', id: booking.id }) : document.getElementById('booking-summary')?.focus() }}
           secondary={{ label: 'View Listing', onClick: () => navigate({ name: 'listing', id: booking.listingId }) }} />}
 
@@ -497,10 +500,10 @@ export function ConfirmationPage({ id }: { id: string }) {
         {booking.deposit > 0 && <Surface className="p-4 mb-4">
           <h3 className="font-semibold text-main">Separate security-deposit transaction</h3>
           <p className="mt-2 text-sm text-sec">${booking.deposit.toFixed(2)} {booking.depositCollectionModel === 'authorization'
-            ? 'temporary hold, not included in the rental total. Complete it at pre-check-in before pickup or delivery.'
+            ? 'temporary hold, not included in the rental total. Complete it at check-in before pickup or delivery.'
             : 'was collected with the original legacy payment; its refund is tracked separately.'}</p>
         </Surface>}
-        {booking.paymentFirst && booking.status === 'confirmed' && <Button className="mb-4" onClick={() => navigate({ name: 'check-in', id: booking.id })}>Pre-check-in: choose a slot</Button>}
+        {booking.paymentFirst && booking.status === 'confirmed' && <Button className="mb-4" onClick={() => navigate({ name: 'check-in', id: booking.id })}>Check-in: choose a slot</Button>}
 
         {booking.status === 'completed' && <RentalSettlement bookingId={booking.id} isOwner={booking.isOwner} autoProcess />}
         <div className="flex flex-col sm:flex-row gap-3">

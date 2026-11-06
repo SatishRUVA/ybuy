@@ -9,6 +9,8 @@ import { getListingFlowPolicy, saveListingFlow, type ListingFlowPolicy, type Lis
 import { moderateListingContent, type ListingFlag } from '@/lib/listing-ai';
 import { LISTING_RULES, LISTING_FIELD_IDS, ITEM_STEP_FIELDS, parseMoney, validateListing, type ListingField } from '@/lib/listing-rules';
 import { todayIso, addDaysIso } from '@/lib/geo';
+import { pickupTimeZone, pickupToday } from '@/lib/pickup-timezone';
+import { HANDOFF_WINDOW_LABELS } from '@/lib/handoff-hours';
 import { Button, Alert, Surface, Field, IconButton } from '@/main-site/components/ui';
 import { fieldClass, textareaClass } from '@/main-site/components/form-classes';
 import { PickupLocation, type PickupLocationValue } from '@/main-site/components/pickup-location';
@@ -20,7 +22,14 @@ import { SuccessFeedback } from '@/main-site/components/success-feedback';
 import { ListingAiSkeleton, Skeleton } from '@/main-site/components/skeleton';
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from '@/main-site/components/shadcn/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/main-site/components/shadcn/dialog';
-import { EMPTY_ITEM_DETAILS, listingItemDetailsError, type ListingItemDetails } from '@/lib/listing-item-details';
+import {
+  EMPTY_ITEM_DETAILS,
+  HANDOFF_WINDOWS,
+  RETURN_RULE_OPTIONS,
+  listingItemDetailsError,
+  type HandoffWindow,
+  type ListingItemDetails,
+} from '@/lib/listing-item-details';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { calculateRentalPricing } from '@/lib/rental-pricing';
 import { fetchMainItemRequest, type MainItemRequest } from '../request-flow';
@@ -130,6 +139,15 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
     update('itemDetails', next);
     setIncludedItem(''); setIncludedError(null);
   }
+  function toggleWindow(kind: 'pickup_windows' | 'return_windows', window: HandoffWindow) {
+    const current = form.itemDetails[kind];
+    const next = current.includes(window) ? current.filter((value) => value !== window) : [...current, window];
+    updateItemDetails(kind, next.length > 0 ? next : current);
+  }
+  function toggleReturnRule(rule: string) {
+    const current = form.itemDetails.return_rules;
+    updateItemDetails('return_rules', current.includes(rule) ? current.filter((value) => value !== rule) : [...current, rule]);
+  }
 
   useEffect(() => {
     if (!profile) return;
@@ -188,7 +206,11 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
             deliveryFee: String(ownRow.delivery_fee ?? 0), quantity: ownRow.available_quantity,
             start: ownRow.availability_start ?? todayIso(), end: ownRow.availability_end ?? addDaysIso(todayIso(), Math.min(LISTING_MAX_AVAILABLE_DAYS, nextPolicy.listing_duration_days)),
             itemDetails: { brand: ownRow.brand ?? '', model: ownRow.model ?? '', included_items: ownRow.included_items ?? [],
-              additional_details: ownRow.additional_details ?? '', delivery_radius_miles: ownRow.delivery_radius_miles ?? null },
+              additional_details: ownRow.additional_details ?? '', delivery_radius_miles: ownRow.delivery_radius_miles ?? null,
+              pickup_windows: ownRow.pickup_windows && ownRow.pickup_windows.length > 0 ? ownRow.pickup_windows : [...HANDOFF_WINDOWS],
+              return_windows: ownRow.return_windows && ownRow.return_windows.length > 0 ? ownRow.return_windows : [...HANDOFF_WINDOWS],
+              return_rules: ownRow.return_rules ?? [],
+              return_note: ownRow.return_note ?? '' },
           });
           setPhotos([...ownRow.listing_images].sort((a, b) => a.sort_order - b.sort_order).map((image) => image.url));
           const hasSavedDetails = Boolean(ownRow.title.trim() || ownRow.description?.trim());
@@ -263,6 +285,8 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   }
 
   const pickupFields = [pickup.formattedAddress, pickup.streetAddress, pickup.city, pickup.state, pickup.postalCode, pickup.country];
+  const availabilityToday = pickupConfirmed && pickup.latitude !== null && pickup.longitude !== null
+    ? pickupToday(pickupTimeZone(pickup.latitude, pickup.longitude)) : todayIso();
   const errors: FlowErrors = validateListing({
     photoCount: photos.length, title: form.title, categoryId: form.categoryId, description: form.description,
     pickupConfirmed, pickupFields, priceText: form.price, depositText: '0', valueText: form.value, maxValue: policy?.max_estimated_value, condition: form.condition,
@@ -270,7 +294,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   delete errors.deposit;
   const retainedAvailability = status !== 'draft' && originalWindow.current?.start === form.start && originalWindow.current?.end === form.end;
   if (!retainedAvailability) {
-    const availabilityError = listingAvailabilityError(form.start, form.end);
+    const availabilityError = listingAvailabilityError(form.start, form.end, availabilityToday);
     if (availabilityError) errors.availability = availabilityError;
   }
   if (!Number.isInteger(form.quantity) || form.quantity < 1 || (policy && form.quantity > policy.max_quantity)) errors.quantity = 'Choose an allowed number of identical units.';
@@ -318,14 +342,13 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
           instant_booking: current.instant, delivery_available: current.delivery, available_quantity: current.quantity,
           delivery_fee: current.delivery ? parseMoney(current.deliveryFee || '0')! : 0,
           availability_start: current.start,           availability_end: current.end,
-          availability_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           item_details: current.itemDetails,
         };
         const stepKeys: (keyof ListingFlowDetails)[][] = [
           [],
           ['title', 'description', 'category_id', 'item_condition', 'item_details'],
           ['price_per_day', 'weekly_discount_enabled', 'weekly_discount_percent', 'monthly_discount_enabled', 'monthly_discount_percent', 'estimated_value', 'instant_booking', 'available_quantity'],
-          ['availability_start', 'availability_end', 'availability_timezone'],
+          ['availability_start', 'availability_end'],
           ['location_label', 'delivery_available', 'delivery_fee', 'item_details'],
         ];
         const details: ListingFlowDetails = step === STEPS.length ? allDetails : Object.fromEntries(
@@ -811,7 +834,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                 </div>
               </>}
               {step === 4 && <>
-                <ListingAvailabilityPicker start={form.start} end={form.end}
+                <ListingAvailabilityPicker start={form.start} end={form.end} today={availabilityToday}
                   error={invalid('availability')} onChange={(start, end) => { setForm(current => ({ ...current, start, end })); changed(); }} />
                 {retainedAvailability && <p className="text-xs text-sec">Your saved listing dates are retained until you select a new range.</p>}
                 <div className="flex gap-3 rounded-card bg-subtle p-3 text-xs text-sec"><BellRing size={17} aria-hidden="true" className="shrink-0 text-accent" />
@@ -843,6 +866,45 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                       <p className="mt-2 text-xs text-sec">Your declared delivery area, not an automatic address or checkout restriction.</p>
                     </Field>}
                   </fieldset>
+                  <fieldset className="space-y-3">
+                    <legend className="text-sm font-semibold text-main mb-2">Handoff availability windows</legend>
+                    <p className="text-xs text-sec">Renter picks one of these windows on the booking’s pickup and return date.</p>
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-main">Pickup windows</p>
+                      <p className="text-xs text-sec">Hours are one-hour handoff start times in your pickup timezone. Renters only see future hours on the booking date.</p>
+                      <div className="flex flex-wrap gap-2">{HANDOFF_WINDOWS.map((window) => <button key={`pickup-${window}`} type="button"
+                        className={`min-h-11 rounded-full border px-3 text-sm ${form.itemDetails.pickup_windows.includes(window)
+                          ? 'bg-accent text-accent-text border-accent' : 'bg-card text-sec border-strong'}`}
+                        aria-pressed={form.itemDetails.pickup_windows.includes(window)}
+                        onClick={() => toggleWindow('pickup_windows', window)}>{HANDOFF_WINDOW_LABELS[window]}</button>)}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-main">Return windows</p>
+                      <div className="flex flex-wrap gap-2">{HANDOFF_WINDOWS.map((window) => <button key={`return-${window}`} type="button"
+                        className={`min-h-11 rounded-full border px-3 text-sm ${form.itemDetails.return_windows.includes(window)
+                          ? 'bg-accent text-accent-text border-accent' : 'bg-card text-sec border-strong'}`}
+                        aria-pressed={form.itemDetails.return_windows.includes(window)}
+                        onClick={() => toggleWindow('return_windows', window)}>{HANDOFF_WINDOW_LABELS[window]}</button>)}
+                      </div>
+                    </div>
+                  </fieldset>
+                  <fieldset className="space-y-3">
+                    <legend className="text-sm font-semibold text-main mb-2">Return rules</legend>
+                    <p className="text-xs text-sec">Tap the expectations renters must follow when returning the item.</p>
+                    <div className="flex flex-wrap gap-2">{RETURN_RULE_OPTIONS.map((rule) => <button key={rule} type="button"
+                      className={`min-h-11 rounded-full border px-3 text-sm text-left ${form.itemDetails.return_rules.includes(rule)
+                        ? 'bg-accent text-accent-text border-accent' : 'bg-card text-sec border-strong'}`}
+                      aria-pressed={form.itemDetails.return_rules.includes(rule)}
+                      onClick={() => toggleReturnRule(rule)}>{rule}</button>)}
+                    </div>
+                    <Field label="Return note (optional)" htmlFor="listing-return-note">
+                      <textarea id="listing-return-note" value={form.itemDetails.return_note} maxLength={240} rows={2}
+                        placeholder="Example: Place lens cap and charger in the case before handoff."
+                        onChange={event => updateItemDetails('return_note', event.target.value)} className={textareaClass()} />
+                      <p className="text-xs text-sec text-right mt-1">{form.itemDetails.return_note.length}/240</p>
+                    </Field>
+                  </fieldset>
                 </div>
               </>}
               {step === 6 && <>
@@ -864,6 +926,8 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                 </dl>}
                 <div className="grid gap-4 text-sm text-sec"><p className="flex gap-2"><MapPin aria-hidden="true" size={17} className="shrink-0 text-accent" />{[pickup.city, pickup.state].filter(Boolean).join(', ')} (approximate area)</p>
                   <p className="flex gap-2"><CalendarDays aria-hidden="true" size={17} className="shrink-0 text-accent" />Pickup from {formatListingDate(form.start)}. Return by {formatListingDate(form.end)}.</p>
+                  <p className="flex gap-2"><CheckCircle2 aria-hidden="true" size={17} className="shrink-0 text-accent" />Pickup windows: {form.itemDetails.pickup_windows.map(window => HANDOFF_WINDOW_LABELS[window]).join(', ')}</p>
+                  <p className="flex gap-2"><CheckCircle2 aria-hidden="true" size={17} className="shrink-0 text-accent" />Return windows: {form.itemDetails.return_windows.map(window => HANDOFF_WINDOW_LABELS[window]).join(', ')}</p>
                   <p className="flex gap-2"><CheckCircle2 aria-hidden="true" size={17} className="shrink-0 text-accent" />{form.quantity} {form.quantity === 1 ? 'unit' : 'units'} available</p>
                   <p className="flex gap-2"><ShieldCheck aria-hidden="true" size={17} className="shrink-0 text-accent" />{form.instant ? 'Instant booking rules apply' : 'Owner approval required'}</p>
                   {form.delivery && <p className="flex gap-2"><Truck aria-hidden="true" size={17} className="shrink-0 text-accent" />Delivery available - ${form.deliveryFee || '0'} per trip{form.itemDetails.delivery_radius_miles ? `, within ${form.itemDetails.delivery_radius_miles} miles (owner-declared)` : ''}, arranged separately</p>}</div>
@@ -871,6 +935,9 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                 <section className="border-t border-app pt-5"><h3 className="font-semibold text-main mb-2">About this item</h3><p className="text-sm text-sec whitespace-pre-wrap leading-relaxed">{form.description || 'No additional description.'}</p></section>
                 {form.itemDetails.included_items.length > 0 && <section><h3 className="text-sm font-semibold mb-2">What's included</h3><ul className="flex flex-wrap gap-2">
                   {form.itemDetails.included_items.map(item => <li key={item} className="rounded-card bg-subtle px-2 py-1 text-xs text-sec">{item}</li>)}</ul></section>}
+                {form.itemDetails.return_rules.length > 0 && <section><h3 className="text-sm font-semibold mb-2">Return expectations</h3><ul className="space-y-1">
+                  {form.itemDetails.return_rules.map(rule => <li key={rule} className="text-xs text-sec">• {rule}</li>)}</ul></section>}
+                {form.itemDetails.return_note && <section><h3 className="text-sm font-semibold mb-2">Return note</h3><p className="text-xs text-sec whitespace-pre-wrap">{form.itemDetails.return_note}</p></section>}
                 {form.itemDetails.additional_details && <section><h3 className="text-sm font-semibold mb-2">Additional details</h3><p className="text-xs text-sec whitespace-pre-wrap">{form.itemDetails.additional_details}</p></section>}
                 <Button size="sm" variant="secondary" onClick={() => { setStep(2); setAttempted(false); }}>Edit details</Button>
                 <p className="text-xs text-sec">The exact pickup address stays private until an eligible booking is confirmed. Availability, payment verification, return, and deposit rules apply to every rental. Saved offer settings take effect only after publication.</p>

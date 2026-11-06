@@ -22,33 +22,13 @@ import {
   type NotificationPreferences,
 } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
-import { useRouter, type Route } from '@/router';
+import { notificationRoute, useRouter } from '@/router';
 import {
   fetchMarketplaceNotifications, markAllMarketplaceNotificationsRead, markMarketplaceNotificationRead,
   type MarketplaceNotification,
 } from '@/lib/marketplace';
 
 const PAGE_SIZE = 25;
-const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-
-function notificationRoute(destination: string): Route | null {
-  if (destination === '/dashboard') return { name: 'dashboard' };
-  if (destination === '/requests') return { name: 'requests' };
-  if (destination === '/bidding') return { name: 'bidding' };
-  if (destination === '/profile') return { name: 'trust-profile' };
-  const auction = new RegExp(`^/bidding/(${UUID})$`, 'i').exec(destination);
-  if (auction) return { name: 'bidding-detail', id: auction[1] };
-  const booking = new RegExp(`^/confirmation/(${UUID})$`, 'i').exec(destination);
-  if (booking) return { name: 'confirmation', id: booking[1] };
-  const conversation = new RegExp(`^/messages/(${UUID})$`, 'i').exec(destination);
-  if (conversation) return { name: 'conversation', id: conversation[1] };
-  const support = new RegExp(`^/support/(${UUID})$`, 'i').exec(destination);
-  if (support) return { name: 'support', id: support[1] };
-  const claim = new RegExp(`^/claims/(${UUID})$`, 'i').exec(destination);
-  if (claim) return { name: 'claim-detail', id: claim[1] };
-  return null;
-}
-
 function NotificationIcon({ notification }: { notification: AppNotification }) {
   const event = notification.event_key?.split(':')[0];
   const styles: Record<string, { icon: typeof Bell; tone: string }> = {

@@ -1,5 +1,8 @@
 param([string]$Container = 'supabase_db_YBuy')
 $ErrorActionPreference = 'Stop'
+$podman = (Get-Command podman -ErrorAction SilentlyContinue).Source
+if (-not $podman) { $podman = Join-Path $env:LOCALAPPDATA 'Programs\Podman\podman.exe' }
+if (-not (Test-Path $podman)) { throw 'Install Podman before running the local concurrency check.' }
 
 # Uses independent psql processes, not sequential assertions in one transaction.
 # Requires the running disposable local Supabase stack. No hosted database connection is accepted.
@@ -14,14 +17,14 @@ $claims = '{"sub":"' + $ids.renter + '","role":"authenticated","session_id":"' +
 $gate = $null
 
 function Invoke-LocalSql([string]$Sql) {
-  $output = $Sql | & docker exec -i $Container psql -X -U postgres -d postgres -v ON_ERROR_STOP=1 -At 2>&1
+  $output = $Sql | & $podman exec -i $Container psql -X -U postgres -d postgres -v ON_ERROR_STOP=1 -At 2>&1
   if ($LASTEXITCODE -ne 0) { throw ($output -join "`n") }
   return ($output -join "`n")
 }
 
 function Start-LocalSession([string]$Sql) {
   $info = [System.Diagnostics.ProcessStartInfo]::new()
-  $info.FileName = 'docker'
+  $info.FileName = $podman
   foreach ($arg in @('exec','-i',$Container,'psql','-X','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-At')) {
     $info.ArgumentList.Add($arg)
   }

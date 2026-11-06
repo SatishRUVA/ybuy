@@ -9,10 +9,9 @@ import { LISTING_MAX_AVAILABLE_DAYS, LISTING_SCHEDULING_DAYS, listingAvailabilit
 const NO_DATES = new Set<string>();
 const label = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
-export function ListingAvailabilityPicker({ start, end, onChange, error }: {
-  start: string; end: string; onChange: (start: string, end: string) => void; error?: string;
+export function ListingAvailabilityPicker({ start, end, onChange, error, today = todayIso() }: {
+  start: string; end: string; onChange: (start: string, end: string) => void; error?: string; today?: string;
 }) {
-  const today = todayIso();
   const horizon = addDaysIso(today, LISTING_SCHEDULING_DAYS);
   const lastStart = addDaysIso(horizon, -1);
   const initial = new Date(`${start >= today && start <= lastStart ? start : today}T12:00:00`);
@@ -40,7 +39,7 @@ export function ListingAvailabilityPicker({ start, end, onChange, error }: {
       return;
     }
     const exclusiveEnd = addDaysIso(date, 1);
-    const invalid = listingAvailabilityError(start, exclusiveEnd);
+    const invalid = listingAvailabilityError(start, exclusiveEnd, today);
     if (invalid) { setSelectionError(invalid); return; }
     onChange(start, exclusiveEnd);
     setChoosingEnd(false);

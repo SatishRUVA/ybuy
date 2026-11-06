@@ -113,6 +113,7 @@ export function BookingHandoff({ bookingId, kind }: Props) {
   const [booking, setBooking] = useState<UiBooking | null>(null);
   const [handoff, setHandoff] = useState<BookingHandoff | null>(null);
   const [precheckinReady, setPrecheckinReady] = useState(false);
+  const [returnReady, setReturnReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const photoInput = useRef<HTMLInputElement>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -405,6 +406,7 @@ export function BookingHandoff({ bookingId, kind }: Props) {
           arrived={Boolean(handoff.pickup_arrived_at)} done={done} />
 
         {kind === 'pickup' && booking.paymentFirst && !done && <BookingPrecheckin booking={booking} onReady={setPrecheckinReady} />}
+        {kind === 'return' && !done && ['active', 'return_pending'].includes(booking.status) && <BookingPrecheckin booking={booking} kind="return" onReady={setReturnReady} />}
         {kind === 'pickup' && <div className="mb-4"><BookingPickup key={String(precheckinReady)} bookingId={bookingId} status={booking.status} paymentFirst={booking.paymentFirst} /></div>}
         {booking.deposit > 0 && !(kind === 'pickup' && booking.paymentFirst && !done) && <div className="mb-4"><DepositAuthorizationStatus bookingId={bookingId} deposit={booking.deposit}
           collectionModel={booking.depositCollectionModel} isOwner={booking.isOwner} paymentFirst={booking.paymentFirst} /></div>}
@@ -493,10 +495,13 @@ export function BookingHandoff({ bookingId, kind }: Props) {
                 <Alert tone="info">Arrival sent. Waiting for the owner to start the handoff.</Alert>
               )}
               {kind === 'return' && (handoff.status === 'rental_active' || (handoff.status === null && booking.status === 'active')) && !handoff.is_owner && (
-                <Button loading={busy === 'start-return'} onClick={() => void perform('start-return', async () => {
+                <Button disabled={!returnReady} loading={busy === 'start-return'} onClick={() => void perform('start-return', async () => {
                   await startBookingReturn(bookingId);
                   setNotice('Return started. The owner has been notified.');
                 })}>Start Return</Button>
+              )}
+              {kind === 'return' && (handoff.status === 'rental_active' || (handoff.status === null && booking.status === 'active')) && !handoff.is_owner && !returnReady && (
+                <Alert tone="info">Schedule and get owner approval for the return window before starting return.</Alert>
               )}
               {kind === 'return' && (handoff.status === 'rental_active' || (handoff.status === null && booking.status === 'active')) && handoff.is_owner && (
                 <Alert tone="info">The renter has not started the return yet. You will be notified when they do.</Alert>

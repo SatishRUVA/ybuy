@@ -34,7 +34,7 @@ export function BookingPickup({ bookingId, status, paymentFirst = false }: { boo
 
   if (!user || !eligible) return null;
   if (!result || result.key !== key) return <div role="status" aria-label="Loading pickup address"><Skeleton className="h-20 w-full" /></div>;
-  if (result.locked) return <Alert tone="info" title="Complete pre-check-in first">The private handoff address opens after the separate security hold is ready within 24 hours before the approved slot.
+  if (result.locked) return <Alert tone="info" title="Complete check-in first">The private handoff address opens after the separate security hold is ready within 24 hours before the approved slot.
     <Button variant="secondary" size="sm" className="mt-2" onClick={() => setAttempt(value => value + 1)}>Check handoff readiness</Button>
   </Alert>;
   if (result.error) return <Alert tone="error" title="Pickup address unavailable">{result.error}

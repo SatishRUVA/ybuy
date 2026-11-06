@@ -19,6 +19,9 @@ import { usePlatformFeePct } from '@/lib/settings';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { fieldClass } from '@/components/form-classes';
 import { calculateRentalPricing, validRentalRange } from '@/lib/rental-pricing';
+import { listingAvailabilityError } from '@/lib/listing-availability';
+import { pickupToday } from '@/lib/pickup-timezone';
+import { todayIso } from '@/lib/geo';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
 import { InsuranceAmount } from '@/components/insurance-amount';
 import { bookingTaxCents } from '@/lib/booking-tax';
@@ -75,7 +78,8 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
     );
   }
 
-  if (!startDate || !endDate || !validRentalRange(startDate, endDate)) {
+  if (!startDate || !endDate || !validRentalRange(startDate, endDate)
+    || listingAvailabilityError(startDate, endDate, listing.pickupTimeZone ? pickupToday(listing.pickupTimeZone) : todayIso())) {
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center">
         <h1 className="text-xl font-bold text-main font-display">Choose your dates first</h1>
@@ -247,7 +251,7 @@ export function CheckoutPage({ id, startDate, endDate }: { id: string; startDate
           {listing.deposit > 0 && (
             <div className="mt-4 pt-4 border-t border-app">
               <div className="flex justify-between items-center text-sm">
-                <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Separate security hold at pre-check-in</span>
+                <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Separate security hold at check-in</span>
                 <span className="font-semibold text-main tnum">${formatMoney(listing.deposit)}</span>
               </div>
               <p className="text-xs text-muted mt-1.5 leading-relaxed">
@@ -380,7 +384,7 @@ export function ConfirmationPage({ id }: { id: string }) {
     feedback={<>{confirmationError && <ErrorNote>{confirmationError}</ErrorNote>}
       {(booking.status === 'pending_payment' || confirmationError) && <PreviewButton variant="secondary" disabled={checking} onClick={() => setRefresh((value) => value + 1)}>Check status again</PreviewButton>}
     </>}
-    actions={<>{booking.paymentFirst && confirmed && <PreviewButton onClick={() => navigate({ name: 'check-in', id: booking.id })}>Pre-check-in: choose a slot</PreviewButton>}
+    actions={<>{booking.paymentFirst && confirmed && <PreviewButton onClick={() => navigate({ name: 'check-in', id: booking.id })}>Check-in: choose a slot</PreviewButton>}
       <PreviewAction to={booking.isOwner ? 'owner' : 'renter'}>View my rentals</PreviewAction>
       <PreviewButton variant="secondary" onClick={() => { void handleMessageOwner(); }}><MessageSquare size={17} aria-hidden="true" /> Message {booking.isOwner ? 'renter' : 'owner'}</PreviewButton></>}
     note={<>{confirmed && payment ? `Paid ${payment.currency} ${payment.amount.toFixed(2)}. ` : 'Check booking details for the next step. '}
@@ -410,10 +414,10 @@ export function ConfirmationPage({ id }: { id: string }) {
         {booking.deposit > 0 && <Surface className="p-4 mb-4 text-left">
           <h3 className="font-semibold text-main">Separate security-deposit transaction</h3>
           <p className="mt-2 text-sm text-sec">${booking.deposit.toFixed(2)} {booking.depositCollectionModel === 'authorization'
-            ? 'temporary hold, not included in the rental total. Complete it at pre-check-in before pickup or delivery.'
+            ? 'temporary hold, not included in the rental total. Complete it at check-in before pickup or delivery.'
             : 'was collected with the original legacy payment; its refund is tracked separately.'}</p>
         </Surface>}
-        {booking.paymentFirst && booking.status === 'confirmed' && <Button className="mb-4" onClick={() => navigate({ name: 'check-in', id: booking.id })}>Pre-check-in: choose a slot</Button>}
+        {booking.paymentFirst && booking.status === 'confirmed' && <Button className="mb-4" onClick={() => navigate({ name: 'check-in', id: booking.id })}>Check-in: choose a slot</Button>}
 
         {booking.status === 'completed' && <RentalSettlement bookingId={booking.id} isOwner={booking.isOwner} autoProcess />}
       </Modal></>} />;

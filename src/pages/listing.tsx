@@ -15,6 +15,7 @@ import { useAuth } from '@/auth-context';
 import { usePlatformFeePct } from '@/lib/settings';
 import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
 import { MAX_BOOKING_RANGE_DAYS, addDaysIso, todayIso } from '@/lib/geo';
+import { pickupToday } from '@/lib/pickup-timezone';
 import { ListingDetailSkeleton } from '@/components/skeleton';
 import { InsuranceAmount } from '@/components/insurance-amount';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
@@ -88,9 +89,10 @@ export function ListingPage({ id }: { id: string }) {
         if (cancelled) return;
         setListing(row ? toUiListing(row) : null);
         setCategoryId(row?.category_id ?? null);
-        const start = row?.availability_start && row.availability_start > todayIso() ? row.availability_start : todayIso();
+        const today = row?.pickup_time_zone ? pickupToday(row.pickup_time_zone) : todayIso();
+        const start = row?.availability_start && row.availability_start > today ? row.availability_start : today;
         const saved = savedSearchState();
-        const keepDates = !listingAvailabilityError(saved.start, saved.end) && saved.start >= start
+        const keepDates = !listingAvailabilityError(saved.start, saved.end, today) && saved.start >= start
           && (!row?.availability_end || saved.end <= row.availability_end);
         setStartDate(keepDates ? saved.start : start);
         setEndDate(keepDates ? saved.end : addDaysIso(start, 1));
@@ -221,7 +223,8 @@ export function ListingPage({ id }: { id: string }) {
   const tax = bookingTaxCents(rental, serviceFee) / 100;
   const paymentEstimate = rental + serviceFee + insuranceAmount;
   const total = paymentEstimate + tax;
-  const datesValid = Boolean(startDate && endDate && startDate >= todayIso() && endDate > startDate && days <= MAX_BOOKING_RANGE_DAYS
+  const today = listing.pickupTimeZone ? pickupToday(listing.pickupTimeZone) : todayIso();
+  const datesValid = Boolean(startDate && endDate && startDate >= today && endDate > startDate && days <= MAX_BOOKING_RANGE_DAYS
     && (!listing.availabilityStart || startDate >= listing.availabilityStart)
     && (!listing.availabilityEnd || endDate <= listing.availabilityEnd));
   const rangeUnavailable = (() => {
@@ -289,6 +292,7 @@ export function ListingPage({ id }: { id: string }) {
           bookedDates={bookedDates}
           blockedDates={blockedDates}
           minimumDate={listing.availabilityStart}
+          timeZone={listing.pickupTimeZone}
           maximumDate={listing.availabilityEnd}
           onChange={(nextStart, nextEnd) => { setStartDate(nextStart); setEndDate(nextEnd); }}
         />}
@@ -356,7 +360,7 @@ export function ListingPage({ id }: { id: string }) {
       <div className="listing-deposit-box mt-4 flex gap-3">
         <ShieldCheck size={26} className="shrink-0 text-accent mt-0.5" aria-hidden="true" />
         <div>
-          <h2 className="text-sm font-bold text-main">Separate security hold at pre-check-in</h2>
+          <h2 className="text-sm font-bold text-main">Separate security hold at check-in</h2>
           <p className="mt-1 font-bold text-accent tnum">${formatMoney(listing.deposit)}</p>
           <p className="text-xs text-sec mt-2 leading-relaxed">{listing.deposit > 0 ? 'Not included in rental payment. Authorize the temporary hold within 24 hours before an owner-approved pickup or delivery slot.' : 'No security deposit is required for this item.'}</p>
         </div>

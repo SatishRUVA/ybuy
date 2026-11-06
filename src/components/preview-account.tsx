@@ -29,6 +29,7 @@ import {
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  markConversationMessagesRead,
   setNotificationPreference,
   subscribeToNotifications,
   mandatoryNotification,
@@ -45,7 +46,7 @@ import { searchListings, toUiListing } from '@/lib/listings';
 import type { Listing } from '@/data';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { supabase } from '@/lib/supabase';
-import { useRouter, type Route } from '@/router';
+import { notificationRoute, useRouter } from '@/router';
 import { RequestsPage } from '@/pages/requests';
 import {
   Messages as MessagesTemplate,
@@ -364,11 +365,14 @@ export function PreviewMessages({ id }: { id?: string } = {}) {
   }, [userId, attempt, id]);
 
   useEffect(() => {
-    if (!selectedId) {
+    if (!selectedId || !userId) {
       setMessages([]);
       return;
     }
     let active = true;
+    void markConversationMessagesRead(selectedId).catch((reason: unknown) => {
+      if (active) setError(reason instanceof Error ? reason.message : 'Could not mark messages as read.');
+    });
     setMessages([]);
     setError(null);
     setLoadingMessages(true);
@@ -383,7 +387,7 @@ export function PreviewMessages({ id }: { id?: string } = {}) {
         : row).sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)));
     });
     return () => { active = false; unsubscribe(); };
-  }, [selectedId, attempt]);
+  }, [selectedId, attempt, userId]);
 
   const onSend = async (body: string) => {
     if (!userId || !selectedId || sending || body.length > MESSAGE_MAX_LENGTH) return false;
@@ -428,32 +432,6 @@ function mapMarketplaceNotification(row: MarketplaceNotification): UnifiedNotifi
     createdAt: row.created_at,
     category: 'requests',
   };
-}
-
-function notificationRoute(destination: string): Route {
-  const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-  if (destination === '/dashboard') return { name: 'dashboard' };
-  if (destination === '/requests' || destination === '/requests?tab=mine') return { name: 'requests', tab: 'mine' };
-  if (destination === '/bidding') return { name: 'bidding' };
-  if (destination === '/profile') return { name: 'trust-profile' };
-  if (destination === '/dashboard/listings') return { name: 'owner-listings' };
-  if (destination === '/payouts') return { name: 'owner-payouts' };
-  if (destination === '/messages') return { name: 'messaging' };
-  if (destination === '/support') return { name: 'support' };
-  const routes: [RegExp, (id: string) => Route][] = [
-    [new RegExp(`^/bidding/(${uuid})$`, 'i'), (id) => ({ name: 'bidding-detail', id })],
-    [new RegExp(`^/auction/(${uuid})$`, 'i'), (id) => ({ name: 'auction', id })],
-    [new RegExp(`^/listing/(${uuid})$`, 'i'), (id) => ({ name: 'listing', id })],
-    [new RegExp(`^/confirmation/(${uuid})$`, 'i'), (id) => ({ name: 'confirmation', id })],
-    [new RegExp(`^/messages/(${uuid})$`, 'i'), (id) => ({ name: 'conversation', id })],
-    [new RegExp(`^/support/(${uuid})$`, 'i'), (id) => ({ name: 'support', id })],
-    [new RegExp(`^/claims/(${uuid})$`, 'i'), (id) => ({ name: 'claim-detail', id })],
-  ];
-  for (const [pattern, toRoute] of routes) {
-    const match = pattern.exec(destination);
-    if (match) return toRoute(match[1]);
-  }
-  return { name: 'notifications' };
 }
 
 export function PreviewNotifications() {
@@ -593,8 +571,13 @@ export function PreviewNotifications() {
   async function open(notice: PreviewNotice) {
     const row = rows.find((item) => item.id === notice.id);
     if (!row) return;
+    const route = notificationRoute(row.destination === '/requests' ? '/requests?tab=mine' : row.destination);
+    if (!route) {
+      setError('This notification destination is unavailable.');
+      return;
+    }
     if (!row.read && !await mark([row.id])) return;
-    navigate(notificationRoute(row.destination));
+    navigate(route);
   }
 
   if (!user) return <div className="p1-work-page"><EmptyState title="Sign in to view updates" description="Your account notifications are available after signing in." actionLabel="Sign in" onAction={openSignIn} /></div>;

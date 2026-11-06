@@ -31,6 +31,8 @@ insert into public.conversations (id,booking_id,participant_one,participant_two)
   '51000000-0000-4000-8000-000000000001','41000000-0000-4000-8000-000000000001',
   '11000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000002'
 );
+update public.notification_preferences set messages_in_app = false
+  where user_id = '11000000-0000-4000-8000-000000000002';
 insert into public.messages (conversation_id,sender_id,body) values
   ('51000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000001','First private message'),
   ('51000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000001','Second private message');
@@ -78,11 +80,20 @@ select is((select count(*)::int from public.notifications where user_id = '11000
 select is((select count(*)::int from public.notification_preferences),1,
   'Owner can read only their preferences');
 select lives_ok(
-  $$select public.mark_persistent_notification_read((select id from public.notifications where user_id = auth.uid() limit 1))$$,
+  $$select public.mark_persistent_notification_read((select id from public.notifications where user_id = auth.uid() and category <> 'messages' limit 1))$$,
   'Recipient can mark one notification read'
 );
 select is((select count(*)::int from public.notifications where read_at is not null),1,
   'Read state is persisted for that recipient');
+select lives_ok($$select public.mark_all_notifications_read()$$,
+  'Mark all read completes without consuming message alerts');
+select is((select count(*)::int from public.notifications
+  where user_id = auth.uid() and category = 'messages' and read_at is null),2,
+  'Muted message alerts remain unread for the Messages inbox');
+select lives_ok(
+  $$select public.mark_persistent_notification_read((select id from public.notifications where user_id = auth.uid() and category = 'messages' limit 1))$$,
+  'Messages can be marked read independently of notification preferences'
+);
 
 set local request.jwt.claims = '{"sub":"11000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"61000000-0000-4000-8000-000000000001","exp":4102444800}';
 select is((select count(*)::int from public.notifications),3,

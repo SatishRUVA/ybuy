@@ -43,6 +43,7 @@ export async function listNotifications(params: {
 }): Promise<{ rows: AppNotification[]; total: number }> {
   let query = supabase.from('notifications')
     .select('id,event_key,category,title,body,destination,created_at,read_at', { count: 'exact' })
+    .neq('category', 'messages')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .range(params.offset, params.offset + params.limit - 1);
@@ -58,6 +59,7 @@ export async function unreadNotificationCount(userId: string): Promise<number> {
   const [notifications, marketplace] = await Promise.all([supabase.from('notifications')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
+    .neq('category', 'messages')
     .eq('in_app_enabled', true)
     .is('read_at', null),
   supabase.from('marketplace_notifications').select('id', { count: 'exact', head: true })
@@ -65,6 +67,29 @@ export async function unreadNotificationCount(userId: string): Promise<number> {
   if (notifications.error) throw new Error(notifications.error.message);
   if (marketplace.error) throw new Error(marketplace.error.message);
   return (notifications.count ?? 0) + (marketplace.count ?? 0);
+}
+
+export async function unreadMessageCount(userId: string): Promise<number> {
+  const { count, error } = await supabase.from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('category', 'messages')
+    .is('read_at', null);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+export async function markConversationMessagesRead(conversationId: string): Promise<void> {
+  const destination = `/messages/${conversationId}`;
+  const { data, error } = await supabase.from('notifications')
+    .select('id')
+    .eq('category', 'messages')
+    .eq('destination', destination)
+    .eq('in_app_enabled', true)
+    .is('read_at', null);
+  if (error) throw new Error(error.message);
+  await Promise.all((data ?? []).map(({ id }) => markNotificationRead(id)));
+  if (data?.length) window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
 }
 
 export async function getNotificationPreferences(): Promise<NotificationPreferences> {

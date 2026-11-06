@@ -14,6 +14,32 @@
   box-shadow: 0 0 0 3px var(--accent), var(--shadow-hover);
 }
 
+.search-date-trigger {
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+  min-width: 0;
+  min-height: 3rem;
+  padding-inline: .75rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+}
+.search-date-trigger > svg { flex: 0 0 auto; }
+.search-date-trigger > span { flex: 1 1 0; min-width: 0; }
+.search-date-trigger small { display: block; color: var(--text-muted); font-size: 11px; line-height: 1.25; }
+.search-date-trigger strong {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-field-dates .search-date-trigger { justify-content: flex-start; }
+
 /* Search is one calm row on desktop and a two-row touch layout on tablet. */
 @media (min-width: 640px) {
   .search-control { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(7.5rem, .72fr); gap: .375rem; }
@@ -25,7 +51,7 @@
   .search-field-submit { grid-column: 3; grid-row: 2; }
   .search-field-radius .search-radius-select { height: 3rem; }
   .search-field-dates > div, .search-field-dates > div > button { width: 100%; }
-  .search-field-dates > div > button { justify-content: center; padding-inline: .5rem; }
+  .search-field-dates > div > button { padding-inline: .5rem; }
 }
 @media (min-width: 1024px) {
   .search-control { grid-template-columns: minmax(10rem, 1.35fr) 1px minmax(10.5rem, 1fr) minmax(8rem, .78fr) minmax(12.5rem, 1.3fr) auto; gap: .25rem; }
@@ -35,7 +61,7 @@
   .search-field-radius { grid-column: 4; grid-row: 1; }
   .search-field-dates { grid-column: 5; grid-row: 1; }
   .search-field-submit { grid-column: 6; grid-row: 1; }
-  .search-field-dates > div > button { justify-content: center; padding-inline: .65rem; }
+  .search-field-dates > div > button { padding-inline: .65rem; }
 }
 @media (max-width: 639px) {
   .search-input { font-size: 16px; }
@@ -503,20 +529,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 46px;
-  height: 26px;
-  padding: 0 9px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 96%, white 4%), var(--bg-card));
+  min-width: 50px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--bg-card);
   color: var(--text);
-  border: 2px solid color-mix(in srgb, var(--accent) 28%, var(--border-strong) 72%);
-  box-shadow: 0 3px 10px rgba(0,0,0,0.14), 0 1px 0 rgba(255,255,255,0.35) inset;
+  border: 1px solid var(--border-strong);
   font-weight: 700;
   font-size: 12px;
-  letter-spacing: 0.01em;
   white-space: nowrap;
   cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background-color var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast);
 }
 .ybuy-price-pin:hover,
 .ybuy-price-pin.is-selected {
@@ -524,6 +548,18 @@
   color: var(--accent-text);
   border-color: var(--accent);
 }
+.ybuy-price-pin.is-cluster {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  font-size: 11px;
+}
+.ybuy-price-pin.is-cluster:hover,
+.ybuy-price-pin.is-cluster.is-selected {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.ybuy-price-pin:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
 .ybuy-pin-marker {
   background: transparent;

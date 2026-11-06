@@ -1,14 +1,36 @@
 # ybuy
 
-## Rental-first pre-check-in
+## Rental-first check-in
+
+Owners can create and publish a listing available today, and renters can book
+pickup today with return on a later calendar date. "Today" is determined by the
+pickup location timezone, including after UTC midnight; payment, owner approval,
+capacity and unexpired handoff-window checks still apply. Before a draft has a
+pickup location, its calendar uses the editor timezone; publication revalidates
+against the confirmed pickup location. Apply
+`20261105000001_same_day_location_dates.sql`,
+`20261105000002_unlocated_draft_calendar.sql` and
+`20261105000003_same_day_category_counts.sql` for these date rules and
+pickup-local category counts.
 
 New customer bookings use `payment_first=true` and a separate authorization
 deposit. Checkout charges rental, applicable fees, insurance and tax only.
 Signed Stripe webhook receipts remain the authority for payment confirmation;
 return URL parameters never mark a booking paid.
 
-After payment, the renter proposes a 30-minute pickup or delivery slot on the
-rental start date, specifying their IANA time zone. The owner approves or
+After payment, the renter proposes an hour within an owner-available Morning
+(7, 8, 9, 10, 11 am), Afternoon (noon, 1, 2, 3, 4 pm), or Evening (5, 6, 7 pm)
+group on the rental start date, with an optional note. Each new selection is a
+one-hour handoff window. For same-day pickup and return, only future starting
+hours are shown, with no extra lead time: at 10:20 am, 11 am is the next option.
+If all owner-available hours have passed, scheduling shows an explicit empty
+state rather than offering a past hour. Owners still set general groups for all
+available dates; creating a listing later today does not remove tomorrow's hours.
+Apply `20261105000004_hourly_handoff_slots.sql` for hourly proposals.
+Existing approved broad-window and 30-minute arrangements retain their stored
+boundaries; the legacy broad-window API remains compatible.
+Windows use the pickup location's IANA timezone,
+resolved offline from coordinates, not either participant's device. The owner approves or
 declines it. An approved slot is locked; contact support to reschedule.
 Card setup and consent to the temporary security hold open 24 hours before
 the approved slot and close at its end. No deposit is captured at checkout.
@@ -16,7 +38,58 @@ An adequate, unexpired hold (or a zero-deposit booking) unlocks the private
 handoff address during that window, so the renter can plan travel. Arrival and
 owner handoff start additionally require the current agreed slot.
 
-Both customer interfaces share pre-check-in at `/check-in/:bookingId`.
+The same scheduling applies to return on the booked end date. A date change
+requires an extension, not a note. Existing rentals retain their return access;
+new rentals require an approved return window. Historical 30-minute agreements
+keep their exact boundaries. Both parties receive an agreed-window reminder
+within 24 hours; notification event keys prevent duplicate reminders.
+
+Apply `20261104000001_handoff_windows_and_return_rules.sql` and
+`20261104000002_pickup_location_timezone.sql` and
+`20261104000003_pickup_timezone_metadata.sql` and
+`20261104000004_listing_validation_order.sql` together. For retained local data,
+run `node scripts\backfill-pickup-timezones.mjs` after applying them.
+Without arguments the backfill touches only local Podman and does not reset data.
+For the authorized test backend, run
+`node scripts\backfill-pickup-timezones.mjs jzyjmsixfuwzfnntewqn` before release.
+It uses the Supabase CLI's existing login, resolves coordinates offline, and only fills absent timezones;
+unresolved locations produce an explicit scheduling error, never a UTC fallback.
+
+### Handoff-window release
+
+The subsequent same-day and hourly-handoff release was promoted to the same
+authorized test site's production channel on November 5, 2026 (UTC):
+`dpl_5UCCgLCwTLZtnskgoMXD9FTdHtV4` at
+`https://ybuy-e2e-test.vercel.app`. Vercel frontend and API functions were built
+from the current workspace. Migrations `20261105000001` through
+`20261105000004` were applied atomically to `jzyjmsixfuwzfnntewqn`.
+All 247 hosted rollback-only SQL assertions passed. Post-promotion checks
+confirmed the READY alias, HTTP 200 homepage and entry assets, main-site bundle
+using the intended Supabase project, hourly scheduling bundles, access API
+method rejection, active handoff reminders, no unresolved pickup timezones,
+and no retained synthetic regression fixtures. Focused local browser tests,
+mobile/desktop visual checks, typecheck, targeted lint and production build
+passed before deployment. No Supabase Edge Function source changes were
+required; the existing deployed functions remain active. Real payment and
+notification-email delivery were not exercised. The separate live marketplace
+Supabase backend was not changed.
+
+The complete workspace app and Vercel APIs were promoted to
+`https://ybuy-e2e-test.vercel.app` as
+`dpl_Da2QkrNQ3JhsTvqStbQBT9SdwK1J` on November 5, 2026 (UTC).
+The four handoff migrations were applied together to the explicitly authorized
+test Supabase project `jzyjmsixfuwzfnntewqn`, with 76 pickup timezones backfilled
+offline in the same transaction. No pickup locations remain unresolved.
+The separate live-production database and redesign deployment were not changed.
+
+Validation passed: 14 focused browser tests on port 5174, all 206 local and
+hosted SQL assertions, typecheck, targeted lint, and production builds.
+Hosted checks confirmed the production alias, entry bundle, access-API rejection
+of unauthorized requests, reminder job and owner-approval RPC permissions.
+Regression fixtures were rolled back. Full hosted user journeys, real payment
+transactions and email delivery were not exercised.
+
+Both customer interfaces share check-in at `/check-in/:bookingId`.
 Rental totals and security-hold transactions are displayed separately;
 customer references use the human-readable booking reference, not a UUID.
 Existing bookings keep their original payment sequence and immutable agreement
@@ -50,7 +123,7 @@ errors (the existing mixed-export Fast Refresh warning remains).
 
 The follow-up migration returns `"slot": null` when no slot has been proposed,
 rather than a composite object with null fields. A real database response
-regression verifies that new bookings can load the initial pre-check-in state.
+regression verifies that new bookings can load the initial check-in state.
 
 Both live test aliases serve the verified handoff bundles. Browser-callable
 functions accept preflights from both test origins and reject signed-out calls;
@@ -410,6 +483,15 @@ bid-activity preferences. Database constraints and delivery triggers enforce
 this policy, including direct notification inserts. Muting does not remove
 existing inbox history. The preview still uses isolated sample data and
 session-only preferences.
+All production notification surfaces share the app router's validated destination
+resolver, including pickup/check-in, return, booking confirmation, listings,
+request matches, bids, conversations and support cases. Dashboard and request
+tabs are preserved. Unknown or malformed destinations show an error without
+marking the notification read or silently returning to the inbox.
+Owners now define general pickup/return handoff windows (morning/afternoon/evening)
+and return expectations on listings. Bookings keep their selected dates fixed;
+renters propose a window with an optional note, owners approve/decline, and the
+same scheduling model applies to both pickup and return flows.
 Home, browse/search, listing details, favorites and checkout now render the actual
 `src/preview-1` components through `MarketplaceProvider`, with real listings,
 availability, favorites, messages and booking/payment commands. Confirmation
@@ -996,7 +1078,7 @@ immutable rental snapshots; listing bidding rules and a real top-five feed; and
 coordinate-based Request an Item matching.
 
 Apply the additive `20261021000005` through `20261021000023` migrations with
-`npx supabase migration up --local`. Do not reset a database containing retained
+`pnpm supabase:local migration up --local`. Do not reset a database containing retained
 payment or agreement evidence. The isolated
 [hosted test application](https://ybuy-e2e-test.vercel.app) received migrations
 05–23, all nine current Edge Functions and the latest frontend on 2026-10-21.
@@ -1052,13 +1134,85 @@ acceptance gates. A successful build does not establish any of these.
 
 ## Local lifecycle test accounts
 
-### Password-free local profile selection
+### Podman Desktop backend
 
-Start Docker Desktop, then run:
+The local Supabase backend uses a rootful `podman-machine-default` machine.
+Install Podman Desktop and the Podman CLI, then create/start that machine:
 
 ```powershell
-pnpm exec supabase start
-pnpm exec supabase migration up --local
+podman machine init --rootful podman-machine-default
+podman machine start podman-machine-default
+pnpm supabase:local start
+```
+
+Only run `machine init` on a new installation. On this Windows machine, the
+Podman virtual disk is on `D:\Podman\podman-machine-default`. WSL 2.7.14 is
+installed; the previous WSL 2.2.4 kernel could not boot Podman's Fedora image.
+Keep Podman's own WSL bootstrap configuration rather than enabling native
+`systemd=true` in that distribution.
+
+Use `pnpm supabase:local` instead of bare `supabase` for all local lifecycle,
+migration, SQL-test and Edge Function commands. The wrapper selects Podman's
+Docker-compatible API explicitly, even while Docker Desktop is installed.
+It does not change the global Docker context, environment or hosted project
+link. Local SQL helpers call Podman directly. Hosted deployment commands still
+use the normal Supabase CLI with an explicitly authorized project reference.
+On Windows, `start` also replaces Vector's Docker TCP endpoint with a mounted
+Podman Unix socket so Studio log collection works without exposing a TCP API.
+Do not expose the local container socket or Studio to untrusted users.
+
+Docker Desktop and its original YBuy containers/volumes are retained as a
+rollback snapshot. Only the Podman copy should run on ports 54321 (API),
+54322 (Postgres), 54323 (Studio), 54324 (mail), and 54327 (analytics); the
+application stays on port 5174.
+Docker's YBuy containers have automatic restart disabled to prevent port
+conflicts. Do not delete either runtime's volumes or run `db reset`.
+The copies do not synchronize: new Podman writes are not in the Docker snapshot.
+
+To return temporarily to the original Docker snapshot, stop any local
+`functions serve` process, then:
+
+```powershell
+pnpm supabase:local stop
+$containers = docker --context desktop-linux ps -a --format '{{.Names}}' |
+  Where-Object { $_ -match '^supabase_.+_YBuy$' }
+docker --context desktop-linux start $containers
+```
+
+Local development scripts intentionally remain Podman-only. For a permanent
+rollback, copy newer Podman data back first and update those scripts; do not
+silently point them at Docker's older data. Other Docker workloads are unchanged.
+Private database and volume backups are kept outside the repository.
+
+The November 5, 2026 cutover verified all 4,356 persistent-volume files against
+SHA-256 checksums, and matching database fingerprints for 22 Auth users,
+4 listings, 6 bookings, 4 Storage objects and 130 applied migrations.
+The installed Supabase CLI uses Storage API `v1.80.2` rather than the old
+Docker image `v1.77.5`; all four stored objects were downloaded successfully.
+All 12 services run on Podman, including Edge Functions and stable Vector logs.
+Keep at least 5 GB free on the Windows drive containing Podman's virtual disk;
+Linux's reported virtual-disk capacity is not the available Windows free space.
+
+Verification passed 74 pgTAP assertions, the plain SQL inspection-storage
+permissions check, concurrent reference allocation, all 22 real local account
+identities/staff permissions, and main-site browser sign-in/reload persistence.
+Existing profile UI tests contain stale button/heading assumptions for the main
+site; they were not changed by this runtime migration. Real payment, email and
+hosted backend workflows were not exercised.
+
+To rerun the local Auth, Storage-download, Edge-auth, Realtime and log-socket smoke:
+
+```powershell
+node --experimental-websocket tests\podman-local.mjs
+```
+
+### Password-free local profile selection
+
+Start the rootful machine in Podman Desktop, then run:
+
+```powershell
+pnpm supabase:local start
+pnpm supabase:local migration up --local
 pnpm dev
 ```
 
@@ -1122,7 +1276,7 @@ configuration. With it running, create or reuse five Owner and five Renter test
 personas with real password authentication:
 
 ```powershell
-$status = npx supabase status --output json
+$status = node dev\supabase-local.mjs status --output json
 if ($LASTEXITCODE -ne 0) { throw 'Local Supabase must be running.' }
 ($status -join "`n") | node --experimental-websocket scripts\seed-local-test-users.mjs
 ```
@@ -1246,7 +1400,7 @@ flow were verified against local Supabase; nothing was deployed to hosted
 Supabase.
 
 Run local policy and real TOTP/encrypted-write checks with
-`npx supabase test db supabase\tests\super_admin_vault.sql --local` and
+`pnpm supabase:local test db supabase\tests\super_admin_vault.sql --local` and
 `node --experimental-websocket scripts\verify-vault-local.mjs`. The smoke
 script uses temporary local test credentials, refuses to overwrite a populated
 test slot, and cleans up its test account and value.
@@ -1313,7 +1467,7 @@ unchanged. Listings default to quantity 1 and negotiation disabled.
 The database implementation is in
 [20261018000006_item_requests_and_negotiation.sql](supabase/migrations/20261018000006_item_requests_and_negotiation.sql).
 Run its focused SQL assertions locally with
-`npx supabase test db --local`; do not apply this migration to hosted Supabase
+`pnpm supabase:local test db --local`; do not apply this migration to hosted Supabase
 without separate authorization.
 
 ## UI/UX skill
@@ -1367,7 +1521,7 @@ set `RESEND_FROM_EMAIL`, `PUBLIC_APP_URL`, and a controlled
 `NOTIFICATION_TEST_RECIPIENT`, then run:
 
 ```powershell
-npx supabase functions serve --env-file .env.local
+pnpm supabase:local functions serve --env-file .env.local
 ```
 
 Keep this command running for local AI listing analysis as well. The ignored

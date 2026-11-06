@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import ts from 'typescript';
+import { podman } from './podman.mjs';
 
 const source = ts.transpileModule(readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.ESNext },
@@ -82,7 +83,7 @@ where id in (select md5('ybuy-local-city-listings-v1:'||(value->>'name')||':'||(
   from jsonb_array_elements(${literal(JSON.stringify(data))}::jsonb))
 group by location_label order by location_label;
 `;
-const result = spawnSync('docker', ['exec', '-i', 'supabase_db_YBuy', 'psql', '-X',
+const result = spawnSync(podman, ['exec', '-i', 'supabase_db_YBuy', 'psql', '-X',
   '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'postgres', '-P', 'pager=off'], {
   input: sql, encoding: 'utf8',
 });

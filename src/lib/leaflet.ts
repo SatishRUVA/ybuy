@@ -8,11 +8,17 @@ export interface LeafletLatLngBounds {
 export interface LeafletMap {
   setView(center: [number, number], zoom: number): LeafletMap;
   fitBounds(bounds: LeafletLatLngBounds, options?: { padding?: [number, number]; maxZoom?: number }): LeafletMap;
+  zoomIn(): LeafletMap;
+  zoomOut(): LeafletMap;
+  on(event: 'click', handler: () => void): LeafletMap;
   remove(): void;
   invalidateSize(): void;
 }
 export interface LeafletMarker {
   addTo(map: LeafletMap): LeafletMarker;
+  remove(): LeafletMarker;
+  setLatLng(latlng: [number, number]): LeafletMarker;
+  setIcon(icon: LeafletDivIcon): LeafletMarker;
   on(event: 'click' | 'mouseover' | 'mouseout', handler: () => void): LeafletMarker;
   getElement(): HTMLElement | undefined;
 }
@@ -20,9 +26,9 @@ export interface LeafletDivIcon {
   _brand?: 'divicon';
 }
 export interface Leaflet {
-  map(el: HTMLElement, options?: { zoomControl?: boolean; scrollWheelZoom?: boolean }): LeafletMap;
+  map(el: HTMLElement, options?: { zoomControl?: boolean; scrollWheelZoom?: boolean; keyboard?: boolean }): LeafletMap;
   tileLayer(url: string, options: { attribution: string; maxZoom: number }): { addTo(map: LeafletMap): unknown };
-  marker(latlng: [number, number], options: { icon: LeafletDivIcon }): LeafletMarker;
+  marker(latlng: [number, number], options: { icon: LeafletDivIcon; title?: string; alt?: string; keyboard?: boolean }): LeafletMarker;
   divIcon(options: { html: string; className: string; iconSize: [number, number]; iconAnchor: [number, number] }): LeafletDivIcon;
   latLngBounds(latlngs: [number, number][]): LeafletLatLngBounds;
 }

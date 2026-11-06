@@ -19,9 +19,9 @@ values ('c3000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-00000000
  current_date,current_date+10);
 insert into public.listing_images(listing_id,url,sort_order)
 values ('c3000000-0000-4000-8000-000000000001','https://example.test/slot-item.jpg',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude)
+insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude,time_zone)
 values ('c3000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000001',
- 'Private pickup','Dallas','TX','75201','US',32.8,-96.8);
+ 'Private pickup','Dallas','TX','75201','US',32.8,-96.8,'UTC');
 update public.listings set status='published' where id='c3000000-0000-4000-8000-000000000001';
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,
  service_fee_pct,service_fee_amount,deposit,total,status)
@@ -56,7 +56,7 @@ select ok(not has_function_privilege('authenticated','public.start_booking_picku
 set local role authenticated;
 select pg_temp.slot_login(2);
 select throws_ok($$select public.propose_booking_pickup_slot('c4000000-0000-4000-8000-000000000001',current_date+3+time '12:00','UTC')$$,
- '55000','Pay the rental before scheduling pre-check-in','Unpaid bookings cannot schedule');
+ '55000','Confirm payment before scheduling pickup','Unpaid bookings cannot schedule');
 reset role;
 select public.confirm_booking_payment(id,'cs_slot_1','pi_slot_1',total) from public.bookings where id='c4000000-0000-4000-8000-000000000001';
 select public.confirm_booking_payment(id,'cs_slot_2','pi_slot_2',total) from public.bookings where id='c4000000-0000-4000-8000-000000000002';
@@ -72,14 +72,14 @@ select is((public.get_booking_precheckin('c4000000-0000-4000-8000-000000000001')
 select is(public.get_booking_precheckin('c4000000-0000-4000-8000-000000000001')->'slot','null'::jsonb,
  'A missing slot is JSON null rather than an object with null fields');
 select throws_ok($$select public.get_booking_pickup('c4000000-0000-4000-8000-000000000001')$$,
- '55000','Complete pre-check-in before accessing the private handoff address','Address stays private until pre-check-in is complete');
+ '55000','Complete check-in before accessing the private handoff address','Address stays private until check-in is complete');
 select lives_ok($$select public.propose_booking_pickup_slot('c4000000-0000-4000-8000-000000000001',current_date+3+time '12:00','UTC')$$,
  'Renter proposes a slot after paying');
 select throws_ok($$select public.respond_to_booking_pickup_slot('c4000000-0000-4000-8000-000000000001',current_date+3+time '12:00',true)$$,
  '42501','Only the owner can approve the handoff slot','Renter cannot approve own slot');
 select pg_temp.slot_login(1);
 select throws_ok($$select public.respond_to_booking_pickup_slot('c4000000-0000-4000-8000-000000000001',current_date+3+time '13:00',true)$$,
- '55000','This slot changed or is no longer available. Refresh pre-check-in.','Owner cannot approve a stale proposal');
+ '55000','This slot changed or is no longer available. Refresh check-in.','Owner cannot approve a stale proposal');
 select lives_ok($$select public.respond_to_booking_pickup_slot('c4000000-0000-4000-8000-000000000001',current_date+3+time '12:00',true)$$,
  'Owner approves the proposed slot');
 select pg_temp.slot_login(2);
@@ -91,8 +91,15 @@ select throws_ok($$select public.record_deposit_hold_consent('c4000000-0000-4000
 select throws_ok($$select public.start_booking_pickup('c4000000-0000-4000-8000-000000000001')$$,
  '55000','Deposit authorization opens 24 hours before the slot; handoff is available only during the agreed slot',
  'Server rejects early pickup');
-select lives_ok($$select public.propose_booking_pickup_slot('c4000000-0000-4000-8000-000000000002',clock_timestamp()+interval '10 minutes','UTC')$$,
- 'Renter proposes a near-term slot');
+reset role;
+insert into public.booking_pickup_slots(booking_id,kind,selected_date,slot_window,starts_at,ends_at,time_zone,status,proposed_by)
+values('c4000000-0000-4000-8000-000000000002','pickup',(clock_timestamp()+interval '10 minutes')::date,
+ 'afternoon',statement_timestamp()+interval '10 minutes',statement_timestamp()+interval '40 minutes','UTC','proposed',
+ 'c0000000-0000-4000-8000-000000000002');
+select is((select ends_at-starts_at from public.booking_pickup_slots
+ where booking_id='c4000000-0000-4000-8000-000000000002'),interval '30 minutes',
+ 'Historical exact slots keep their shorter bounds');
+set local role authenticated;
 select pg_temp.slot_login(1);
 select public.respond_to_booking_pickup_slot('c4000000-0000-4000-8000-000000000002',
  (select starts_at from public.booking_pickup_slots where booking_id='c4000000-0000-4000-8000-000000000002'),true);

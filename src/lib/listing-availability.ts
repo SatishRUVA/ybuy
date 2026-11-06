@@ -4,7 +4,7 @@ export const LISTING_SCHEDULING_DAYS = 180;
 export const LISTING_MAX_AVAILABLE_DAYS = 30;
 export const RENTAL_MAX_DAYS = Math.min(MAX_BOOKING_RANGE_DAYS, LISTING_MAX_AVAILABLE_DAYS);
 
-export function listingAvailabilityExpired(end: string | null | undefined, today = new Date().toISOString().slice(0, 10)): boolean {
+export function listingAvailabilityExpired(end: string | null | undefined, today = todayIso()): boolean {
   return Boolean(end && end <= today);
 }
 

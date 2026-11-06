@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import type { CategoryDepositRule, ListingPickupLocation } from '@/lib/listings';
 import type { ListingItemDetails } from '@/lib/listing-item-details';
 import type { ListingAuctionPreferences } from '@/lib/listing-auctions';
+import { pickupTimeZone } from '@/lib/pickup-timezone';
 
 export type ListingFlowStatus = 'draft' | 'pending_approval' | 'published' | 'archived' | 'suspended';
 
@@ -35,8 +36,6 @@ export interface ListingFlowDetails {
   available_quantity?: number;
   availability_start?: string | null;
   availability_end?: string | null;
-  /** Used transiently during the save transaction to align date-only checks with the owner’s calendar. */
-  availability_timezone?: string;
   delivery_fee?: number;
   item_details?: ListingItemDetails;
   auction_preferences?: ListingAuctionPreferences;
@@ -79,18 +78,13 @@ export async function saveListingFlow(
   publish = false,
 ): Promise<ListingFlowResult> {
   const args = {
-    p_listing_id: listingId, p_revision: revision, p_pickup: pickup ?? null, p_publish: publish,
+    p_listing_id: listingId, p_revision: revision,
+    p_pickup: pickup ? { ...pickup, timeZone: pickupTimeZone(pickup.latitude, pickup.longitude) } : null,
+    p_publish: publish,
   };
-  let { data, error } = await supabase.rpc('owner_save_listing_flow', { ...args, p_details: details });
-  // Older hosted databases reject the transient timezone key until the migration is deployed.
-  if (error?.message === 'Unsupported listing changes' && details.availability_timezone) {
-    const compatibleDetails = { ...details };
-    delete compatibleDetails.availability_timezone;
-    ({ data, error } = await supabase.rpc('owner_save_listing_flow', { ...args, p_details: compatibleDetails }));
-    if (error?.message === 'Choose a current listing availability range before publishing') {
-      throw new Error('Your selected dates are valid in your local timezone, but the connected listing database still validates dates in UTC. Apply migration 20261027000009_listing_availability_local_dates.sql to the hosted Supabase project, then retry.');
-    }
-  }
+  const { data, error } = await supabase.rpc('owner_save_listing_flow', {
+    ...args, p_details: { ...details, availability_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+  });
   if (error) throw new Error(error.message);
   const saved = result(data);
   if (publish && saved.status === 'published' && details.auction_preferences?.enabled) {

@@ -106,13 +106,13 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
           <div className="flex items-center justify-between h-16 gap-4">
             <Wordmark onClick={() => navigate({ name: 'home' })} />
 
-            <nav className={`${workspace ? 'hidden' : 'hidden xl:flex'} items-center gap-0.5`} aria-label="Main">
+            <nav className={`${workspace ? 'hidden' : 'hidden md:flex'} items-center gap-0.5`} aria-label="Main">
               {navItems.map((item) => (
                 <button
                   key={item.label}
                   onClick={() => go(item.route)}
                   aria-current={isActive(item.route) ? 'page' : undefined}
-                  className={`relative px-3 h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${
+                  className={`${item.label === 'Bookings' || item.label === 'Messages' ? 'hidden xl:inline-flex' : 'inline-flex'} relative px-2 xl:px-3 h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${
                     isActive(item.route) ? 'text-main bg-subtle' : 'text-sec hover:text-main hover:bg-subtle'
                   }`}
                 >
@@ -127,7 +127,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
                 variant="primary"
                 icon={<PackagePlus size={16} />}
                 onClick={() => go({ name: 'create-listing' })}
-                className={rentalWorkspace ? 'hidden' : 'hidden md:inline-flex'}
+                className={rentalWorkspace ? 'hidden' : 'hidden xl:inline-flex'}
               >
                 List an item
               </Button>

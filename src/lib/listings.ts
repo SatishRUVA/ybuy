@@ -3,6 +3,7 @@ import { assertPlainText, PICKUP_TEXT_MAX, sanitizeFilterValue, UUID_RE } from '
 import type { Listing, Category } from '@/data';
 import { fetchOwnerRatings } from '@/lib/reviews';
 import { listingAvailabilityExpired } from '@/lib/listing-availability';
+import { pickupTimeZone, pickupToday } from '@/lib/pickup-timezone';
 
 export interface DbCategory {
   id: string;
@@ -40,8 +41,13 @@ export interface DbListingRow {
   included_items?: string[];
   additional_details?: string;
   delivery_radius_miles?: number | null;
+  pickup_windows?: ('morning' | 'afternoon' | 'evening')[];
+  return_windows?: ('morning' | 'afternoon' | 'evening')[];
+  return_rules?: string[];
+  return_note?: string;
   availability_start?: string | null;
   availability_end?: string | null;
+  pickup_time_zone?: string | null;
   delivery_fee?: number;
   duration_discount_min_days?: number | null;
   duration_discount_percent?: number;
@@ -119,14 +125,17 @@ export async function fetchCategories(): Promise<DbCategory[]> {
   return data ?? [];
 }
 
-// ponytail: O(n) scan over published listings is sufficient for Part 1's small dataset.
-// Upgrade to a DB view/RPC count(*) group by category_id if listing volume grows materially.
 export async function fetchCategoryCounts(): Promise<Map<string, number>> {
-  const { data, error } = await supabase.from('listings').select('category_id').eq('status', 'published')
-    .or(`availability_end.is.null,availability_end.gt.${new Date().toISOString().slice(0, 10)}`);
+  const { data, error } = await supabase.rpc('get_listing_category_counts');
   if (error) throw error;
+  if (!Array.isArray(data)) throw new Error('Could not verify listing category counts.');
   const counts = new Map<string, number>();
-  for (const row of data ?? []) counts.set(row.category_id, (counts.get(row.category_id) ?? 0) + 1);
+  for (const row of data) {
+    if (typeof row.category_id !== 'string' || !Number.isSafeInteger(row.listing_count) || row.listing_count < 0) {
+      throw new Error('Could not verify listing category counts.');
+    }
+    counts.set(row.category_id, row.listing_count);
+  }
   return counts;
 }
 
@@ -150,7 +159,15 @@ export async function fetchListingById(id: string): Promise<DbListingRow | null>
   if (error) throw error;
   if (!data) return null;
   const row = data as unknown as DbListingRow;
-  return { ...row, listing_images: await signListingImages(row.listing_images) };
+  const timeZone = await fetchListingTimeZone(id);
+  return { ...row, pickup_time_zone: timeZone, listing_images: await signListingImages(row.listing_images) };
+}
+
+export async function fetchListingTimeZone(id: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc('get_listing_time_zone', { p_listing_id: id });
+  if (error) throw new Error(error.message);
+  if (data !== null && typeof data !== 'string') throw new Error('Could not verify the pickup location timezone.');
+  return data;
 }
 
 export async function fetchListingsByOwner(ownerId: string): Promise<DbListingRow[]> {
@@ -438,7 +455,9 @@ export function toUiCategory(row: DbCategory, listingCountByCategoryId: Map<stri
 export function toUiListing(row: DbListingRow): Listing {
   const images = [...row.listing_images].sort((a, b) => a.sort_order - b.sort_order).map((i) => i.url);
   const cleanText = (value: string | null | undefined) => value?.split('\u2014').join('-') ?? '';
-  const expired = listingAvailabilityExpired(row.availability_end);
+  const expired = row.pickup_time_zone
+    ? listingAvailabilityExpired(row.availability_end, pickupToday(row.pickup_time_zone))
+    : listingAvailabilityExpired(row.availability_end);
   return {
     id: row.id,
     title: cleanText(row.title),
@@ -493,6 +512,7 @@ export function toUiListing(row: DbListingRow): Listing {
     availableQuantity: Number(row.available_quantity ?? 1),
     availabilityStart: row.availability_start ?? null,
     availabilityEnd: row.availability_end ?? null,
+    pickupTimeZone: row.pickup_time_zone ?? null,
     availabilityExpired: expired,
     deliveryFee: row.delivery_fee == null ? null : Number(row.delivery_fee),
     auctionEnabled: row.auction_enabled === true,
@@ -644,7 +664,8 @@ export async function fetchOwnerPickup(listingId: string): Promise<ListingPickup
 
 export async function saveOwnerListing(listingId: string, revision: number, details: ListingDetailsUpdate, pickup?: ListingPickupLocation): Promise<number> {
   const { data, error } = await supabase.rpc('owner_save_listing', {
-    p_listing_id: listingId,p_revision: revision,p_details: details,p_pickup: pickup ?? null,
+    p_listing_id: listingId,p_revision: revision,p_details: details,
+    p_pickup: pickup ? { ...pickup, timeZone: pickupTimeZone(pickup.latitude, pickup.longitude) } : null,
   });
   if (error) throw new Error(error.message);
   if (!Number.isSafeInteger(data)) throw new Error('Could not verify the saved listing revision.');
@@ -698,6 +719,7 @@ export async function saveListingPickupLocation(listingId: string, ownerId: stri
     country: location.country,
     latitude: location.latitude,
     longitude: location.longitude,
+    time_zone: pickupTimeZone(location.latitude, location.longitude),
     place_id: location.placeId || null,
   }, { onConflict: 'listing_id' });
   if (error) throw error;

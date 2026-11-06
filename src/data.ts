@@ -67,6 +67,7 @@ export interface Listing {
   availableQuantity?: number;
   availabilityStart?: string | null;
   availabilityEnd?: string | null;
+  pickupTimeZone?: string | null;
   availabilityExpired?: boolean;
   deliveryFee?: number | null;
   auctionEnabled?: boolean;

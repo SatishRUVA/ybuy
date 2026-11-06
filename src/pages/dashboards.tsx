@@ -10,7 +10,8 @@ import {
 import { startBookingPickup } from '@/lib/booking-handoff';
 import { getOrCreateConversation } from '@/lib/messages';
 import { createReview, fetchReviewedBookingIds, REVIEW_MAX_LENGTH } from '@/lib/reviews';
-import { deleteOwnerListing, fetchListingsByOwner, toUiListing } from '@/lib/listings';
+import { deleteOwnerListing, fetchListingsByOwner, fetchListingTimeZone, toUiListing } from '@/lib/listings';
+import { pickupToday } from '@/lib/pickup-timezone';
 import { fetchBankPayoutStatus, fetchPayoutsByOwner, startConnectOnboarding, type BankPayoutStatus, type DbPayoutRow } from '@/lib/payouts';
 import { RentalSettlement } from '@/components/rental-settlement';
 import { BookingPickup } from '@/components/booking-pickup';
@@ -361,7 +362,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
                 )}
                 {booking.status === 'confirmed' && (
                   <Button size="sm" loading={busyId === booking.id} onClick={() => void handleStartCheckIn(booking.id)}>
-                    {booking.paymentFirst ? 'Pre-check-in: choose a slot' : "I'm Here – Start Pickup"}
+                    {booking.paymentFirst ? 'Check-in: choose a slot' : "I'm Here – Start Pickup"}
                   </Button>
                 )}
                 {booking.status === 'active' && (
@@ -566,10 +567,10 @@ export function OwnerDashboard({ onRequestCount, listingView = false }: { onRequ
     setAvailabilityNotice(false);
     setAvailabilityTarget(null);
     try{
-      const dates=await fetchUnavailableDates(listing.id);
+      const [dates,timeZone]=await Promise.all([fetchUnavailableDates(listing.id),fetchListingTimeZone(listing.id)]);
       if(request!==availabilityRequest.current)return;
       setAvailabilityDates(dates);
-      setAvailabilityTarget(listing);
+      setAvailabilityTarget({ ...listing, pickupTimeZone: timeZone ?? undefined });
     }catch(error){
       if(request===availabilityRequest.current)setActionError(error instanceof Error?error.message:'Could not verify listing availability.');
     }
@@ -889,6 +890,7 @@ export function OwnerDashboard({ onRequestCount, listingView = false }: { onRequ
           <p className="text-sm text-sec mb-3">Tap a date to block it. Booked dates are managed for you.</p>
           {availabilityNotice && <SuccessNotice onDismiss={() => setAvailabilityNotice(false)}>Availability saved.</SuccessNotice>}
           <AvailabilityCalendar
+            today={availabilityTarget.pickupTimeZone ? pickupToday(availabilityTarget.pickupTimeZone) : undefined}
             bookedDates={availabilityDates.booked}
             blockedDates={availabilityDates.blocked}
             editable
