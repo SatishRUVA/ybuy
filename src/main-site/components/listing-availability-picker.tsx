@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { MonthGrid } from '@/main-site/components/date-range-picker';
 import { IconButton } from '@/main-site/components/ui';
 import { addDaysIso, todayIso } from '@/lib/geo';
-import { LISTING_MAX_AVAILABLE_DAYS, LISTING_SCHEDULING_DAYS, listingAvailabilityError } from '@/lib/listing-availability';
+import { LISTING_DEFAULT_AVAILABLE_DAYS, LISTING_MAX_AVAILABLE_DAYS, LISTING_SCHEDULING_DAYS, listingAvailabilityError } from '@/lib/listing-availability';
 
 const NO_DATES = new Set<string>();
 const label = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -34,7 +34,8 @@ export function ListingAvailabilityPicker({ start, end, onChange, error, today =
   function pick(date: string) {
     setSelectionError(undefined);
     if (!choosingEnd) {
-      onChange(date, addDaysIso(date, 1));
+      const defaultEnd = addDaysIso(date, LISTING_DEFAULT_AVAILABLE_DAYS);
+      onChange(date, defaultEnd < horizon ? defaultEnd : horizon);
       setChoosingEnd(true);
       return;
     }
@@ -45,8 +46,8 @@ export function ListingAvailabilityPicker({ start, end, onChange, error, today =
     setChoosingEnd(false);
   }
 
-  return <section id="listing-availability" tabIndex={-1} aria-label="Listing availability" aria-describedby={currentError ? 'listing-availability-error' : undefined} className="space-y-4">
-    <p className="text-sm text-sec">Choose the first and last days your item can be rented, including both dates. Select the same date for one day, or up to 30 days. Then block any unavailable days.</p>
+  return <section id="listing-availability" tabIndex={-1} aria-invalid={Boolean(currentError)} aria-label="Listing availability" aria-describedby={currentError ? 'listing-availability-error' : undefined} className="space-y-4">
+    <p className="text-sm text-sec">Choose your first available day to start with 7 days. Adjust the last day for 1 to 30 days, including both dates. Then block any unavailable days.</p>
     <div className="grid grid-cols-2 gap-3" aria-label="Selected availability dates">
       <button type="button" aria-pressed={!choosingEnd} onClick={() => { setChoosingEnd(false); const date = new Date(`${start || today}T12:00:00`); setMonth(new Date(date.getFullYear(), date.getMonth(), 1)); }}
         className={`rounded-card-lg border p-3 text-left transition ${!choosingEnd ? 'border-accent bg-accent-soft ring-1 ring-accent/20' : 'border-app bg-card hover:border-accent/50'}`}>

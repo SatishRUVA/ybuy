@@ -4,6 +4,7 @@ import { mockSupabaseModule } from './mock-supabase';
 import { appUrl as defaultAppUrl } from './test-url';
 import type { ListingPickupLocation } from '../src/lib/listings';
 import type { ListingAuction } from '../src/lib/listing-auctions';
+import { maskListingContact } from '../supabase/functions/_shared/listing-contact';
 
 const appUrl = process.env.YBUY_TEST_PORT ? `http://localhost:${process.env.YBUY_TEST_PORT}` : defaultAppUrl;
 const appWebSocketUrl = appUrl.replace(/^http:/, 'ws:');
@@ -31,54 +32,14 @@ const booking = {
 };
 
 for (const width of [375, 768, 1440]) {
-  test(`main uses the actual Preview 1 wizard template at ${width}px`, async ({ page, context }) => {
+  test(`uniform six-step listing wizard stays usable at ${width}px`, async ({ page }) => {
     test.slow();
     await page.setViewportSize({ width, height: 1000 });
-    await setup(page);
-    await page.goto(`${appUrl}/create-listing`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Put your good gear to work.' })).toBeVisible();
-    await expect(page.locator('.main-workspace-sidebar')).toHaveCount(0);
-    await expect(page.getByRole('textbox', { name: 'Give it a useful title' })).toBeVisible();
-    await expect(page.getByRole('textbox', { name: 'What should renters know?' })).toBeVisible();
-
-    const preview = await context.newPage();
-    await preview.route('https://fonts.googleapis.com/**', route => route.fulfill({ contentType: 'text/css', body: '' }));
-    await preview.setViewportSize({ width, height: 1000 });
-    await preview.goto(`${appUrl}/preview-1/#/create`, { waitUntil: 'domcontentloaded' });
-    await expect(preview.getByRole('heading', { name: 'Put your good gear to work.' })).toBeVisible();
-    const metrics = async (target: Page) => target.evaluate(() => {
-      const properties = (selector: string) => {
-        const node = document.querySelector(selector);
-        if (!node) throw new Error(`Missing template element: ${selector}`);
-        const style = getComputedStyle(node);
-        return {
-          width: node.getBoundingClientRect().width,
-          fontFamily: style.fontFamily, fontSize: style.fontSize,
-          fontWeight: style.fontWeight, lineHeight: style.lineHeight,
-          color: style.color, background: style.backgroundColor,
-          columns: style.gridTemplateColumns, gap: style.gap,
-        };
-      };
-      return {
-        heading: properties('.p1-page-head h1'),
-        wizard: properties('.p1-wizard-layout'),
-        header: properties('.p1-header-inner'),
-        primary: properties('.p1-wizard-content .p1-button-primary'),
-      };
-    });
-    const expected = await metrics(preview);
-    const actual = await metrics(page);
-    for (const key of ['heading', 'wizard', 'header', 'primary'] as const) {
-      expect(actual[key], key).toEqual(expected[key]);
-    }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: test.info().outputPath(`main-preview-one-${width}.png`), fullPage: true });
-    await preview.close();
-
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(page.getByRole('radio', { name: 'Good', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'A few details need your attention' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Show its best side.' })).toHaveCount(0);
+    await createListingForReview(page, {}, true);
+    await expect(page.getByRole('navigation', { name: 'Edit listing sections' }).getByRole('button')).toHaveCount(5);
+    await page.getByRole('button', { name: 'Edit rental settings', exact: true }).click();
+    await expect(page.getByLabel('Daily price (USD)', { exact: true })).toHaveValue('25');
+    await expect(page.getByLabel('Estimated replacement value (USD)', { exact: true })).toHaveValue('100');
   });
 }
 
@@ -132,6 +93,63 @@ interface Scenario {
   readyDraft?: boolean;
 }
 
+async function createListingForReview(page: Page, scenario: Scenario = {}, captureLayout = false) {
+  await setup(page, { ...scenario, aiSuccess: true });
+  await page.goto(`${appUrl}/create-listing`, { waitUntil: 'domcontentloaded' });
+  const shell = page.locator('.owner-listing-panel');
+  await expect(page.getByRole('region', { name: 'Step 1: Photos', exact: true })).toBeVisible({ timeout: 30000 });
+  const initialWidth = (await shell.boundingBox())!.width;
+  async function checkStep(number: number, name: string) {
+    await expect(page.getByRole('region', { name: `Step ${number}: ${name}`, exact: true })).toBeVisible();
+    await expect(page.locator('.main-workspace-sidebar')).toHaveCount(0);
+    await expect.poll(async () => (await shell.boundingBox())?.width).toBe(initialWidth);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (captureLayout) {
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await page.screenshot({ path: test.info().outputPath(`listing-step-${number}.png`), fullPage: true, animations: 'disabled' });
+    }
+  }
+  await checkStep(1, 'Photos');
+  await expect(page.locator('#listing-add-photo')).toBeFocused();
+  const photo = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1000;
+    canvas.getContext('2d')!.fillRect(0, 0, 1000, 1000);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  await page.locator('input[type="file"]').setInputFiles({ name: 'camera.png', mimeType: 'image/png', buffer: Buffer.from(photo, 'base64') });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Visible camera item');
+  await expect(page.getByLabel('Title', { exact: true })).toBeFocused();
+  await page.getByRole('radio', { name: 'Good', exact: true }).check();
+  await checkStep(2, 'Details');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByLabel('Daily price (USD)', { exact: true })).toBeFocused();
+  await page.getByLabel('Daily price (USD)', { exact: true }).fill('25');
+  await page.getByLabel('Estimated replacement value (USD)', { exact: true }).fill('100');
+  await checkStep(3, 'Rental settings');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await checkStep(4, 'Availability');
+  await expect(page.getByRole('button', { name: /^Available from/ })).toBeFocused();
+  if (scenario.listingStart) {
+    const availability = page.getByRole('region', { name: 'Listing availability', exact: true });
+    await availability.getByRole('button', { name: /^Available from/ }).click();
+    const dates = await page.evaluate(date => {
+      const first = new Date(`${date}T12:00:00`);
+      const last = new Date(first); last.setDate(last.getDate() + 7);
+      const format = (value: Date) => value.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      return [format(first), format(last)];
+    }, scenario.listingStart);
+    for (const date of dates) await availability.getByRole('button', { name: new RegExp(date) }).click();
+  }
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await checkStep(5, 'Location');
+  await expect(page.locator('#pickup-address')).toBeFocused();
+  await page.locator('test-place-autocomplete').click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await checkStep(6, 'Review');
+}
+
 async function setup(page: Page, scenario: Scenario = {}) {
   let aiAnalysisCount = 0;
   let scheduledAuction: ListingAuction | null = null;
@@ -180,7 +198,7 @@ async function setup(page: Page, scenario: Scenario = {}) {
     const url = new URL(req.url());
     if (url.origin === appUrl) {
       if (url.pathname === '/src/lib/supabase.ts') return mockSupabaseModule(route);
-      if (url.pathname === '/src/components/pickup-location.tsx' || url.pathname === '/src/lib/google-maps.ts') {
+      if (url.pathname === '/src/lib/google-maps.ts') {
         const response = await route.fetch();
         const body = (await response.text()).replace(/const (googleKey|key) = [^\n]+;/, 'const $1 = "test-google-key";');
         expect(body).toContain('"test-google-key"');
@@ -225,6 +243,7 @@ async function setup(page: Page, scenario: Scenario = {}) {
     if (url.pathname === '/rest/v1/rpc/has_active_session') body = true;
     if (url.pathname === '/rest/v1/feature_flags') body = [{ key: 'bidding', enabled: scenario.auctionSupported === true }];
     if (url.pathname === '/rest/v1/rpc/get_listing_auction') body = scheduledAuction;
+    if (url.pathname === '/rest/v1/rpc/get_listing_time_zone') body = null;
     if (url.pathname === '/rest/v1/app_settings') body = { value: ['US'] };
     if (url.pathname === '/rest/v1/reference_countries') body = [{ code: 'US', name: 'United States' }];
     if (url.pathname === '/rest/v1/rpc/get_listing_flow_policy') body = {
@@ -345,9 +364,17 @@ async function setup(page: Page, scenario: Scenario = {}) {
       aiAnalysisCount += 1;
       await scenario.aiDelay;
       status = scenario.aiHttpStatus ?? 200;
+      const photoCount = req.postDataJSON().photoUrls?.length ?? 0;
+      const photoDecisions = Array.from({ length: photoCount }, (_, photoIndex) => ({
+        photoIndex,
+        decision: scenario.aiError ? 'manual_review'
+          : scenario.aiQualityWarning && aiAnalysisCount === 1 ? 'replace' : 'approved',
+        reason: scenario.aiError ? 'This photo needs manual review.'
+          : scenario.aiQualityWarning && aiAnalysisCount === 1 ? 'The photo looks dim.' : 'The photo is clear.',
+      }));
       body = scenario.aiError
         ? status === 200
-          ? { ok: true, masked: { title: '', description: '', changed: false }, suggestion: null, flags: [], aiError: scenario.aiError }
+          ? { ok: true, masked: { title: '', description: '', changed: false }, suggestion: null, flags: [], aiError: scenario.aiError, photoDecisions }
           : { ok: false, error: scenario.aiError }
         : scenario.aiMalformed ? { ok: true, suggestion: { title: 123 } } : scenario.aiSuccess
         ? {
@@ -361,9 +388,20 @@ async function setup(page: Page, scenario: Scenario = {}) {
         photoQualitySuggestions: scenario.aiQualityWarning && aiAnalysisCount === 1
           ? [{ photoIndex: 0, reason: 'The photo looks dim.', recommendation: 'Retake it in brighter light.' }]
           : [],
+        photoDecisions,
       }
       : { ok: true, masked: { title: req.postDataJSON().title, description: req.postDataJSON().description, changed: false },
-        suggestion: null, flags: [], aiError: 'AI suggestions are unavailable. Continue manually.' };
+        suggestion: null, flags: [], aiError: 'AI suggestions are unavailable. Continue manually.', photoDecisions };
+      if (req.postDataJSON().reviewMode === 'text' && !scenario.aiError && !scenario.aiMalformed) {
+        const { title, description } = req.postDataJSON();
+        const maskedTitle = maskListingContact(title);
+        const maskedDescription = maskListingContact(description);
+        const changed = maskedTitle !== title || maskedDescription !== description;
+        body = { ok: true, masked: { title: maskedTitle, description: maskedDescription, changed },
+          suggestion: null, aiError: null, photoDecisions, photoQualitySuggestions: [],
+          flags: changed ? [{ type: 'contact_info', reason: 'A phone number or email address was detected and automatically removed.',
+            confidence: 'high', source: 'text' }] : [] };
+      }
     }
     if (url.pathname === '/rest/v1/bookings') {
       const row = { ...booking, status: scenario.status ?? 'confirmed' };
@@ -836,12 +874,12 @@ for (const width of [375, 768, 1440]) {
     await page.getByRole('button', { name: 'Save draft', exact: true }).click();
     await expect(page.getByText('All changes saved', { exact: true })).toBeVisible();
     for (const step of [5, 4, 3, 2, 1]) {
-      await expect(page.locator('.p1-wizard-content > div > section')).toHaveCount(1);
+      await expect(page.locator('.owner-listing-panel')).toHaveCount(1);
       await expect(page.getByRole('region', { name: `Step ${step}: ${['The item', 'Photos', 'Price & pickup', 'Availability', 'Review'][step - 1]}`, exact: true })).toBeVisible();
       if (width > 1100 && step !== 2) await expect(page.getByRole('complementary', { name: 'Listing preview' })).toBeVisible();
       else await expect(page.getByRole('complementary', { name: 'Listing preview' })).toBeHidden();
       if (width === 1440 && step < 5) {
-        const panel = await page.locator('.p1-wizard-content > div > section').boundingBox();
+        const panel = await page.locator('.owner-listing-panel').boundingBox();
         if (step === 2) expect(panel!.width).toBeGreaterThan(900);
         else {
           expect(panel!.width).toBeGreaterThan(300);
@@ -1052,6 +1090,66 @@ test('photo analysis auto-fills untouched item details and preserves owner edits
   await page.getByLabel('Estimated replacement value (USD)', { exact: true }).fill('1000');
 });
 
+test('unchanged photos are not reanalyzed and edited contact text is actually removed before continuing', async ({ page }) => {
+  const requests: { reviewMode?: string; description: string }[] = [];
+  const saves: { p_details: { description?: string } }[] = [];
+  page.on('request', request => {
+    if (request.url().includes('/functions/v1/analyze-listing-photo')) requests.push(request.postDataJSON());
+    if (request.url().includes('/rpc/owner_save_listing_flow')) saves.push(request.postDataJSON());
+  });
+  await setup(page, { aiSuccess: true });
+  await page.goto(`${appUrl}/create-listing`);
+  const photo = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1000;
+    canvas.getContext('2d')!.fillRect(0, 0, 1000, 1000);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  await page.locator('input[type="file"]').setInputFiles({ name: 'drill.png', mimeType: 'image/png', buffer: Buffer.from(photo, 'base64') });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Visible camera item');
+  expect(requests).toHaveLength(1);
+  await page.getByRole('button', { name: 'Previous step', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByLabel('Description', { exact: true })).toBeVisible();
+  expect(requests).toHaveLength(1);
+  const description = page.getByLabel('Description', { exact: true });
+  const text = 'A powerful cordless drill perfect for a variety of projects. Ideal for drilling into concrete and other materials.';
+  await description.fill(`${text} 5104678566`);
+  await page.getByLabel('Brand (optional)', { exact: true }).fill('Call 555-123-4567');
+  await page.getByRole('radio', { name: 'Good', exact: true }).check();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(description).toHaveValue(`${text} [contact info removed - message the owner in YBuy]`);
+  await expect(page.getByLabel('Brand (optional)', { exact: true })).toHaveValue('Call [contact info removed - message the owner in YBuy]');
+  await expect(page.getByText('Contact information was removed. Review the updated details before continuing.', { exact: true })).toBeVisible();
+  expect(requests).toHaveLength(2);
+  expect(requests[1].reviewMode).toBe('text');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Step 3: Rental settings', exact: true })).toBeVisible();
+  expect(requests).toHaveLength(3);
+  expect(requests[2].reviewMode).toBe('text');
+  expect(requests[2].description).not.toMatch(/5104678566|555-123-4567/);
+  await page.getByRole('button', { name: 'Previous step', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Step 3: Rental settings', exact: true })).toBeVisible();
+  expect(requests).toHaveLength(3);
+  await page.getByLabel('Daily price (USD)', { exact: true }).fill('25');
+  await page.getByLabel('Estimated replacement value (USD)', { exact: true }).fill('100');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Step 4: Availability', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Step 5: Location', exact: true })).toBeVisible();
+  await page.locator('test-place-autocomplete').click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Step 6: Review', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Your listing is live!', exact: true })).toBeVisible();
+  expect(requests).toHaveLength(4);
+  expect(requests[3].reviewMode).toBe('text');
+  expect(requests.filter(request => request.reviewMode !== 'text')).toHaveLength(1);
+  expect(saves.at(-1)?.p_details.description).toBe(`${text} [contact info removed - message the owner in YBuy]`);
+});
+
 for (const details of [
   { name: 'empty photo-only draft', title: '', description: '', categoryId: '20000000-0000-4000-8000-000000000002' },
   { name: 'partially completed draft', title: 'Saved owner title', description: '', categoryId: '20000000-0000-4000-8000-000000000002' },
@@ -1168,7 +1266,7 @@ for (const failure of [
       .toContainText('aiError' in failure.scenario ? failure.scenario.aiError : 'AI returned invalid suggestions. Please retry or enter details manually.');
     await page.getByLabel('Give it a useful title', { exact: true }).fill('Owner title');
     await page.route('**/functions/v1/analyze-listing-photo', (route) => route.fulfill({
-      json: { ok: true, masked: { title: '', description: '', changed: false }, suggestion: { title: 'Suggested title', description: 'A camera carrying case.', categoryId }, flags: [], photoQualitySuggestions: [] },
+      json: { ok: true, masked: { title: '', description: '', changed: false }, suggestion: { title: 'Suggested title', description: 'A camera carrying case.', categoryId }, flags: [], photoQualitySuggestions: [], photoDecisions: [{ photoIndex: 0, decision: 'approved', reason: 'Clear photo.' }] },
     }));
     await page.getByRole('button', { name: /Generate details|Regenerate/, exact: true }).click();
     await expect(page.getByLabel('What should renters know?', { exact: false })).toHaveValue('A camera carrying case.');
@@ -1190,7 +1288,38 @@ test('photo quality suggestions are actionable but do not block continuing', asy
   await expect(page.getByText(/The photo looks dim. Retake it in brighter light./)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continue', exact: true }).last()).toBeEnabled();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByLabel('Give it a useful title', { exact: true })).toHaveValue('Visible camera item');
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Visible camera item');
+});
+
+test('a flagged photo routes back to its thumbnail and can be replaced and rechecked', async ({ page }) => {
+  await setup(page, { aiSuccess: true, aiQualityWarning: true });
+  await page.goto(`${appUrl}/create-listing`);
+  const photo = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1000;
+    canvas.getContext('2d')!.fillRect(0, 0, 1000, 1000);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  const input = page.locator('input[type="file"]');
+  await input.setInputFiles({ name: 'item.png', mimeType: 'image/png', buffer: Buffer.from(photo, 'base64') });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByText('Photos need attention before publishing')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Step 1: Photos', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Step 1: Photos', exact: true })).toBeVisible();
+  await expect(page.locator('#listing-photo-0')).toHaveAttribute('aria-label', /replace: The photo looks dim/);
+  await page.getByRole('button', { name: 'Replace photo 1', exact: true }).click();
+  const replacement = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1000;
+    canvas.getContext('2d')!.fillStyle = '#d22';
+    canvas.getContext('2d')!.fillRect(0, 0, 1000, 1000);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  await input.setInputFiles({ name: 'replacement.png', mimeType: 'image/png', buffer: Buffer.from(replacement, 'base64') });
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Visible camera item');
+  await expect(page.getByText('Photos need attention before publishing')).toHaveCount(0);
 });
 
 test('advisory guideline warnings stay visible without blocking manual editing', async ({ page }) => {
@@ -1226,9 +1355,9 @@ test('publication waits for the server and offers view, manage and share actions
   await expect(dialog.getByRole('status')).toHaveText('People nearby can find your item and request a rental.');
   await expect(dialog.getByRole('img', { name: listing.title })).toBeVisible();
   await expect(dialog).toContainText(listing.title);
-  await expect(dialog.getByRole('button', { name: 'View listing', exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Manage listing', exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Share listing', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'View item', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Edit listing', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Copy link', exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'List another item', exact: true })).toBeVisible();
   await expect(page.getByText('Rental offers are off.', { exact: false })).toHaveCount(0);
   await expect(dialog.getByRole('heading', { name: 'Your listing is live!' })).toBeFocused();
@@ -1236,7 +1365,7 @@ test('publication waits for the server and offers view, manage and share actions
   await expect(dialog).toHaveCSS('opacity', '1');
   await page.screenshot({ path: testInfo.outputPath('listing-inline-desktop.png'), fullPage: true });
   await expect(dialog.locator('.success-confetti')).toHaveCount(0, { timeout: 3500 });
-  await dialog.getByRole('button', { name: 'Manage listing' }).click();
+  await dialog.getByRole('button', { name: 'Edit listing' }).click();
   await expect(page).toHaveURL(`${appUrl}/edit-listing/${listingId}`);
 });
 
@@ -1255,8 +1384,8 @@ test('publication achievement stays static on reduced-motion phones and View lis
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('listing-achievement-mobile.png'), fullPage: true });
-  await hero.getByRole('button', { name: 'View listing', exact: true }).focus();
-  await expect(hero.getByRole('button', { name: 'View listing', exact: true })).toBeFocused();
+  await hero.getByRole('button', { name: 'View item', exact: true }).focus();
+  await expect(hero.getByRole('button', { name: 'View item', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(`${appUrl}/listing/${listingId}`);
 });
@@ -1301,19 +1430,42 @@ test('Share listing copies the URL and reports Copied only after clipboard succe
   await fillListing(page);
   await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your listing is live!', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Share listing', exact: true }).click();
+  await page.getByRole('button', { name: 'Copy link', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Copied!', exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('test-copied-listing-url'))).toBe(`${appUrl}/listing/${listingId}`);
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {
     configurable: true, value: { writeText: async () => { throw new Error('Clipboard permission denied'); } },
   }));
   await page.getByRole('button', { name: 'Copied!', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Share listing', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy link', exact: true })).toBeVisible();
   await expect(page.getByText('Could not copy the listing link. Open the listing to copy its URL.', { exact: true })).toBeVisible();
 });
 
-test('bidding moves after publication and owner management restores the bidding schedule', async ({ page }, testInfo) => {
-  test.slow();
+test('listing steps focus inputs and highlight invalid fields before continuing', async ({ page }) => {
+  await createListingForReview(page);
+  await page.getByRole('button', { name: 'Details', exact: true }).click();
+  const title = page.getByLabel('Title', { exact: true });
+  await expect(title).toBeFocused();
+  await title.fill('');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(title).toBeFocused();
+  await expect(title).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#listing-title-error')).toBeVisible();
+  await expect(title).toHaveCSS('outline-style', 'solid');
+  await title.fill('Visible camera item');
+  await expect(title).toHaveAttribute('aria-invalid', 'false');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  const price = page.getByLabel('Daily price (USD)', { exact: true });
+  await expect(price).toBeFocused();
+  await price.fill('-1');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(price).toBeFocused();
+  await expect(price).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#listing-price-error')).toBeVisible();
+});
+
+test('inline optional bidding expands after publication, keeps inputs and retries failed saves', async ({ page }, testInfo) => {
+  page.setDefaultTimeout(15000);
   await page.clock.setFixedTime(new Date('2026-11-01T10:00:00Z'));
   const saves: Record<string, unknown>[] = [];
   const negotiationSaves: Record<string, unknown>[] = [];
@@ -1321,17 +1473,84 @@ test('bidding moves after publication and owner management restores the bidding 
     if (request.url().includes('/rpc/owner_save_listing_flow')) saves.push(request.postDataJSON().p_details);
     if (request.url().includes('/rpc/owner_configure_listing_negotiation')) negotiationSaves.push(request.postDataJSON());
   });
-  await setup(page, { auctionSupported: true, readyDraft: true, listingStart: '2026-11-04' });
-  await reviewReadyDraft(page);
+  await createListingForReview(page, { auctionSupported: true, listingStart: '2026-11-04' });
   await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toHaveCount(0);
   await expect(page.getByText('Bidding is available after publication', { exact: true })).toBeVisible();
   await expect(page.getByRole('switch', { name: 'Allow rental offers' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Your listing is live', exact: true })).toBeVisible();
-  await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toBeEnabled();
+  const confirmation = page.getByRole('region', { name: 'Your listing is live!', exact: true });
+  await expect(confirmation).toBeVisible();
+  const receiptActions = confirmation.getByRole('group', { name: 'Published listing actions' });
+  for (const name of ['View item', 'Edit listing', 'Copy link', 'List another']) {
+    await expect(receiptActions.getByRole('button', { name, exact: true })).toBeVisible();
+  }
+  await expect(receiptActions.locator('.listing-receipt-main-actions').getByRole('button', { name: 'List another', exact: true })).toBeVisible();
+  await expect(receiptActions.locator('.listing-receipt-main-actions').getByRole('button').first()).toHaveText('List another');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const biddingSection = page.getByRole('region', { name: 'Optional competitive bidding', exact: true });
+  const disclosure = biddingSection.locator(':scope > details');
+  const summary = disclosure.locator(':scope > summary');
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText('Their best bid.');
+  await expect(summary.locator('.owner-bidding-product img')).toHaveAttribute('src', /storage|data:image/);
+  await expect(summary).toContainText('Set up bidding');
+  await expect(summary).toContainText('Nothing goes live until you save.');
+  await expect(biddingSection).toHaveCSS('animation-name', 'ownerBiddingAttention');
+  await expect(biddingSection).toHaveCSS('animation-delay', '2.8s');
+  await expect(biddingSection).toHaveCSS('animation-iteration-count', '1');
+  expect(await summary.evaluate(element => {
+    const style = getComputedStyle(element, '::after');
+    return { name: style.animationName, delay: style.animationDelay, count: style.animationIterationCount, pointerEvents: style.pointerEvents };
+  })).toEqual({ name: 'ownerBiddingShine', delay: '2.8s', count: '3', pointerEvents: 'none' });
+  await expect(summary.locator('.owner-bidding-cta')).toHaveCSS('animation-name', 'ownerBiddingCtaPulse');
+  await expect(summary.locator('.owner-bidding-cta')).toHaveCSS('animation-iteration-count', '3');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(biddingSection).toHaveCSS('animation-name', 'none');
+  await expect(summary.locator('.owner-bidding-mark')).toHaveCSS('animation-name', 'none');
+  expect(await summary.evaluate(element => getComputedStyle(element, '::after').animationName)).toBe('none');
+  await expect(summary.locator('.owner-bidding-cta')).toHaveCSS('animation-name', 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    const receipt = (await confirmation.boundingBox())!;
+    const invitation = (await summary.boundingBox())!;
+    const cta = (await summary.locator('.owner-bidding-cta').boundingBox())!;
+    expect(receipt.height).toBeLessThanOrEqual(260);
+    expect(invitation.height).toBeGreaterThan(receipt.height);
+    expect(cta.y + cta.height).toBeLessThanOrEqual(900);
+    await page.screenshot({ path: testInfo.outputPath(`bidding-first-viewport-${width}.png`), animations: 'disabled' });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect((await summary.locator('.owner-bidding-cta').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await biddingSection.screenshot({ path: testInfo.outputPath(`bidding-invitation-${width}.png`), animations: 'disabled' });
+  }
+  await expect(disclosure).not.toHaveAttribute('open');
+  await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toHaveCount(0);
+  const confirmationBox = (await confirmation.boundingBox())!;
+  expect((await biddingSection.boundingBox())!.y).toBeGreaterThanOrEqual(confirmationBox.y + confirmationBox.height);
+  expect(negotiationSaves).toHaveLength(0);
+  const rulesLink = summary.getByRole('button', { name: 'How bids and deadlines work', exact: true });
+  await rulesLink.click();
+  const rulesArticle = page.getByRole('dialog', { name: 'How bids and deadlines work', exact: true });
+  await expect(rulesArticle).toBeVisible();
+  await expect(rulesArticle.getByRole('article')).toContainText('Overlapping bids compete by total rental value');
+  expect(negotiationSaves).toHaveLength(0);
+  await page.keyboard.press('Escape');
+  await expect(rulesArticle).toHaveCount(0);
+  await expect(disclosure).not.toHaveAttribute('open');
+  await expect(rulesLink).toBeFocused();
+  await summary.focus();
+  await summary.press('Enter');
+  await expect(biddingSection.getByRole('list', { name: 'Bidding setup steps' })).toBeVisible();
+  await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toHaveCount(0);
+  const openingRate = page.getByRole('spinbutton', { name: /^Starting bid per day \(USD\)/ });
+  await expect(openingRate).toBeVisible();
+  await expect(page.locator('.owner-auction-calendar')).toBeVisible();
+  await expect(page.getByLabel('Bidding closes date', { exact: true })).toHaveValue('2026-11-03');
+  await expect(page.getByLabel('Bidding closes time', { exact: true })).toContainText('10:00 PM');
+  await expect(page.getByLabel('Bidding opens date', { exact: true })).toHaveValue('2026-11-04');
+  expect(negotiationSaves).toHaveLength(0);
   await expect(page.getByRole('switch', { name: 'Allow rental offers' })).toHaveCount(0);
-  await page.getByRole('switch', { name: 'Enable live bidding' }).check();
   await expect(page.getByText('Renters choose their pickup and return dates within your bidding availability window.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Choose a complete auction rental period inside your listing availability.' })).toBeVisible();
@@ -1340,39 +1559,88 @@ test('bidding moves after publication and owner management restores the bidding 
     await bidding.getByRole('button', { name: new RegExp(`^${label}`) }).click();
     await bidding.getByRole('button', { name: new RegExp(date) }).click();
   }
-  await page.getByLabel('Bidding opens', { exact: true }).fill('2026-11-02T10:00');
-  await page.getByLabel('Bidding closes', { exact: true }).fill('2026-11-04T23:00');
+  await expect(page.getByLabel('Bidding closes date', { exact: true })).toHaveValue('2026-11-04');
+  await expect(page.getByLabel('Bidding closes time', { exact: true })).toContainText('10:00 PM');
+  await page.getByLabel('Bidding opens date', { exact: true }).fill('2026-11-02');
+  await page.getByLabel('Bidding opens time', { exact: true }).click();
+  await page.getByRole('option', { name: '10:00 AM', exact: true }).click();
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Bidding cannot open before your listing availability starts.' })).toBeVisible();
+  expect(negotiationSaves).toHaveLength(0);
+  await page.getByLabel('Bidding opens date', { exact: true }).fill('2026-11-04');
+  await page.getByLabel('Bidding closes time', { exact: true }).click();
+  await page.getByRole('option', { name: '11:00 PM', exact: true }).click();
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Bidding must close at least 2 hours before pickup.' })).toBeVisible();
   expect(negotiationSaves).toHaveLength(0);
-  await page.getByLabel('Bidding closes', { exact: true }).fill('2026-11-04T22:00');
+  await page.getByLabel('Bidding closes time', { exact: true }).click();
+  await page.getByRole('option', { name: '10:00 PM', exact: true }).click();
+  await openingRate.fill('20');
+  await summary.click();
+  await expect(disclosure).not.toHaveAttribute('open');
+  await expect(page.getByLabel('Bidding opens date', { exact: true })).not.toBeVisible();
+  await summary.click();
+  await expect(page.getByLabel('Bidding opens date', { exact: true })).toHaveValue('2026-11-04');
+  await expect(page.getByLabel('Bidding opens time', { exact: true })).toContainText('10:00 AM');
+  await expect(openingRate).toHaveValue('20');
+  await page.route('**/rest/v1/rpc/owner_configure_listing_negotiation', route => route.fulfill({
+    status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Bidding service unavailable. Please retry.' }),
+  }), { times: 1 });
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(biddingSection.getByRole('status').filter({ hasText: 'Bidding service unavailable. Please retry.' })).toBeVisible();
+  await expect(page.locator('.bidding-celebration')).toHaveCount(0);
+  await expect(confirmation).toBeVisible();
+  await expect(openingRate).toHaveValue('20');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Your item is scheduled for bidding. Bidding opens' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Manage your auction' })).toHaveAttribute('href', `/auction/${listingId}`);
+  const celebration = page.locator('.bidding-celebration');
+  await expect(celebration).toBeVisible();
+  await expect(celebration).toContainText('Ready for the bidding spotlight!');
+  await expect(celebration).toHaveCSS('pointer-events', 'none');
+  await expect(celebration.locator('.bidding-celebration-particle')).toHaveCount(12);
+  await expect(celebration.locator('.bidding-celebration-ring')).toHaveCount(2);
+  await expect(celebration.locator('.bidding-celebration-gavel')).toHaveCSS('animation-name', 'biddingGavelStrike');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(celebration).not.toBeVisible();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect(celebration).toHaveCount(0, { timeout: 6000 });
+  const ticket = page.getByRole('article', { name: 'Your auction ticket' });
+  await expect(ticket).toBeVisible();
+  await expect(ticket).toBeFocused();
+  await expect(ticket).toContainText('Scheduled auction');
+  await expect(ticket.getByRole('link', { name: 'View auction' })).toHaveAttribute('href', `/auction/${listingId}`);
+  await expect(summary).not.toBeVisible();
+  await expect(disclosure).not.toHaveAttribute('open');
   expect(saves.every(value => !('offer_preferences' in value) && !('auction_preferences' in value))).toBe(true);
   const times = await page.evaluate(() => ({
-    bidding_starts_at: new Date('2026-11-02T10:00').toISOString(), bidding_ends_at: new Date('2026-11-04T22:00').toISOString(),
+    bidding_starts_at: new Date('2026-11-04T10:00').toISOString(), bidding_ends_at: new Date('2026-11-04T22:00').toISOString(),
   }));
   expect(negotiationSaves.at(-1)?.p_auction).toMatchObject({ enabled: true, date_flexible: true, start_date: '2026-11-05', end_date: '2026-11-08', ...times });
   for (const width of [1440, 375]) {
     await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath(`post-publication-negotiation-${width}.png`), fullPage: true });
+    expect((await ticket.boundingBox())!.width).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: testInfo.outputPath(`post-publication-negotiation-${width}.png`), fullPage: true, animations: 'disabled' });
   }
-  await page.goto(`${appUrl}/dashboard?tab=lending`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'My listings', exact: true }).click();
-  await page.getByText('More options', { exact: true }).click();
-  await page.getByRole('button', { name: 'Bidding settings', exact: true }).click();
-  await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toBeChecked();
-  await expect(page.locator('#listing-auction').getByRole('button', { name: /^Earliest pickup/ })).toContainText('Nov 5, 2026');
-  await expect(page.getByLabel('Bidding opens', { exact: true })).toHaveValue('2026-11-02T10:00');
-  await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
-  await page.goto(`${appUrl}/edit-listing/${listingId}`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('list', { name: 'Listing progress' })).toBeVisible({ timeout: 60_000 });
-  const steps = await page.getByRole('list', { name: 'Listing progress' }).getByRole('listitem').count();
-  for (let step = 2; step < steps; step++) await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toBeChecked();
+  await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toHaveCount(0);
+  await expect(page.getByLabel('Bidding opens date', { exact: true })).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save changes', exact: true })).not.toBeVisible();
 });
+
+for (const scenario of [
+  { name: 'bidding is disabled', auctionSupported: false },
+  { name: 'publication awaits approval', auctionSupported: true, pendingApproval: true },
+]) {
+  test(`inline bidding is not offered when ${scenario.name}`, async ({ page }) => {
+    await createListingForReview(page, scenario);
+    await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
+    await expect(page.getByRole('heading', { name: scenario.pendingApproval ? 'Submitted for review' : 'Your listing is live!', exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Optional competitive bidding', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('switch', { name: 'Enable live bidding' })).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+}
 
 test('renter auction waits for scheduled opening, shows anonymous ranks and preserves retry keys', async ({ page }) => {
   test.slow();
@@ -1598,7 +1866,7 @@ test('required item identity, included tags and delivery radius persist through 
   await expect(page.getByRole('heading', { name: 'Your listing is live!' })).toBeVisible();
   expect(saves.at(-1)).toMatchObject({ item_details: { delivery_radius_miles: 25, included_items: ['Carrying case'] } });
   expect(reviews.at(-1)!.description).toContain('Charge the battery before use.');
-  await page.getByRole('button', { name: 'View listing', exact: true }).click();
+  await page.getByRole('button', { name: 'View item', exact: true }).click();
   await expect(page.getByRole('heading', { name: listing.title, exact: true })).toBeVisible({ timeout: 60000 });
   for (const text of ['Sony', 'FX3', 'Carrying case', 'Charge the battery before use.', '25 miles']) await expect(page.getByRole('main')).toContainText(text);
 });

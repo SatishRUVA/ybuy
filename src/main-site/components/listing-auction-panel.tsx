@@ -17,7 +17,7 @@ const NO_DATES = new Set<string>();
 function FixedAuctionCalendar({ start, end }: { start: string; end: string }) {
   const [month, setMonth] = useState(() => new Date(`${start.slice(0, 7)}-01T12:00:00`));
   const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
-  return <section aria-label="Auction rental calendar" className="rounded-card border border-app p-3">
+  return <section aria-label="Auction rental calendar" className="rental-calendar rounded-card border border-app p-3">
     <h3 className="text-sm font-bold">Rental dates</h3>
     <p className="mt-1 text-xs text-sec">These dates are fixed by the owner. All bids cover pickup {start} to return {end}; the return date is not a charged rental day.</p>
     <div className="my-3 flex items-center justify-between gap-2">

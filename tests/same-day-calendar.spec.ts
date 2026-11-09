@@ -34,6 +34,16 @@ for (const surface of ['main-site', ''] as const) {
       const today = page.getByRole('button', { name: /^Wednesday, November 4, 2026/ });
       await expect(today).toBeEnabled();
       await today.click();
+      if (owner && surface === 'main-site') {
+        await expect(page.getByTestId('selection')).toHaveText('2026-11-04 / 2026-11-11');
+        await page.getByRole('button', { name: /^Thursday, December 3, 2026/ }).click();
+        await expect(page.getByTestId('selection')).toHaveText('2026-11-04 / 2026-12-04');
+        await page.getByRole('button', { name: /^Available through/ }).click();
+        await expect(page.getByRole('button', { name: /^Friday, December 4, 2026/ })).toBeDisabled();
+        await page.getByRole('button', { name: /^Available from/ }).click();
+        await today.click();
+        await expect(page.getByTestId('selection')).toHaveText('2026-11-04 / 2026-11-11');
+      }
       if (owner) await today.click();
       else {
         await page.getByRole('button', { name: /^Thursday, November 5, 2026/ }).click();

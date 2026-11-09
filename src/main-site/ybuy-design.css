@@ -49,6 +49,8 @@
   --motion-fast: 120ms;
   --motion-standard: 200ms;
   --motion-page: 280ms;
+  --motion-exit: 160ms;
+  --ease-market: cubic-bezier(0.2, 0.8, 0.2, 1);
   --motion-success-enter: 320ms;
   --motion-success-icon: 400ms;
   --motion-success-check: 300ms;
@@ -58,6 +60,8 @@
 }
 
 :root[data-theme="main"] {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
   --bg: var(--ybuy-bg);
   --bg-subtle: var(--ybuy-bg-subtle);
   --bg-card: var(--ybuy-surface);
@@ -83,35 +87,6 @@
   --error-soft: var(--ybuy-error-soft);
   --star: var(--ybuy-star);
   --favorite: var(--ybuy-favorite);
-}
-
-:root[data-theme="main"],
-:root[data-theme="main"] .p1 {
-  --p1-blue: var(--ybuy-accent);
-  --p1-blue-hover: var(--ybuy-accent-hover);
-  --p1-forest: var(--ybuy-gray-900);
-  --p1-lime: var(--ybuy-gray-200);
-  --p1-white: var(--ybuy-white);
-  --p1-paper: var(--ybuy-gray-100);
-  --p1-sand: var(--ybuy-gray-200);
-  --p1-ink: var(--ybuy-text);
-  --p1-muted: var(--ybuy-text-secondary);
-  --p1-border: var(--ybuy-border);
-  --p1-info: var(--ybuy-gray-100);
-  --p1-good: var(--ybuy-success);
-  --p1-good-bg: var(--ybuy-success-soft);
-  --p1-pending: var(--ybuy-warning);
-  --p1-pending-bg: var(--ybuy-warning-soft);
-  --p1-bad: var(--ybuy-error);
-  --p1-bad-bg: var(--ybuy-error-soft);
-  --p1-category-cameras: var(--ybuy-gray-100);
-  --p1-category-outdoor: var(--ybuy-gray-200);
-  --p1-category-tools: var(--ybuy-gray-100);
-  --p1-category-sports: var(--ybuy-gray-300);
-  --p1-category-home: var(--ybuy-gray-200);
-  --p1-category-fashion: var(--ybuy-gray-100);
-  --p1-category-baby: var(--ybuy-gray-300);
-  --p1-category-vehicles: var(--ybuy-gray-200);
 }
 
 * { border-color: var(--border); }
@@ -168,4 +143,15 @@ h1, h2, h3, h4 {
 
 @media (pointer: coarse) {
   .ui-button { min-width: 44px; min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

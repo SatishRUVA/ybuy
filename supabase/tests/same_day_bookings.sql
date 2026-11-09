@@ -28,6 +28,8 @@ select is(public.listing_local_today('e4000000-0000-4000-8000-000000000001'),
  (select today from calendar),'Authoritative today is the pickup calendar');
 select ok(not has_function_privilege('anon','public.listing_local_today(uuid)','execute'),
  'Private listing date helper is not exposed');
+select ok((select enabled from public.feature_flags where key='ALLOW_SAME_DAY_BOOKINGS'),
+ 'Same-day bookings are enabled by default');
 
 set local role authenticated;
 set local request.jwt.claims='{"sub":"e1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"e2000000-0000-4000-8000-000000000001","exp":4102444800}';
@@ -55,8 +57,18 @@ select lives_ok($$select public.owner_save_listing_availability('e4000000-0000-4
  (select today from calendar),(select today+2 from calendar),array[]::date[],'UTC')$$,
  'Availability management ignores device timezone once pickup is confirmed');
 
+reset role;
+update public.feature_flags set enabled=false where key='ALLOW_SAME_DAY_BOOKINGS';
 set local request.jwt.claims='{"sub":"e1000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"e2000000-0000-4000-8000-000000000002","exp":4102444800}';
 set local timezone='UTC';
+set local role authenticated;
+select throws_ok($$select public.create_booking_request('e4000000-0000-4000-8000-000000000001',
+ (select today from calendar),(select today+1 from calendar),1,'pickup','')$$,
+ '23P01','Listing is not available for the requested dates and quantity',
+ 'Disabling the setting rejects new bookings starting today');
+reset role;
+update public.feature_flags set enabled=true where key='ALLOW_SAME_DAY_BOOKINGS';
+set local role authenticated;
 select lives_ok($$select public.create_booking_request('e4000000-0000-4000-8000-000000000001',
  (select today from calendar),(select today+1 from calendar),1,'pickup','')$$,
  'Renter books pickup today and return tomorrow even when UTC date differs');
@@ -72,13 +84,17 @@ select throws_ok($$select public.create_booking_request('e4000000-0000-4000-8000
 select throws_ok($$select public.create_booking_request('e4000000-0000-4000-8000-000000000001',
  (select today from calendar),(select today from calendar),1)$$,
  '23P01','Listing is not available for the requested dates and quantity','Pickup and return must remain different dates');
+reset role;
+update public.feature_flags set enabled=false where key='ALLOW_SAME_DAY_BOOKINGS';
 set local request.jwt.claims='{"sub":"e1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"e2000000-0000-4000-8000-000000000001","exp":4102444800}';
+set local role authenticated;
 select lives_ok($$select public.respond_to_booking_request(
  (select id from public.bookings where listing_id='e4000000-0000-4000-8000-000000000001'),true)$$,
- 'Owner can approve same-day booking across UTC midnight');
+ 'A saved same-day booking can still be approved after the setting is disabled');
 select is((select status from public.bookings where listing_id='e4000000-0000-4000-8000-000000000001'),
  'pending_payment','Payment is still required after owner approval');
 reset role;
+update public.feature_flags set enabled=true where key='ALLOW_SAME_DAY_BOOKINGS';
 update public.bookings set status='cancelled' where listing_id='e4000000-0000-4000-8000-000000000001';
 set local role authenticated;
 insert into public.listing_availability(listing_id,date,is_available)

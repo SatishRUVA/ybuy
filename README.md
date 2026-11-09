@@ -221,9 +221,8 @@ holds rather than charges and excluded from the displayed rental charge.
 
 ## Main-site renter request journey
 
-The main-site interface is black, white, and neutral gray, using neutral tokens
-and bidding surfaces rather than a page-wide grayscale filter. Photos and
-celebration confetti retain their colors. Other themes and Preview 1 are unchanged.
+The main-site interface uses YBuy's evergreen, citrus and sage design tokens.
+Photos and celebration confetti retain their colors.
 Status meaning remains available through text and icons, not color alone.
 
 Main-site pages share a keyboard skip link, a flexible content landmark, and an
@@ -269,9 +268,8 @@ bundled synthetic camera image instead of inserting a nonexistent `example.test`
 URL. Existing photos locked by an outstanding rental and immutable agreement
 snapshots must not be rewritten to repair test data.
 
-The `VITE_SITE_VARIANT=main` build keeps the restored green main-site components,
-layouts and palette. The request journey is main-site-only; Preview 1's adapters
-and presentation are unchanged.
+The main-site request journey uses the same production components and services
+as the rest of the marketplace.
 
 - Renters choose open-to-offers or fixed daily budget, and a per-request **in-app**
   matching notification preference. Fixed budgets require a positive daily amount.
@@ -294,7 +292,7 @@ and presentation are unchanged.
   not generic search. Listing links preserve request dates and quantity through
   checkout, including modified clicks/new tabs. Booking and payment validation
   remain authoritative. Matching cards use real saved-item mutations, not
-  preview-only favorite state.
+  mock favorite state.
 
 The new [request journey migration](supabase/migrations/20261102000003_main_request_journey.sql)
 depends on the
@@ -339,7 +337,7 @@ rolls back both schema and fixture changes.
 Hosted smoke checks confirmed the READY deployment and correct E2E alias, an
 entry bundle matching the validated build byte-for-byte, accessible request
 journey chunks, the enabled access-code gate, and the new database columns/RPCs
-with anonymous match reads denied. Preview 1 remains on
+with anonymous match reads denied. The independently managed redesign deployment remains on
 `dpl_BvvDmFinF65quJ2aKSiGBVJud6ay`. Unrelated concurrent booking/tax/discovery
 changes were excluded by deploying the preserved validated build, not rebuilding
 the current worktree. Authenticated hosted journeys and real payment transactions
@@ -416,7 +414,7 @@ the enabled access gate, and normal renter-authenticated access to the saved
 agreement while withdrawn listing details remain hidden by RLS. The shared
 browser connection was unavailable, so no new hosted UI payment was performed.
 
-During final verification, an independent deployment moved Preview 1 to
+During final verification, an independent deployment moved the separate redesign site to
 `dpl_tdtcgfrkR3TFa6NenMd6Wr2dhJpd` and added migrations `20261102000004`,
 `20261102000005` and `20261102000007` to the shared test backend. This release
 did not perform those deployments or revert them. Their integration with the
@@ -435,7 +433,7 @@ supplied-reference protection. An isolated local concurrency check verified
 distinct allocations across the six-digit boundary under overlapping sessions;
 it uses minimal booking/agreement tables rather than the complete booking flow.
 
-## Preview 1 production integration
+## Main-site marketplace implementation
 
 ### Local city inventory
 
@@ -445,7 +443,7 @@ targets the isolated `supabase_db_YBuy` container and requires the local profile
 picker accounts. It is transactional and idempotent: reruns leave existing seed
 IDs unchanged. Existing listings, bookings and accounts are not replaced.
 Availability starts on the insertion date and spans 30 days; enabled delivery
-costs $15. Existing preview image URLs are reused, so image loading still depends
+costs $15. Existing listing image URLs are reused, so image loading still depends
 on the image host. Seeded listings do not invent ratings or owner verification.
 
 The shared marketplace cards use the supplied card design: rounded photo/cards,
@@ -453,26 +451,17 @@ lime instant-booking badges, actual photo counts, owner avatars, handoff badges,
 daily price and a working View Details link. Favorites retain their real mutation.
 Rental, bidding and community request cards share the same bordered white
 surface, corner radius, title scale and body spacing, with actions aligned at
-the bottom. List views retain their horizontal layout. Shared Preview dialogs
+the bottom. List views retain their horizontal layout. Shared dialogs
 keep their headers visible and scroll long content internally; date/filter
 actions use a separate footer, while request form actions stay in their form
 with a sticky footer. Existing Radix dialog action footers also remain sticky.
 
-The current application defaults to Preview 1's cobalt/lime palette, not Ocean
-Green. The live app and local preview share `src/styles/preview-one.css`.
-The approved palette uses ink `#172321`, cobalt `#3157E1`, lime `#D8FF68`,
-forest `#163D34`, white `#FFFFFF`, paper `#F7F6F1`, sand `#EEEAE0`,
-border `#DCDED7` and muted text `#62706D`. Category backgrounds and
-success/pending/information states are centralized in the same shared CSS tokens.
-Camping and Garden use Outdoor's color; Party and Music use Fashion's color,
-and Electronics uses Vehicles' color. Error states retain their accessible red.
-Primary CTAs consistently use cobalt with white text, including bidding,
-request cards and promotional actions. The legacy lime button variant maps to
-the same primary treatment; lime remains available for non-button highlights.
-Secondary navigation and Cancel/Back stay neutral; destructive actions stay red.
+The main application defaults to the `main` theme. Its evergreen, citrus and sage
+tokens are defined in `src/main-site/ybuy-design.css`; saved theme preferences
+cannot switch the production marketplace to a retired palette.
 
-The approved notification center is available at `/notifications`, with the same
-category/day grouping and responsive settings as `/preview-1#/notifications`.
+The notification center is available at `/notifications`, with category/day
+grouping and responsive layouts.
 Production uses real account notifications (including marketplace requests),
 saved in-app category preferences, selection/mark-read actions and a numeric
 unread bell. Counts within the center describe loaded history; older updates
@@ -481,8 +470,7 @@ settings. Bookings, payments and safety/support cannot be muted in either
 channel. Winning bids and time-sensitive auction actions bypass optional
 bid-activity preferences. Database constraints and delivery triggers enforce
 this policy, including direct notification inserts. Muting does not remove
-existing inbox history. The preview still uses isolated sample data and
-session-only preferences.
+existing inbox history.
 All production notification surfaces share the app router's validated destination
 resolver, including pickup/check-in, return, booking confirmation, listings,
 request matches, bids, conversations and support cases. Dashboard and request
@@ -492,22 +480,19 @@ Owners now define general pickup/return handoff windows (morning/afternoon/eveni
 and return expectations on listings. Bookings keep their selected dates fixed;
 renters propose a window with an optional note, owners approve/decline, and the
 same scheduling model applies to both pickup and return flows.
-Home, browse/search, listing details, favorites and checkout now render the actual
-`src/preview-1` components through `MarketplaceProvider`, with real listings,
-availability, favorites, messages and booking/payment commands. Confirmation
-shares the original ticket template with the existing authoritative booking
-loader. Header, sidebar and footer are also shared components, not lookalikes.
-The main routes never mount the demo `PreviewProvider` as their backend.
+Home, browse/search, listing details, favorites and checkout are implemented in
+`src/main-site` and use the real marketplace services for inventory, availability,
+favorites, messages and booking/payment commands. Confirmation loads authoritative
+booking state. The header, workspace navigation and footer are main-site
+components; production routes do not install sample data or demo providers.
 
 Renter and owner dashboards, inventory, listing creation/editing, payouts,
-messages, notifications, requests and profile/settings now use the native
-Preview templates with typed live-data adapters. Bidding cards, bidding-room
-layout/rules and the administrator page/tab layout are also shared between the
-preview and production. Creating/editing keeps the original standalone wizard,
-without the account-workspace sidebar. Real workflow tools that have no Preview
-screen remain in separate dialogs or detail pages rather than replacing it.
+messages, notifications, requests and profile/settings use the main-site
+components and live data. Bidding and administrator tools retain their protected
+operations and permissions. Listing creation stays focused on the wizard, while
+workflow actions remain in their corresponding dialogs or detail pages.
 
-| Preview screen | Main route |
+| Marketplace surface | Main route |
 | --- | --- |
 | Home / browse / details | `/`, `/search`, `/listing/:id` |
 | Bidding / bidding room | `/bidding`, `/auction/:id` |
@@ -519,24 +504,23 @@ screen remain in separate dialogs or detail pages rather than replacing it.
 | Messages / notifications / profile | `/messages`, `/messages/:id`, `/notifications`, `/profile` |
 | Admin and its six sections | `/admin`, `/admin/:section` |
 
-The interface-state gallery, sample role switches, fake payments, demo maintenance
-controls and screen index stay preview-only. Main routes show real loading,
-empty, failure and success states instead of installing simulated controls.
+The standalone `design-showcase/` remains separate from the product. Main routes
+show real loading, empty, failure and success states rather than simulated controls.
 Administrator deep links retain their protected tool destinations and individual
 permissions. Owners link published rentals to requests at the advertised price;
 the new UI does not create private offers or counteroffers.
 
 Real listing validation, uploads, draft saving, publication review, authentication
-and booking/payment verification remain authoritative. Listing creation keeps
-Preview 1's shared layout and stylesheet, with one validated production wizard
-instead of a second wizard inside a modal. Required condition, pricing and private
+and booking/payment verification remain authoritative. Listing creation uses one
+validated main-site wizard instead of a second wizard inside a modal. Required
+condition, pricing and private
 pickup controls are available inline; AI assistance and optional item fields use
 a details disclosure. Blocked-day failures offer a reload and prevent continuing
 until availability can be verified. No sample photos,
 fake publication success or demo payments are added to the main app.
-The Photos step follows the supplied Preview 1 upload layout: a full-width
-neutral upload area, no preview sidebar, and secondary Back / primary Continue
-actions. The preview-only sample-photo button is replaced by real draft saving.
+The Photos step uses a full-width neutral upload area, no listing sidebar, and
+secondary Back / primary Continue actions. Sample-photo controls are replaced by
+real draft saving.
 Uploaded photos retain cover selection, ordering, replacement and removal.
 
 Earlier staging verification below describes the previous Ocean Green rollout;
@@ -544,8 +528,8 @@ it is not evidence of complete pixel parity for the current redesign.
 Sharing tokens alone is not
 pixel-level proof. Shared CSS resets have deliberately low specificity so they
 cannot replace primary-button text, selected-filter colors or semantic feedback
-with inherited ink. Preview typography still takes precedence over browser
-heading defaults. Dialogs and dropdown portals share the same presentation scope.
+with inherited ink. Main-site typography defines heading styles. Dialogs and
+dropdown portals share the same presentation scope.
 Shared overlay roots explicitly stay transparent with no page minimum height:
 a closed calendar must not inherit the page's white background and cover the app.
 Incomplete descriptions can be saved privately as drafts; advancing and publishing
@@ -559,26 +543,13 @@ booking, and delivery/note RPC payloads and estimates. Account regressions also
 cover favorites, notifications, handoff retry and return confirmation. The build
 still reports its existing large-chunk warning.
 
-The direct integration has focused regressions in `tests/preview-backend.spec.ts`
-for original tag/class hierarchy, exact hero-copy screenshot equality at
-375/768/1440px, empty real catalogs, authoritative search filters and errors,
-favorite mutation failures, checkout state/delivery/note persistence, exclusive
-return dates, same-booking payment retry and exact receipt amount/currency checks.
-The old main-site page fade is not applied to these routes: its compositing
-changed text rendering even with matching markup and colors.
-All 13 focused browser regressions passed after the direct integration.
-Application typecheck, targeted lint and production build also passed; lint
-reports nine Fast Refresh export warnings and the build retains its large-chunk
-warning. The unmocked local homepage returned HTTP 200 with no page errors or
-alerts; the nearby catalog was empty. These checks did not create live bookings,
-charge cards, transfer payouts or send notification emails.
-
-This is not a claim of all-page screenshot identity. Extra admin subsection,
-case/evidence and wallet controls retain real production features in separate
-tools. Real listings, authentication state, location lookup and missing local
-fixture photos differ from the preview's sample content; unavailable photos are
-reported rather than replaced with misleading demo listing images. Hosted
-deployment and live provider transactions have not been validated by these checks.
+Current main-site regressions are maintained in
+`tests/main-site-variant.spec.ts` and related focused workflow tests. They cover
+responsive layouts, real catalog states, listing and checkout flows, bidding,
+authentication and visible recovery states. These checks do not create live
+bookings, charge cards, transfer payouts or send notification emails. Missing
+fixture photos are reported rather than replaced with misleading listing images.
+Hosted deployment and live provider transactions require separate validation.
 
 Native checkout creates a booking once before starting Stripe, then retries
 payment against that same returned ID. It cannot simulate card success or a
@@ -619,23 +590,19 @@ Typecheck, focused bidding lint, the production build and the hosted test-profil
 safety test passed. Both deployed entry bundles returned HTTP 200. The redesign
 site's live bidding directory loaded real auctions; the main test site's security
 code gate remains enabled. These are deployment smoke checks, not a full hosted
-payment regression or a run of the complete pgTAP suite. Preview 1 remains a
-sample-only demo. Deposits still use the existing combined checkout charge,
+payment regression or a run of the complete pgTAP suite. Deposits still use the existing combined checkout charge,
 not a separate authorization hold.
 
-The main test site's build must set `VITE_SITE_VARIANT=main`. This selects the
-complete October 30 UI from `00bb794`, isolated in `src/main-site`: original
-pages, navigation, controls, cards, dialogs, layout rules and global stylesheet.
-It reuses current marketplace APIs and authentication, not the old backend.
+The application entry loads `src/main-site` by default; `VITE_SITE_VARIANT=admin`
+selects the separately protected administrator portal. The main site reuses
+current marketplace APIs and authentication.
 The restored bidding screens retain scheduled opening/closing times, configured
 increments, renter-only bid history/rank, owner full history/profiles/ratings,
 and owner-only winner selection before bidding closes. There is no post-close
 decision window or automatic winner selection. Both UUID auction URL forms
 use real bidding; sample auction IDs and empty-feed samples require `mock_bidding`.
-Leave the setting unset on `ybuy-redesign-v1` to preserve its redesign.
-The entry points load their own stylesheets so Preview 1 styles cannot override
-main-site layouts. The main entry fixes its theme to `main`, ignoring saved demo
-themes, and uses the original Inter/Plus Jakarta Sans typography and corner radii.
+The main entry loads its stylesheet and fixes its theme to `main`, ignoring saved
+theme preferences, and uses DM Sans and Manrope typography.
 Legacy `/dashboard/listings` and `/payouts` URLs open the original lending
 dashboard, which contains inventory, availability and earnings together.
 Its palette is primary `#0E7C66`, hover `#096653`, deep green `#075B4D`,
@@ -643,10 +610,8 @@ light green `#D8F0E8`, pale green `#EFF8F4`, highlight `#E9B949`,
 secondary accent `#F28B64`, background `#F6F7F3`, cards `#FFFFFF`,
 text `#172321`, secondary text `#687873`, borders `#E1E8E4`,
 success `#25865B`, warning `#D99A29`, and error `#C94C4C`.
-Shared template color aliases resolve to this palette on the main site only;
-the redesign keeps its cobalt/lime theme. The compiled-browser regression checks
-all 15 exact tokens, the page background, primary-button normal/hover colors,
-and shared bidding aliases with a stale Preview 1 preference in browser storage.
+The compiled-browser regression checks the main palette, page background,
+primary-button states and recovery from an obsolete saved theme preference.
 The earlier router/homepage-only restoration was incomplete: shared redesigned
 components still changed inner pages. The full isolated UI replaces that partial
 fix without rolling back the bidding database or deploying the redesign project.
@@ -670,8 +635,8 @@ only after bidding closes. Hosted checks confirmed deployment readiness, all
 The redesign deployment remains `dpl_BvvDmFinF65quJ2aKSiGBVJud6ay`; no database
 changes were made for this restoration.
 
-Shared Preview 1 form controls have persistent borders and padding before focus.
-Native checkboxes use the cobalt checked state and retain keyboard, disabled,
+Main-site form controls have persistent borders and padding before focus.
+Native checkboxes use the accent checked state and retain keyboard, disabled,
 indeterminate and system high-contrast behavior. Sign-in fields and actions use
 consistent spacing.
 The homepage retains the supplied camping, mixer and drill imagery. Production
@@ -901,10 +866,9 @@ within its availability step, reusing the same API and booked-date protection as
 the dashboard. Blocking errors require reloading authoritative dates before retry;
 the UI does not claim an unsaved change succeeded.
 
-### Page workflow migration
+### Page workflows
 
-The earlier adapted-page rollout translated the approved Preview 1 page hierarchy and
-interactions, not its private theme or simulated data:
+The main site provides production workflows across the marketplace:
 
 - Marketplace: persistent search filters, grid/list/map results, uploaded-photo
   listing galleries, owner contact, date continuity and authoritative favorites.
@@ -916,15 +880,15 @@ interactions, not its private theme or simulated data:
   bookings/money, marketplace configuration and platform controls; existing
   operation forms retain audit reasons and named form values.
 
-That earlier rollout retained Ocean Green and the existing backend APIs. Private pricing and
+These workflows retain the existing backend APIs. Private pricing and
 counteroffer creation are not part of the new navigation/workflows; historical
 records remain available where required. Booking approval and checkout redirects
 never count as verified payment. Provider webhook confirmation remains
 authoritative. The public bidding directory displays real auctions or a real
 empty/offline state, never automatic sample auctions or a mock fallback.
 
-Focused workflow regressions are in `account-workspace.spec.ts`,
-`admin-console.spec.ts`, `success-feedback.spec.ts`, `workflow-components.spec.ts`,
+Focused workflow regressions are in `admin-console.spec.ts`,
+`success-feedback.spec.ts`, `workflow-components.spec.ts`,
 `hero-search.spec.ts` and `ui-remediation.spec.ts`. Browser tests using mock data
 are separate from the real-backend staging checks.
 
@@ -996,10 +960,10 @@ separates verified local behavior, unresolved failures and hosted release gates.
 
 ## Homepage category discovery
 
-The homepage translates Preview 1's split hero, inventory collage, prominent
-search, image-led categories, four-item discovery shelf, outdoor story and
-renter/owner entry points into Ocean Green. It uses real inventory only; empty
-or failed catalog loads never substitute preview listings. The outdoor story
+The homepage pairs a photographic hero and prominent search with image-led
+categories, discovery shelves and renter/owner entry points. It uses real
+inventory only; empty or failed catalog loads never substitute sample listings.
+The outdoor story
 appears only when its category and a real outdoor listing are available.
 When coordinates are selected, discovery uses the server's radius-filtered
 search rather than claiming nearby results from a global 24-item sample.

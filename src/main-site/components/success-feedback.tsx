@@ -60,7 +60,7 @@ type SuccessFeedbackProps = {
   secondary?: Action;
   tertiary?: Action;
 } & (
-  | { kind: 'listing'; id: string; title: string; image?: string; onListAnother?: () => void }
+  | { kind: 'listing'; id: string; title: string; image?: string; onListAnother?: () => void; compact?: boolean }
   | { kind: 'booking'; booking: UiBooking; payment: ConfirmedPayment | null }
 );
 
@@ -78,6 +78,30 @@ export function SuccessFeedback(props: SuccessFeedbackProps) {
   }, [props.kind, payment]);
   if (booking && booking.status !== 'confirmed') return null;
   const title = props.kind === 'listing' ? 'Your listing is live!' : payment ? 'Payment confirmed' : 'Booking confirmed';
+  if (props.kind === 'listing' && props.compact) return (
+    <Surface role="region" aria-labelledby={headingId} className="listing-success-receipt relative isolate p-4 sm:p-5">
+      <Confetti eventKey={eventKey} />
+      <div className="flex items-center gap-3">
+        {props.image && <img src={props.image} alt={props.title} className="h-12 w-12 shrink-0 rounded-card object-cover bg-subtle" />}
+        <div className="min-w-0 flex-1">
+          <h2 ref={heading} tabIndex={-1} id={headingId} className="flex items-center gap-2 text-base font-semibold text-main">
+            <Check size={18} aria-hidden="true" />Your listing is live!
+          </h2>
+          <p className="mt-1 truncate text-sm text-sec">{props.title}</p>
+        </div>
+      </div>
+      <div role="group" aria-label="Published listing actions" className="listing-receipt-actions mt-4">
+        <div className="listing-receipt-main-actions">
+          {props.onListAnother && <Button size="sm" variant="primary" className="listing-receipt-list-another" icon={<Plus size={16} aria-hidden="true" />} onClick={props.onListAnother}>List another</Button>}
+          <Button size="sm" variant="secondary" trailingIcon={<ArrowUpRight size={16} aria-hidden="true" />} onClick={props.primary.onClick}>{props.primary.label}</Button>
+          {props.secondary && <Button size="sm" variant="secondary" icon={<Settings2 size={16} aria-hidden="true" />} onClick={props.secondary.onClick}>{props.secondary.label}</Button>}
+        </div>
+        <div className="listing-receipt-utilities">
+          {props.tertiary && <Button size="sm" variant="ghost" icon={<Share2 size={15} aria-hidden="true" />} onClick={props.tertiary.onClick}>{props.tertiary.label}</Button>}
+        </div>
+      </div>
+    </Surface>
+  );
   if (props.kind === 'listing') return (
     <Surface role="region" aria-labelledby={headingId} className="success-card listing-success-hero relative isolate overflow-hidden px-5 py-9 sm:px-12 sm:py-12">
       <Confetti eventKey={eventKey} />

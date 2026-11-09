@@ -149,19 +149,56 @@ for (const notify of [true, false]) {
 
 test('request-linked listing creation preserves prefilled details through photo analysis', async ({ page }) => {
   await prepareJourney(page, true);
+  let photoAnalysisCalls = 0;
+  let listingCreates = 0;
+  let photoUploads = 0;
+  page.on('request', request => {
+    const url = new URL(request.url());
+    if (url.pathname === '/rest/v1/listings' && request.method() === 'POST') listingCreates++;
+    if (url.pathname.startsWith('/storage/v1/object/listing-images/') && request.method() === 'POST') photoUploads++;
+    if (url.pathname.endsWith('/functions/v1/analyze-listing-photo')) photoAnalysisCalls++;
+  });
+  await page.route('**/functions/v1/analyze-listing-photo', async route => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return route.fulfill({ json: {
+      ok: true, masked: { title: '', description: '', changed: false },
+      suggestion: { title: 'AI camera title', description: 'AI camera description.', categoryId, brand: null, model: null },
+      flags: [], photoQualitySuggestions: [], photoDecisions: [{ photoIndex: 0, decision: 'approved', reason: 'Clear photo.' }],
+    } });
+  });
   await page.goto(`/create-listing?request=${requestId}`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByText(`Listing for: ${renterRequest.title}`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`Listing for: ${renterRequest.title}`, { exact: true })).toBeVisible({ timeout: 30_000 });
   const image = await page.evaluate(() => {
     const canvas = document.createElement('canvas'); canvas.width = 700; canvas.height = 700;
     canvas.getContext('2d')!.fillRect(0, 0, 700, 700);
     return canvas.toDataURL('image/png').split(',')[1];
   });
-  await page.locator('input[type=file]').setInputFiles({ name: 'camera.png', mimeType: 'image/png', buffer: Buffer.from(image, 'base64') });
+  const buffer = Buffer.from(image, 'base64');
+  await page.locator('input[type=file]').setInputFiles(Array.from({ length: 5 }, (_, index) => ({
+    name: `camera-${index + 1}.png`, mimeType: 'image/png', buffer,
+  })));
+  await page.getByRole('button', { name: 'Select photo 4' }).click();
+  await expect(page.getByRole('button', { name: 'Remove photo 4' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Select photo 5/ })).toHaveCount(0);
+  await expect(page.getByText('You can add at most 4 more photos. The remaining files were not added.')).toBeVisible();
+  expect({ listingCreates, photoUploads, photoAnalysisCalls }).toEqual({ listingCreates: 0, photoUploads: 0, photoAnalysisCalls: 0 });
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Analyzing photos and preparing item details' })).toBeVisible();
+  await expect.poll(() => listingCreates).toBe(1);
+  await expect.poll(() => photoUploads).toBe(4);
+  await expect.poll(() => photoAnalysisCalls).toBe(1);
   await expect(page.getByRole('heading', { name: 'Review and edit item details' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Reset form', exact: true })).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue(renterRequest.title);
   await expect(page.getByLabel('Description', { exact: false })).toHaveValue(renterRequest.description);
   expect(await page.evaluate(({ userId, listingId }) => localStorage.getItem(`ybuy-listing-request:${userId}:${listingId}`), { userId, listingId })).toBe(requestId);
+  await page.getByRole('textbox', { name: 'Title', exact: true }).fill('ohflkdsfdsfkdsjfhdsfdsfk');
+  await page.getByLabel('Description', { exact: false }).fill('ohflkdsfdsfkdsjfhdsfdsfk'.repeat(4));
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByText('Enter a clear, meaningful title instead of gibberish or placeholder text.')).toBeVisible();
+  await expect(page.getByText('Enter a clear, meaningful description instead of gibberish or placeholder text.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Review and edit item details' })).toBeVisible();
 });
 
 test('approved request-linked listing exposes notify step but pending approval never does', async ({ page }) => {
@@ -225,7 +262,7 @@ for (const status of ['published', 'pending_approval'] as const) {
     } }));
     await page.route('**/functions/v1/analyze-listing-photo', route => route.fulfill({ json: {
       ok: true, masked: { title: listing.title, description: listing.description, changed: false },
-      suggestion: null, flags: [],
+      suggestion: null, flags: [], photoDecisions: [{ photoIndex: 0, decision: 'approved', reason: 'Clear photo.' }],
     } }));
     await page.route('**/rpc/owner_save_listing_flow', route => route.fulfill({ json: {
       revision: 2, status: route.request().postDataJSON().p_publish ? status : 'draft', deposit: 0,
@@ -426,7 +463,7 @@ async function prepare(page: Page, authenticated = false) {
       ? route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module" src="/assets/${entry}"></script></body></html>` })
       : route.fallback());
   }
-  await page.addInitScript(() => localStorage.setItem('rental-theme', 'preview-one'));
+  await page.addInitScript(() => localStorage.setItem('rental-theme', 'removed-theme'));
   await page.route('**/*', route => route.request().resourceType() === 'image'
     ? route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#D8F0E8"/></svg>' })
     : route.fallback());
@@ -502,7 +539,7 @@ async function prepare(page: Page, authenticated = false) {
 test('main-site skip link moves keyboard focus past navigation', async ({ page }) => {
   await prepare(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'What do you need to rent?', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good gear, close by.', exact: true })).toBeVisible();
   await page.keyboard.press('Tab');
   const skipLink = page.getByRole('link', { name: 'Skip to content', exact: true });
   await expect(skipLink).toBeFocused();
@@ -656,7 +693,7 @@ for (const width of [390, 824, 1440]) {
     await prepare(page, true);
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'What do you need to rent?', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Good gear, close by.', exact: true })).toBeVisible();
     await expect(page.getByRole('search')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Browse by category', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Featured rentals', exact: true })).toBeVisible();
@@ -807,15 +844,25 @@ test('rental workspace preserves populated booking actions and disclosed invento
 });
 
 test('workspace keeps creation and checkout flows free of competing navigation', async ({ page }) => {
-  await prepareJourney(page);
+  await prepare(page, true);
   await page.setViewportSize({ width: 1440, height: 900 });
-  for (const url of ['/create-listing', '/need-something', `/checkout/${listingId}`]) {
+  const flows = [
+    ['/create-listing', 'Back to my listings', '/dashboard/listings'],
+    ['/need-something', 'Back to requests', '/requests'],
+    [`/checkout/${listingId}`, 'Back to the listing', `/listing/${listingId}`],
+  ] as const;
+  for (const [url, backLabel, destination] of flows) {
     await page.goto(url, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('button', { name: 'Back to bookings', exact: true })).toBeVisible();
+    const backButton = page.getByRole('button', { name: backLabel, exact: true });
+    await expect(page.locator('body')).toContainText('Skip to content');
+    await expect(backButton).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Back to bookings', exact: true })).toHaveCount(0);
     await expect(page.getByRole('complementary', { name: 'Your workspace', exact: true })).toHaveCount(0);
     await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Open menu', exact: true })).toHaveCount(0);
     await expect(page.locator('.workspace-focused')).toBeVisible();
+    await backButton.click();
+    await expect(page).toHaveURL(new RegExp(`${destination.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\?.*)?$`));
   }
 });
 
@@ -1114,12 +1161,12 @@ test('map groups co-located rentals and keeps the selected result in sync with t
   await expect(page.locator(`[data-listing-id="${secondListingId}"]`)).not.toHaveClass(/ring-accent/);
 });
 
-test('main-site build keeps the original homepage and routes to real bidding', async ({ page }) => {
+test('main-site build renders the current homepage and routes to real bidding', async ({ page }) => {
   const crashes: string[] = [];
   page.on('pageerror', error => crashes.push(error.message));
   await prepare(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'What do you need to rent?' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good gear, close by.' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'main');
   const palette = await page.locator('html').evaluate((root, keys) => {
     const styles = getComputedStyle(root);
@@ -1132,19 +1179,18 @@ test('main-site build keeps the original homepage and routes to real bidding', a
   await page.getByRole('button', { name: 'List an item', exact: true }).first().hover();
   await expect(page.getByRole('button', { name: 'List an item', exact: true }).first())
     .toHaveCSS('background-color', 'rgb(64, 64, 64)');
-  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Good gear, close by.' })).toHaveCount(0);
   await expect(page.locator('header').first()).toHaveClass(/glass-nav-top/);
   expect(await page.locator('body').evaluate(body => getComputedStyle(body).fontFamily)).toContain('Inter');
-  await expect(page.locator('.p1')).toHaveCount(0);
   await page.getByRole('navigation', { name: 'Main', exact: true })
     .getByRole('button', { name: 'Bidding', exact: true }).click();
   await expect(page).toHaveURL(/\/bidding$/);
   await expect(page.getByRole('heading', { name: 'Live bidding', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Sample bidding only' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'No open auctions right now' })).toBeVisible();
-  expect(await page.locator('html').evaluate(root => getComputedStyle(root).getPropertyValue('--p1-blue').trim()))
+  expect(await page.locator('html').evaluate(root => getComputedStyle(root).getPropertyValue('--accent').trim()))
     .toBe('#111111');
-  expect(await page.locator('html').evaluate(root => getComputedStyle(root).getPropertyValue('--p1-lime').trim()))
+  expect(await page.locator('html').evaluate(root => getComputedStyle(root).getPropertyValue('--highlight').trim()))
     .toBe('#E5E5E5');
   expect(crashes).toEqual([]);
 });
@@ -1156,14 +1202,13 @@ for (const width of [390, 768, 1440]) {
     await prepare(page);
     await page.setViewportSize({ width, height: 900 });
     for (const [url, heading] of [
-      ['/', 'What do you need to rent?'],
+      ['/', 'Good gear, close by.'],
       ['/search', "Couldn't find what you need?"],
       [`/listing/${listingId}`, listing.title],
       ['/bidding', 'Live bidding'],
     ]) {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
-      await expect(page.locator('[class~="p1"], [class~="p1-button"], [class~="p1-tag"]')).toHaveCount(0);
       await expect(page.locator('header').first()).toHaveClass(/glass-nav-top/);
       expect(await page.locator('html').evaluate(root => {
         const styles = getComputedStyle(root);
@@ -1216,7 +1261,6 @@ for (const width of [390, 768, 1440]) {
         await page.getByRole('button', { name: 'My auctions', exact: true }).click();
         await expect(page.getByRole('heading', { name: 'Owner — Bidding', exact: true })).toBeVisible();
       }
-      await expect(page.locator('[class~="p1"], [class~="p1-button"], [class~="p1-tag"]')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       if (url.includes('lending') || url === '/create-listing') {
         await page.screenshot({ path: testInfo.outputPath(`${url.includes('lending') ? 'owner-dashboard' : 'create-listing'}-${width}.png`), animations: 'disabled' });

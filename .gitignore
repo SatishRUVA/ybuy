@@ -41,3 +41,16 @@ test-results*/
 .impeccable/review/
 .21st/design.json
 .cursor/mcp.json
+brag-output/
+.brag-output/
+screenshots/
+.taste-skill/before/
+.taste-skill/inspect/
+UX/*.png
+YBuy-feature-coverage-audit-*.html
+
+!.github/
+.github/*
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/trivy.yml

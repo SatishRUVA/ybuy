@@ -97,8 +97,7 @@ test('discovery day refreshes at UTC midnight and after a sleeping tab returns',
   expect(cleared && removed).toBe(true);
 });
 
-for (const variant of ['main', 'redesign']) {
-  test(`${variant} owner dates store exclusive returns and location failures retain the address`, async ({ page, context }) => {
+test('owner dates store exclusive returns and location failures retain the address', async ({ page, context }) => {
     test.setTimeout(60_000);
     await page.clock.setFixedTime(new Date('2026-10-22T12:00:00'));
     await context.grantPermissions(['geolocation']);
@@ -121,10 +120,6 @@ for (const variant of ['main', 'redesign']) {
     }));
     await page.route('**/rest/v1/app_settings?**', route => route.fulfill({ contentType: 'application/json', body: '{"value":["US"]}' }));
     await page.route('**/rest/v1/reference_countries?**', route => route.fulfill({ contentType: 'application/json', body: '[{"code":"US","name":"United States"}]' }));
-    await page.route('**/src/components/pickup-location.tsx', async route => {
-      const response = await route.fetch();
-      return route.fulfill({ response, body: (await response.text()).replace(/const googleKey = [^\n]+;/, 'const googleKey = "test-google-key";') });
-    });
     await page.route('**/src/main-site/components/pickup-location.tsx', async route => {
       const response = await route.fetch();
       return route.fulfill({ response, body: (await response.text()).replace(/const googleKey = [^\n]+;/, 'const googleKey = "test-google-key";') });
@@ -136,7 +131,7 @@ for (const variant of ['main', 'redesign']) {
       window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type;
       window.__vite_plugin_react_preamble_installed__ = true;</script></head><body></body></html>`,
     }));
-    await page.goto(`/__owner-flow-fixture?variant=${variant}`);
+    await page.goto('/__owner-flow-fixture');
     await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__ === true);
     await page.evaluate(async () => {
       const { mountComponent } = await import('/tests/component-mount.tsx');
@@ -168,7 +163,6 @@ for (const variant of ['main', 'redesign']) {
     for (const width of [1440, 375]) {
       await page.setViewportSize({ width, height: 1000 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      await page.screenshot({ path: test.info().outputPath(`${variant}-owner-${width}.png`), fullPage: true });
+      await page.screenshot({ path: test.info().outputPath(`main-owner-${width}.png`), fullPage: true });
     }
-  });
-}
+});

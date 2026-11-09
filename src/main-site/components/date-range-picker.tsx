@@ -151,6 +151,7 @@ export function DateRangePicker({
   mode = 'dual', bookedDates = NO_DATES, blockedDates = NO_DATES,
   minimumDate, maximumDate, timeZone,
   presentation = 'dialog',
+  disabled = false,
 }: {
   startDate: string;
   endDate: string;
@@ -162,6 +163,7 @@ export function DateRangePicker({
   maximumDate?: string | null;
   timeZone?: string | null;
   presentation?: 'dialog' | 'listing' | 'search';
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
@@ -176,6 +178,7 @@ export function DateRangePicker({
   const reduceMotion = useReducedMotion();
   const [position, setPosition] = useState<{ left: number; top: number } | undefined>();
   const compact = presentation !== 'dialog';
+  const rentalPresentation = presentation === 'listing';
   const todayStr = timeZone ? pickupToday(timeZone) : todayIso();
   const minDate = minimumDate && minimumDate > todayStr ? minimumDate : todayStr;
   const horizon = addDaysIso(todayStr, MAX_BOOKING_RANGE_DAYS);
@@ -195,6 +198,10 @@ export function DateRangePicker({
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [open]);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   useEffect(() => {
     if (!open || !compact) return;
@@ -338,29 +345,31 @@ export function DateRangePicker({
           exit={reduceMotion ? undefined : { opacity: 0, y: 18, scale: 0.99 }}
           transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
           style={compact && position ? { position: 'fixed', ...position } : undefined}
-          className={`calendar-dialog relative z-[201] flex w-full max-w-[960px] flex-col overflow-hidden rounded-t-card-xl border border-app bg-card shadow-pop sm:rounded-card-xl${compact ? ' listing-calendar-popover' : ''}`}
+          className={`calendar-dialog relative z-[201] flex w-full max-w-[960px] flex-col overflow-hidden rounded-t-card-xl border border-app bg-card shadow-pop sm:rounded-card-xl${compact ? ' listing-calendar-popover' : ''}${rentalPresentation ? ' rental-calendar' : ''}`}
         >
           <header className="calendar-dialog-header shrink-0">
             <div className="calendar-range-pair" role="group" aria-label="Rental dates">
-              <CalendarDays size={18} aria-hidden="true" className="calendar-range-icon" />
+              {!rentalPresentation && <CalendarDays size={18} aria-hidden="true" className="calendar-range-icon" />}
               <button type="button" aria-pressed={activeEndpoint === 'start'}
                 aria-label={`Choose pickup date${draftStart ? `, ${formatIsoLocal(draftStart, { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`}
                 onClick={() => setActiveEndpoint('start')}
                 className={`calendar-range-value${activeEndpoint === 'start' ? ' is-active' : ''}`}>
-                <span>Pickup</span><strong>{draftStart ? formatIsoLocal(draftStart, { weekday: 'short', month: 'short', day: 'numeric' }) : 'Add date'}</strong>
+                {rentalPresentation && <CalendarDays size={20} aria-hidden="true" />}
+                <span className="calendar-range-label"><span>Pickup</span><strong>{draftStart ? formatIsoLocal(draftStart, rentalPresentation ? { month: 'short', day: 'numeric' } : { weekday: 'short', month: 'short', day: 'numeric' }) : 'Add date'}</strong></span>
               </button>
-              <ArrowRight size={16} className="calendar-range-arrow" aria-hidden="true" />
+              {!rentalPresentation && <ArrowRight size={16} className="calendar-range-arrow" aria-hidden="true" />}
               <button type="button" aria-pressed={activeEndpoint === 'end'}
                 aria-label={`Choose return date${draftEnd ? `, ${formatIsoLocal(draftEnd, { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`}
                 onClick={() => setActiveEndpoint('end')}
                 className={`calendar-range-value${activeEndpoint === 'end' ? ' is-active' : ''}`}>
-                <span>Return</span><strong>{draftEnd ? formatIsoLocal(draftEnd, { weekday: 'short', month: 'short', day: 'numeric' }) : draftStart ? 'Choose date' : 'Add date'}</strong>
+                {rentalPresentation && <CalendarDays size={20} aria-hidden="true" />}
+                <span className="calendar-range-label"><span>Return</span><strong>{draftEnd ? formatIsoLocal(draftEnd, rentalPresentation ? { month: 'short', day: 'numeric' } : { weekday: 'short', month: 'short', day: 'numeric' }) : draftStart ? 'Choose date' : 'Add date'}</strong></span>
               </button>
             </div>
-            <button type="button" onClick={handleClear} className="calendar-reset">Reset</button>
-            <button type="button" onClick={() => setOpen(false)} aria-label="Close calendar" className="calendar-close grid h-11 w-11 place-items-center rounded-full text-sec hover:bg-subtle">
+            {!rentalPresentation && <button type="button" onClick={handleClear} className="calendar-reset">Reset</button>}
+            {!rentalPresentation && <button type="button" onClick={() => setOpen(false)} aria-label="Close calendar" className="calendar-close grid h-11 w-11 place-items-center rounded-full text-sec hover:bg-subtle">
               <X size={19} aria-hidden="true" />
-            </button>
+            </button>}
           </header>
 
           {!compact && <div className="calendar-dialog-presets shrink-0" aria-label="Quick date choices">
@@ -378,7 +387,23 @@ export function DateRangePicker({
           </div>}
 
           <div className="calendar-dialog-body min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <div className="calendar-dialog-toolbar">
+            {rentalPresentation ? <>
+              <div className="rental-calendar-prompt">
+                <span>{activeEndpoint === 'start' ? 'When does your rental start?' : 'When will you return it?'}</span>
+                <button type="button" onClick={() => setOpen(false)} aria-label="Close calendar" className="calendar-month-nav">
+                  <X size={19} aria-hidden="true" />
+                </button>
+              </div>
+              <div className="rental-calendar-month">
+                <button type="button" onClick={() => setMonthOffset((offset) => Math.max(0, offset - 1))} disabled={monthOffset === 0} className="calendar-month-nav" aria-label="Previous month">
+                  <ChevronLeft size={20} aria-hidden="true" />
+                </button>
+                <strong aria-live="polite">{monthLabel(leftMonth)}</strong>
+                <button type="button" onClick={() => setMonthOffset((offset) => offset + 1)} disabled={rightMonth > parseIsoLocal(maxDate)} className="calendar-month-nav" aria-label="Next month">
+                  <ChevronRight size={20} aria-hidden="true" />
+                </button>
+              </div>
+            </> : <div className="calendar-dialog-toolbar">
               <span>{compact ? 'Select pickup, then return' : 'Dates before today are unavailable'}</span>
               <div className="flex items-center gap-1">
                 <button type="button" onClick={() => setMonthOffset((offset) => Math.max(0, offset - 1))} disabled={monthOffset === 0} className="calendar-month-nav" aria-label="Previous month">
@@ -388,11 +413,12 @@ export function DateRangePicker({
                   <ChevronRight size={18} />
                 </button>
               </div>
-            </div>
+            </div>}
             <div className="calendar-months">
-              <MonthGrid monthDate={leftMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} rangeView />
-              <MonthGrid monthDate={rightMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} rangeView />
+              <MonthGrid monthDate={leftMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} rangeView showMonthLabel={!rentalPresentation} />
+              {!rentalPresentation && <MonthGrid monthDate={rightMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} rangeView />}
             </div>
+            {rentalPresentation && <p className="rental-calendar-help">Arrow keys move between days. Choose pickup, then return.</p>}
           </div>
 
           <footer className="calendar-dialog-footer shrink-0">
@@ -400,7 +426,10 @@ export function DateRangePicker({
               <span>{draftStart && draftEnd ? `${nights} ${compact ? `rental day${nights === 1 ? '' : 's'}` : `night${nights === 1 ? '' : 's'}`}` : draftStart ? 'Select your return date' : 'No dates selected'}</span>
               <strong>{draftStart && draftEnd ? fmtRangeTiny(draftStart, draftEnd) : draftStart ? formatIsoLocal(draftStart, { month: 'short', day: 'numeric' }) : ''}</strong>
             </div>
-            <button type="button" onClick={handleApply} disabled={!canApply} className="calendar-apply">Done</button>
+            <div className="rental-calendar-actions">
+              {rentalPresentation && <button type="button" onClick={handleClear} className="calendar-reset">Reset</button>}
+              <button type="button" onClick={handleApply} disabled={!canApply} className="calendar-apply">Done</button>
+            </div>
           </footer>
         </motion.div>}
       </AnimatePresence>
@@ -409,10 +438,10 @@ export function DateRangePicker({
 
   return (
     // No z-index here: it would cap the panel below the shared dim Overlay (z-200).
-    <div ref={ref} className={presentation === 'search' ? 'p1-search-date relative' : 'relative'}>
+    <div ref={ref} className={presentation === 'search' ? 'main-search-date relative' : 'relative'}>
       {presentation === 'search' ? (
         <button ref={triggerRef} type="button" className="search-date-trigger w-full"
-          aria-haspopup="dialog" aria-expanded={open}
+          aria-haspopup="dialog" aria-expanded={open} disabled={disabled}
           aria-label={`Choose a date range${startDate ? `, ${triggerDateLabel}` : ''}`}
           onClick={() => open ? setOpen(false) : openPicker()}>
           <CalendarDays size={20} aria-hidden="true" />
@@ -421,6 +450,7 @@ export function DateRangePicker({
         </button>
       ) : compact && presentation === 'listing' ? (
         <button ref={triggerRef} type="button" aria-haspopup="dialog" aria-expanded={open}
+          disabled={disabled}
           aria-label={`Choose a date range${startDate ? `, ${triggerDateLabel}` : ''}`}
           onClick={() => open ? setOpen(false) : openPicker()}
           className={`listing-date-range-trigger${open ? ' is-open' : ''}`}>
@@ -436,6 +466,7 @@ export function DateRangePicker({
           type="button"
           aria-haspopup="dialog"
           aria-expanded={open}
+          disabled={disabled}
           aria-label={`Choose a date range${startDate ? `, ${triggerDateLabel}` : ''}`}
           onClick={() => (open ? setOpen(false) : openPicker())}
           className="calendar-trigger w-full min-h-11 flex items-center justify-between gap-2 px-0 py-1 text-sm text-main"
@@ -452,6 +483,7 @@ export function DateRangePicker({
           type="button"
           aria-haspopup="dialog"
           aria-expanded={open}
+          disabled={disabled}
           aria-label={`Choose a date range${startDate ? `, ${triggerDateLabel}` : ''}`}
           onClick={() => (open ? setOpen(false) : openPicker())}
           className="calendar-trigger flex min-w-0 items-center gap-2 px-3.5 min-h-12 rounded-full text-sm font-medium text-main hover:bg-subtle transition-colors duration-fast whitespace-nowrap"

@@ -266,7 +266,7 @@ export function HomePage() {
             onAction={() => navigate({ name: 'create-listing' })}
           />
         ) : (
-          <Rail>
+          <Rail count={featured.length}>
             {featured.map((listing) => (
               <RailItem key={listing.id}><ListingCard {...cardProps(listing)} /></RailItem>
             ))}
@@ -303,7 +303,7 @@ export function HomePage() {
             onAction={() => navigate({ name: 'search' })}
             className="mb-5"
           />
-          <Rail>
+          <Rail count={nearby.length}>
             {nearby.map((listing) => (
               <RailItem key={listing.id}><ListingCard {...cardProps(listing)} /></RailItem>
             ))}
@@ -363,7 +363,7 @@ export function HomePage() {
           {loading ? (
             <ListingGridSkeleton count={4} className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4" />
           ) : (
-            <Rail>
+            <Rail count={justAdded.length}>
               {justAdded.map((listing) => (
                 <RailItem key={listing.id}><ListingCard {...cardProps(listing)} /></RailItem>
               ))}
@@ -421,10 +421,13 @@ function Shell({ children, className = '' }: { children: React.ReactNode; classN
   return <section className={`max-w-[1400px] mx-auto px-4 sm:px-6 ${className}`}>{children}</section>;
 }
 
-/** Horizontal, snap-scrolling on mobile; a plain 4-up grid from `lg`. */
-function Rail({ children }: { children: React.ReactNode }) {
+/** Horizontal, snap-scrolling on mobile; sparse rails center capped cards on desktop. */
+function Rail({ children, count }: { children: React.ReactNode; count: number }) {
+  const columns = count <= 2
+    ? 'lg:grid-cols-[repeat(auto-fit,minmax(280px,360px))] lg:justify-center'
+    : 'lg:grid-cols-4';
   return (
-    <div className="flex lg:grid lg:grid-cols-4 gap-3 sm:gap-4 overflow-x-auto lg:overflow-visible no-scrollbar snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0 animate-cross-fade">
+    <div className={`flex lg:grid ${columns} gap-3 sm:gap-4 overflow-x-auto lg:overflow-visible no-scrollbar snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0 animate-cross-fade`}>
       {children}
     </div>
   );
@@ -446,21 +449,17 @@ function Hero({
   return (
     // No `isolate` here: it would cap the search bar's popover z-index, letting the
     // category rail (a later DOM sibling) paint over the date/location dropdowns.
-    <section className="relative">
+    <section className="home-hero relative">
       <div className="absolute inset-0 overflow-hidden pointer-events-none"><HeroCarousel /></div>
-      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/55 to-black/25" />
+      <div className="home-hero-scrim absolute inset-0" aria-hidden="true" />
 
       <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 pt-14 pb-12 sm:pt-20 sm:pb-16">
         <div className="max-w-2xl">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-[11px] sm:text-xs font-semibold tracking-wide text-white/90 uppercase">
-            <Sparkles size={13} className="text-white" />
-            Trusted local rentals
-          </span>
-          <h1 className="text-[32px] leading-[1.1] sm:text-[48px] font-bold text-white font-display tracking-tight mt-4">
-            What do you need to rent?
+          <h1 className="text-[36px] leading-[1.04] sm:text-[56px] font-extrabold text-white font-display tracking-tight">
+            Good gear, close by.
           </h1>
-          <p className="text-white/85 text-sm sm:text-lg mt-3 max-w-xl leading-relaxed">
-            Find tools, cameras, outdoor gear and more from people nearby.
+          <p className="text-white/90 text-sm sm:text-lg mt-4 max-w-xl leading-relaxed">
+            Rent tools, cameras, outdoor gear, and everyday extras from people in your neighborhood.
           </p>
         </div>
 

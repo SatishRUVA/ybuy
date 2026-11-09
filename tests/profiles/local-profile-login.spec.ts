@@ -29,31 +29,6 @@ test('main-site local sign-in exposes the Profile selector', async ({ page }) =>
   await expect(page.getByRole('heading', { name: 'Welcome back, Maya', exact: true })).toBeVisible();
 });
 
-test('shared palette matches approved core, category and status colors', async ({ page }) => {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  const expected = {
-    ink: '#172321', blue: '#3157E1', lime: '#D8FF68', forest: '#163D34',
-    white: '#FFFFFF', paper: '#F7F6F1', sand: '#EEEAE0', border: '#DCDED7', muted: '#62706D',
-    good: '#178455', 'good-bg': '#DFF2E8', pending: '#8A6110', 'pending-bg': '#FFF1CF', info: '#EDF0FF',
-    'category-cameras': '#DCE8F7', 'category-outdoor': '#DCEBDC', 'category-tools': '#F6E8B9', 'category-sports': '#F6D8C5',
-    'category-home': '#F5DFE4', 'category-fashion': '#E7E1F2', 'category-baby': '#D9EEE8', 'category-vehicles': '#E5E6E2',
-  };
-  const actual = await page.locator('.p1').first().evaluate((element, keys) => {
-    const style = getComputedStyle(element);
-    return Object.fromEntries(keys.map(key => [key, style.getPropertyValue(`--p1-${key}`).trim().toUpperCase()]));
-  }, Object.keys(expected));
-  expect(actual).toEqual(expected);
-  const categories = page.locator('.p1-category-grid');
-  await expect(categories.getByRole('button', { name: 'Tools & Equipment' })).toHaveCSS('background-color', 'rgb(246, 232, 185)');
-  await expect(categories.getByRole('button', { name: 'Outdoor & Camping' })).toHaveCSS('background-color', 'rgb(220, 235, 220)');
-  await expect(categories.getByRole('button', { name: 'Sports & Fitness' })).toHaveCSS('background-color', 'rgb(246, 216, 197)');
-  await expect(categories.getByRole('button', { name: 'Home & Garden' })).toHaveCSS('background-color', 'rgb(245, 223, 228)');
-  await page.goto('/preview-1/', { waitUntil: 'domcontentloaded' });
-  const card = page.locator('.p1-item').first();
-  await expect(card.locator('.p1-card-bottom .p1-button')).toHaveCSS('background-color', 'rgb(49, 87, 225)');
-  await expect(card.locator('.p1-item-price strong')).toHaveCSS('color', 'rgb(23, 35, 33)');
-});
-
 test('Login exposes exactly 22 named profiles without automatically signing in', async ({ page }) => {
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'Sign in to continue' })).toBeVisible();
@@ -112,7 +87,7 @@ test('top-right account dropdown exposes only sign-out and profile switching', a
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
 });
 
-test('Owner listings use the Preview 1 workspace layout and remain responsive', async ({ page }) => {
+test('Owner listings use the main workspace layout and remain responsive', async ({ page }) => {
   await page.goto('/dashboard?tab=lending', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Choose a local profile' });

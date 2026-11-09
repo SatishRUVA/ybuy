@@ -20,8 +20,9 @@ import { useFeatureFlags, useFeatureFlag } from '@/lib/use-feature-flags';
 import { useMarketplaceLocation } from '@/location-context';
 import { createMainItemRequest, fetchNearbyRequests, suggestRequestCategory, type MainItemRequest as ItemRequest } from '../request-flow';
 import { RequestFulfillment } from '../components/request-fulfillment';
+import { PageBackButton } from '@/main-site/components/page-back-button';
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, DollarSign,
+  ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, DollarSign,
   HeartHandshake, MapPin, PackagePlus, Plus, Search,
 } from 'lucide-react';
 
@@ -493,7 +494,7 @@ function RequestSkeleton() {
 
 export function NeedSomethingPage() {
   const { user, openSignIn } = useAuth();
-  const { back, navigate } = useRouter();
+  const { navigate } = useRouter();
   const requestId = useRef(crypto.randomUUID());
   const idempotencyKey = useRef(crypto.randomUUID());
   const { enabled, loading: flagLoading, error: flagError, reload: reloadFlag } = useFeatureFlag('item_requests');
@@ -609,7 +610,7 @@ export function NeedSomethingPage() {
 
   return <div className="animate-fade-in pb-20 md:pb-10">
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
-      <button onClick={back} className="inline-flex items-center gap-1.5 text-sm text-sec mb-4 hover:text-main"><ArrowLeft size={16} /> Back</button>
+      <PageBackButton fallback={{ name: 'requests' }}>Back to requests</PageBackButton>
       <SectionHeader as="h1" title="Request an item" subtitle="Share what you need and owners can respond with a listing and price." className="mb-6" />
       <form onSubmit={(event) => void submit(event)} className="space-y-4">
         <Surface className="p-4 sm:p-5 space-y-4">

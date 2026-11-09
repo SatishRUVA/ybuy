@@ -42,10 +42,10 @@ test('main interface stays neutral while photos and celebration confetti retain 
           `Interface color in ${selector} at ${width}px`);
       }
     }
-    await page.locator('html').evaluate(root => { root.dataset.theme = 'preview-one'; });
+    await page.locator('html').evaluate(root => { root.dataset.theme = 'main'; });
     assert.equal(await page.locator('html').evaluate(root => getComputedStyle(root).filter), 'none');
     assert.ok(await countColoredPixels(page, await page.screenshot()) > 1000,
-      'Preview media and accents must retain color');
+      'Media and accents must retain color');
   } finally {
     await browser.close();
   }

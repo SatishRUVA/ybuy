@@ -1,14 +1,11 @@
-import { useRouter } from '@/router';
-import { Shield, Lock, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Shield, Lock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { PageBackButton } from '@/main-site/components/page-back-button';
 
 export function ProtectionPage() {
-  const { back } = useRouter();
   return (
     <div className="animate-fade-in pb-20 md:pb-8">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
-        <button onClick={back} className="flex items-center gap-1.5 text-sm text-sec mb-4 hover:text-main transition-colors">
-          <ArrowLeft size={18} /> Back
-        </button>
+        <PageBackButton fallback={{ name: 'home' }}>Back to home</PageBackButton>
 
         <div className="text-center mb-8">
           <div className="w-16 h-16 rounded-full bg-accent-soft flex items-center justify-center mx-auto mb-4">

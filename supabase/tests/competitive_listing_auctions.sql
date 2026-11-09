@@ -33,6 +33,10 @@ select ok(not has_function_privilege('authenticated','public.owner_save_listing_
 select ok(not has_function_privilege('authenticated','public.confirm_booking_payment(uuid,text,text,numeric)','EXECUTE'),'Clients cannot confirm payment');
 select ok(has_function_privilege('service_role','public.confirm_booking_payment(uuid,text,text,numeric)','EXECUTE'),'Trusted verification retains payment access');
 select ok(not has_function_privilege('service_role','public.confirm_booking_payment_before_auctions(uuid,text,text,numeric)','EXECUTE'),'Payment bypass is private');
+select ok(has_table_privilege('anon','public.listing_auction_activity','SELECT'),'Anonymous clients can receive safe auction activity signals');
+select ok(not has_table_privilege('authenticated','public.listing_auction_activity','INSERT'),'Clients cannot forge auction activity signals');
+select ok(exists (select 1 from pg_publication_tables where pubname='supabase_realtime'
+  and schemaname='public' and tablename='listing_auction_activity'),'Auction activity is published to realtime');
 
 set local request.jwt.claims='{"sub":"81000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"82000000-0000-4000-8000-000000000001","exp":4102444800}';
 select throws_ok($$select public.owner_save_listing_flow('84000000-0000-4000-8000-000000000001',
@@ -61,6 +65,7 @@ where id in ('84000000-0000-4000-8000-000000000002','84000000-0000-4000-8000-000
 update public.listings set estimated_value=2000 where id='84000000-0000-4000-8000-000000000005';
 update public.listings set status='published' where category_id='83000000-0000-4000-8000-000000000001';
 select is((select count(*)::integer from public.listing_auctions),3,'Publication starts auctions only for opted-in listings');
+select is((select count(*)::integer from public.listing_auction_activity),3,'Auction state changes create safe realtime signals');
 select is((select status from public.listings where id='84000000-0000-4000-8000-000000000005'),'pending_approval','High-value listing still requires approval');
 select is((select count(*)::integer from public.listing_auctions where listing_id='84000000-0000-4000-8000-000000000005'),0,'Pending approval never opens bidding');
 select is((select ends_at-starts_at from public.listing_auctions where listing_id='84000000-0000-4000-8000-000000000001'),
@@ -124,6 +129,15 @@ select is(jsonb_array_length(public.get_listing_auction('84000000-0000-4000-8000
 select is((public.get_listing_auction('84000000-0000-4000-8000-000000000001')->>'my_rank')::integer,1,
   'Renter can see their current rank');
 select is(jsonb_array_length(public.get_top_listing_bids()),3,'Ticker includes published open auctions, including those without bids');
+select is((select (auction->>'bid_count')::integer from jsonb_array_elements(public.get_top_listing_bids()) as items(auction)
+  where auction->>'listing_id'='84000000-0000-4000-8000-000000000001'),6,'Ticker reports the actual eligible bid count');
+select is((select (auction->>'participant_count')::integer from jsonb_array_elements(public.get_top_listing_bids()) as items(auction)
+  where auction->>'listing_id'='84000000-0000-4000-8000-000000000001'),4,'Ticker reports distinct eligible bidders');
+select is((select (auction->>'daily_rate')::numeric from jsonb_array_elements(public.get_top_listing_bids()) as items(auction)
+  where auction->>'listing_id'='84000000-0000-4000-8000-000000000001'),45::numeric,'Ticker displays the highest eligible bid');
+select is((select (auction->>'bid_count')::integer from jsonb_array_elements(public.get_top_listing_bids()) as items(auction)
+  where auction->>'listing_id'='84000000-0000-4000-8000-000000000003'),0,'Auctions without bids remain explicitly empty');
+select ok(not ((public.get_top_listing_bids())::text like '%renter_id%'),'Ticker activity totals do not expose bidder identities');
 
 set local request.jwt.claims='{"sub":"81000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"82000000-0000-4000-8000-000000000001","exp":4102444800}';
 select is(jsonb_array_length(public.get_listing_auction('84000000-0000-4000-8000-000000000001')->'owner_bids'),6,

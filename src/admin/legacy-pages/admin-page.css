@@ -32,14 +32,14 @@
   text-align: left;
   font-size: 0.8125rem;
   font-weight: 500;
-  color: var(--p1-muted);
+  color: var(--text-secondary);
   transition: background-color 150ms ease, color 150ms ease;
 }
 
 .admin-console__nav-item[aria-current='page'] {
   font-weight: 650;
-  background: var(--p1-info);
-  color: var(--p1-blue);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .admin-console__main {
@@ -52,26 +52,26 @@
 
 .admin-console__main table {
   font-size: 13px;
-  background: var(--p1-white);
+  background: var(--bg-card);
 }
 
 .admin-console__main thead {
-  background: var(--p1-paper);
+  background: var(--bg-subtle);
 }
 
 .admin-console__main :is(th, td) {
   padding: 16px;
-  border-color: var(--p1-border);
+  border-color: var(--border);
 }
 
 .admin-console__main th {
-  color: var(--p1-muted);
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
 }
 
 .admin-console__main tbody tr:hover {
-  background: var(--p1-paper);
+  background: var(--bg-subtle);
 }
 
 .admin-console__main--overview section[aria-label='Marketplace'] {
@@ -94,21 +94,21 @@
   letter-spacing: -.05em;
 }
 
-.p1-production-operation .p1-settings-form {
+.admin-operation-dialog .admin-operation-form {
   padding: 0;
   background: transparent;
 }
 
-.p1-production-operation fieldset {
+.admin-operation-dialog fieldset {
   min-width: 0;
 }
 
 .admin-console__nav-item:hover {
-  background: var(--p1-paper);
+  background: var(--bg-subtle);
 }
 
 .admin-console__nav-item:focus-visible {
-  outline: 2px solid var(--p1-blue);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 

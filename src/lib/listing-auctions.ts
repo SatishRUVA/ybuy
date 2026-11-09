@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { assertUuid, UUID_RE } from '@/lib/text-safety';
-import { addDaysIso } from '@/lib/geo';
+import { addDaysIso, todayIso } from '@/lib/geo';
 import { signListingImageUrl } from '@/lib/listings';
 
 export interface ListingAuctionPreferences {
@@ -15,6 +15,28 @@ export interface ListingAuctionPreferences {
 }
 
 export const EMPTY_AUCTION_PREFERENCES: ListingAuctionPreferences = { enabled: false, start_date: null, end_date: null };
+export const BIDDING_RULES_TEXT = 'Overlapping bids compete by total rental value; non-overlapping periods can both win. Select eligible bidders before bidding closes or bidding expires. Selected renters have the configured payment window. Bids in the final 2 minutes can extend closing by up to 10 minutes.';
+
+export function twoHoursBeforePickup(date: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day - 1, 22, 0, 0, 0).toISOString();
+}
+
+export function enableBiddingPreferences(value: ListingAuctionPreferences, start: string): ListingAuctionPreferences {
+  const immediateEligible = Boolean(start && start <= addDaysIso(todayIso(), 1));
+  const pickup = value.start_date || start;
+  return {
+    ...value,
+    enabled: true,
+    starts_immediately: immediateEligible,
+    bidding_starts_at: immediateEligible ? null : value.bidding_starts_at ?? defaultBiddingOpeningTime(start),
+    bidding_ends_at: value.bidding_ends_at ?? (pickup ? twoHoursBeforePickup(pickup) : null),
+  };
+}
+
+export function defaultBiddingOpeningTime(start: string): string {
+  return new Date(Math.max(Date.now() + 5 * 60_000, new Date(`${start}T00:00:00`).getTime())).toISOString();
+}
 
 export function auctionPublicationMessage(auction: Pick<ListingAuction, 'status' | 'starts_at' | 'ends_at'>): string {
   if (!['scheduled', 'open'].includes(auction.status)) return `Bidding settings saved. Auction ${auction.status.replace(/_/g, ' ')}.`;
@@ -50,6 +72,9 @@ export function listingAuctionError(value: ListingAuctionPreferences, start: str
     return 'Choose future bidding times with at least 10 minutes for bids.';
   }
   const pickup = new Date(value.start_date + 'T00:00:00').getTime();
+  if (!value.starts_immediately && opens < new Date(`${start}T00:00:00`).getTime()) {
+    return 'Bidding cannot open before your listing availability starts. Choose a later opening date.';
+  }
   if (closes + 2 * 60 * 60_000 > pickup) return 'Bidding must close at least 2 hours before pickup.';
   return null;
 }
@@ -217,6 +242,7 @@ export async function placeListingAuctionBid(listingId: string, dailyRate: numbe
   if (error) throw new Error(error.message);
   const result = auctionResult(data);
   if (!result) throw new Error('The server did not confirm your bid. Refresh before trying again.');
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('ybuy-auction-updated'));
   return result;
 }
 
@@ -252,10 +278,41 @@ export interface TopListingBid {
   listing_id: string;
   title: string;
   daily_rate: number;
+  has_bids: boolean;
+  bid_count: number;
+  participant_count: number;
   start_date: string;
   end_date: string;
   expires_at: string;
   image_url: string | null;
+}
+
+export function subscribeToAuctionTickerUpdates(onChange: () => void): () => void {
+  let disposed = false;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let channel: ReturnType<typeof supabase.channel>;
+
+  function connect() {
+    channel = supabase.channel(`auction-cloud:${crypto.randomUUID()}`, {
+      config: { postgres_changes_options: { wait: true } },
+    })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'listing_auction_activity' }, onChange)
+      .subscribe((status) => {
+        if (disposed) return;
+        if (status === 'SUBSCRIBED') onChange();
+        if (status === 'CLOSED') {
+          clearTimeout(retry);
+          retry = setTimeout(connect, 1000);
+        }
+      });
+  }
+
+  connect();
+  return () => {
+    disposed = true;
+    clearTimeout(retry);
+    void supabase.removeChannel(channel);
+  };
 }
 
 async function signAuctionImages<T extends { image_url: string | null }>(rows: T[]): Promise<T[]> {
@@ -270,6 +327,10 @@ export async function getTopListingBids(): Promise<TopListingBid[]> {
   if (!Array.isArray(data) || data.length > 24
     || data.some(row => !row || typeof row.listing_id !== 'string' || typeof row.title !== 'string'
       || !Number.isFinite(row.daily_rate) || row.daily_rate <= 0
+      || typeof row.has_bids !== 'boolean'
+      || !Number.isSafeInteger(row.bid_count) || row.bid_count < 0
+      || !Number.isSafeInteger(row.participant_count) || row.participant_count < 0
+      || row.participant_count > row.bid_count || row.has_bids !== (row.bid_count > 0)
       || !Number.isFinite(Date.parse(row.expires_at)) || !Number.isFinite(Date.parse(row.start_date))
       || !Number.isFinite(Date.parse(row.end_date)) || (row.image_url !== null && typeof row.image_url !== 'string'))) {
     throw new Error('The live bidding feed returned an invalid result.');

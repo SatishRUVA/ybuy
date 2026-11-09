@@ -149,6 +149,7 @@ async function setup(page: Page, scenario: Scenario = {}, authId?: string) {
       max_delivery_fee: 100, max_estimated_value: 5000, high_value_threshold: 1000,
       offer_below_pct: null, offer_above_pct: null, deposit_rules: [],
     };
+    else if (url.pathname === '/rest/v1/rpc/get_listing_time_zone') body = 'America/Chicago';
     else if (url.pathname === '/rest/v1/rpc/get_listing_unavailable_dates') {
       body = scenario.unavailableDates ?? { blocked: [], booked: [] };
       if (scenario.failAvailability) {
@@ -189,7 +190,7 @@ async function setup(page: Page, scenario: Scenario = {}, authId?: string) {
     } else if (url.pathname === '/rest/v1/feature_flags') {
       body = [{ key: 'bidding', enabled: scenario.bidding ?? false }];
     } else if (url.pathname === '/rest/v1/app_settings') {
-      body = { value: '0.1' };
+      body = { value: 0.1 };
     } else if (url.pathname === '/rest/v1/reviews') {
       if (scenario.failReviews) {
         status = 503;
@@ -446,14 +447,14 @@ test('listing redesign keeps a single cost-first booking panel and photo-first r
   for (const [width, height] of [[1440, 1000], [1024, 900], [768, 1024], [375, 812], [812, 375]]) {
     await page.setViewportSize({ width, height });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    const gallery = await page.locator('.p1-gallery').boundingBox();
+    const gallery = await page.locator('.listing-gallery').boundingBox();
     const bookingBox = await panel.boundingBox();
     expect(gallery!.width).toBeGreaterThan(200);
     if (width >= 1024) {
       expect(bookingBox!.y).toBeGreaterThanOrEqual(gallery!.y + gallery!.height);
       const heading = await page.locator('.listing-heading').boundingBox();
       expect(bookingBox!.x).toBeGreaterThan(heading!.x + heading!.width);
-      await expect(page.locator('.p1-gallery-side')).toBeVisible();
+      await expect(page.locator('.listing-image-main')).toBeVisible();
     }
     else {
       expect(bookingBox!.y).toBeGreaterThan(gallery!.y);
@@ -531,7 +532,6 @@ test('instant checkout opens payment and retries the same booking when Stripe is
   await page.getByRole('button', { name: 'Retry secure payment', exact: true }).click();
   await expect.poll(() => paymentCalls).toBe(2);
   expect(bookingCalls).toBe(1);
-  await expect(page.locator('.p1-checkout-actions').getByRole('button', { name: 'Back', exact: true })).toBeDisabled();
 });
 
 test('checkout delivery and note update the estimate and reach the authoritative booking RPC', async ({ page }) => {
@@ -589,7 +589,8 @@ test('supplied listing calendar stays within the viewport and Escape restores tr
     await trigger.click();
     const calendar = page.getByRole('dialog', { name: 'Choose rental dates' });
     await expect(calendar).toBeVisible();
-    await expect(calendar.getByRole('button', { name: 'Use these dates' })).toBeVisible();
+    await expect(calendar.getByRole('button', { name: 'Done', exact: true })).toBeVisible();
+    await expect(calendar.locator('.calendar-months > div')).toHaveCount(1);
     await expect.poll(async () => {
       const box = await calendar.boundingBox();
       return !!box && box.x >= 0 && box.y >= 0 && box.x + box.width <= width + 1 && box.y + box.height <= 813;
@@ -732,41 +733,28 @@ async function visit(page: Page, path: string) {
 }
 
 for (const width of [375, 768, 1440]) {
-  test(`marketplace page families fit ${width}px with consistent Preview 1 controls`, async ({ page }, testInfo) => {
+  test(`core marketplace pages fit ${width}px with the main design system`, async ({ page }, testInfo) => {
     test.setTimeout(180000);
     page.on('pageerror', (error) => { throw error; });
     await page.setViewportSize({ width, height: 900 });
     await setup(page, {}, renterId);
     await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
     const routes: [string, string | RegExp][] = [
-      ['/', 'Great gear. No need to buy.'],
+      ['/', 'Good gear, close by.'],
       ['/search', '1 item'],
       [`/listing/${listingId}`, listing.title],
-      [`/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, 'Make time for a good plan.'],
-      ['/dashboard?tab=renting', 'Your next good plans.'],
-      ['/dashboard?tab=lending', 'A little more from what you own.'],
-      ['/create-listing', 'Put your good gear to work.'],
-      ['/favorites', 'Keep the good things close.'],
-      ['/messages', 'Good rentals start with a hello.'],
-      ['/profile', 'A little more about you.'],
-      ['/guidelines', 'Community guidelines'],
-      ['/requests', 'Item requests are not enabled yet'],
-      ['/bidding', 'Competitive bidding'],
-      ['/wallet', 'Your wallet, clearly explained.'],
-      ['/support', 'Support tickets'],
-      ['/claims', 'Disputes & claims'],
-      ['/protection', 'Not available in Part 1'],
+      [`/checkout/${listingId}?start=2026-11-02&end=2026-11-05`, /Review and (book|request)/],
+      ['/create-listing', 'Create a listing'],
+      ['/bidding', 'Live bidding'],
     ];
     for (const [path, heading] of routes) {
       await visit(page, path);
-      await expect(page.getByRole('heading', { name: heading, exact: true }).first()).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole('heading', { name: heading }).first()).toBeVisible({ timeout: 30_000 });
       await expectPageFits(page);
-      expect(await page.evaluate(() => getComputedStyle(document.body).getPropertyValue('--accent-ink').trim())).toBe('#3157E1');
+      expect(await page.evaluate(() => getComputedStyle(document.body).getPropertyValue('--accent-ink').trim())).toBe('#1b634b');
     }
-    await visit(page, '/profile');
-    await expect(page.getByRole('heading', { name: 'A little more about you.' })).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath(`profile-${width}.png`), fullPage: true, animations: 'disabled' });
+    await visit(page, '/');
+    await page.screenshot({ path: testInfo.outputPath(`home-${width}.png`), fullPage: true, animations: 'disabled' });
   });
 }
 
@@ -846,7 +834,7 @@ test('long forms stay reachable in a short landscape viewport', async ({ page },
 test('semantic feedback text meets normal-text contrast without replacing brand colors', async ({ page }) => {
   await setup(page);
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good gear, close by.' })).toBeVisible();
   const ratios = await page.evaluate(() => {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 1;

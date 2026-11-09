@@ -4,7 +4,7 @@ import { loadTestActors } from '../local/test-accounts';
 const backend = 'https://jzyjmsixfuwzfnntewqn.supabase.co';
 
 for (const width of [1440, 768, 390]) {
-  test(`Ocean Green staging loads real marketplace data at ${width}px`, async ({ page }) => {
+  test(`main site staging loads real marketplace data at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     const errors: string[] = [];
     const backendRequests: string[] = [];
@@ -16,28 +16,31 @@ for (const width of [1440, 768, 390]) {
       response.url().startsWith(`${backend}/rest/v1/`) && response.ok());
     await page.goto('/');
     await feed;
-    await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Good gear, close by.' })).toBeVisible();
     await expect(page.getByRole('link', { name: /^View listing:/ }).first()).toBeVisible({ timeout: 30_000 });
     const presentation = await page.evaluate(() => ({
       theme: document.documentElement.dataset.theme,
       accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
       overflow: document.documentElement.scrollWidth > innerWidth,
     }));
-    expect(presentation).toEqual({ theme: 'ocean', accent: '#0E7C66', overflow: false });
+    expect(presentation).toEqual({ theme: 'main', accent: '#1b634b', overflow: false });
     expect(backendRequests.length).toBeGreaterThan(0);
     expect(backendRequests.every((url) => url.startsWith(backend))).toBe(true);
     await expect(page.getByRole('status').filter({ hasText: 'Finding your area' })).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByRole('region', { name: 'Browse by category' }).getByRole('button', { name: 'More categories' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('link', { name: /^View listing:/ }).first()).toBeVisible({ timeout: 30_000 });
-    await expect.poll(() => page.locator('.marketplace-home-collage img').evaluateAll(
-      (images) => images.every((image) => (image as HTMLImageElement).complete),
+    const listingCard = page.getByRole('link', { name: /^View listing:/ }).first();
+    await expect.poll(() => listingCard.locator('img').first().evaluate(
+      image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0,
     )).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`home-${width}.png`), fullPage: true });
     await page.getByRole('link', { name: /^View listing:/ }).first().click();
     await expect(page).toHaveURL(/\/listing\/[a-f0-9-]+/);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-    await expect.poll(() => page.locator('.marketplace-photo-layout img').evaluateAll(
-      images => images.every(image => (image as HTMLImageElement).complete),
+    const listingImage = page.locator('.listing-image-main img').first();
+    await expect(listingImage).toBeVisible();
+    await expect.poll(() => listingImage.evaluate(
+      image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0,
     )).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`listing-${width}.png`), fullPage: true });
     expect(errors).toEqual([]);

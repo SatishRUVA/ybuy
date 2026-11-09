@@ -16,7 +16,7 @@ import { AlertTriangle, Info, CheckCircle2, Loader2, ArrowRight } from 'lucide-r
  */
 export function Overlay({ children, className = '' }: { children: ReactNode; className?: string }) {
   return createPortal(
-    <div className={`p1 p1-overlay fixed inset-0 z-[200] ${className}`} style={{ background: 'transparent', minHeight: 0 }}>{children}</div>,
+    <div className={`ui-overlay fixed inset-0 z-[200] ${className}`} style={{ background: 'transparent', minHeight: 0 }}>{children}</div>,
     document.body,
   );
 }
@@ -30,11 +30,11 @@ const BUTTON_BASE =
   'active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50';
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
-  primary: 'p1-button-primary bg-accent text-accent-text hover:bg-accent-hover',
-  secondary: 'p1-button-secondary bg-subtle text-main hover:bg-subtle',
-  ghost: 'p1-button-quiet text-sec hover:text-main hover:bg-subtle',
-  danger: 'p1-button-danger bg-error text-white hover:bg-error',
-  lime: 'p1-button-lime',
+  primary: 'bg-accent text-accent-text hover:bg-accent-hover',
+  secondary: 'bg-subtle text-main hover:bg-subtle',
+  ghost: 'text-sec hover:text-main hover:bg-subtle',
+  danger: 'bg-error text-white hover:bg-error',
+  lime: 'bg-highlight text-main hover:opacity-90',
   success: 'bg-success text-white shadow-xs hover:opacity-90',
   // For placement on an accent-filled panel.
   inverse: 'bg-card text-accent shadow-xs hover:bg-subtle',
@@ -68,7 +68,7 @@ export function Button({
       {...rest}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={`p1-button ${BUTTON_BASE} ${BUTTON_VARIANT[variant]} ${BUTTON_SIZE[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
+      className={`ui-button ${BUTTON_BASE} ${BUTTON_VARIANT[variant]} ${BUTTON_SIZE[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
     >
       {loading ? <Loader2 size={16} className="animate-spin shrink-0" /> : icon}
       {loading ? (loadingLabel ?? children) : children}
@@ -97,11 +97,11 @@ export function IconButton({
 type BadgeTone = 'neutral' | 'accent' | 'success' | 'warning' | 'error' | 'inverse';
 
 const BADGE_TONE: Record<BadgeTone, string> = {
-  neutral: 'p1-tag-neutral',
-  accent: 'p1-tag-blue',
-  success: 'p1-tag-good',
-  warning: 'p1-tag-pending',
-  error: 'p1-tag-bad',
+  neutral: 'border border-app bg-subtle text-sec',
+  accent: 'bg-accent-soft text-accent',
+  success: 'bg-success-soft text-success',
+  warning: 'bg-warning-soft text-warning',
+  error: 'bg-error-soft text-error',
   inverse: 'bg-[var(--text)] text-[var(--bg-card)] border-transparent',
 };
 
@@ -110,7 +110,7 @@ export function Badge({
 }: { tone?: BadgeTone; icon?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <span
-      className={`p1-tag max-w-full ${BADGE_TONE[tone]} ${className}`}
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-1 text-xs font-semibold ${BADGE_TONE[tone]} ${className}`}
     >
       {icon}
       {children}
@@ -217,7 +217,7 @@ export function Field({
   label, hint, error, htmlFor, children,
 }: { label: string; hint?: ReactNode; error?: string | null; htmlFor?: string; children: ReactNode }) {
   return (
-    <div className="p1-field">
+    <div className="grid gap-1.5">
       <label htmlFor={htmlFor} className="block text-[13px] font-semibold text-main mb-1.5">{label}</label>
       {hint}
       {children}

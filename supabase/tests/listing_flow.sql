@@ -2,6 +2,14 @@ begin;
 set local timezone='America/Chicago';
 create extension if not exists pgtap with schema extensions;
 select no_plan();
+select is((select (value #>> '{}')::integer from public.app_settings where key='listing_max_photos'),4,
+ 'Listings are limited to four photos');
+select is((select (value #>> '{}')::integer from public.app_settings where key='listing_max_photo_bytes'),3145728,
+ 'Listing photos are limited to 3 MiB');
+select is((select file_size_limit::bigint from storage.buckets where id='listing-images'),3145728::bigint,
+ 'Storage enforces the 3 MiB upload limit');
+select ok(not has_table_privilege('authenticated','public.listing_photo_reviews','SELECT'),
+ 'Owners cannot read or alter photo moderation audit records');
 
 insert into auth.users(id,email) values
  ('a1000000-0000-4000-8000-000000000001','flow-owner@example.test'),
@@ -170,6 +178,11 @@ select is((select sort_order from public.listing_images where listing_id='a40000
 select throws_ok($$select public.owner_reorder_listing_images('a4000000-0000-4000-8000-000000000001',
  array['https://example.test/two.jpg','https://example.test/unknown.jpg'])$$,
  '22023','Photo order must include each saved photo exactly once','Partial or forged reorder rejected');
+reset role;
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Approved test fixture photo.','ai'
+from public.listing_images where listing_id='a4000000-0000-4000-8000-000000000001';
+set local role authenticated;
 select lives_ok($$select public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='a4000000-0000-4000-8000-000000000001'),'{"description":""}',
  '{"formattedAddress":"123 Test Lane","streetAddress":"123 Test Lane","city":"Austin","state":"TX","postalCode":"78701","country":"US","latitude":30.27,"longitude":-97.74,"placeId":"","timeZone":"America/Chicago"}',false)$$,
@@ -290,8 +303,27 @@ update public.listings set status='draft' where id='a4000000-0000-4000-8000-0000
 select throws_ok($$update public.listings set status='published' where id='a4000000-0000-4000-8000-000000000001'$$,
  '23514','This listing requires moderation review before publication','High-confidence prohibited flag blocks publication');
 update public.listing_flags set resolved=true where listing_id='a4000000-0000-4000-8000-000000000001' and type='prohibited_item';
+insert into public.listing_flags(listing_id,reason,confidence,type)
+ values('a4000000-0000-4000-8000-000000000001','Listing text violates community guidelines','high','content_violation');
+select throws_ok($$update public.listings set status='published' where id='a4000000-0000-4000-8000-000000000001'$$,
+ '23514','This listing requires moderation review before publication','High-confidence content violation blocks publication');
+update public.listing_flags set resolved=true where listing_id='a4000000-0000-4000-8000-000000000001' and type='content_violation';
+insert into public.listing_flags(listing_id,reason,confidence,type)
+ values('a4000000-0000-4000-8000-000000000001','Offensive language','high','profanity');
+select throws_ok($$update public.listings set status='published' where id='a4000000-0000-4000-8000-000000000001'$$,
+ '23514','This listing requires moderation review before publication','High-confidence profanity flag blocks publication');
+update public.listing_flags set resolved=true where listing_id='a4000000-0000-4000-8000-000000000001' and type='profanity';
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'replace','Latest photo decision requires replacement.','ai'
+from public.listing_images where listing_id='a4000000-0000-4000-8000-000000000001';
+select throws_ok($$update public.listings set status='published' where id='a4000000-0000-4000-8000-000000000001'$$,
+ '23514','Every current listing photo must pass moderation before publication',
+ 'The latest decision for every current photo must be approved');
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Clear and relevant photo.','ai'
+from public.listing_images where listing_id='a4000000-0000-4000-8000-000000000001';
 select lives_ok($$update public.listings set status='published' where id='a4000000-0000-4000-8000-000000000001'$$,
- 'Resolved prohibited flag and advisory flag permit publication');
+ 'Resolved moderation flags and approved photos permit publication');
 update public.app_settings set value='2' where key='listing_max_photos';
 select throws_ok($$insert into public.listing_images(listing_id,url,sort_order)
  values('a4000000-0000-4000-8000-000000000001','https://example.test/three.jpg',2)$$,
@@ -302,6 +334,9 @@ select ok((public.owner_save_listing_flow('a4000000-0000-4000-8000-000000000001'
 
 insert into public.listing_images(listing_id,url,sort_order)
  values('a4000000-0000-4000-8000-000000000002','https://example.test/value-bands.jpg',0);
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+ values('a4000000-0000-4000-8000-000000000002','https://example.test/value-bands.jpg',
+  'approved','Approved test fixture photo.','ai');
 alter table public.listings disable trigger b_listing_scheduling_window;
 update public.listings set availability_start=current_date-1,availability_end=current_date+29
  where id='a4000000-0000-4000-8000-000000000002';

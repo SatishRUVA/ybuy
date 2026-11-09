@@ -1,14 +1,44 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
+import { Gavel, Sparkles } from 'lucide-react';
 import { useAuth } from '@/auth-context';
 import { Alert, Button } from '@/main-site/components/ui';
 import { ListingAuctionPreferences } from '@/main-site/components/listing-auction-preferences';
 import { fetchListingById, type DbListingRow } from '@/lib/listings';
-import { getListingAuction, listingAuctionError, type ListingAuction, type ListingAuctionPreferences as AuctionPreferences } from '@/lib/listing-auctions';
+import { enableBiddingPreferences, getListingAuction, listingAuctionError, type ListingAuction, type ListingAuctionPreferences as AuctionPreferences } from '@/lib/listing-auctions';
 import { saveAuctionPreferences } from '@/lib/listing-flow';
 import { auctionPublicationMessage } from '@/lib/listing-auctions';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 
-export function ListingNegotiationSettings({ listingId, onSaved }: { listingId: string; onSaved?: () => void }) {
+function BiddingCelebration({ scheduled }: { scheduled: boolean }) {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setVisible(false), 4200);
+    return () => window.clearTimeout(timer);
+  }, []);
+  if (!visible) return null;
+  return createPortal(<div aria-hidden="true" className="bidding-celebration">
+    <div className="bidding-celebration-stage">
+      {Array.from({ length: 12 }, (_, index) => <Sparkles key={index} className="bidding-celebration-particle" style={{
+        '--spark-x': `${Math.cos(index * Math.PI / 6) * (130 + index % 3 * 45)}px`,
+        '--spark-y': `${Math.sin(index * Math.PI / 6) * (150 + index % 3 * 35)}px`,
+        '--spark-turn': `${index % 2 ? 90 : -90}deg`,
+        animationDelay: `${index % 3 * 70}ms`,
+      } as CSSProperties} />)}
+      <div className="bidding-celebration-hero">
+        <div className="bidding-celebration-emblem">
+          <i className="bidding-celebration-ring" />
+          <i className="bidding-celebration-ring bidding-celebration-ring-delayed" />
+          <Gavel className="bidding-celebration-gavel" strokeWidth={1.8} />
+        </div>
+        <p>{scheduled ? 'Ready for the bidding spotlight!' : 'Let the bidding begin!'}</p>
+        <span>{scheduled ? 'Your auction is scheduled. The stage is set.' : 'Your auction is open. Let the bids roll in.'}</span>
+      </div>
+    </div>
+  </div>, document.body);
+}
+
+export function ListingNegotiationSettings({ listingId, onSaved, startSetup = false }: { listingId: string; onSaved?: (auction: ListingAuction | null) => void; startSetup?: boolean }) {
   const { user } = useAuth();
   const flag = useFeatureFlag('bidding');
   const [listing, setListing] = useState<DbListingRow | null>(null);
@@ -25,14 +55,17 @@ export function ListingNegotiationSettings({ listingId, onSaved }: { listingId: 
       if (!active) return;
       if (!row || row.owner_id !== user?.id || row.status !== 'published' || !Number.isSafeInteger(row.revision)) throw new Error('Bidding settings require your published listing. Reload its current status before continuing.');
       setListing(row); setAuction(current);
-      setPreferences({ enabled: row.auction_enabled ?? false, start_date: row.auction_start_date ?? null, end_date: row.auction_end_date ?? null,
+      const loadedPreferences = { enabled: row.auction_enabled ?? false, start_date: row.auction_start_date ?? null, end_date: row.auction_end_date ?? null,
         date_flexible: current?.date_flexible ?? true,
         starts_immediately: current?.status === 'open',
         opening_daily_rate: row.auction_opening_daily_rate ?? row.price_per_day,
-        bidding_starts_at: row.auction_bidding_starts_at ?? null, bidding_ends_at: row.auction_bidding_ends_at ?? null });
+        bidding_starts_at: row.auction_bidding_starts_at ?? null, bidding_ends_at: row.auction_bidding_ends_at ?? null };
+      setPreferences(startSetup && !current && !loadedPreferences.enabled
+        ? enableBiddingPreferences(loadedPreferences, row.availability_start ?? '')
+        : loadedPreferences);
     }).catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Could not load bidding settings. Please retry.'); });
     return () => { active = false; };
-  }, [listingId, user?.id, retry]);
+  }, [listingId, user?.id, retry, startSetup]);
   const locked = !!auction && ['scheduled', 'open', 'owner_selection', 'awaiting_payment'].includes(auction.status);
   const formatDate = (date: string | null) => date
     ? new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
@@ -55,25 +88,24 @@ export function ListingNegotiationSettings({ listingId, onSaved }: { listingId: 
       if (preferences.enabled && !savedAuction) throw new Error('Your settings were saved, but the auction was not confirmed. Reload your listing before continuing.');
       if (savedAuction) auctionPublicationMessage(savedAuction);
       setAuction(savedAuction);
-      setSaved(true); onSaved?.();
+      setSaved(true); onSaved?.(savedAuction);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not save bidding settings. Your entries are kept.'); }
     finally { setBusy(false); }
   }
   return <div className="space-y-5">
-    <div className="max-w-2xl"><h2 className="text-xl font-bold text-main">Bidding settings</h2>
-      <p className="mt-1 text-sm leading-relaxed text-sec">Renters can book at your daily rate using your chosen approval mode. You can also schedule competitive bidding for selected dates with platform-configured decision and payment deadlines.</p></div>
+    {saved && auction && ['scheduled', 'open'].includes(auction.status) && <BiddingCelebration scheduled={auction.status === 'scheduled'} />}
     {error && <Alert tone="error" title="Bidding settings unavailable">{error}
       {!listing && <Button variant="secondary" className="mt-3" onClick={() => setRetry(value => value + 1)}>Retry settings</Button>}
     </Alert>}
     {!listing && !error && <p role="status" className="text-sm text-sec">Loading bidding settings...</p>}
     {listing && <>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-card bg-subtle px-3.5 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-sec">
         <span className="font-medium text-sec">Rental dates</span>
         <span className="font-semibold text-main">{formatDate(listing.availability_start ?? null)} – {formatDate(listing.availability_end ?? null)}</span>
-        <span className="text-xs text-sec">Set in listing availability</span>
       </div>
       {locked && <Alert tone="info">Auction terms are locked, including while bidding is scheduled. Open Bidding for current bids and winner selection.</Alert>}
       <ListingAuctionPreferences value={preferences} start={listing.availability_start ?? ''} end={listing.availability_end ?? ''} askingPrice={Number(listing.price_per_day)}
+        hideEnableSwitch={startSetup}
         disabled={busy || !!auction || flag.loading || !flag.enabled} onChange={value => { setPreferences(value); setSaved(false); }} />
       {flag.error && <Alert tone="error">{flag.error}</Alert>}
       {!flag.loading && !flag.enabled && !flag.error && <p className="text-xs text-sec">Competitive bidding is currently disabled.</p>}

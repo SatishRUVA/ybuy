@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Crown, Gavel, Minus, Plus, ShieldCheck } from 'lucide-react';
+import { CalendarDays, Clock3, Crown, Gavel, Minus, Plus, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/auth-context';
 import { useRouter } from '@/router';
 import { fetchUnavailableDates } from '@/lib/availability';
 import { addDaysIso, todayIso } from '@/lib/geo';
 import { getListingAuction, placeListingAuctionBid, type ListingAuction } from '@/lib/listing-auctions';
 import { auctionCountdown } from '@/lib/auction-countdown';
-import { MonthGrid } from '@/main-site/components/date-range-picker';
+import { DateRangePicker } from '@/main-site/components/date-range-picker';
 import { Alert, Button, Field } from '@/main-site/components/ui';
 import { fieldClass } from '@/main-site/components/form-classes';
 
@@ -22,8 +22,6 @@ export function DateBiddingPanel({ listingId, listedPrice, deposit, initialAucti
   const [auction, setAuction] = useState(initialAuction);
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
-  const [returnPicking, setReturnPicking] = useState(false);
-  const [month, setMonth] = useState(() => new Date(`${initialAuction.start_date.slice(0, 7)}-01T12:00:00`));
   const [rate, setRate] = useState('');
   const [consent, setConsent] = useState(false);
   const [unavailable, setUnavailable] = useState<{ blocked: Set<string>; booked: Set<string> } | null>(null);
@@ -64,12 +62,6 @@ export function DateBiddingPanel({ listingId, listedPrice, deposit, initialAucti
   const minimum = quoted ? quote.minimum : auction.minimum_next_bid;
   const open = auction.status === 'open' && !!auction.ends_at && Date.parse(auction.ends_at) > now;
   const minDate = auction.start_date > todayIso() ? auction.start_date : todayIso();
-  function pick(date: string) {
-    setMessage('');
-    if (!returnPicking || !start || date <= start) {
-      setStart(date); setEnd(''); setReturnPicking(true);
-    } else { setEnd(date); setReturnPicking(false); }
-  }
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(null); setMessage('');
     try {
@@ -102,17 +94,23 @@ export function DateBiddingPanel({ listingId, listedPrice, deposit, initialAucti
       <form onSubmit={event => void submit(event)} className="mt-5 space-y-5">
         <fieldset disabled={busy || !open || !unavailable} className="space-y-3">
           <legend className="mb-3 text-base font-semibold text-main">1. Select your rental dates</legend>
-          <div className="flex items-center justify-between">
-            <button type="button" aria-label="Previous month" disabled={month.toISOString().slice(0, 7) <= minDate.slice(0, 7)} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1, 12))} className="grid h-11 w-11 place-items-center rounded-full hover:bg-subtle"><ChevronLeft size={18} /></button>
-            <p aria-live="polite" className="text-sm font-semibold">{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</p>
-            <button type="button" aria-label="Next month" disabled={month.toISOString().slice(0, 7) >= auction.end_date.slice(0, 7)} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1, 12))} className="grid h-11 w-11 place-items-center rounded-full hover:bg-subtle"><ChevronRight size={18} /></button>
-          </div>
-          <MonthGrid monthDate={month} todayStr={todayIso()} minDate={minDate} maxDate={auction.end_date} draftStart={start || null} draftEnd={end || null} bookedDates={unavailable?.booked ?? new Set()} blockedDates={unavailable?.blocked ?? new Set()} onPick={pick} showMonthLabel={false} rangeView />
-          <p role="status" className="text-xs text-sec">{returnPicking ? 'Choose your return date.' : 'Choose your pickup date.'} The return date is not a charged rental day.</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Rental pickup" htmlFor="bid-start"><input id="bid-start" type="date" required min={minDate} max={addDaysIso(auction.end_date, -1)} value={start} onChange={e => { setStart(e.target.value); setEnd(''); }} className={fieldClass()} /></Field>
-            <Field label="Rental return" htmlFor="bid-end"><input id="bid-end" type="date" required min={start ? addDaysIso(start, 1) : minDate} max={auction.end_date} value={end} onChange={e => setEnd(e.target.value)} className={fieldClass()} /></Field>
-          </div>
+          <DateRangePicker
+            mode="range"
+            presentation="listing"
+            startDate={start}
+            endDate={end}
+            minimumDate={minDate}
+            maximumDate={auction.end_date}
+            bookedDates={unavailable?.booked}
+            blockedDates={unavailable?.blocked}
+            disabled={busy || !open || !unavailable}
+            onChange={(pickup, returnDate) => {
+              setStart(pickup);
+              setEnd(returnDate);
+              setMessage('');
+            }}
+          />
+          <p role="status" className="text-xs text-sec">Choose pickup, then return. The return date is not a charged rental day.</p>
         </fieldset>
         <fieldset disabled={busy || !open} className="space-y-3 border-t border-app pt-4">
           <legend className="text-base font-semibold text-main">2. Place your bid</legend>

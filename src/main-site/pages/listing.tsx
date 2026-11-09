@@ -22,6 +22,7 @@ import { bookingTaxCents } from '@/lib/booking-tax';
 import { useUtcDay } from '@/lib/use-utc-day';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { calculateRentalPricing } from '@/lib/rental-pricing';
+import { ALLOW_SAME_DAY_BOOKINGS } from '@/lib/feature-flags';
 import { fetchMainItemRequest } from '../request-flow';
 import {
   MapPin, CheckCircle2, Truck,
@@ -68,10 +69,22 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
   const [reviewsRetry, setReviewsRetry] = useState(0);
   const [favoriteError, setFavoriteError] = useState(false);
   const [favoriteRetry, setFavoriteRetry] = useState(0);
+  const sameDayBookings = useFeatureFlag(ALLOW_SAME_DAY_BOOKINGS);
   const { enabled: biddingEnabled, error: biddingFlagError } = useFeatureFlag('bidding');
   const durationDiscounts = useFeatureFlag('duration_discounts');
   const [requestError, setRequestError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const today = listing?.pickupTimeZone ? pickupToday(listing.pickupTimeZone) : todayIso();
+
+  useEffect(() => {
+    if (!listing || sameDayBookings.loading || sameDayBookings.error || sameDayBookings.enabled) return;
+    const firstAllowedDate = addDaysIso(today, 1);
+    if (startDate < firstAllowedDate) {
+      const duration = Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000));
+      setStartDate(firstAllowedDate);
+      setEndDate(addDaysIso(firstAllowedDate, duration));
+    }
+  }, [endDate, listing, sameDayBookings.enabled, sameDayBookings.error, sameDayBookings.loading, startDate, today]);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,8 +235,10 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
   const tax = bookingTaxCents(rental, serviceFee) / 100;
   const paymentEstimate = rental + serviceFee + insuranceAmount;
   const total = paymentEstimate + tax;
-  const today = listing.pickupTimeZone ? pickupToday(listing.pickupTimeZone) : todayIso();
-  const datesValid = Boolean(startDate && endDate && startDate >= today && endDate > startDate && days <= MAX_BOOKING_RANGE_DAYS
+  const firstAllowedDate = addDaysIso(today, sameDayBookings.enabled ? 0 : 1);
+  const minimumBookingDate = listing.availabilityStart && listing.availabilityStart > firstAllowedDate
+    ? listing.availabilityStart : firstAllowedDate;
+  const datesValid = Boolean(startDate && endDate && startDate >= minimumBookingDate && endDate > startDate && days <= MAX_BOOKING_RANGE_DAYS
     && (!listing.availabilityStart || startDate >= listing.availabilityStart)
     && (!listing.availabilityEnd || endDate <= listing.availabilityEnd));
   const rangeUnavailable = (() => {
@@ -233,7 +248,8 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
     return false;
   })();
   const isOwner = listing.owner.id === user?.id;
-  const canBook = !isOwner && listing.available && quantity <= (listing.availableQuantity ?? 1) && datesValid && !rangeUnavailable && !availabilityLoading && !availabilityError;
+  const canBook = !isOwner && listing.available && quantity <= (listing.availableQuantity ?? 1) && datesValid && !rangeUnavailable && !availabilityLoading && !availabilityError
+    && !sameDayBookings.loading && !sameDayBookings.error;
   const rentalOptions = [1, 3, 7, 30].map((optionDays) => {
     const optionPrice = calculateRentalPricing(listing.pricePerDay * quantity, optionDays, {
       weeklyEnabled: durationDiscounts.enabled && listing.weeklyDiscountEnabled,
@@ -286,11 +302,15 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
           endDate={endDate}
           bookedDates={bookedDates}
           blockedDates={blockedDates}
-          minimumDate={listing.availabilityStart}
+          minimumDate={minimumBookingDate}
           timeZone={listing.pickupTimeZone}
           maximumDate={listing.availabilityEnd}
           onChange={(nextStart, nextEnd) => { setStartDate(nextStart); setEndDate(nextEnd); }}
         />}
+        {sameDayBookings.error && <Alert tone="error" className="mt-3" title="Could not verify booking-date settings">
+          <p>{sameDayBookings.error}</p>
+          <Button size="sm" variant="secondary" className="mt-2" onClick={sameDayBookings.reload}>Try again</Button>
+        </Alert>}
       </div>
 
       {!isOwner && <div className="mt-4" aria-label="Choose rental length">

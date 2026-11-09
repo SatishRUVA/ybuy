@@ -15,7 +15,7 @@ import { RentalSettlement } from '@/main-site/components/rental-settlement';
 import { CheckoutReservation } from '@/main-site/components/checkout-reservation';
 import { RentalAgreement } from '@/main-site/components/rental-agreement';
 import { ListingPhoto } from '@/main-site/components/listing-card';
-import { ArrowLeft, CheckCircle2, Calendar, MapPin, Lock, MessageSquare, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, Calendar, MapPin, Lock, MessageSquare, ShieldCheck } from 'lucide-react';
 import { usePlatformFee } from '@/lib/settings';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { calculateRentalPricing } from '@/lib/rental-pricing';
@@ -28,6 +28,7 @@ import { listingAvailabilityError } from '@/lib/listing-availability';
 import { pickupToday } from '@/lib/pickup-timezone';
 import { useUtcDay } from '@/lib/use-utc-day';
 import { createDepositAuthorizationSession, createDepositSetupSession, recordDepositHoldConsent } from '@/lib/security-deposit';
+import { PageBackButton } from '@/main-site/components/page-back-button';
 
 function formatDay(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
@@ -116,7 +117,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
 
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) return <div className="max-w-xl mx-auto px-4 py-10">
     <Alert tone="error" title="Invalid rental quantity">Choose between 1 and 100 units before continuing.</Alert>
-    <Button className="mt-4" onClick={back}>Back to the listing</Button>
+    <Button className="mt-4" onClick={() => back({ name: 'listing', id })}>Back to the listing</Button>
   </div>;
   const days = Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000));
   const rentalPricing = calculateRentalPricing(listing.pricePerDay * quantity, days, {
@@ -186,9 +187,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
   return (
     <div className="animate-fade-in pb-24 md:pb-10">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
-        <button onClick={back} className="inline-flex items-center gap-1.5 text-sm font-medium text-sec hover:text-main transition-colors duration-fast mb-5">
-          <ArrowLeft size={18} /> Back
-        </button>
+        <PageBackButton fallback={{ name: 'listing', id }}>Back to the listing</PageBackButton>
 
         <h1 className="text-[26px] sm:text-[32px] font-extrabold text-main font-display leading-tight">{listing.instantBooking ? 'Review and book' : 'Review and request'}</h1>
         <p className="mt-2 text-sm text-sec">Rental quantity: {quantity} {quantity === 1 ? 'unit' : 'units'}</p>

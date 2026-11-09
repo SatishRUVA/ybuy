@@ -68,11 +68,12 @@ function Nav({ access, active, onSelect }: { access: AdminAccess; active: string
   const activeGroup = GROUPS.find((group) => group.items.some((item) => item.id === active));
   return (
     <nav aria-label="Admin" className="admin-console__nav">
-      <div className="p1-tabs p1-space-bottom" aria-label="Admin sections">
+      <div className="mb-4 flex flex-wrap gap-1" aria-label="Admin sections">
         {GROUPS.map((group) => {
           const items = group.items.filter((item) => can(access, item));
           if (!items.length) return null;
           return <button key={group.title} type="button"
+            className={`min-h-11 rounded-card px-3 text-sm font-semibold transition-colors ${activeGroup === group ? 'bg-accent-soft text-accent' : 'text-sec hover:bg-subtle hover:text-main'}`}
             aria-pressed={activeGroup === group}
             onClick={() => onSelect(items[0].id)}>{group.title}</button>;
         })}
@@ -173,8 +174,8 @@ export function AdminPage({ section }: { section?: string }) {
     : 'Keep the good plans running.';
 
   return (
-    <main className="admin-console p1-work-page">
-      <header className="p1-page-head">
+    <main className="admin-console">
+      <header className="mb-6">
         <div><h1>{headline}</h1><p>Review live marketplace activity. Access and actions are limited to your administrator permissions.</p></div>
       </header>
       <div className="admin-console__layout">

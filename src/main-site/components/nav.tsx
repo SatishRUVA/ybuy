@@ -90,9 +90,8 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
   if (focused) {
     return (
       <header className="sticky top-0 z-40 glass-nav glass-nav-top border-b border-app">
-        <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-4 px-4 sm:px-6">
           <Wordmark onClick={() => navigate({ name: 'home' })} />
-          <Button variant="ghost" size="sm" onClick={() => navigate({ name: 'dashboard' })}>Back to bookings</Button>
         </div>
         {error && !signInOpen && <div role="alert" className="px-4 pb-3"><Alert tone="error">{error}</Alert></div>}
       </header>

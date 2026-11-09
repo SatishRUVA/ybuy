@@ -2,6 +2,25 @@
 
 ## Latest E2E deployment
 
+On November 8, 2026, the current frontend was published to
+`https://ybuy-e2e-test.vercel.app` as `dpl_FuBY6pEiyy4Q1x9wQPA96e87G9bA`.
+This includes step autofocus, highlighted inline validation, the styled bidding
+time dropdown, availability-aligned opening defaults, and the no-cloud bidding
+celebration. Confirmed auction setup now collapses into a status ticket with
+an opening/closing clock and View auction deep link. Vercel reports Ready;
+the ticket and deep link were verified in the hosted bundle. The deployed listing and bidding bundles
+return HTTP 200.
+
+The E2E backend `jzyjmsixfuwzfnntewqn` has all local migrations through
+`20261107000002`; no additional migrations were pending. Deploying
+`analyze-listing-photo` confirmed its current source was already deployed.
+Its unauthenticated endpoint returns HTTP 401. Two focused local browser tests,
+TypeScript and scoped lint passed before this release. Authenticated hosted
+publication and real AI-provider inference were not rerun. The separate
+production Supabase project and administrator deployment were not changed.
+
+### Previous deployment
+
 All current changes were deployed to `https://ybuy-e2e-test.vercel.app` as
 `dpl_EouNhsY3AMuSybukmfedNTP7jY7W`. Vercel reports Ready and the access gate
 responds with HTTP 200 after redirect. Main production was not changed.

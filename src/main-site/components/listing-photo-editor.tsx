@@ -1,14 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, ImagePlus, Plus, RotateCcw, Trash2, UploadCloud } from 'lucide-react';
 import { Button, IconButton } from '@/main-site/components/ui';
 import { Skeleton } from '@/main-site/components/skeleton';
+import type { ListingPhotoDecision } from '@/lib/listing-ai';
 
-export function ListingPhotoEditor({ photos, maximum, disabled, warnings, uploadProgress, preventLastPhotoRemoval = false, onAdd, onDrop, onReplace, onRemove, onReorder, error }: {
+export function ListingPhotoEditor({ photos, maximum, disabled, warnings, decisions, focusIndex, onFocusHandled, uploadProgress, preventLastPhotoRemoval = false, onAdd, onDrop, onReplace, onRemove, onReorder, error }: {
   photos: string[];
   maximum: number;
   disabled: boolean;
   warnings: Record<string, string>;
+  decisions: Record<string, ListingPhotoDecision>;
+  focusIndex: number | null;
+  onFocusHandled: () => void;
   uploadProgress?: { done: number; total: number; text: string } | null;
   preventLastPhotoRemoval?: boolean;
   error?: string;
@@ -23,12 +27,20 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, upload
   const reducedMotion = useReducedMotion();
   const active = Math.min(selected, Math.max(0, photos.length - 1));
   const activePhoto = photos[active];
-  return <div>
+  useEffect(() => {
+    if (focusIndex === null || !photos[focusIndex]) return;
+    setSelected(focusIndex);
+    const photo = document.getElementById(`listing-photo-${focusIndex}`);
+    photo?.focus();
+    photo?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' });
+    onFocusHandled();
+  }, [focusIndex, onFocusHandled, photos, reducedMotion]);
+  return <div id="listing-photo-editor">
     <div aria-label="Listing photos"
       onDragOver={event => { event.preventDefault(); if (!disabled) setDragging(true); }}
       onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
       onDrop={event => { event.preventDefault(); setDragging(false); if (!disabled) onDrop(Array.from(event.dataTransfer.files)); }}>
-      <button id="listing-add-photo" type="button" disabled={disabled || photos.length >= maximum} onClick={onAdd}
+      <button id="listing-add-photo" type="button" aria-invalid={Boolean(error)} disabled={disabled || photos.length >= maximum} onClick={onAdd}
         aria-label={photos.length === 0 ? 'Add your cover photo' : 'Upload listing photos'}
         aria-describedby={error ? 'listing-photos-error' : 'listing-photo-help'}
         className={`owner-photo-drop flex w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed px-4 py-7 text-center transition-colors disabled:opacity-50 ${dragging ? 'border-accent bg-accent-soft' : 'border-strong bg-subtle hover:border-accent'}`}>
@@ -41,11 +53,14 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, upload
       </button>
       <div className="mt-3 flex gap-2 overflow-x-auto py-1">
         <AnimatePresence initial={false}>
-        {photos.map((photo, index) => <motion.button key={photo} type="button" disabled={disabled} onClick={() => setSelected(index)}
-          aria-label={index === 0 ? 'Select cover photo' : `Select photo ${index + 1}${warnings[photo] ? ', quality suggestion' : ''}`}
-          aria-pressed={active === index} layout={!reducedMotion} initial={reducedMotion ? false : { opacity: 0, scale: 0.92, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={reducedMotion ? undefined : { opacity: 0, scale: 0.9 }} transition={{ duration: 0.2 }} className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-card border-2 ${active === index ? 'border-accent' : 'border-app'}`}>
+        {photos.map((photo, index) => <motion.button key={photo} id={`listing-photo-${index}`} type="button" disabled={disabled} onClick={() => setSelected(index)}
+          aria-label={`${index === 0 ? 'Select cover photo' : `Select photo ${index + 1}`}${decisions[photo] ? `, ${decisions[photo].decision.replace('_', ' ')}: ${decisions[photo].reason}` : warnings[photo] ? ', quality suggestion' : ''}`}
+          aria-pressed={active === index} layout={!reducedMotion} initial={reducedMotion ? false : { opacity: 0, scale: 0.92, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={reducedMotion ? undefined : { opacity: 0, scale: 0.9 }} transition={{ duration: 0.2 }} className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-card border-2 ${decisions[photo] && decisions[photo].decision !== 'approved' ? decisions[photo].decision === 'manual_review' ? 'border-warning' : 'border-error' : active === index ? 'border-accent' : 'border-app'}`}>
           <img src={photo} alt={`Listing photo ${index + 1}${index === 0 ? ', cover photo' : ''}`} className="h-full w-full object-cover" />
           {index === 0 && <span className="absolute bottom-0 inset-x-0 bg-accent text-accent-text text-[10px] py-0.5">Cover</span>}
+          {decisions[photo] && decisions[photo].decision !== 'approved' && <span aria-hidden="true" className={`absolute inset-x-0 top-0 text-[9px] font-semibold py-0.5 ${decisions[photo].decision === 'manual_review' ? 'bg-warning-soft text-warning' : 'bg-error-soft text-error'}`}>
+            {decisions[photo].decision === 'manual_review' ? 'Review needed' : 'Replace photo'}
+          </span>}
           {active === index && <span className="absolute right-1 top-1 rounded-full bg-accent text-accent-text p-0.5"><Check size={10} aria-hidden="true" /></span>}
         </motion.button>)}
         </AnimatePresence>
@@ -78,7 +93,10 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, upload
     {preventLastPhotoRemoval && photos.length === 1 && <p className="mt-2 text-xs text-sec">Published listings need at least one photo. Replace it, or archive the listing before removing it.</p>}
     {active > 0 && <Button size="sm" className="mt-2" variant="secondary" disabled={disabled} icon={<ImagePlus size={14} aria-hidden="true" />}
       onClick={() => { onReorder(active, 0); setSelected(0); }}>Make cover photo</Button>}
-    {activePhoto && warnings[activePhoto] && <p role="status" className="mt-2 rounded-card bg-warning-soft p-3 text-xs text-warning">{warnings[activePhoto]} This is a suggestion, not a publication blocker.</p>}
-    {error && <p id="listing-photos-error" role="alert" className="mt-2 text-sm text-error">{error}</p>}
+    {activePhoto && decisions[activePhoto] && decisions[activePhoto].decision !== 'approved' && <p role="status" className="mt-2 rounded-card bg-error-soft p-3 text-xs text-error">
+      {decisions[activePhoto].reason} Replace this photo and recheck the listing before publishing.
+    </p>}
+    {activePhoto && warnings[activePhoto] && <p role="status" className="mt-2 rounded-card bg-warning-soft p-3 text-xs text-warning">{warnings[activePhoto]}</p>}
+    {error && <p id="listing-photos-error" className="mt-2 text-sm text-error">{error}</p>}
   </div>;
 }

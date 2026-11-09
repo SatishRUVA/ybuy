@@ -69,7 +69,7 @@ for (const [width, height, columns] of [[375, 812, 4], [812, 375, 4], [768, 1024
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     const section = page.getByRole('region', { name: 'Browse by category' });
     await expect(section.getByRole('button')).toHaveCount(10);
-    const cards = section.locator('.p1-category-grid > button');
+    const cards = section.locator('.workspace-category-grid > button');
     await expect(cards).toHaveCount(8);
     const bounds = await cards.evaluateAll((elements) => elements.map((element) => {
       const { x, y, width, height } = element.getBoundingClientRect();
@@ -120,7 +120,7 @@ test('keyboard focus is visible, follows card order and activates category navig
   await expect(page).toHaveURL(new RegExp(`category=${categories[7].id}`));
 });
 
-test('Preview 1 hover lifts category cards; reduced motion disables movement', async ({ page }) => {
+test('category cards lift on hover; reduced motion disables movement', async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const card = page.getByRole('region', { name: 'Browse by category' }).getByRole('button', { name: 'Electronics', exact: true });
   const originalShadow = await card.evaluate((node) => getComputedStyle(node).boxShadow);

@@ -1,6 +1,5 @@
 export type ThemeId =
   | 'main'
-  | 'preview-one'
   | 'coral'
   | 'forest'
   | 'ocean'
@@ -93,35 +92,6 @@ export const themes: Theme[] = [
     {
       '--font-sans': "'Inter', system-ui, -apple-system, sans-serif",
       '--font-display': "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif",
-    },
-  ),
-  makeTheme(
-    'preview-one',
-    'Preview 1',
-    'Cobalt, lime and warm neutral surfaces',
-    false,
-    {
-      '--bg': 'var(--p1-white)',
-      '--bg-subtle': 'var(--p1-paper)',
-      '--bg-card': 'var(--p1-white)',
-      '--text': 'var(--p1-ink)',
-      '--text-secondary': 'var(--p1-muted)',
-      '--text-muted': 'var(--p1-muted)',
-      '--border': 'var(--p1-border)',
-      '--border-strong': 'var(--p1-border)',
-      '--accent': 'var(--p1-blue)',
-      '--accent-hover': 'var(--p1-blue-hover)',
-      '--accent-soft': 'var(--p1-info)',
-      '--accent-text': 'var(--p1-white)',
-      '--success': 'var(--p1-good)',
-      '--success-soft': 'var(--p1-good-bg)',
-      '--warning': 'var(--p1-pending)',
-      '--warning-soft': 'var(--p1-pending-bg)',
-      '--error': 'var(--p1-bad)',
-      '--error-soft': 'var(--p1-bad-bg)',
-      '--star': 'var(--p1-ink)',
-      '--favorite': 'var(--p1-blue)',
-      '--accent-ink': 'var(--p1-blue)',
     },
   ),
   makeTheme(
@@ -404,4 +374,4 @@ export const themes: Theme[] = [
   ),
 ];
 
-export const defaultTheme: ThemeId = 'preview-one';
+export const defaultTheme: ThemeId = 'main';

@@ -11,7 +11,12 @@ test-results-private-offers
 test-results-session
 test-results-staging
 playwright*.config.ts
-supabase
+supabase/*
+!supabase/functions
+supabase/functions/*
+!supabase/functions/_shared
+supabase/functions/_shared/*
+!supabase/functions/_shared/listing-contact.ts
 tests
 test-results
 playwright-report

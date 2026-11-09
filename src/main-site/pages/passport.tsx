@@ -1,19 +1,18 @@
 import { useRouter } from '@/router';
 import { listings } from '@/data';
 import { Rating, VerifiedBadge } from '@/main-site/components/trust';
-import { ArrowLeft, CheckCircle2, Shield, Package, Clock, Award, FileText, MapPin, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Shield, Package, Clock, Award, FileText, MapPin, AlertCircle } from 'lucide-react';
+import { PageBackButton } from '@/main-site/components/page-back-button';
 
 export function ItemPassportPage({ id }: { id: string }) {
-  const { back, navigate } = useRouter();
+  const { navigate } = useRouter();
   const listing = listings.find((l) => l.id === id);
   if (!listing) return <div className="p-8 text-center text-sec">Listing not found.</div>;
 
   return (
     <div className="animate-fade-in pb-20 md:pb-8">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
-        <button onClick={back} className="flex items-center gap-1.5 text-sm text-sec mb-4 hover:text-main transition-colors">
-          <ArrowLeft size={18} /> Back
-        </button>
+        <PageBackButton fallback={{ name: 'listing', id }}>Back to the listing</PageBackButton>
 
         {/* Passport header */}
         <div className="relative overflow-hidden rounded-card-xl bg-card border border-app p-6 mb-6">
@@ -100,7 +99,7 @@ export function ItemPassportPage({ id }: { id: string }) {
         </div>
 
         <button onClick={() => navigate({ name: 'listing', id: listing.id })} className="mt-6 w-full py-3 rounded-card-lg border border-app text-main font-semibold text-sm hover:bg-subtle transition-colors">
-          Back to listing
+          View listing
         </button>
       </div>
     </div>

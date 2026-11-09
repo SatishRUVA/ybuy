@@ -40,10 +40,18 @@ export type Route =
 interface RouterContextValue {
   route: Route;
   navigate: (route: Route) => void;
-  back: () => void;
+  back: (fallback: Route) => void;
 }
 
 const RouterContext = createContext<RouterContextValue | null>(null);
+const HISTORY_INDEX = '__ybuyIndex';
+
+function historyIndex(): number {
+  const state = window.history.state;
+  return state && typeof state === 'object' && typeof state[HISTORY_INDEX] === 'number'
+    ? state[HISTORY_INDEX]
+    : 0;
+}
 
 /** Route <-> real URL path mapping so pages are deep-linkable (no `#` hash routes). */
 function routeToPath(route: Route): string {
@@ -197,11 +205,14 @@ export function RouterProvider({ children }: { children: ReactNode }) {
         ? { name: 'dashboard', tab: 'renting' }
         : r;
     setRoute(next);
-    window.history.pushState(null, '', routeToPath(next));
+    window.history.pushState({ [HISTORY_INDEX]: historyIndex() + 1 }, '', routeToPath(next));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const back = () => window.history.back();
+  const back = (fallback: Route) => {
+    if (historyIndex() > 0) window.history.back();
+    else navigate(fallback);
+  };
 
   useEffect(() => {
     replaceLegacyDashboardPath(pathToRoute(window.location.pathname, window.location.search));

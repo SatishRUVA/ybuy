@@ -12,9 +12,9 @@ export function OperationDialog({ title, description, open, onClose, onSave, chi
   const [error, setError] = useState<string | null>(null);
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && !busy) { setError(null); onClose(); } }}>
-      <DialogContent className="p1-production-operation">
-        <DialogHeader className="p1-dialog-head"><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
-        <form className="p1-settings-form mt-4" aria-busy={busy} onSubmit={async (event) => {
+      <DialogContent className="admin-operation-dialog">
+        <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
+        <form className="admin-operation-form mt-4" aria-busy={busy} onSubmit={async (event) => {
           event.preventDefault();
           if (busy) return;
           const data = new FormData(event.currentTarget);
@@ -26,7 +26,7 @@ export function OperationDialog({ title, description, open, onClose, onSave, chi
         }}>
           <fieldset disabled={busy} className="space-y-4">{children}</fieldset>
           {error && <Alert tone="error">{error}</Alert>}
-          <div className="p1-dialog-footer">
+          <div className="flex flex-col-reverse gap-3 border-t border-app pt-4 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={busy} onClick={() => { setError(null); onClose(); }}>Cancel</Button>
             <Button type="submit" loading={busy}>Save</Button>
           </div>
@@ -40,13 +40,13 @@ export function TextField({ name, label, required = true, value, type = 'text', 
   name: string; label: string; required?: boolean; value?: string | number; type?: string;
   min?: number; max?: number; step?: string; maxLength?: number;
 }) {
-  return <label className="p1-field"><span>{label}</span><input name={name} type={type} required={required} defaultValue={value} min={min} max={max} step={step} maxLength={maxLength} className={fieldClass()} /></label>;
+  return <label className="grid gap-1.5 text-sm font-medium"><span>{label}</span><input name={name} type={type} required={required} defaultValue={value} min={min} max={max} step={step} maxLength={maxLength} className={fieldClass()} /></label>;
 }
 
 export function LongField({ name, label, required = true, value, maxLength = 4000 }: {
   name: string; label: string; required?: boolean; value?: string; maxLength?: number;
 }) {
-  return <label className="p1-field"><span>{label}</span><textarea name={name} required={required} defaultValue={value} maxLength={maxLength} rows={4} className={textareaClass()} /></label>;
+  return <label className="grid gap-1.5 text-sm font-medium"><span>{label}</span><textarea name={name} required={required} defaultValue={value} maxLength={maxLength} rows={4} className={textareaClass()} /></label>;
 }
 
 export function ChoiceField({ name, label, options, value }: {
@@ -54,7 +54,7 @@ export function ChoiceField({ name, label, options, value }: {
 }) {
   const id = useId();
   const [selected, setSelected] = useState(value ?? options[0] ?? '');
-  return <div className="p1-field"><label htmlFor={id}>{label}</label>
+  return <div className="grid gap-1.5 text-sm font-medium"><label htmlFor={id}>{label}</label>
     <Dropdown id={id} name={name} value={selected} onChange={setSelected}
       options={options.map((option) => ({ value: option, label: option.replace(/_/g, ' ') }))} />
   </div>;

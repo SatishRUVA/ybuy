@@ -11,7 +11,7 @@ export const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
 >(({ className, children, ...props }, ref) => (
-  <SelectPrimitive.Trigger ref={ref} className={cn(fieldClass('p1-dropdown-trigger group flex items-center justify-between gap-2 text-left data-[placeholder]:text-muted [&>span]:truncate'), className)} {...props}>
+  <SelectPrimitive.Trigger ref={ref} className={cn(fieldClass('group flex items-center justify-between gap-2 text-left data-[placeholder]:text-muted [&>span]:truncate'), className)} {...props}>
     {children}
     <SelectPrimitive.Icon asChild><ChevronDown size={16} aria-hidden="true" className="text-sec shrink-0 transition-transform duration-fast group-data-[state=open]:rotate-180 motion-reduce:transition-none" /></SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
@@ -28,7 +28,7 @@ export const SelectContent = React.forwardRef<
       position={position}
       sideOffset={6}
       collisionPadding={16}
-      className={cn('p1 p1-dropdown-menu relative z-[210] max-h-[min(18rem,var(--radix-select-content-available-height))] min-w-[8rem] max-w-[calc(100vw_-_2rem)] overflow-y-auto overscroll-contain rounded-card-lg border border-app bg-card text-main shadow-pop animate-scale-in motion-reduce:animate-none', className)}
+      className={cn('relative z-[210] max-h-[min(18rem,var(--radix-select-content-available-height))] min-w-[8rem] max-w-[calc(100vw_-_2rem)] overflow-y-auto overscroll-contain rounded-card-lg border border-app bg-card text-main shadow-pop animate-scale-in motion-reduce:animate-none', className)}
       {...props}
     >
       <SelectPrimitive.Viewport className={cn('p-1', position === 'popper' && 'w-full min-w-[var(--radix-select-trigger-width)]')}>
@@ -45,7 +45,7 @@ export const SelectItem = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
-    className={cn('p1-dropdown-option relative flex min-h-11 w-full cursor-pointer select-none items-center rounded-card py-2.5 pl-3 pr-9 text-sm outline-none transition-colors duration-fast data-[highlighted]:bg-subtle data-[state=checked]:bg-accent-soft data-[state=checked]:font-semibold data-[state=checked]:text-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50 motion-reduce:transition-none', className)}
+    className={cn('relative flex min-h-11 w-full cursor-pointer select-none items-center rounded-card py-2.5 pl-3 pr-9 text-sm outline-none transition-colors duration-fast data-[highlighted]:bg-subtle data-[state=checked]:bg-accent-soft data-[state=checked]:font-semibold data-[state=checked]:text-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50 motion-reduce:transition-none', className)}
     {...props}
   >
     <span className="absolute right-3 flex h-4 w-4 items-center justify-center">

@@ -63,42 +63,42 @@ function radiusControl(page: Page) {
 
 test.beforeEach(async ({ page }) => setup(page));
 
-test('Preview 1 wordmark returns to Home on desktop and mobile', async ({ page }) => {
+test('brand mark returns to Home on desktop and mobile', async ({ page }) => {
   await page.goto(`${appUrl}/search`, { waitUntil: 'domcontentloaded' });
-  const mainNavigation = page.getByRole('navigation', { name: 'Main navigation' });
+  const mainNavigation = page.getByRole('navigation', { name: 'Main', exact: true });
   const homeLink = page.getByRole('button', { name: 'YBuy home', exact: true }).first();
 
   await expect(homeLink).toBeVisible();
   await homeLink.click();
-  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good gear, close by.' })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe('/');
-  await expect(mainNavigation.getByRole('button', { name: 'Home', exact: true })).toHaveCount(0);
+  await expect(mainNavigation.getByRole('button', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page');
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByRole('button', { name: 'Explore', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Main', exact: true })
+    .getByRole('button', { name: 'Browse', exact: true }).click();
   await expect(page).toHaveURL(/\/search/);
   await page.getByRole('button', { name: 'YBuy home', exact: true }).first().click();
-  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good gear, close by.' })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe('/');
 });
 
-test('marketplace search exposes the preview workflow hierarchy and working grid/list views', async ({ page }) => {
+test('marketplace search exposes its hierarchy and working list/map views', async ({ page }) => {
   await page.goto(`${appUrl}/search?q=camera&lat=32.8&lng=-96.8&loc=Dallas%2C+Texas&radius=25`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Find "camera" nearby' })).toBeVisible();
-  await expect(page.locator('.p1-search-bar')).toHaveCSS('position', 'static');
+  await expect(page.locator('.search-control')).toHaveCSS('position', 'static');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('3 items');
-  await expect(page.getByRole('complementary', { name: 'Refine your search' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Grid view' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('.marketplace-results-grid article')).toHaveCount(3);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('camera');
+  await expect(page.getByRole('group', { name: 'Result view' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'List view' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.workspace-results-grid article')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Map view' }).click();
+  await expect(page.locator('.workspace-map-grid article')).toHaveCount(3);
+  await expect(page.getByRole('region', { name: 'Rental map' })).toBeVisible();
   await page.getByRole('button', { name: 'List view' }).click();
-  await expect(page.locator('.marketplace-results-list article')).toHaveCount(3);
+  await expect(page.locator('.workspace-results-grid article')).toHaveCount(3);
   await expect(page.getByRole('button', { name: 'List view' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page).toHaveURL(/radius=25/);
-  await page.getByRole('button', { name: 'Grid view' }).click();
-  await expect(page.locator('.marketplace-results-grid article')).toHaveCount(3);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('complementary', { name: 'Refine your search' })).not.toBeVisible();
   await page.getByRole('button', { name: /^Filters/ }).click();
   await expect(page.getByRole('dialog', { name: 'Filters' })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -107,57 +107,50 @@ test('marketplace search exposes the preview workflow hierarchy and working grid
 
 test('homepage uses real radius-filtered inventory, honest photo states and existing listing/auth destinations', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good gear, close by.' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Nothing listed yet' })).toBeVisible();
-  await expect(page.locator('.p1-hero-collage a')).toHaveCount(0);
   const request = page.waitForRequest((req) => req.url().includes('/rpc/search_available_listings'));
   await selectLocation(page);
   expect((await request).postDataJSON()).toMatchObject({
     p_latitude: 32.8, p_longitude: -96.8, p_radius_miles: 5, p_start_date: null, p_end_date: null,
   });
 
-  await expect(page.getByRole('heading', { name: 'Good finds around Dallas' })).toBeVisible();
-  const shelf = page.getByRole('region', { name: 'Rental finds' });
-  await expect(shelf.getByRole('link', { name: /^View listing:/ })).toHaveCount(1);
-  await expect(shelf.getByText('By Test Owner', { exact: true })).toBeVisible();
-  await expect(page.locator('.p1-hero-collage a')).toHaveAttribute('href', `/listing/${listingId}`);
-  await expect(page.locator('.p1-hero-collage').getByText('Photo unavailable')).toBeVisible();
-  await shelf.getByRole('button', { name: 'Save to favorites' }).click();
+  const listingLink = page.getByRole('link', { name: 'View listing: Radius camera 1', exact: true });
+  await expect(listingLink).toHaveAttribute('href', `/listing/${listingId}`);
+  await expect(listingLink.getByRole('img', { name: 'Photo unavailable' })).toBeVisible();
+  await page.getByRole('button', { name: 'Save to favorites' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
-  await shelf.getByRole('link', { name: /^View listing:/ }).click();
+  await listingLink.click();
   await expect(page).toHaveURL(new RegExp(`/listing/${listingId}`));
 });
 
-test('search uses Preview 1 colors without overriding primary button text or active filters', async ({ page }) => {
+test('search controls use the main palette without overriding button text or active filters', async ({ page }) => {
   await page.goto(`${appUrl}/search?q=camera&lat=32.8&lng=-96.8&loc=Dallas%2C+Texas&radius=25&verified=1`, { waitUntil: 'domcontentloaded' });
   const search = page.getByRole('button', { name: 'Search', exact: true });
-  await expect(search).toHaveCSS('background-color', 'rgb(49, 87, 225)');
+  await expect(search).toHaveCSS('background-color', 'rgb(27, 99, 75)');
   await expect(search).toHaveCSS('color', 'rgb(255, 255, 255)');
   await expect(search.locator('svg')).toHaveCSS('color', 'rgb(255, 255, 255)');
   const filters = page.getByRole('button', { name: /^Filters/ });
-  await expect(filters).toHaveCSS('color', 'rgb(49, 87, 225)');
+  await expect(filters).toHaveCSS('color', 'rgb(27, 99, 75)');
   await expect(filters.locator('span')).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await filters.click();
   await page.getByRole('combobox', { name: 'Category', exact: true }).click();
   const menu = page.getByRole('listbox');
   await expect(menu).toHaveCSS('background-color', 'rgb(255, 255, 255)');
-  await expect(page.getByRole('option', { name: 'All categories', exact: true })).toHaveCSS('color', 'rgb(49, 87, 225)');
+  await expect(page.getByRole('option', { name: 'All categories', exact: true })).toHaveCSS('color', 'rgb(27, 99, 75)');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('combobox', { name: 'Category', exact: true })).toBeFocused();
 });
 
-test('closed calendar overlay does not paint a white screen over the marketplace', async ({ page }) => {
+test('rental date picker opens and closes without blocking the marketplace', async ({ page }) => {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Great gear. No need to buy.' })).toBeVisible();
-  const layer = page.locator('.p1-overlay');
-  await expect(layer).toHaveClass(/pointer-events-none/);
-  await expect(layer).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-  await expect(layer).toHaveCSS('min-height', '0px');
+  await expect(page.getByRole('heading', { name: 'Good gear, close by.' })).toBeVisible();
   await page.getByRole('button', { name: 'Choose a date range', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Choose rental dates' })).toBeVisible();
-  await expect(layer).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  const calendar = page.getByRole('dialog', { name: 'Choose rental dates' });
+  await expect(calendar).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(layer).toHaveClass(/pointer-events-none/);
+  await expect(calendar).toBeHidden();
   await expect(page.getByRole('button', { name: 'Choose a date range', exact: true })).toBeFocused();
 });
 

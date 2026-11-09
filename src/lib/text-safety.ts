@@ -12,6 +12,7 @@
 
 // eslint-disable-next-line no-control-regex -- control characters are exactly what this rejects
 export const UNSAFE_TEXT = /<\s*\/?\s*[a-z!?]|javascript\s*:|[\u0000-\u0008\u000B\u000C\u000E-\u001F]/i;
+export const GIBBERISH_TEXT = /\b(?:asdf(?:ghjkl)?|qwerty(?:uiop)?|zxcvbnm|lorem ipsum|lorem|ipsum|blah(?:\s+blah)+|test(?:\s+test)+)\b|[bcdfghjklmnpqrstvwxyz]{10,}|(\w)\1{5,}/i;
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

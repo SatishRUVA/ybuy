@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '@/auth-context';
 import { useRouter } from '@/router';
+import { PageBackButton } from '@/main-site/components/page-back-button';
 import { fetchBookingById, startBookingReturn, type UiBooking } from '@/lib/bookings';
 import {
   acknowledgeBookingInspection,
@@ -24,7 +25,7 @@ import { DepositAuthorizationStatus } from '@/main-site/components/deposit-autho
 import { BookingPrecheckin } from '@/main-site/components/booking-precheckin';
 import { RentalSettlement } from '@/main-site/components/rental-settlement';
 import { Alert, Badge, Button, SectionHeader, Surface } from '@/main-site/components/ui';
-import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, Clock3, Handshake, ShieldCheck, Star, UserRound } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, CheckCircle2, Clock3, Handshake, ShieldCheck, Star, UserRound } from 'lucide-react';
 
 type Props = { bookingId: string; kind: HandoffKind };
 
@@ -109,7 +110,7 @@ function InspectionRecord({ inspection, photos, title }: {
 
 export function BookingHandoff({ bookingId, kind }: Props) {
   const { user } = useAuth();
-  const { back, navigate } = useRouter();
+  const { navigate } = useRouter();
   const [booking, setBooking] = useState<UiBooking | null>(null);
   const [handoff, setHandoff] = useState<BookingHandoff | null>(null);
   const [precheckinReady, setPrecheckinReady] = useState(false);
@@ -355,9 +356,9 @@ export function BookingHandoff({ bookingId, kind }: Props) {
   return (
     <main className="animate-fade-in pb-20 md:pb-10">
       <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-8">
-        <button onClick={back} className="mb-4 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-sec hover:text-main focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-          <ArrowLeft size={17} /> Back
-        </button>
+        <PageBackButton fallback={{ name: 'dashboard', tab: handoff.is_owner ? 'lending' : 'renting' }}>
+          Back to bookings
+        </PageBackButton>
         <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-main font-display sm:text-3xl">{handoff.is_owner ? 'Owner flow' : 'Renter flow'}</h1>
