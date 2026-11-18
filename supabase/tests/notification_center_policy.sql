@@ -1,4 +1,8 @@
 begin;
+create extension if not exists pgtap with schema extensions;
+select plan(1);
+insert into auth.users(id,email)
+values('ce000000-0000-4000-8000-000000000001','notification-policy@test.invalid');
 do $$
 declare
   v_user uuid;
@@ -6,8 +10,7 @@ declare
   v_category text;
   v_enabled boolean;
 begin
-  select id into strict v_user from public.profiles
-    where email ~ '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$' order by created_at limit 1;
+  v_user := 'ce000000-0000-4000-8000-000000000001';
   insert into public.notification_preferences(user_id) values(v_user) on conflict(user_id) do nothing;
   update public.notification_preferences set
     bidding_in_app=false,bidding_email=false,listings_in_app=false,listings_email=false,
@@ -59,4 +62,6 @@ begin
   end if;
 end;
 $$;
+select pass('Notification categories, mandatory delivery and optional preferences are enforced');
+select * from finish();
 rollback;

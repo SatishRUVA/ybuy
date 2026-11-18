@@ -2,6 +2,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
+\ir fixtures/published_listing.inc
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('a0000000-0000-4000-8000-000000000001', 'super@admin.test', '{"full_name":"Super"}'),
@@ -19,7 +20,8 @@ insert into public.admin_users (user_id, role, permissions) values
   ('a0000000-0000-4000-8000-000000000002', 'admin', '{listings.moderate}');
 insert into public.categories (id, name) values ('a2000000-0000-4000-8000-000000000001', 'Admin test category');
 insert into public.listings (id, owner_id, category_id, title, price_per_day, status,estimated_value,item_condition) values
-  ('a3000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000003', 'a2000000-0000-4000-8000-000000000001', 'Owner item', 10, 'published',200,'good');
+  ('a3000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000003', 'a2000000-0000-4000-8000-000000000001', 'Owner item', 10, 'draft',200,'good');
+select pg_temp.publish_listing_fixture('a3000000-0000-4000-8000-000000000001',current_date,current_date+30);
 
 select ok(not has_function_privilege('anon', 'public.admin_overview(timestamptz,timestamptz)', 'EXECUTE'), 'Anonymous callers cannot run admin RPCs');
 select ok(not has_function_privilege('authenticated', 'public.admin_write_audit(text,text,text,jsonb,jsonb,text,text)', 'EXECUTE'), 'Clients cannot write audit rows directly');

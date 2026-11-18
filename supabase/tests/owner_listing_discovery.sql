@@ -17,8 +17,11 @@ select ('96000000-0000-4000-8000-'||lpad((30+n)::text,12,'0'))::uuid,
 from generate_series(1,5) n;
 insert into public.listing_images(listing_id,url,sort_order)
 select id,'https://example.test/camera.png',0 from public.listings where category_id='96000000-0000-4000-8000-000000000021';
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude)
-select id,owner_id,'Private pickup','Dallas','TX','75201','US',32.8,-96.8
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select i.listing_id,i.url,'approved','Synthetic discovery fixture','system' from public.listing_images i
+join public.listings l on l.id=i.listing_id where l.category_id='96000000-0000-4000-8000-000000000021';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone)
+select id,owner_id,'Private pickup','123 Test Street','Dallas','TX','75201','US',32.8,-96.8,'America/Chicago'
 from public.listings where category_id='96000000-0000-4000-8000-000000000021';
 update public.listings set status='published' where category_id='96000000-0000-4000-8000-000000000021';
 
@@ -38,8 +41,9 @@ select is((public.search_available_listings(p_category_id=>'96000000-0000-4000-8
  'Later pages retain the active total');
 select is((public.search_available_listings(p_category_id=>'96000000-0000-4000-8000-000000000021')->'rows'->0->>'availability_end')::date,current_date+20,
  'Search includes the actual exclusive availability end');
-select throws_ok($$select public.search_available_listings(p_start_date=>current_date-1,p_end_date=>current_date+1)$$,'22023',
- 'Choose both dates, starting today or later, with an end after the start and a range of at most 366 days','Past requested rentals are rejected');
+select is((public.search_available_listings(p_start_date=>current_date-2,p_end_date=>current_date+1,
+ p_category_id=>'96000000-0000-4000-8000-000000000021')->>'total')::integer,0,
+ 'Past requested rentals cannot match inventory in its pickup-local calendar');
 
 set local role authenticated;
 set local request.jwt.claims='{"sub":"96000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"96000000-0000-4000-8000-000000000011","exp":4102444800}';
@@ -48,10 +52,10 @@ select is((select count(*)::integer from public.listings where category_id='9600
 reset role;
 reset request.jwt.claims;
 update public.feature_flags set enabled=true where key='bidding';
-insert into public.listing_auctions(listing_id,start_date,end_date,opening_daily_rate,status,starts_at,ends_at,created_at)
+insert into public.listing_auctions(listing_id,start_date,end_date,opening_daily_rate,status,starts_at,ends_at,hard_ends_at,created_at)
 select id,current_date+7,current_date+10,price_per_day,'open',
  case when id='96000000-0000-4000-8000-000000000034' then now()+interval '1 hour' else now()-interval '1 hour' end,
- now()+interval '2 hours',now()
+ now()+interval '2 hours',now()+interval '3 hours',now()
 from public.listings where category_id='96000000-0000-4000-8000-000000000021' and id<>'96000000-0000-4000-8000-000000000035';
 
 select is((select count(*)::integer from jsonb_array_elements(public.get_top_listing_bids()) r

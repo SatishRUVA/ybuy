@@ -22,7 +22,7 @@ insert into public.listings(id,owner_id,category_id,title,description,price_per_
  availability_start,availability_end,pickup_windows,return_windows)
 values('f4000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000001',
  'f3000000-0000-4000-8000-000000000001','Hourly item','Hourly fixture',2,10,'good',
- current_date,current_date+10,array['morning','afternoon'],array['evening']);
+ (select today from hour_calendar),(select today+10 from hour_calendar),array['morning','afternoon'],array['evening']);
 insert into public.listing_images(listing_id,url,sort_order)
 values('f4000000-0000-4000-8000-000000000001','https://example.test/hour.jpg',0);
 insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)

@@ -58,8 +58,11 @@ reset role;
 drop trigger zz_atomic_availability_test_failure on public.listing_availability;
 insert into public.listing_images(listing_id,url,sort_order)
 values('a9400000-0000-4000-8000-000000000001','https://example.test/atomic-camera.png',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude)
-values('a9400000-0000-4000-8000-000000000001','a9100000-0000-4000-8000-000000000001','123 Main Street','123 Main Street','Dallas','TX','75201','US',32.8,-96.8);
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic atomic availability fixture','system' from public.listing_images
+where listing_id='a9400000-0000-4000-8000-000000000001';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone)
+values('a9400000-0000-4000-8000-000000000001','a9100000-0000-4000-8000-000000000001','123 Main Street','123 Main Street','Dallas','TX','75201','US',32.8,-96.8,'America/Chicago');
 update public.listings set status='published' where id='a9400000-0000-4000-8000-000000000001';
 set local role authenticated;
 set local request.jwt.claims='{"sub":"a9100000-0000-4000-8000-000000000002","role":"authenticated","session_id":"a9200000-0000-4000-8000-000000000002","exp":4102444800}';

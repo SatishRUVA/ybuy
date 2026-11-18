@@ -1,6 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
+\ir fixtures/published_listing.inc
 insert into auth.users(id,email) values
  ('a9000000-0000-4000-8000-000000000001','geography-owner@example.test'),
  ('a9000000-0000-4000-8000-000000000002','geography-renter@example.test');
@@ -32,10 +33,11 @@ select is((select country_code from public.profiles where id='a9000000-0000-4000
 update public.profiles set country_code='IN',state_region_code='IN-DL' where id='a9000000-0000-4000-8000-000000000002';
 insert into public.categories(id,name) values('a9200000-0000-4000-8000-000000000001','Geography fixture');
 insert into public.listings(id,owner_id,category_id,title,price_per_day,status,estimated_value,item_condition)
-values('a9300000-0000-4000-8000-000000000001','a9000000-0000-4000-8000-000000000001','a9200000-0000-4000-8000-000000000001','Geography camera',10,'published',200,'good');
+values('a9300000-0000-4000-8000-000000000001','a9000000-0000-4000-8000-000000000001','a9200000-0000-4000-8000-000000000001','Geography camera',10,'draft',200,'good');
+select pg_temp.publish_listing_fixture('a9300000-0000-4000-8000-000000000001',current_date+10,current_date+30);
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,total,status)
 values('a9400000-0000-4000-8000-000000000001','a9300000-0000-4000-8000-000000000001',
- 'a9000000-0000-4000-8000-000000000001','a9000000-0000-4000-8000-000000000002',current_date+200,current_date+202,10,2,20,.1,2,22,'pending_payment');
+ 'a9000000-0000-4000-8000-000000000001','a9000000-0000-4000-8000-000000000002',current_date+10,current_date+12,10,2,20,.1,2,22,'pending_payment');
 select is((select owner_country_code from public.bookings where id='a9400000-0000-4000-8000-000000000001'),'US','Transaction snapshots Owner country');
 select is((select renter_state_region_code from public.bookings where id='a9400000-0000-4000-8000-000000000001'),'IN-DL','Transaction snapshots Renter subdivision');
 select is((select currency from public.bookings where id='a9400000-0000-4000-8000-000000000001'),'USD','Currency is explicit and not inferred from Indian or US account country');

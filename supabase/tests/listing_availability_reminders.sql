@@ -10,9 +10,9 @@ insert into auth.sessions(id,user_id) values
   ('72000000-0000-4000-8000-000000000002','71000000-0000-4000-8000-000000000002');
 insert into public.categories(id,name)
 values ('73000000-0000-4000-8000-000000000001','Availability reminder fixture');
-insert into public.notification_preferences(user_id,bookings_in_app,bookings_email)
+insert into public.notification_preferences(user_id,listings_in_app,listings_email)
 values ('71000000-0000-4000-8000-000000000002',false,false)
-on conflict (user_id) do update set bookings_in_app=false,bookings_email=false;
+on conflict (user_id) do update set listings_in_app=false,listings_email=false;
 
 insert into public.listings(
   id,owner_id,category_id,title,description,price_per_day,status,estimated_value,item_condition,
@@ -38,10 +38,13 @@ insert into public.listing_images(listing_id,url,sort_order)
 select id,'https://example.test/availability-reminder.jpg',0
 from public.listings where id between
   '74000000-0000-4000-8000-000000000001' and '74000000-0000-4000-8000-000000000005';
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic availability reminder fixture','system' from public.listing_images
+where listing_id between '74000000-0000-4000-8000-000000000001' and '74000000-0000-4000-8000-000000000005';
 insert into public.listing_pickup_locations(
-  listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude
+  listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone
 )
-select id,owner_id,'Private test pickup','Test City','TX','75201','US',location_lat,location_lng
+select id,owner_id,'Private test pickup','123 Test Street','Test City','TX','75201','US',location_lat,location_lng,'America/Chicago'
 from public.listings where id between
   '74000000-0000-4000-8000-000000000001' and '74000000-0000-4000-8000-000000000005';
 update public.listings set status='published'

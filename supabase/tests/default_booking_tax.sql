@@ -18,8 +18,11 @@ insert into public.listings(id,owner_id,category_id,title,description,price_per_
  ('95000000-0000-4000-8000-000000000031','95000000-0000-4000-8000-000000000001','95000000-0000-4000-8000-000000000021','Tax test camera','Camera with a case and charger.',10,'draft',200,'good',true,15,current_date+1,current_date+20,true,2);
 insert into public.listing_images(listing_id,url,sort_order) values
  ('95000000-0000-4000-8000-000000000031','https://example.test/tax-camera.png',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude) values
- ('95000000-0000-4000-8000-000000000031','95000000-0000-4000-8000-000000000001','Private pickup','Dallas','TX','75201','US',32.8,-96.8);
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic tax fixture','system' from public.listing_images
+where listing_id='95000000-0000-4000-8000-000000000031';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone) values
+ ('95000000-0000-4000-8000-000000000031','95000000-0000-4000-8000-000000000001','Private pickup','123 Test Street','Dallas','TX','75201','US',32.8,-96.8,'America/Chicago');
 update public.listings set status='published' where id='95000000-0000-4000-8000-000000000031';
 update public.feature_flags set enabled=true where key in ('insurance','owner_promotions');
 update public.app_settings set value='0.1'::jsonb where key='platform_fee_pct';
@@ -36,8 +39,16 @@ select is((select total - deposit from public.bookings where listing_id='9500000
 reset role;
 alter table public.bookings enable trigger zzzzz_bookings_apply_sandbox_tax;
 alter table public.bookings enable trigger zzzzzz_bookings_deposit_authorization_model;
+-- Retain coverage of authorization-before-payment bookings created before rental-first checkout.
+set local request.jwt.claims='{}';
+select lives_ok($$insert into public.bookings(
+ listing_id,renter_id,owner_id,start_date,end_date,quantity,status,daily_rate,days,subtotal,
+ service_fee_pct,service_fee_amount,deposit,total,delivery_mode,delivery_fee_amount,payment_first,deposit_collection_model)
+ values('95000000-0000-4000-8000-000000000031','95000000-0000-4000-8000-000000000002',
+ '95000000-0000-4000-8000-000000000001',current_date+4,current_date+6,1,'pending_payment',
+ 10,2,20,.1,2,40,81,'delivery',15,false,'authorization')$$,'Historical authorization-model booking receives the same authoritative tax snapshot');
 set local role authenticated;
-select lives_ok($$select public.create_booking_request('95000000-0000-4000-8000-000000000031',current_date+4,current_date+6,1,'delivery',null)$$,'Ordinary instant booking charges tax with the sandbox gate disabled');
+set local request.jwt.claims='{"sub":"95000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"95000000-0000-4000-8000-000000000012","exp":4102444800}';
 select lives_ok($$select public.record_deposit_hold_consent(id) from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4$$,
  'Renter records consent for the separate temporary deposit authorization');
 reset role;
@@ -102,12 +113,12 @@ select is((select confirmation_gate from public.bookings where listing_id='95000
 create temporary table retried_deposit_authorization as
 	select public.prepare_booking_deposit_authorization(id,renter_id) as result
 	from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4;
-select is((select (result->>'attempt')::integer from retried_deposit_authorization),3,'Failed authentication gets a fresh idempotent authorization attempt');
+select is((select (result->>'attempt')::integer from retried_deposit_authorization),2,'Additional authentication resumes the existing idempotent authorization attempt');
 select lives_ok($$select public.record_deposit_authorization_event(
  'evt_depositauthfixture','payment_intent.amount_capturable_updated',
  ((select result->>'id' from retried_deposit_authorization)::uuid),
  (select id from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4),
- 'pi_deposit_fixture','requires_capture','pm_deposit_fixture',
+ 'pi_deposit_action','requires_capture','pm_deposit_fixture',
  (select deposit from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4),0,
  (select deposit from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4),
  clock_timestamp()+interval '10 days',null)$$,'Stripe capturable event confirms the separate hold');
@@ -119,7 +130,7 @@ select lives_ok($$select public.record_deposit_authorization_event(
  'evt_depositduplicate','payment_intent.payment_failed',
  ((select result->>'id' from retried_deposit_authorization)::uuid),
  (select id from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4),
- 'pi_deposit_fixture','requires_capture','pm_deposit_fixture',
+ 'pi_deposit_action','requires_capture','pm_deposit_fixture',
  (select deposit from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4),0,
  (select deposit from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4),
  clock_timestamp()+interval '10 days',null)$$,'A distinct stale event reconciles the current Stripe intent state');
@@ -127,7 +138,7 @@ select lives_ok($$select public.record_deposit_authorization_event(
  'evt_depositduplicate','payment_intent.payment_failed',
  ((select result->>'id' from retried_deposit_authorization)::uuid),
  (select id from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4),
- 'pi_deposit_fixture','requires_capture','pm_deposit_fixture',
+ 'pi_deposit_action','requires_capture','pm_deposit_fixture',
  (select deposit from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4),0,
  (select deposit from public.bookings where listing_id='95000000-0000-4000-8000-000000000031' and start_date=current_date+4),
  clock_timestamp()+interval '10 days',null)$$,'Duplicate Stripe event IDs are idempotent');

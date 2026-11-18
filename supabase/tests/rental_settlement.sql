@@ -17,17 +17,19 @@ insert into public.listings(id,owner_id,category_id,title,description,price_per_
   'Settlement test listing','A listing fixture for settlement tests.',10,'draft',200,'good',current_date+100,current_date+130);
 insert into public.listing_images(listing_id,url,sort_order) values
  ('84000000-0000-4000-8000-000000000001','https://example.test/settlement-item.png',0);
-insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method) values
- ('84000000-0000-4000-8000-000000000001','https://example.test/settlement-item.png','approved','Fixture photo approved','system');
-insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,time_zone,latitude,longitude) values
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic settlement fixture','system' from public.listing_images
+where listing_id='84000000-0000-4000-8000-000000000001';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone) values
  ('84000000-0000-4000-8000-000000000001','81000000-0000-4000-8000-000000000001',
-  'Private pickup','100 Main Street','Dallas','TX','75201','US','America/Chicago',32.8,-96.8);
+  'Private pickup','123 Test Street','Dallas','TX','75201','US',32.8,-96.8,'America/Chicago');
 update public.listings set status='published' where id='84000000-0000-4000-8000-000000000001';
 update public.service_fee_configurations set total_fee_pct=0.10,renter_share_percent=70
  where effective_from='-infinity'::timestamptz;
 alter table public.bookings disable trigger zzzzzz_bookings_deposit_authorization_model;
-insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status) values
- ('85000000-0000-4000-8000-000000000001','84000000-0000-4000-8000-000000000001','81000000-0000-4000-8000-000000000001','81000000-0000-4000-8000-000000000002',current_date+100,current_date+102,10,2,20,.1,2,50,72,'pending_payment');
+-- Exercise historical captured-deposit refunds, not the newer authorization release flow.
+insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status,payment_first,deposit_collection_model) values
+ ('85000000-0000-4000-8000-000000000001','84000000-0000-4000-8000-000000000001','81000000-0000-4000-8000-000000000001','81000000-0000-4000-8000-000000000002',current_date+100,current_date+102,10,2,20,.1,2,50,72,'pending_payment',false,'captured');
 alter table public.bookings enable trigger zzzzzz_bookings_deposit_authorization_model;
 
 select is((select service_fee_total_pct from public.bookings where id='85000000-0000-4000-8000-000000000001'),0.10::numeric,'Booking snapshots the configured total fee');

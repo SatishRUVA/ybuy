@@ -21,8 +21,11 @@ insert into public.listings(id,owner_id,category_id,title,description,price_per_
  'f3000000-0000-4000-8000-000000000001','Journey rental','A test rental with two units of inventory.',25,10,2,'draft',200,'good',current_date,current_date+30);
 insert into public.listing_images(listing_id,url,sort_order) values
  ('f4000000-0000-4000-8000-000000000001','https://example.test/journey.jpg',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,latitude,longitude,country) values
- ('f4000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000002','Private pickup','Dallas','TX','75201',32.78,-96.8,'US');
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic request journey fixture','system' from public.listing_images
+where listing_id='f4000000-0000-4000-8000-000000000001';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,latitude,longitude,country,time_zone) values
+ ('f4000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000002','Private pickup','123 Test Street','Dallas','TX','75201',32.78,-96.8,'US','America/Chicago');
 update public.listings set status='published' where id='f4000000-0000-4000-8000-000000000001';
 
 create function pg_temp.request_payload() returns jsonb language sql as $$
@@ -37,8 +40,8 @@ grant execute on function pg_temp.request_payload() to authenticated;
 
 set local role authenticated;
 set local request.jwt.claims='{"sub":"f1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"f2000000-0000-4000-8000-000000000001","exp":4102444800}';
-select throws_ok($$select public.create_main_item_request(pg_temp.request_payload()-'p_max_daily_budget',32.78,-96.8,5,false,true)$$,
- '22023','Choose offer and notification preferences, and a daily budget for fixed-budget requests','Fixed daily budget is required');
+select throws_ok($$select public.create_main_item_request(pg_temp.request_payload(),32.78,-96.8,5,true,true)$$,
+ '55000','Private offers have been removed. Choose only your match-notification preference.','Removed private offers cannot be enabled during request creation');
 select is((public.create_main_item_request(pg_temp.request_payload(),32.78,-96.8,5,false,false)).notify_matches_in_app,false,
  'Creation atomically saves disabled in-app notifications');
 select ok((select main_site_flow and not open_for_offers and max_daily_budget=30 from public.item_requests where id='f5000000-0000-4000-8000-000000000001'),

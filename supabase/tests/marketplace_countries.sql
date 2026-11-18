@@ -52,13 +52,13 @@ values('c4000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000
  'c3000000-0000-4000-8000-000000000001','Country camera',10);
 set local role authenticated;
 set local request.jwt.claims='{"sub":"c1000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"c2000000-0000-4000-8000-000000000002","exp":4102444800}';
-select throws_ok($$insert into public.listing_pickup_locations(listing_id,owner_id,address,city,latitude,longitude,country)
+select throws_ok($$insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,latitude,longitude,country,time_zone)
  values('c4000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000002',
- 'Example address','London',51.5,-0.1,'GB')$$,
+ '123 Example Road, London','123 Example Road','London','London','SW1A 1AA',51.5,-0.1,'GB','Europe/London')$$,
  '22023','Choose a pickup address in an enabled marketplace country','Direct pickup writes cannot use disabled countries');
-select lives_ok($$insert into public.listing_pickup_locations(listing_id,owner_id,address,city,latitude,longitude,country)
+select lives_ok($$insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,latitude,longitude,country,time_zone)
  values('c4000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000002',
- 'Example address','Toronto',43.65,-79.38,'CA')$$,'Pickup accepts an admin-enabled country');
+ '123 Example Road, Toronto','123 Example Road','Toronto','ON','M5V 2T6',43.65,-79.38,'CA','America/Toronto')$$,'Pickup accepts an admin-enabled country');
 reset role;
 update public.app_settings set value='["US"]' where key='marketplace_country_codes';
 set local role authenticated;

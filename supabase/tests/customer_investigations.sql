@@ -1,6 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
+\ir fixtures/published_listing.inc
 insert into auth.users(id,email,raw_user_meta_data)
 select ('14000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
   'investigation'||n||'@example.test',jsonb_build_object('full_name','Investigation actor')
@@ -13,7 +14,8 @@ insert into public.admin_users(user_id,role,permissions) values
   ('14000000-0000-4000-8000-000000000004','admin','{fraud.investigate}');
 insert into public.categories(id,name) values ('24000000-0000-4000-8000-000000000001','Investigation category');
 insert into public.listings(id,owner_id,category_id,title,price_per_day,status,estimated_value,item_condition) values
-  ('34000000-0000-4000-8000-000000000001','14000000-0000-4000-8000-000000000001','24000000-0000-4000-8000-000000000001','Investigation fixture',10,'published',200,'good');
+  ('34000000-0000-4000-8000-000000000001','14000000-0000-4000-8000-000000000001','24000000-0000-4000-8000-000000000001','Investigation fixture',10,'draft',200,'good');
+select pg_temp.publish_listing_fixture('34000000-0000-4000-8000-000000000001',current_date,current_date+30);
 insert into public.bookings(id,listing_id,renter_id,owner_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,total,status)
 values ('44000000-0000-4000-8000-000000000001','34000000-0000-4000-8000-000000000001','14000000-0000-4000-8000-000000000002',
   '14000000-0000-4000-8000-000000000001',current_date+10,current_date+12,10,2,20,0.1,2,22,'cancelled');
