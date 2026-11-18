@@ -19,9 +19,12 @@ values ('c3000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-00000000
  current_date,current_date+10);
 insert into public.listing_images(listing_id,url,sort_order)
 values ('c3000000-0000-4000-8000-000000000001','https://example.test/slot-item.jpg',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude,time_zone)
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic pre-check-in fixture','system' from public.listing_images
+where listing_id='c3000000-0000-4000-8000-000000000001';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone)
 values ('c3000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000001',
- 'Private pickup','Dallas','TX','75201','US',32.8,-96.8,'UTC');
+ 'Private pickup','123 Test Street','Dallas','TX','75201','US',32.8,-96.8,'UTC');
 update public.listings set status='published' where id='c3000000-0000-4000-8000-000000000001';
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,
  service_fee_pct,service_fee_amount,deposit,total,status)
@@ -143,8 +146,8 @@ update public.booking_pickup_slots set starts_at=statement_timestamp()+interval 
  ends_at=statement_timestamp()+interval '40 minutes' where booking_id='c4000000-0000-4000-8000-000000000002';
 set local role authenticated;
 select pg_temp.slot_login(2);
-select is((public.get_booking_precheckin('c4000000-0000-4000-8000-000000000002')->>'handoff_ready')::boolean,false,
- 'A valid hold does not unlock arrival before the agreed slot');
+select is((public.get_booking_precheckin('c4000000-0000-4000-8000-000000000002')->>'handoff_ready')::boolean,true,
+ 'A valid hold unlocks arrival within the two-hour early-pickup window');
 select lives_ok($$select public.get_booking_pickup('c4000000-0000-4000-8000-000000000002')$$,
  'A valid hold unlocks the address before the slot so the renter can plan travel');
 reset role;

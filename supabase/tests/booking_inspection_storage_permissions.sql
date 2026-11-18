@@ -1,4 +1,6 @@
 begin;
+create extension if not exists pgtap with schema extensions;
+select plan(1);
 
 do $$
 begin
@@ -26,5 +28,6 @@ end;
 $$;
 reset role;
 
-select 'Listing storage policies execute; private inspection access remains guarded' as result;
+select pass('Listing storage policies execute; private inspection access remains guarded');
+select * from finish();
 rollback;

@@ -23,9 +23,12 @@ insert into public.listings (id, owner_id, category_id, title, description, pric
    'Public rental','Public fixture for isolation tests.',10,'draft',200,'good',current_date+10,current_date+40);
 insert into public.listing_images(listing_id,url,sort_order) values
   ('30000000-0000-4000-8000-000000000003','https://example.test/isolation-rental.png',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude) values
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic isolation fixture','system' from public.listing_images
+where listing_id='30000000-0000-4000-8000-000000000003';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone) values
   ('30000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000003',
-   'Private pickup','Dallas','TX','75201','US',32.8,-96.8);
+   'Private pickup','123 Test Street','Dallas','TX','75201','US',32.8,-96.8,'America/Chicago');
 update public.listings set status='published' where id='30000000-0000-4000-8000-000000000003';
 insert into public.favorites (user_id, listing_id) values
   ('10000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000003');

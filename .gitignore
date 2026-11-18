@@ -54,3 +54,11 @@ YBuy-feature-coverage-audit-*.html
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/trivy.yml
+!.github/workflows/ci.yml
+!.github/workflows/deploy-staging.yml
+
+!docs/
+docs/*
+!docs/implementation/
+docs/implementation/*
+!docs/implementation/CI_CD.md

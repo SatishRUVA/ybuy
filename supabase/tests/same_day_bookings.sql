@@ -14,9 +14,12 @@ values('e4000000-0000-4000-8000-000000000001','e1000000-0000-4000-8000-000000000
  'e3000000-0000-4000-8000-000000000001','Same-day fixture item','A same-day calendar fixture.',2,10,'good',2);
 insert into public.listing_images(listing_id,url,sort_order)
 values('e4000000-0000-4000-8000-000000000001','https://example.test/same-day.jpg',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude,time_zone)
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic same-day fixture','system' from public.listing_images
+where listing_id='e4000000-0000-4000-8000-000000000001';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone)
 values('e4000000-0000-4000-8000-000000000001','e1000000-0000-4000-8000-000000000001',
- 'Private fixture','Fixture','TX','75201','US',32.8,-96.8,
+ 'Private fixture','123 Test Street','Fixture','TX','75201','US',32.8,-96.8,
  case when extract(hour from current_timestamp at time zone 'UTC')<12 then 'Etc/GMT+12' else 'Etc/GMT-14' end);
 create temporary table calendar as select time_zone as zone,
  (current_timestamp at time zone time_zone)::date as today

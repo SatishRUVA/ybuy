@@ -15,12 +15,15 @@ insert into public.listings(id,owner_id,category_id,title,description,price_per_
   location_lat,location_lng,availability_start,availability_end,brand,model)
 values ('a4000000-0000-4000-8000-000000000001','a1000000-0000-4000-8000-000000000001',
   'a3000000-0000-4000-8000-000000000001','Notification camera','A camera and carrying case.',20,'draft',100,'good',
-  0,0,current_date+7,current_date+14,'Sony','FX3');
+  0,0,current_date,current_date+14,'Sony','FX3');
 insert into public.listing_images(listing_id,url,sort_order) values
  ('a4000000-0000-4000-8000-000000000001','https://example.test/notification.png',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude)
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic bid notification fixture','system' from public.listing_images
+where listing_id='a4000000-0000-4000-8000-000000000001';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone)
 values ('a4000000-0000-4000-8000-000000000001','a1000000-0000-4000-8000-000000000001',
-  'Private pickup','Dallas','TX','75201','US',0,0);
+  'Private pickup','123 Test Street','Dallas','TX','75201','US',0,0,'America/Chicago');
 update public.listings set status='published' where id='a4000000-0000-4000-8000-000000000001';
 update public.listings set auction_enabled=true,auction_start_date=current_date+7,auction_end_date=current_date+10,
   auction_bidding_starts_at=clock_timestamp()+interval '1 hour',auction_bidding_ends_at=clock_timestamp()+interval '2 days'
@@ -31,24 +34,24 @@ where listing_id='a4000000-0000-4000-8000-000000000001';
 select ok(not has_function_privilege('authenticated','public.notify_listing_auction_bid()','EXECUTE'),
   'Clients cannot invoke the notification trigger directly');
 set local request.jwt.claims='{"sub":"a1000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"a2000000-0000-4000-8000-000000000002","exp":4102444800}';
-select lives_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',20,'a5000000-0000-4000-8000-000000000001')$$,
+select lives_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',20,'a5000000-0000-4000-8000-000000000001',true,current_date+7,current_date+10)$$,
   'Accepted bid creates its notification atomically');
 select is((select count(*)::integer from public.notifications where user_id='a1000000-0000-4000-8000-000000000001'
   and event_key like 'auction-bid:%'),1,'Owner receives one new bid notification');
-select ok((select in_app_enabled and read_at is null and category='bookings' and destination='/bidding'
+select ok((select in_app_enabled and read_at is null and category='bidding' and destination='/bidding'
   and body like '%Notification camera%$20.00 per day%'
-  from public.notifications where user_id='a1000000-0000-4000-8000-000000000001' and event_key like 'auction-bid:%'),
+  from public.notifications where user_id='a1000000-0000-4000-8000-000000000001'   and event_key like 'auction-bid:%'),
   'Notification is unread, identifies the listing and rate, and opens owner bidding');
 select is((select count(*)::integer from public.notifications where user_id='a1000000-0000-4000-8000-000000000002'
   and event_key like 'auction-bid:%'),0,'Bidder does not receive the owner alert');
-select lives_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',20,'a5000000-0000-4000-8000-000000000001')$$,
+select lives_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',20,'a5000000-0000-4000-8000-000000000001',true,current_date+7,current_date+10)$$,
   'Bid retry succeeds');
 select is((select count(*)::integer from public.notifications where user_id='a1000000-0000-4000-8000-000000000001'
   and event_key like 'auction-bid:%'),1,'Bid retries do not duplicate notifications');
-select throws_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',19,gen_random_uuid())$$,
-  '23514','Bid at least $21.00 per day','Rejected bid creates no alert');
-update public.notification_preferences set bookings_in_app=false where user_id='a1000000-0000-4000-8000-000000000001';
-select lives_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',21,'a5000000-0000-4000-8000-000000000002')$$,
+select throws_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',19,gen_random_uuid(),true,current_date+7,current_date+10)$$,
+  '23514','Bid at least $21.0000000000000000 per day','Rejected bid creates no alert');
+update public.notification_preferences set bidding_in_app=false where user_id='a1000000-0000-4000-8000-000000000001';
+select lives_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',21,'a5000000-0000-4000-8000-000000000002',true,current_date+7,current_date+10)$$,
   'Second bid succeeds with owner alerts disabled');
 select is((select count(*)::integer from public.notifications where user_id='a1000000-0000-4000-8000-000000000001'
   and event_key like 'auction-bid:%' and in_app_enabled),1,'Owner notification preference is respected');
@@ -75,7 +78,7 @@ insert into auth.sessions(id,user_id) values
 update public.listing_auctions set ends_at=clock_timestamp()+interval '1 minute'
 where listing_id='a4000000-0000-4000-8000-000000000001';
 set local request.jwt.claims='{"sub":"a1000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"a2000000-0000-4000-8000-000000000003","exp":4102444800}';
-select lives_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',22,'a5000000-0000-4000-8000-000000000003')$$,
+select lives_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',22,'a5000000-0000-4000-8000-000000000003',true,current_date+7,current_date+10)$$,
   'Another renter places a late bid');
 select is((select count(*)::integer from public.notifications where event_key like 'auction-outbid:%'
   and user_id='a1000000-0000-4000-8000-000000000002'),1,'Previous leading renter receives outbid alert');
@@ -83,7 +86,7 @@ select is((select count(*)::integer from public.notifications where event_key li
   'Extension notifies owner and each distinct participant');
 select is((select count(*)::integer from public.notifications where event_key like 'auction-extended:%' and in_app_enabled),2,
   'Extension respects disabled owner preference');
-select lives_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',22,'a5000000-0000-4000-8000-000000000003')$$,
+select lives_ok($$select public.place_listing_auction_bid('a4000000-0000-4000-8000-000000000001',22,'a5000000-0000-4000-8000-000000000003',true,current_date+7,current_date+10)$$,
   'Late bid retry is idempotent');
 select is((select count(*)::integer from public.notifications where event_key like 'auction-extended:%'),3,
   'Retry creates no duplicate extension alerts');
@@ -94,8 +97,8 @@ set local request.jwt.claims='{"sub":"a1000000-0000-4000-8000-000000000001","rol
 select lives_ok($$select public.select_listing_auction_winner('a4000000-0000-4000-8000-000000000001',
   (select id from public.listing_auction_bids where idempotency_key='a5000000-0000-4000-8000-000000000003'))$$,
   'Owner selects a winner while bidding is open');
-select is((select count(*)::integer from public.notifications where event_key like 'auction-closed:%'),3,
-  'Closing bidding notifies owner and each participant');
+select is((select count(*)::integer from public.notifications where event_key like 'auction-closed:%'),0,
+  'Selecting dates does not announce closure while flexible bidding is still open');
 select is((select count(*)::integer from public.notifications where event_key like 'auction-winner:%'
   and user_id='a1000000-0000-4000-8000-000000000003'),1,'Selected renter receives existing winner alert exactly once');
 select is((select count(*)::integer from public.notifications where event_key like 'auction-not-selected:%'),0,
@@ -115,15 +118,25 @@ select public.process_auction_payment_reminders();
 select is((select count(*)::integer from public.notifications where event_key like 'auction-payment-reminder:%'
   and user_id='a1000000-0000-4000-8000-000000000003'),1,'Expired checkout receives no additional reminder');
 select lives_ok($$select public.advance_listing_auction('a4000000-0000-4000-8000-000000000001')$$,
-  'Expired selected renter advances checkout to runner-up');
+  'Expired checkout is released without automatically selecting another renter');
+select is((select count(*)::integer from public.notifications where event_key like 'auction-winner:%'
+  and user_id='a1000000-0000-4000-8000-000000000002'),0,'Runner-up receives no unrequested winner alert');
+select lives_ok($$select public.select_listing_auction_winner('a4000000-0000-4000-8000-000000000001',
+  (select id from public.listing_auction_bids where idempotency_key='a5000000-0000-4000-8000-000000000002'))$$,
+  'Owner explicitly selects a replacement while bidding remains open');
 select is((select count(*)::integer from public.notifications where event_key like 'auction-winner:%'
   and user_id='a1000000-0000-4000-8000-000000000002'),1,'Runner-up receives a selected alert');
 select is((select count(*)::integer from public.notifications where event_key like 'auction-not-selected:%'),0,
-  'Runner-up fallback still does not emit premature final outcomes');
--- Simulate the state written by trusted payment verification, not a client payment call.
-update public.bookings set status='confirmed'
-where listing_id='a4000000-0000-4000-8000-000000000001' and renter_id='a1000000-0000-4000-8000-000000000002';
+  'Explicit replacement does not emit premature final outcomes');
+reset request.jwt.claims;
+select public.confirm_booking_payment(id,'cs_notification_winner','pi_notification_winner',total)
+from public.bookings where listing_id='a4000000-0000-4000-8000-000000000001'
+  and renter_id='a1000000-0000-4000-8000-000000000002';
+update public.listing_auctions set ends_at=clock_timestamp()-interval '1 second'
+where listing_id='a4000000-0000-4000-8000-000000000001';
 select public.advance_listing_auction('a4000000-0000-4000-8000-000000000001');
+select is((select count(*)::integer from public.notifications where event_key like 'auction-closed:%'),3,
+  'Actual closure notifies the owner and each participant exactly once');
 select public.advance_listing_auction('a4000000-0000-4000-8000-000000000001');
 select is((select count(*)::integer from public.notifications where event_key like 'auction-not-selected:%'
   and user_id='a1000000-0000-4000-8000-000000000003'),1,'Non-winning renter receives one final not-selected alert');

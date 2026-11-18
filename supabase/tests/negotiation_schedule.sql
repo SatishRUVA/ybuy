@@ -17,8 +17,11 @@ select ('94000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
 from generate_series(1,2) n;
 insert into public.listing_images(listing_id,url,sort_order)
 select id,'https://example.test/schedule.png',0 from public.listings where category_id='93000000-0000-4000-8000-000000000001';
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude)
-select id,owner_id,'Private pickup','Dallas','TX','75201','US',0,0 from public.listings where category_id='93000000-0000-4000-8000-000000000001';
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select i.listing_id,i.url,'approved','Synthetic negotiation fixture','system' from public.listing_images i
+join public.listings l on l.id=i.listing_id where l.category_id='93000000-0000-4000-8000-000000000001';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone)
+select id,owner_id,'Private pickup','123 Test Street','Dallas','TX','75201','US',0,0,'America/Chicago' from public.listings where category_id='93000000-0000-4000-8000-000000000001';
 update public.listings set status='published' where id='94000000-0000-4000-8000-000000000001';
 
 create function pg_temp.configure(p_id uuid default '94000000-0000-4000-8000-000000000001',
@@ -57,23 +60,23 @@ select throws_ok($$update public.listings set availability_end=current_date+15 w
 select throws_ok($$select public.owner_configure_listing_negotiation('94000000-0000-4000-8000-000000000001',0,'{}','{"enabled":false}')$$,
  '40001','This listing changed in another session. Reload before saving.','Stale settings cannot overwrite scheduled terms');
 set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000002","exp":4102444800}';
-select throws_ok($$select public.place_listing_auction_bid('94000000-0000-4000-8000-000000000001',20,gen_random_uuid(),true)$$,
+select throws_ok($$select public.place_listing_auction_bid('94000000-0000-4000-8000-000000000001',20,gen_random_uuid(),true,current_date+4,current_date+7)$$,
  '55000','Bidding is closed','Server rejects early bids');
 select is((select count(*)::integer from public.listing_auction_bids where auction_id=(select id from public.listing_auctions where listing_id='94000000-0000-4000-8000-000000000001')),0,'Early bid did not enter the ledger');
 select lives_ok($$select public.create_booking_request('94000000-0000-4000-8000-000000000001',current_date+4,current_date+7,1)$$,
  'Pending regular booking requests may coexist with bidding');
 update public.listing_auctions set starts_at=clock_timestamp()-interval '1 second' where listing_id='94000000-0000-4000-8000-000000000001';
 select is(public.get_listing_auction('94000000-0000-4000-8000-000000000001')->>'status','open','Bidding opens automatically without scheduler lag');
-select lives_ok($$select public.place_listing_auction_bid('94000000-0000-4000-8000-000000000001',20,gen_random_uuid(),true)$$,'Bids are accepted after opening');
+select lives_ok($$select public.place_listing_auction_bid('94000000-0000-4000-8000-000000000001',20,gen_random_uuid(),true,current_date+4,current_date+7)$$,'Bids are accepted after opening');
 select is((public.get_listing_auction_feed()->>'total')::integer,1,'Opened auction appears in live feed');
 select is(jsonb_array_length(public.get_top_listing_bids()),1,'Opened bids appear in ribbon');
 select lives_ok($$select public.process_listing_auctions()$$,'Existing worker preserves future deadlines');
 update public.listing_auctions set ends_at=clock_timestamp()-interval '1 second',selection_deadline=clock_timestamp()+interval '1 hour'
  where listing_id='94000000-0000-4000-8000-000000000001';
-select throws_ok($$select public.place_listing_auction_bid('94000000-0000-4000-8000-000000000001',25,gen_random_uuid(),true)$$,
+select throws_ok($$select public.place_listing_auction_bid('94000000-0000-4000-8000-000000000001',25,gen_random_uuid(),true,current_date+4,current_date+7)$$,
  '55000','Bidding is closed','Chosen closing deadline is enforced');
 select lives_ok($$select public.process_listing_auctions()$$,'Worker moves closed scheduled auction to owner selection');
-select is(public.get_listing_auction('94000000-0000-4000-8000-000000000001')->>'status','owner_selection','Owner selection is retained');
+select is(public.get_listing_auction('94000000-0000-4000-8000-000000000001')->>'status','ended','Closed bidding expires without an owner-selected winner');
 set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
 update public.listings set availability_start=current_date+1 where id='94000000-0000-4000-8000-000000000002';
 select lives_ok($$select public.owner_save_listing_flow(

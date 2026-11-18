@@ -2,6 +2,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
+\ir fixtures/published_listing.inc
 
 insert into auth.users(id,email,raw_user_meta_data)
 select ('b0000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
@@ -19,10 +20,12 @@ insert into public.categories(id,name) values('b2000000-0000-4000-8000-000000000
 insert into public.categories(id,name) values('b2000000-0000-4000-8000-000000000002','Other operations category');
 insert into public.listings(id,owner_id,category_id,title,price_per_day,status,estimated_value,item_condition) values
  ('b3000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000003',
-  'b2000000-0000-4000-8000-000000000001','Operations test listing',100,'published',200,'good');
+  'b2000000-0000-4000-8000-000000000001','Operations test listing',100,'draft',200,'good');
 insert into public.listings(id,owner_id,category_id,title,price_per_day,status,estimated_value,item_condition) values
  ('b3000000-0000-4000-8000-000000000002','b0000000-0000-4000-8000-000000000003',
-  'b2000000-0000-4000-8000-000000000002','Other operations listing',100,'published',200,'good');
+  'b2000000-0000-4000-8000-000000000002','Other operations listing',100,'draft',200,'good');
+select pg_temp.publish_listing_fixture('b3000000-0000-4000-8000-000000000001',current_date,current_date+30);
+select pg_temp.publish_listing_fixture('b3000000-0000-4000-8000-000000000002',current_date,current_date+30);
 insert into public.bookings(id,listing_id,renter_id,owner_id,start_date,end_date,quantity,status,
   daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total)
 select ('b4000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
@@ -35,6 +38,8 @@ insert into public.payments(id,booking_id,amount,currency,status,stripe_payment_
  ('b5000000-0000-4000-8000-000000000003','b4000000-0000-4000-8000-000000000003',2000,'eur','succeeded','pi_operations_eur');
 
 create temporary table test_ids(k text primary key,id uuid);
+create temporary table original_booking_price as
+select total from public.bookings where id='b4000000-0000-4000-8000-000000000001';
 grant select,insert,update on test_ids to authenticated;
 create function pg_temp.login(p_n int) returns void language plpgsql as $$
 begin
@@ -393,9 +398,10 @@ insert into public.bookings(id,listing_id,renter_id,owner_id,start_date,end_date
  daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total)
 values('b4000000-0000-4000-8000-000000000008','b3000000-0000-4000-8000-000000000001',
  'b0000000-0000-4000-8000-000000000005','b0000000-0000-4000-8000-000000000003',
- current_date+80,current_date+82,1,'requested',100,2,200,0.10,20,50,270);
+ current_date+24,current_date+26,1,'requested',100,2,200,0.10,20,50,270);
 select is((select status from public.payments where id='b5000000-0000-4000-8000-000000000001'),'succeeded','Test receipts never mark production payment refunded');
-select is((select total from public.bookings where id='b4000000-0000-4000-8000-000000000001'),270::numeric,'Promotion simulation never changes authoritative booking price');
+select is((select total from public.bookings where id='b4000000-0000-4000-8000-000000000001'),
+ (select total from original_booking_price),'Promotion simulation never changes authoritative booking price');
 select ok(not exists(select 1 from public.refund_requests where execution_enabled),'No request can enable financial execution');
 select throws_ok($$update public.refund_requests set execution_enabled=true$$,'23514',null,'Even direct database updates cannot enable refund execution');
 select throws_ok($$update public.credit_ledger set amount=0$$,'42501','admin_audit_log is append-only','Credit ledger is append-only');

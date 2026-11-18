@@ -8,19 +8,26 @@ insert into public.categories(id,name) values
  ('93000000-0000-4000-8000-000000000002','Directory cameras');
 update public.feature_flags set enabled=true where key='bidding';
 insert into public.listings(id,owner_id,category_id,title,description,price_per_day,status,estimated_value,item_condition,
-  location_lat,location_lng,availability_start,availability_end,brand,model,auction_enabled,auction_start_date,auction_end_date)
+  location_lat,location_lng,availability_start,availability_end,brand,model,auction_enabled,auction_start_date,auction_end_date,
+  auction_bidding_starts_at,auction_bidding_ends_at)
 select ('94000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  '91000000-0000-4000-8000-000000000001',
  case when n=27 then '93000000-0000-4000-8000-000000000002'::uuid else '93000000-0000-4000-8000-000000000001'::uuid end,
  'Directory item '||n,'Rental item with a carrying case.',20,'draft',100,'good',0,0,
- current_date+7,current_date+14,'Fixture brand','Fixture model',true,current_date+7,current_date+10
+ current_date,current_date+14,'Fixture brand','Fixture model',true,current_date+7,current_date+10,
+ clock_timestamp()+interval '1 hour',clock_timestamp()+interval '2 days'
 from generate_series(1,27) n;
 insert into public.listing_images(listing_id,url,sort_order)
 select id,'https://example.test/directory.png',0 from public.listings where owner_id='91000000-0000-4000-8000-000000000001';
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude)
-select id,owner_id,'Private pickup','Dallas','TX','75201','US',0,0
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select i.listing_id,i.url,'approved','Synthetic directory fixture','system' from public.listing_images i
+join public.listings l on l.id=i.listing_id where l.owner_id='91000000-0000-4000-8000-000000000001';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone)
+select id,owner_id,'Private pickup','123 Test Street','Dallas','TX','75201','US',0,0,'America/Chicago'
 from public.listings where owner_id='91000000-0000-4000-8000-000000000001';
 update public.listings set status='published' where owner_id='91000000-0000-4000-8000-000000000001';
+update public.listing_auctions set starts_at=clock_timestamp()-interval '1 minute'
+where listing_id in (select id from public.listings where owner_id='91000000-0000-4000-8000-000000000001');
 
 select ok(has_function_privilege('anon','public.get_listing_auction_feed(uuid,integer)','EXECUTE'),'Anonymous visitors can browse auctions');
 select ok(not has_table_privilege('anon','public.listing_auction_bids','SELECT'),'Directory does not expose private bid ledger');
