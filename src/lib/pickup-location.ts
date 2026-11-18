@@ -11,6 +11,8 @@ export interface PickupLocationValue {
   latitude: number | null;
   longitude: number | null;
   placeId: string;
+  timeZone?: string;
+  manualConfirmed?: boolean;
 }
 
 interface GeocoderLibrary {

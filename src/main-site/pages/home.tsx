@@ -6,6 +6,7 @@ import {
 import { SearchBar } from '@/main-site/components/search';
 import { ListingCard } from '@/main-site/components/listing-card';
 import { HeroCarousel } from '@/main-site/components/hero-carousel';
+import { SignupRewardOffer } from '@/main-site/components/signup-reward-offer';
 import { Badge, Button, SectionHeader, EmptyState, Alert } from '@/main-site/components/ui';
 import { ListingGridSkeleton } from '@/main-site/components/skeleton';
 import { CategoryIcon } from '@/main-site/components/category-icon';
@@ -182,6 +183,8 @@ export function HomePage() {
         radius={searchRadius}
         onRadiusChange={setSearchRadius}
       />
+
+      <SignupRewardOffer />
 
       {error && (
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 pt-6">

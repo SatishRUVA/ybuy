@@ -22,6 +22,7 @@ import { OwnerPromotionControl } from '@/main-site/components/owner-promotion-co
 import { ListingNegotiationSettings } from '@/main-site/components/listing-negotiation-settings';
 import { BookingListSkeleton, BookingRowSkeleton, Skeleton } from '@/main-site/components/skeleton';
 import { DepositAuthorizationStatus } from '@/main-site/components/deposit-authorization-status';
+import { RewardsPanel } from '@/main-site/components/rewards';
 import { Button, Badge, Alert, EmptyState, Surface, SectionHeader, Overlay } from '@/main-site/components/ui';
 import { textareaClass } from '@/main-site/components/form-classes';
 import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
@@ -42,7 +43,7 @@ const STATUS_LABEL: Record<UiBooking['status'], string> = {
   confirmed: 'Confirmed',
   active: 'Active',
   return_pending: 'Return in progress',
-  completed: 'Completed',
+  completed: 'Returned',
   cancelled: 'Cancelled',
   rejected: 'Declined',
 };
@@ -256,9 +257,10 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
         <div className="rental-stats rental-stats-four">
           <StatCard label="Upcoming" value={bookings === null ? '-' : upcoming.length} />
           <StatCard label="Active now" value={bookings === null ? '-' : active.length} />
-          <StatCard label="Completed" value={bookings === null ? '-' : past.filter((b) => b.status === 'completed').length} />
+          <StatCard label="Returned" value={bookings === null ? '-' : past.filter((b) => b.status === 'completed').length} />
           <StatCard label="Your rating" value={trustScore === null ? '-' : trustScore.count > 0 ? trustScore.rating.toFixed(1) : 'New'} />
         </div>
+        <div className="mb-5"><RewardsPanel compact /></div>
         <div className={`rental-activity-grid ${needsAttention.length > 0 || bookings === null ? '' : 'rental-activity-single'}`}>
         <div className="rental-attention">
         {bookings === null ? (

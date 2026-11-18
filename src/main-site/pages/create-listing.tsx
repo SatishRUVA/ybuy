@@ -33,6 +33,7 @@ import {
 } from '@/lib/listing-item-details';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { calculateRentalPricing } from '@/lib/rental-pricing';
+import { usePlatformFee } from '@/lib/settings';
 import { fetchMainItemRequest, type MainItemRequest } from '../request-flow';
 import { RequestFulfillment } from '../components/request-fulfillment';
 import { maskListingContact } from '../../../supabase/functions/_shared/listing-contact';
@@ -70,11 +71,13 @@ const textKey = (form: Form) => JSON.stringify([form.title, listingText(form)]);
 export function CreateListingPage({ editId, requestId }: { editId?: string; requestId?: string }) {
   const { navigate } = useRouter();
   const { profile } = useAuth();
+  const fee = usePlatformFee();
   const durationDiscountFlag = useFeatureFlag('duration_discounts');
   const biddingFlag = useFeatureFlag('bidding');
   const reducedMotion = useReducedMotion();
   const [form, setForm] = useState<Form>(EMPTY_FORM);
   const priceForPreview = parseMoney(form.price) ?? 0;
+  const ownerDailyEstimate = fee.pct === null ? null : Math.round(priceForPreview * (1 - fee.pct) * 100) / 100;
   const weeklyPreview = calculateRentalPricing(priceForPreview, 7, { weeklyEnabled: true, weeklyPercent: Number(form.weeklyDiscount) || 0 });
   const monthlyPreview = calculateRentalPricing(priceForPreview, 30, { monthlyEnabled: true, monthlyPercent: Number(form.monthlyDiscount) || 0 });
   const formRef = useRef(form);
@@ -239,7 +242,18 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
             brand: Boolean(ownRow.brand?.trim()),
             model: Boolean(ownRow.model?.trim()),
           };
-          if (savedPickup) { setPickup(savedPickup); setPickupConfirmed(true); }
+          if (savedPickup) {
+            const restoredTimeZone = savedPickup.timeZone
+              ?? (savedPickup.latitude !== null && savedPickup.longitude !== null
+                ? pickupTimeZone(savedPickup.latitude, savedPickup.longitude) : undefined);
+            const restoredPickup = {
+              ...savedPickup, timeZone: restoredTimeZone,
+              manualConfirmed: savedPickup.latitude === null && Boolean(restoredTimeZone),
+            };
+            setPickup(restoredPickup);
+            setPickupConfirmed(Boolean(restoredPickup.formattedAddress && restoredPickup.streetAddress && restoredPickup.city
+              && restoredPickup.state && restoredPickup.postalCode && restoredPickup.country && restoredPickup.timeZone));
+          }
           setNotice(ownRow.status === 'draft' ? 'Your saved draft is ready to continue.' : 'Photo edits save immediately. Other changes save when you choose Save changes.');
           if (editId) setStep(2);
         } else {
@@ -314,8 +328,9 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   }
 
   const pickupFields = [pickup.formattedAddress, pickup.streetAddress, pickup.city, pickup.state, pickup.postalCode, pickup.country];
-  const availabilityToday = pickupConfirmed && pickup.latitude !== null && pickup.longitude !== null
-    ? pickupToday(pickupTimeZone(pickup.latitude, pickup.longitude)) : todayIso();
+  const availabilityZone = pickup.timeZone
+    ?? (pickup.latitude !== null && pickup.longitude !== null ? pickupTimeZone(pickup.latitude, pickup.longitude) : '');
+  const availabilityToday = pickupConfirmed && availabilityZone ? pickupToday(availabilityZone) : todayIso();
   const errors: FlowErrors = validateListing({
     photoCount: photos.length, title: form.title, categoryId: form.categoryId, description: form.description,
     pickupConfirmed, pickupFields, priceText: form.price, depositText: '0', valueText: form.value, maxValue: policy?.max_estimated_value, condition: form.condition,
@@ -399,8 +414,12 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
         const details: ListingFlowDetails = step === STEPS.length ? allDetails : Object.fromEntries(
           Object.entries(allDetails).filter(([key]) => stepKeys[step - 1].includes(key as keyof ListingFlowDetails)),
         );
-        const confirmedPickup = step >= 5 && pickupConfirmed && pickup.latitude !== null && pickup.longitude !== null
-          ? { ...pickup, latitude: pickup.latitude, longitude: pickup.longitude } : undefined;
+        const confirmedPickup = step >= 5 && pickupConfirmed
+          ? {
+            formattedAddress: pickup.formattedAddress, streetAddress: pickup.streetAddress, city: pickup.city,
+            state: pickup.state, postalCode: pickup.postalCode, country: pickup.country,
+            latitude: pickup.latitude, longitude: pickup.longitude, placeId: pickup.placeId, timeZone: pickup.timeZone,
+          } : undefined;
         const result = await saveListingFlow(id, revision.current, details, confirmedPickup, publish);
         revision.current = result.revision;
         originalWindow.current = { start: current.start, end: current.end };
@@ -1081,6 +1100,13 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                     </div>
                     <p className="mt-2 text-xs text-sec">Your regular price for each rental day.</p>
                   </Field>
+                  {priceForPreview > 0 && ownerDailyEstimate !== null && !fee.loading && <div className="flex items-center justify-between gap-3 rounded-card bg-subtle px-4 py-3">
+                    <span className="text-sm font-semibold text-main">Estimated net payable to you per day</span>
+                    <output aria-label="Estimated net payable to you per day" className="text-lg font-bold text-main tnum">
+                      {ownerDailyEstimate.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                    </output>
+                  </div>}
+                  {priceForPreview > 0 && fee.error && <Alert tone="error" title="Estimated payout unavailable">{fee.error}</Alert>}
                   <div className="space-y-3">
                     <h4 className="text-sm font-semibold text-main">Offer weekly and monthly rentals</h4>
                     <p className="mt-1 text-sm leading-relaxed text-sec">Choose a discount for 7-day and 30-day rentals. Extra days use your daily price. Changes apply to new bookings only.</p>
@@ -1151,9 +1177,10 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
               {step === 5 && <>
                 <div className="space-y-4 min-w-0">
                   <div aria-invalid={Boolean(invalid('pickup'))} aria-describedby={invalid('pickup') ? 'listing-pickup-error' : undefined} tabIndex={-1}>
-                  <PickupLocation showAreaMap value={pickup} onChange={(next) => {
+                  <PickupLocation showAreaMap error={invalid('pickup')} value={pickup} onChange={(next) => {
                     setPickup(next);
-                    setPickupConfirmed(Boolean(next.formattedAddress && next.city && next.latitude !== null && next.longitude !== null));
+                    setPickupConfirmed(Boolean(next.formattedAddress && next.streetAddress && next.city && next.state
+                      && next.postalCode && next.country && next.timeZone && (next.placeId || next.manualConfirmed)));
                     changed();
                   }} />
                   {invalid('pickup') && <p id="listing-pickup-error" role="alert" className="text-sm text-error">{invalid('pickup')}</p>}

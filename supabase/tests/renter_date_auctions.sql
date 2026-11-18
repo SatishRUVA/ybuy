@@ -20,8 +20,11 @@ select ('94000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
   from generate_series(1,6) n;
 insert into public.listing_images(listing_id,url,sort_order)
 select id,'https://example.test/date-auction.png',0 from public.listings where category_id='93000000-0000-4000-8000-000000000001';
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude)
-select id,owner_id,'Private pickup','Dallas','TX','75201','US',0,0
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select id,'https://example.test/date-auction.png','approved','Date auction test photo','system'
+  from public.listings where category_id='93000000-0000-4000-8000-000000000001';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,time_zone,latitude,longitude)
+select id,owner_id,'Private pickup','123 Date Auction Way','Dallas','TX','75201','US','America/Chicago',0,0
   from public.listings where category_id='93000000-0000-4000-8000-000000000001';
 update public.listings set status='published' where category_id='93000000-0000-4000-8000-000000000001';
 

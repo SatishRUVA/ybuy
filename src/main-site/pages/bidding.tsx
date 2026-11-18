@@ -552,7 +552,7 @@ function RentalAuctionDetail({ id }: { id: string }) {
         <h2 className="text-lg font-semibold text-main">Manage your auction</h2>
         <p className="text-sm text-sec">Review anonymous bids, select a winner, and track payment from your owner dashboard.</p>
         <Button onClick={() => navigate({ name: 'bidding' })}>Manage my auctions</Button>
-      </Surface> : <ListingAuctionPanel key={`${id}:${user?.id ?? 'anonymous'}`} listingId={id} deposit={listing.deposit} listedPrice={listing.pricePerDay} />}
+      </Surface> : <ListingAuctionPanel key={`${id}:${user?.id ?? 'anonymous'}`} listingId={id} deposit={listing.deposit} listedPrice={listing.pricePerDay} replacementValue={listing.declaredValue} />}
       </div>
     </>}
   </div>;

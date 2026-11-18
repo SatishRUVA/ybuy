@@ -4,6 +4,191 @@ Date: 2026-10-18.
 
 No real OAuth journey is claimed passing.
 
+## Pickup address publication
+
+Migration `20261117000005_atomic_pickup_timezone.sql` saves the validated pickup
+time zone in the address upsert, before publication checks read that address.
+First-time manual and geocoded addresses can be submitted without a separate
+draft save; incomplete addresses still fail and roll back atomically.
+
+```powershell
+node dev\supabase-local.mjs test db supabase\tests\pickup_address_publication.sql supabase\tests\listing_flow.sql --local
+```
+
+Verified locally: **159 assertions passed** across these two database suites.
+
+## Versioned owner/renter handoff
+
+The design board is a workflow reference, not a separate page for every box.
+Both roles use **Arrange -> Record condition -> Confirm exchange**, with the
+current action and blockers supplied by `get_booking_handoff_workflow`.
+
+- Before an exchange starts, either participant may propose a replacement time;
+  the other participant must approve it. A pending replacement does not erase
+  the current approved slot.
+- Pickup opens two hours before the approved start and stays open until that
+  window ends. Server time enforces the boundary; displayed opening times use
+  the pickup location's time zone, not the participant's device time zone.
+  Only the owner can begin, with a verified rental payment and a ready hold
+  when required. Code verification may start the rental early; the scheduled
+  return date does not change. Return opening times are unchanged.
+- The owner saves a private inspection draft and explicitly publishes it with
+  2-12 photos. Published revisions and their evidence remain available.
+  Corrections require a new revision and fresh renter consent; previous consent
+  and codes cannot authorize changed evidence.
+- Pickup activation requires the current inspection agreement, a valid code,
+  payment readiness and a provider-confirmed deposit hold when required.
+  An expired hold does not erase an already-started inspection.
+- Return condition agreement and physical receipt are separate. A renter may
+  dispute the condition with a reason and still share the receipt OTP.
+  Receipt is not acceptance of damage, deduction consent, or a waiver.
+- An owner's report of receipt without a code opens a support verification case;
+  it does not unilaterally verify the return.
+- A physically returned item is not presented as a closed booking while
+  condition disputes or financial processing remain unresolved. The handoff
+  screen does not initiate settlement merely because it was opened.
+- Recovery preserves handoff progress. Uncertain provider outcomes must be
+  reconciled before another authorization attempt. Existing live holds lacking
+  sufficient provider history can require support reconciliation.
+- Hold expiry does not automatically cancel, suspend, or return an active
+  rental. No new grace-period or continued-use policy is implied.
+
+### Compatibility and rollout
+
+Apply migrations in order:
+
+1. `20261117000001_inspection_photo_participant_read.sql`
+2. `20261117000002_handoff_workflow.sql`
+3. `20261117000003_handoff_financial_recovery.sql`
+
+The two-hour pickup rule additionally requires
+`20261117000007_early_paid_pickup.sql` and the matching client. Apply intervening
+repository migrations through the normal rollout process.
+
+Deploy the matching deposit authorization/setup, authorization processor,
+settlement and Stripe webhook functions before enabling the new client.
+Do not roll back by deleting published evidence, authorization attempts, or
+handoff history. A frontend rollback must retain the compatible database
+adapters and financial safeguards.
+
+Legacy save/upload RPCs remain supported. An owner's legacy acknowledgment
+publishes a complete draft; a renter cannot acknowledge an unpublished draft.
+Existing bookings keep their recorded evidence and financial history.
+
+### Focused checks
+
+```powershell
+node dev\supabase-local.mjs test db supabase\tests\booking_handoff.sql supabase\tests\handoff_workflow.sql supabase\tests\handoff_financial_recovery.sql --local
+node node_modules\@playwright\test\cli.js test booking-handoff.spec.ts --workers=1
+```
+
+The browser suite uses independent owner/renter contexts at 1440px and 390px.
+REST, storage and provider responses in that suite are synthetic; it does not
+prove live payment-provider behavior or mutate the original hosted booking.
+Database suites exercise the actual local functions in rollback-only fixtures.
+
+First publication does not require pressing **Save draft** separately:
+**Publish & confirm** saves the draft, registers its photos and publishes the
+returned version. Desktop/mobile journeys exercise this with the initial
+server permissions containing only `save_draft`; the return journey separately
+covers explicitly saving a private draft first. Required checklist fields,
+photo validation, stale-edit protection and server publication checks remain.
+Verified the first-publish path locally at both widths and against the real
+local backend, including correction, renter review and code verification.
+
+The two-hour pickup regression verifies role-specific next steps, payment readiness,
+readable scheduling blockers and the opening time in the pickup location's time
+zone, even when the owner and renter devices use different time zones. It checks
+mobile overflow and the transition at exactly two hours before pickup to
+owner-only initiation without any payment or handoff mutation. Desktop owner
+and mobile renter screenshots were visually checked locally.
+
+The two-hour change passed **194 assertions** across `booking_handoff.sql`,
+`handoff_workflow.sql` and `handoff_financial_recovery.sql`, run directly through
+local `psql` in their rollback-only transactions, plus all five handoff browser
+scenarios. The CLI test runner could not resolve its pgTAP assertions in this
+environment. The additional legacy `handoff_windows.sql` run remains blocked
+before assertions by an incomplete pickup-address fixture; it is not claimed
+passing.
+
+The real-backend journey is
+[`tests/local/handoff-workflow.spec.ts`](../../tests/local/handoff-workflow.spec.ts).
+Run it with `playwright.local.config.ts`, using the local public anon key required
+by that configuration and no other server occupying port 5174. It refuses any
+browser base URL other than `http://localhost:5174/`.
+It creates synthetic local participants, a zero-deposit paid fixture, an approved
+future pickup slot within the two-hour lead-in and a legacy return-scheduling
+exemption. It then uses real authentication, RPCs and private storage for correction/republication, activation
+and a disputed-but-physically-verified return. It checks that actual pickup
+verification precedes the scheduled start. It does not test real provider
+payments or a newly scheduled return window. Immutable local evidence is retained.
+
+Verified locally: **188 database assertions**, application typecheck, focused
+lint, the production build, and the real owner/renter browser journey.
+Desktop/mobile handoff, evidence retry, stale-edit preservation, refresh recovery,
+non-mutating returned-booking details, the two scheduling scenarios, both main-site
+notification destinations and 22 settlement/provider-isolation checks passed in
+focused runs at `http://localhost:5174/`.
+Two legacy preview notification checks remain blocked before reaching the handoff:
+their test harness imports the removed `src/App.tsx` entrypoint. A fully green
+legacy-preview suite is not claimed.
+The expired-window regression is included: an already-started pickup retains
+participant address access and can finish inspection and OTP verification with
+a valid hold; an unstarted pickup cannot use an expired window.
+Provider money movement and live webhooks still require sandbox-provider
+validation; the hosted rollout below does not certify those paths.
+A dispute check and a provider call cannot share
+one database transaction; provider-side concurrency remains a release concern.
+
+### Hosted test rollout
+
+Deployed to Supabase `jzyjmsixfuwzfnntewqn` and
+<https://ybuy-e2e-test.vercel.app/> using Vercel deployment
+`dpl_DH7D3QnQ5V3HDWzKeNT59LVxSec8`. The production Supabase project was not changed.
+All eight pending migrations through `20261117000008` applied, all 13 Edge
+Functions report active, and Vercel reports the source build ready with the
+requested alias. Hosted secrets were retained; downloaded secret placeholders
+were not used for a prebuilt deployment.
+
+The legacy inspection metadata backfill temporarily suspends only the audit
+and timestamp triggers while holding the migration's table lock, then restores
+both. Before/after aggregate fingerprints matched for all three existing
+inspection records, excluding only the new metadata columns, and all seven
+existing audit records. Both triggers were verified enabled afterward.
+The address backfill updates only coordinates needing rounding, leaving the
+legacy zero-delivery-fee listing unchanged.
+
+All three authoritative pickup functions contain the two-hour opening rule.
+Safe hosted checks returned 401 for unauthenticated photo analysis and 405 for
+a non-POST deposit authorization request. No payment or participant handoff
+was submitted. Live frontend route, bundle and browser smoke checks remain
+unverified because this machine rejected the site's TLS certificate chain,
+including on the deployment-specific URL. Certificate validation was not bypassed.
+
+## Earlier targeted handoff repair (2026-11-17)
+
+- Run `node node_modules\@playwright\test\cli.js test booking-handoff.spec.ts --workers=1`
+  for independent owner/renter browser sessions at 1440px and 390px. These use
+  synthetic REST/storage responses, not real payments or hosted booking mutations.
+- The browser journey covers slot proposal/approval, blocked pickup before readiness,
+  renter arrival, owner inspection, two-photo validation/upload, shared sign-off,
+  invalid and valid OTPs, pickup-to-return navigation, return scheduling/inspection,
+  completion, draft preservation during polling, and visible refresh failures.
+- Run `node dev\supabase-local.mjs test db supabase\tests\booking_handoff.sql`
+  for 63 rollback-only database assertions, including renter reads of owner-uploaded
+  photos through storage RLS and denial of unrelated users and renter uploads.
+- Handoff state refreshes every ten seconds and when the page becomes visible.
+  Scheduling still uses the server's approved windows and deposit readiness.
+- Migration `20261117000001_inspection_photo_participant_read.sql` permits both
+  booking participants to read registered evidence; only the owner may upload.
+  Do not disable private storage or handoff gates to demonstrate the flow.
+- Verified: all three browser checks and 63 database assertions passed, alongside
+  focused lint, application typecheck, and the isolated Vercel deployment build.
+- The frontend and migration are deployed to the isolated test projects. Hosted
+  participant API checks confirmed renter arrival and owner handoff start.
+  Live browser verification was blocked by certificate trust errors; actual item
+  evidence and the scheduled return were not fabricated or bypassed.
+
 ## Ocean Green responsive styling
 
 The cosmetic pass preserves the existing palette, fonts, components and routing.

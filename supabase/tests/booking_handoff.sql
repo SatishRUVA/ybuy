@@ -20,19 +20,21 @@ insert into public.listings(id,owner_id,category_id,title,description,price_per_
  availability_start,availability_end)
 values ('b3000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000001',
  'b2000000-0000-4000-8000-000000000001','Handoff test item','A test item for pickup and return handoff.',10,'draft',200,'good',
- current_date+1,current_date+30);
+ current_date,current_date+30);
 insert into public.listing_images(listing_id,url,sort_order)
 values ('b3000000-0000-4000-8000-000000000001','https://example.test/handoff-item.jpg',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude)
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+values ('b3000000-0000-4000-8000-000000000001','https://example.test/handoff-item.jpg','approved','Synthetic handoff fixture','system');
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone)
 values ('b3000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000001',
- 'Private pickup','Dallas','TX','75201','US',32.8,-96.8);
+ '123 Test Street, Dallas, TX 75201','123 Test Street','Dallas','TX','75201','US',32.8,-96.8,'America/Chicago');
 update public.listings set status='published' where id='b3000000-0000-4000-8000-000000000001';
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,
  service_fee_pct,service_fee_amount,deposit,total,status,payment_first)
 values
  ('b4000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000001',
   'b0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000002',
-  current_date+1,current_date+3,10,2,20,.1,2,50,72,'pending_payment',false),
+  current_date,current_date+3,10,2,20,.1,2,50,72,'pending_payment',false),
  ('b4000000-0000-4000-8000-000000000002','b3000000-0000-4000-8000-000000000001',
   'b0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000002',
   current_date+10,current_date+12,10,2,20,.1,2,50,72,'pending_payment',false),
@@ -71,13 +73,21 @@ set local role authenticated;
 select pg_temp.login(3);
 select throws_ok($$select public.get_booking_handoff('b4000000-0000-4000-8000-000000000001')$$,
  '42501','Booking not found or not authorized','Unrelated users cannot view a handoff');
+select throws_ok($$select public.start_booking_handoff('b4000000-0000-4000-8000-000000000001')$$,
+ '42501','Booking not found or not authorized','Unrelated users cannot start pickup');
 select pg_temp.login(1);
 select throws_ok($$select public.start_booking_handoff('b4000000-0000-4000-8000-000000000001')$$,
- '55000','The renter must arrive before the owner can start handoff','Owner cannot skip renter arrival');
+ '55000','Pickup requires an approved window, opening 2 hours before its start and closing at its end','Owner cannot start pickup without an approved slot');
 select pg_temp.login(2);
 select lives_ok($$select public.start_booking_pickup('b4000000-0000-4000-8000-000000000001')$$,'Renter can report pickup arrival');
 select is((public.get_booking_handoff('b4000000-0000-4000-8000-000000000001')->>'status'),
  'pickup_ready','Arrival creates the pickup-ready state');
+reset role;
+insert into public.booking_pickup_slots(booking_id,kind,selected_date,slot_window,starts_at,ends_at,time_zone,status,proposed_by,approved_by)
+values ('b4000000-0000-4000-8000-000000000001','pickup',current_date,'morning',
+ clock_timestamp()-interval '10 minutes',clock_timestamp()+interval '50 minutes','America/Chicago','approved',
+ 'b0000000-0000-4000-8000-000000000002','b0000000-0000-4000-8000-000000000001');
+set local role authenticated;
 select pg_temp.login(1);
 select lives_ok($$select public.start_booking_handoff('b4000000-0000-4000-8000-000000000001')$$,'Owner starts handoff after arrival');
 select lives_ok($$select public.save_booking_inspection(
@@ -100,13 +110,32 @@ select lives_ok($$select public.register_booking_inspection_photo(
  'b4000000-0000-4000-8000-000000000001/b0000000-0000-4000-8000-000000000001/pickup/pickup-2.jpg')$$,
  'Owner attaches second private photo');
 select pg_temp.login(2);
-select lives_ok($$select public.acknowledge_booking_inspection('b4000000-0000-4000-8000-000000000001','pickup')$$,
- 'Renter acknowledges the saved pickup record');
-select throws_ok($$select public.get_booking_handoff_otp('b4000000-0000-4000-8000-000000000001','pickup')$$,
- '55000','Both parties must acknowledge the inspection before a code is available','Code is withheld until both acknowledge');
+select throws_ok($$select public.acknowledge_booking_inspection('b4000000-0000-4000-8000-000000000001','pickup')$$,
+ '55000','The owner must publish the inspection before the renter can acknowledge it','Renter cannot acknowledge an unpublished draft');
+select throws_ok($$select public.publish_booking_inspection('b4000000-0000-4000-8000-000000000001','pickup',
+ (select workflow_version from public.bookings where id='b4000000-0000-4000-8000-000000000001'))$$,
+ '42501','Only the owner can publish an inspection','Renter cannot publish owner evidence');
+select is((select count(*)::int from storage.objects where bucket_id='booking-inspection-evidence'
+  and name like 'b4000000-0000-4000-8000-000000000001/%'),0,
+ 'Renter cannot read unpublished draft photos through storage RLS');
+select ok(not public.can_access_booking_inspection_photo(
+ 'b4000000-0000-4000-8000-000000000001/b0000000-0000-4000-8000-000000000001/pickup/pickup-1.jpg',true),
+ 'Renter cannot upload into the owner inspection path');
+select pg_temp.login(3);
+select is((select count(*)::int from storage.objects where bucket_id='booking-inspection-evidence'
+  and name like 'b4000000-0000-4000-8000-000000000001/%'),0,
+ 'Unrelated users cannot read inspection photos through storage RLS');
 select pg_temp.login(1);
 select lives_ok($$select public.acknowledge_booking_inspection('b4000000-0000-4000-8000-000000000001','pickup')$$,
- 'Owner acknowledges the same pickup record');
+ 'Legacy owner acknowledgment publishes the complete pickup draft');
+select pg_temp.login(2);
+select is((select count(*)::int from storage.objects where bucket_id='booking-inspection-evidence'
+  and name like 'b4000000-0000-4000-8000-000000000001/%'),2,
+ 'Renter can read published pickup photos through storage RLS');
+select throws_ok($$select public.get_booking_handoff_otp('b4000000-0000-4000-8000-000000000001','pickup')$$,
+ '55000','The verification code is no longer bound to the current inspection','Code is withheld until both acknowledge');
+select lives_ok($$select public.acknowledge_booking_inspection('b4000000-0000-4000-8000-000000000001','pickup')$$,
+ 'Renter acknowledges the published pickup record');
 reset role;
 select is((select count(*)::int from public.booking_handoff_otp_challenges
  where booking_id='b4000000-0000-4000-8000-000000000001' and kind='pickup'),1,
@@ -137,6 +166,11 @@ select ok(not exists(select 1 from public.booking_handoff_events e
  and (e.detail ? 'code' or e.detail ? 'otp')),
  'OTP values are not written to handoff audit details');
 
+insert into public.booking_pickup_slots(booking_id,kind,selected_date,slot_window,starts_at,ends_at,time_zone,status,proposed_by,approved_by)
+values ('b4000000-0000-4000-8000-000000000001','return',current_date+3,'morning',
+ date_trunc('hour',clock_timestamp()),date_trunc('hour',clock_timestamp())+interval '1 hour','America/Chicago','approved',
+ 'b0000000-0000-4000-8000-000000000002','b0000000-0000-4000-8000-000000000001');
+
 set local role authenticated;
 select pg_temp.login(2);
 select lives_ok($$select public.start_booking_return('b4000000-0000-4000-8000-000000000001')$$,
@@ -165,8 +199,12 @@ select lives_ok($$select public.register_booking_inspection_photo(
  (select id from public.booking_inspections where booking_id='b4000000-0000-4000-8000-000000000001' and kind='return'),
  'b4000000-0000-4000-8000-000000000001/b0000000-0000-4000-8000-000000000001/return/return-2.jpg')$$,
  'Owner attaches second return photo');
+select pg_temp.login(2);
+select throws_ok($$select public.acknowledge_booking_inspection('b4000000-0000-4000-8000-000000000001','return')$$,
+ '55000','The owner must publish the inspection before the renter can acknowledge it','Renter cannot acknowledge an unpublished return draft');
+select pg_temp.login(1);
 select lives_ok($$select public.acknowledge_booking_inspection('b4000000-0000-4000-8000-000000000001','return')$$,
- 'Owner acknowledges return condition');
+ 'Legacy owner acknowledgment publishes the complete return draft');
 select pg_temp.login(2);
 select lives_ok($$select public.acknowledge_booking_inspection('b4000000-0000-4000-8000-000000000001','return')$$,
  'Renter acknowledges return condition');

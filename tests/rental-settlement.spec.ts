@@ -4,6 +4,7 @@ import { runInNewContext } from 'node:vm';
 import { rejects } from 'node:assert/strict';
 import ts from 'typescript';
 import { cents, requireTestSettlement, sameWorkerSecret, settleRental, type Settlement, type SettlementServices } from '../supabase/functions/settle-rental/settlement';
+import { requirePendingAuthorizationReceipt } from '../supabase/functions/create-deposit-authorization-session/receipt';
 
 function fixture() {
   const calls: string[] = [];
@@ -84,10 +85,94 @@ test('settlement preserves actionable database errors instead of a generic provi
   expect(saved).toContainEqual({ last_error: 'Owner must complete Stripe Connect setup' });
 });
 
+test('dispute guard runs before deposit provider operations', async () => {
+  const source = readFileSync('supabase\\functions\\settle-rental\\index.ts', 'utf8');
+  const output = ts.transpileModule(
+    `${source.slice(source.indexOf('async function processBooking('))}\nexports.processBooking = processBooking;`,
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const tables: string[] = [];
+  const admin = {
+    from(table: string) {
+      tables.push(table);
+      return { update: () => ({ eq: async () => ({ error: null }) }) };
+    },
+    rpc: async () => ({ data: null, error: { message: 'Settlement blocked by an unresolved dispute' } }),
+  };
+  const exports: { processBooking?: (admin: unknown, stripe: unknown, booking: string, owner: string) => Promise<void> } = {};
+  runInNewContext(output, { exports, settleRental, console, Date });
+  await rejects(() => exports.processBooking!(admin, {}, 'booking', 'owner'),
+    { message: 'Settlement blocked by an unresolved dispute' });
+  expect(tables).toEqual(['rental_settlements', 'rental_settlements']);
+});
+
+test('a provider-confirmed capture reconciles a claim left in capturing after a lost write', async () => {
+  const source = readFileSync('supabase\\functions\\settle-rental\\index.ts', 'utf8');
+  const output = ts.transpileModule(
+    `${source.slice(source.indexOf('async function requireSettlementEligibility('))}\nexports.settleDepositAuthorization = settleDepositAuthorization;`,
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const updates: { table: string; value: Record<string, unknown>; filters: Record<string, unknown> }[] = [];
+  let claimStatus = 'capturing';
+  let intentStatus = 'succeeded';
+  const admin = {
+    rpc: async () => ({ data: true, error: null }),
+    from(table: string) {
+      let columns = '';
+      let value: Record<string, unknown> | undefined;
+      const filters: Record<string, unknown> = {};
+      const chain = {
+        select(c: string) { columns = c; return chain; },
+        update(v: Record<string, unknown>) { value = v; return chain; },
+        insert() { return Promise.resolve({ error: null }); },
+        eq(k: string, v: unknown) { filters[k] = v; return chain; },
+        lt() { return chain; }, gt() { return chain; }, order() { return chain; }, limit() { return chain; },
+        single() { return Promise.resolve(result()); }, maybeSingle() { return Promise.resolve(result()); },
+        then(resolve: (v: unknown) => void) { resolve(result()); },
+      };
+      function result() {
+        if (value) { updates.push({ table, value, filters: { ...filters } }); return { data: { id: filters.id }, error: null }; }
+        if (table === 'bookings') return { data: { deposit: 50, deposit_collection_model: 'authorization', status: 'completed', return_confirmed_at: '2026-01-01', renter_id: 'renter' }, error: null };
+        if (table === 'booking_deposit_claims') return { data: { id: 'claim', status: claimStatus, approved_amount: 10, authorization_id: 'auth', updated_at: new Date().toISOString() }, error: null };
+        if (columns === 'id') return { data: [], error: null };
+        return { data: { id: 'auth', attempt: 2, status: 'authorized', authorized_amount: 50, stripe_payment_intent_id: 'pi_hold', capture_before: '2099-01-01' }, error: null };
+      }
+      return chain;
+    },
+  };
+  const stripe = { paymentIntents: { retrieve: async () => ({ id: 'pi_hold', livemode: false, currency: 'usd',
+    capture_method: 'manual', amount: 5000, amount_received: 1000, status: intentStatus,
+    metadata: { booking_id: 'booking', deposit_authorization_id: 'auth' } }) } };
+  const exports: { settleDepositAuthorization?: (admin: unknown, stripe: unknown, booking: string) => Promise<void> } = {};
+  runInNewContext(output, { exports, console, Date });
+  await exports.settleDepositAuthorization!(admin, stripe, 'booking');
+  expect(updates.find((u) => u.table === 'booking_deposit_claims')).toMatchObject({
+    value: { status: 'captured' }, filters: { id: 'claim', status: 'capturing' },
+  });
+  updates.length = 0;
+  claimStatus = 'approved';
+  intentStatus = 'processing';
+  await rejects(() => exports.settleDepositAuthorization!(admin, stripe, 'booking'), /outcome is uncertain/);
+  expect(updates).toEqual([]);
+});
+
 test('money conversion rejects invalid, fractional-cent, and unsafe values', () => {
   expect(cents(250.01)).toBe(25001);
   expect(cents(0)).toBe(0);
   for (const amount of [-1, NaN, Infinity, 0.001, Number.MAX_SAFE_INTEGER]) expect(() => cents(amount)).toThrow();
+});
+
+test('completed authorization sessions reconcile only matching provider receipts and never retry failed intents', () => {
+  const receipt = { livemode: false, currency: 'usd', capture_method: 'manual', amount: 5000,
+    status: 'requires_capture', metadata: { booking_id: 'booking', deposit_authorization_id: 'auth' } };
+  expect(() => requirePendingAuthorizationReceipt(receipt, 'booking', 'auth', 50)).not.toThrow();
+  for (const patch of [{ livemode: true }, { currency: 'eur' }, { amount: 4999 },
+    { metadata: { booking_id: 'other', deposit_authorization_id: 'auth' } }]) {
+    expect(() => requirePendingAuthorizationReceipt({ ...receipt, ...patch }, 'booking', 'auth', 50)).toThrow('does not match');
+  }
+  for (const status of ['canceled', 'requires_payment_method']) {
+    expect(() => requirePendingAuthorizationReceipt({ ...receipt, status }, 'booking', 'auth', 50)).toThrow('contact support');
+  }
 });
 
 test('background worker requires the configured secret and rejects missing or wrong credentials', async () => {

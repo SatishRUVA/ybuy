@@ -73,7 +73,7 @@ test('booking requests use the standard RPC and ignore legacy promo arguments', 
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
-  const exports: { createBookingRequest?: (params: { listingId: string; startDate: string; endDate: string; promotionCode?: string }) => Promise<unknown> } = {};
+  const exports: { createBookingRequest?: (params: { listingId: string; startDate: string; endDate: string; promotionCode?: string; insuranceSelected: boolean }) => Promise<unknown> } = {};
   runInNewContext(output, { exports, supabase: {
     rpc: async (fn: string, args: Record<string, unknown>) => {
       calls.push({ fn, args });
@@ -83,14 +83,16 @@ test('booking requests use the standard RPC and ignore legacy promo arguments', 
     },
   } });
   const params = { listingId: 'listing-test', startDate: '2026-11-02', endDate: '2026-11-05' };
-  for (const promotionCode of [undefined, '', '   ', ' SAVE10 ']) {
-    expect(await exports.createBookingRequest!({ ...params, promotionCode })).toEqual({ id: 'booking-test' });
-    expect(calls.at(-1)).toEqual({ fn: 'create_booking_request', args: {
-      p_listing_id: params.listingId, p_start_date: params.startDate, p_end_date: params.endDate, p_quantity: 1,
-      p_delivery_mode: 'pickup', p_renter_note: null,
-    } });
+  for (const insuranceSelected of [false, true]) {
+    for (const promotionCode of [undefined, '', '   ', ' SAVE10 ']) {
+      expect(await exports.createBookingRequest!({ ...params, promotionCode, insuranceSelected })).toEqual({ id: 'booking-test' });
+      expect(calls.at(-1)).toEqual({ fn: 'create_booking_request', args: {
+        p_listing_id: params.listingId, p_start_date: params.startDate, p_end_date: params.endDate, p_quantity: 1,
+        p_delivery_mode: 'pickup', p_renter_note: null, p_insurance_selected: insuranceSelected,
+      } });
+    }
   }
-  expect(calls).toHaveLength(4);
+  expect(calls).toHaveLength(8);
 });
 
 test('default tax rounds discounted rental plus service fees, excluding all other charges', () => {

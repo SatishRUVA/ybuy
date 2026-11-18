@@ -28,7 +28,7 @@ export async function loadLocalProfiles(): Promise<LocalLoginProfile[]> {
   if (!Array.isArray(data) || (ADMIN_PORTAL ? data.length === 0 || data.length > 2
     : HOSTED_PROFILE_LOGIN ? data.length === 0 || data.length > 10 : data.length !== 22) || data.some((item) =>
     !item || typeof item.id !== 'string' || typeof item.name !== 'string'
-    || !(ADMIN_PORTAL ? ['Admin', 'Super Admin'] : HOSTED_PROFILE_LOGIN ? ['Owner', 'Renter']
+    || !(ADMIN_PORTAL ? ['Admin'] : HOSTED_PROFILE_LOGIN ? ['Owner', 'Renter']
       : ['Owner', 'Renter', 'Admin', 'Super Admin']).includes(item.role))) {
     throw new Error(ADMIN_PORTAL || HOSTED_PROFILE_LOGIN ? 'Test profile list is invalid. Contact the site administrator.'
       : 'Local profile list is invalid. Restart the local development server.');

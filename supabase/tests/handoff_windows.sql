@@ -17,10 +17,11 @@ values('d3000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000
  current_date,current_date+10,array['morning','afternoon'],array['evening'],array['Return all accessories'],'Repack the charger.');
 insert into public.listing_images(listing_id,url,sort_order)
  values('d3000000-0000-4000-8000-000000000001','https://example.test/window.jpg',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude,time_zone)
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+ values('d3000000-0000-4000-8000-000000000001','https://example.test/window.jpg','approved','Handoff fixture','system');
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone)
 values('d3000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000001',
- 'Private fixture','New York','NY','10001','US',40.75,-73.99,null);
-update public.listings set status='published' where id='d3000000-0000-4000-8000-000000000001';
+ 'Private fixture','123 Window Way','New York','NY','10001','US',40.75,-73.99,null);
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,
  service_fee_pct,service_fee_amount,deposit,total,status)
 values('d4000000-0000-4000-8000-000000000001','d3000000-0000-4000-8000-000000000001',
@@ -47,12 +48,13 @@ select pg_temp.window_login(1);
 select throws_ok($$select public.owner_save_listing_flow('d3000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='d3000000-0000-4000-8000-000000000001'),
  '{}',null,true)$$,
- '55000','Confirm the pickup location to determine its timezone before publishing',
+ '23514','Enter a complete pickup address and confirm its city, state, ZIP code and time zone before publishing',
  'A retained pickup location needs a timezone before publication');
 select lives_ok($$update public.listing_pickup_locations set time_zone='America/New_York'
  where listing_id='d3000000-0000-4000-8000-000000000001'$$,
  'Timezone metadata can be filled without moving a reserved pickup address');
 reset role;
+update public.listings set status='published' where id='d3000000-0000-4000-8000-000000000001';
 
 select is((select starts_at from public.handoff_slot_bounds('2027-03-13','morning','America/New_York')),
  '2027-03-13 14:00Z'::timestamptz,'Morning before DST uses the location standard offset');
@@ -134,7 +136,7 @@ select lives_ok($$select public.respond_to_booking_handoff_slot('d4000000-0000-4
  'Owner approves return separately from pickup');
 select pg_temp.window_login(2);
 select throws_ok($$select public.start_booking_return('d4000000-0000-4000-8000-000000000001')$$,
- '55000','Get owner approval for the return window before starting return','New rentals cannot return outside the approved window');
+ '55000','Return can start only during the approved return window','New rentals cannot return outside the approved window');
 reset role;
 select throws_ok($$update public.bookings set return_scheduling_required=false where id='d4000000-0000-4000-8000-000000000001'$$,
  '42501','Booking return scheduling policy is immutable','Return scheduling cannot be bypassed by changing the policy');

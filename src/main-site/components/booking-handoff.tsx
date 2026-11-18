@@ -2,21 +2,25 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '@/auth-context';
 import { useRouter } from '@/router';
 import { PageBackButton } from '@/main-site/components/page-back-button';
-import { fetchBookingById, startBookingReturn, type UiBooking } from '@/lib/bookings';
+import { fetchBookingById, type UiBooking } from '@/lib/bookings';
+import type { BookingPrecheckin as PrecheckinState } from '@/lib/booking-precheckin';
 import {
-  acknowledgeBookingInspection,
-  beginBookingReturnInspection,
+  beginBookingHandoff,
   fetchBookingHandoff,
   getBookingHandoffOtp,
   regenerateBookingHandoffOtp,
-  saveBookingInspection,
-  startBookingHandoff,
-  startBookingPickup,
+  saveBookingInspectionDraft,
+  publishBookingInspection,
+  reviewBookingInspection,
+  reportBookingReturnReceipt,
   uploadBookingInspectionPhoto,
   verifyBookingHandoffOtp,
   type BookingHandoff,
   type HandoffKind,
   type HandoffInspection,
+  type WorkflowBookingHandoff,
+  type HandoffWorkflow,
+  type PendingInspectionPhoto,
 } from '@/lib/booking-handoff';
 import { createCase, uploadCaseEvidence } from '@/lib/operations';
 import { submitBookingDepositClaim } from '@/lib/security-deposit';
@@ -25,7 +29,7 @@ import { DepositAuthorizationStatus } from '@/main-site/components/deposit-autho
 import { BookingPrecheckin } from '@/main-site/components/booking-precheckin';
 import { RentalSettlement } from '@/main-site/components/rental-settlement';
 import { Alert, Badge, Button, SectionHeader, Surface } from '@/main-site/components/ui';
-import { ArrowRight, CalendarDays, Check, CheckCircle2, Clock3, Handshake, ShieldCheck, Star, UserRound } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, Clock3, Handshake, ShieldCheck, Star, UserRound } from 'lucide-react';
 
 type Props = { bookingId: string; kind: HandoffKind };
 
@@ -39,23 +43,13 @@ function dateTimeLabel(date: string | null) {
   return date ? new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : null;
 }
 
-function WorkflowProgress({ kind, status, bookingStatus, arrived, done }: {
-  kind: HandoffKind;
-  status: BookingHandoff['status'];
-  bookingStatus: UiBooking['status'];
-  arrived: boolean;
-  done: boolean;
-}) {
-  const steps = ['Booking confirmed', 'Pickup handoff', 'Rental active', 'Return handoff', 'Review & complete'];
-  const active = status === 'returned' || bookingStatus === 'completed' || (kind === 'return' && done) ? 4
-    : ['return_initiated', 'return_inspection', 'return_otp_pending'].includes(status ?? '')
-      || (kind === 'return' && status === null && bookingStatus === 'return_pending') ? 3
-      : status === 'rental_active' || (status === null && ['active', 'return_pending'].includes(bookingStatus))
-        || (kind === 'pickup' && done) ? 2
-        : ['pickup_ready', 'pickup_checkin_started', 'pickup_inspection', 'pickup_otp_pending'].includes(status ?? '') || arrived ? 1
-          : 0;
+function WorkflowProgress({ workflow }: { workflow: HandoffWorkflow }) {
+  const steps = ['Arrange', 'Record condition', 'Confirm exchange'];
+  const active = workflow.stage === 'arrange' ? 0
+    : ['inspection', 'review'].includes(workflow.stage) ? 1
+      : ['active', 'returned'].includes(workflow.stage) ? 3 : 2;
   return (
-    <ol aria-label="Rental progress" className="mb-5 grid grid-cols-2 gap-y-5 rounded-card-lg border border-app bg-card px-3 py-5 sm:grid-cols-5 sm:px-5">
+    <ol aria-label="Exchange progress" className="mb-5 grid grid-cols-3 gap-y-5 rounded-card-lg border border-app bg-card px-3 py-5 sm:px-5">
       {steps.map((label, index) => {
         const complete = index < active;
         const current = index === active;
@@ -78,11 +72,70 @@ function WorkflowProgress({ kind, status, bookingStatus, arrived, done }: {
   );
 }
 
-function InspectionRecord({ inspection, photos, title }: {
+function arrangementGuidance(booking: UiBooking, kind: HandoffKind, workflow: HandoffWorkflow, schedule: PrecheckinState | null) {
+  const slot = kind === 'pickup' ? schedule?.pickup_slot : schedule?.return_slot;
+  const proposal = kind === 'pickup' ? schedule?.pickup_proposal : schedule?.return_proposal;
+  if (!workflow.payment_ready) return {
+    title: booking.isOwner ? 'Waiting for rental payment' : 'Rental payment needs confirmation',
+    description: 'Check the payment status in booking details before continuing. If you already paid, do not pay again.',
+  };
+  if (!schedule) return {
+    title: `Checking ${kind} requirements`,
+    description: 'Checking the agreed time before showing your next step.',
+  };
+  const serverNow = Date.parse(schedule.server_now);
+  if (proposal?.status === 'proposed' && (slot?.status !== 'approved' || Date.parse(slot.ends_at) <= serverNow)) return {
+    title: proposal.proposed_by_is_owner !== booking.isOwner ? `Approve the proposed ${kind} time` : `Waiting for ${booking.counterpartName} to approve the time`,
+    description: proposal.proposed_by_is_owner !== booking.isOwner
+      ? 'Review the proposed time below, then approve it or decline it so another time can be proposed.'
+      : 'Your proposal is sent. The other participant must approve it before the exchange can start.',
+  };
+  if (slot?.status !== 'approved') return {
+    title: `Choose a ${kind} time`,
+    description: `Select a time in the schedule below and send a proposal to ${booking.counterpartName}. Either participant can propose; the other approves.`,
+  };
+  if (Date.parse(slot.ends_at) <= serverNow) return {
+    title: `The approved ${kind} time has passed`,
+    description: 'Propose a different time below and have the other participant approve it. Contact support if no available times remain.',
+  };
+  if (kind === 'pickup' && !workflow.deposit_ready) return {
+    title: booking.isOwner ? 'Waiting for the renter’s security hold' : 'Complete your security deposit step',
+    description: booking.isOwner
+      ? `${booking.counterpartName} needs to complete the separate deposit step below. Do not hand over the item until the hold is ready.`
+      : 'Review Security deposit below. This is a separate temporary card hold, not another rental payment.',
+  };
+  const opensAtTime = Date.parse(slot.starts_at) - (kind === 'pickup' ? 2 * 60 * 60 * 1000 : 0);
+  if (!workflow.scheduling_ready && opensAtTime > serverNow) {
+    const opensAt = new Date(opensAtTime).toLocaleString(undefined, {
+      weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      timeZone: slot.time_zone, timeZoneName: 'short',
+    });
+    return {
+      title: `${kind === 'pickup' ? 'Pickup' : 'Return'} opens ${opensAt}`,
+      description: booking.isOwner
+        ? `No action is needed yet. Meet ${booking.counterpartName} during the agreed window. When you are together, choose ${kind === 'pickup' ? 'Begin pickup' : 'Begin return inspection'} to record the condition and at least two photos.`
+        : `No action is needed yet. Meet ${booking.counterpartName} during the agreed window. The owner records the condition first; you then review the photos and share your code when ready to exchange the item.`,
+    };
+  }
+  if (kind === 'return' && !booking.isOwner && workflow.allowed_actions.includes('start_return')) return {
+    title: 'Begin return when you are together',
+    description: 'Choose Begin return below. The owner then records the returned condition for your review. Your return code confirms physical receipt only.',
+  };
+  return {
+    title: booking.isOwner ? `Start ${kind} when you are together` : `Waiting for ${booking.counterpartName} to start ${kind}`,
+    description: booking.isOwner
+      ? `Choose ${kind === 'pickup' ? 'Begin pickup' : 'Begin return inspection'} below. Record the condition and at least two photos, then publish the inspection for ${booking.counterpartName} to review.`
+      : `${booking.counterpartName} records and publishes the item condition first. The photos will appear here automatically for your review. Do not share a code until you are ready for the exchange.`,
+  };
+}
+
+function InspectionRecord({ inspection, photos, title, onPhotoStatus }: {
   inspection: HandoffInspection | null;
   photos: NonNullable<BookingHandoff['pickup']>['photos'];
   title: string;
+  onPhotoStatus?: (url: string, loaded: boolean) => void;
 }) {
+  const [failedPhotos, setFailedPhotos] = useState<Set<string>>(() => new Set());
   if (!inspection) return null;
   return (
     <section className="space-y-3">
@@ -96,11 +149,17 @@ function InspectionRecord({ inspection, photos, title }: {
       </dl>
       {photos.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {photos.map((photo, index) => photo.signedUrl && (
+          {photos.map((photo, index) => photo.signedUrl && !failedPhotos.has(photo.signedUrl) ? (
             <a key={photo.id} href={photo.signedUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-card border border-app focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-              <img src={photo.signedUrl} alt={`${title} photo ${index + 1}`} className="aspect-square w-full object-cover" />
+              <img src={photo.signedUrl} alt={`${title} photo ${index + 1}`} className="aspect-square w-full object-cover"
+                onLoad={event => onPhotoStatus?.(event.currentTarget.src, true)}
+                onError={event => {
+                  const url = event.currentTarget.src;
+                  setFailedPhotos(current => new Set(current).add(url));
+                  onPhotoStatus?.(url, false);
+                }} />
             </a>
-          ))}
+          ) : <Alert key={photo.id} tone="error">{photo.loadError ?? 'Evidence photo is unavailable. Refresh the handoff before agreeing.'}</Alert>)}
         </div>
       )}
       <p className="text-xs text-sec">Recorded {dateTimeLabel(inspection.submitted_at)}</p>
@@ -112,12 +171,13 @@ export function BookingHandoff({ bookingId, kind }: Props) {
   const { user } = useAuth();
   const { navigate } = useRouter();
   const [booking, setBooking] = useState<UiBooking | null>(null);
-  const [handoff, setHandoff] = useState<BookingHandoff | null>(null);
+  const [handoff, setHandoff] = useState<WorkflowBookingHandoff | null>(null);
   const [precheckinReady, setPrecheckinReady] = useState(false);
-  const [returnReady, setReturnReady] = useState(false);
+  const [schedule, setSchedule] = useState<PrecheckinState | null>(null);
   const [loading, setLoading] = useState(true);
   const photoInput = useRef<HTMLInputElement>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -127,7 +187,11 @@ export function BookingHandoff({ bookingId, kind }: Props) {
   const [accessories, setAccessories] = useState('');
   const [functional, setFunctional] = useState('');
   const [serial, setSerial] = useState('');
-  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoFiles, setPhotoFiles] = useState<PendingInspectionPhoto[]>([]);
+  const [loadedPhotos, setLoadedPhotos] = useState<Set<string>>(() => new Set());
+  const [reviewDecision, setReviewDecision] = useState<'request_correction' | 'dispute' | null>(null);
+  const [reviewReason, setReviewReason] = useState('');
+  const [receiptReason, setReceiptReason] = useState('');
   const [otp, setOtp] = useState<{ code: string; expires_at: string; generation: number } | null>(null);
   const [otpLoadError, setOtpLoadError] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
@@ -143,42 +207,68 @@ export function BookingHandoff({ bookingId, kind }: Props) {
   const [claimAmount, setClaimAmount] = useState('');
   const [claimEvidence, setClaimEvidence] = useState<File | null>(null);
   const [claimCaseId, setClaimCaseId] = useState<string | null>(null);
+  const inspectionVersion = useRef<string | null>(null);
+  const draftDirty = useRef(false);
+  const draftBaseVersion = useRef<number | null>(null);
 
   useEffect(() => {
     let active = true;
+    let refreshing = false;
     if (!user) return;
+    const userId = user.id;
     setLoading(true);
     setLoadError(null);
-    Promise.all([fetchBookingById(bookingId, user.id), fetchBookingHandoff(bookingId)])
-      .then(([row, state]) => {
+    async function refresh(initial = false) {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const [row, state] = await Promise.all([fetchBookingById(bookingId, userId), fetchBookingHandoff(bookingId, kind)]);
         if (!active) return;
         if (!row) throw new Error('This booking is unavailable or you do not have access.');
         setBooking(row);
         setHandoff(state);
-      })
-      .catch((reason: unknown) => {
+        setRefreshError(null);
+        setLoadError(null);
+      } catch (reason) {
         if (!active) return;
-        setLoadError(reason instanceof Error ? reason.message : 'Could not load the handoff.');
-      })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [bookingId, user, refreshKey]);
+        const message = reason instanceof Error ? reason.message : 'Could not load the handoff.';
+        if (initial) setLoadError(message);
+        else setRefreshError(message);
+      } finally {
+        refreshing = false;
+        if (active && initial) setLoading(false);
+      }
+    }
+    void refresh(true);
+    const timer = window.setInterval(() => void refresh(), 10000);
+    const visible = () => { if (document.visibilityState === 'visible') void refresh(); };
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [bookingId, kind, user, refreshKey]);
 
   const inspectionDetail = handoff?.[kind] ?? null;
   const inspection = inspectionDetail?.inspection ?? null;
   const photos = inspectionDetail?.photos ?? [];
   useEffect(() => {
-    if (!inspection) return;
+    if (!inspection || draftDirty.current) return;
+    const version = `${bookingId}:${kind}:${inspection.id}:${inspection.revision}:${inspection.submitted_at}`;
+    if (inspectionVersion.current === version) return;
+    inspectionVersion.current = version;
+    draftBaseVersion.current = handoff?.workflow.version ?? null;
     setAppearance(inspection.appearance_condition);
     setDamage(inspection.existing_damage);
     setAccessories(inspection.included_accessories.join('\n'));
     setFunctional(inspection.functional_condition);
     setSerial(inspection.serial_number);
-  }, [inspection]);
+  }, [bookingId, kind, inspection, handoff?.workflow.version]);
 
   useEffect(() => {
     let active = true;
-    if (!handoff || handoff.is_owner || handoff.status !== (kind === 'pickup' ? 'pickup_otp_pending' : 'return_otp_pending')) {
+    if (!handoff || !handoff.workflow.allowed_actions.includes('view_code')) {
       setOtp(null);
       setOtpLoadError(null);
       return;
@@ -209,43 +299,67 @@ export function BookingHandoff({ bookingId, kind }: Props) {
       setRefreshKey((key) => key + 1);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'That action could not be completed. Please try again.');
+      setRefreshKey((key) => key + 1);
     } finally {
       setBusy(null);
     }
   }
 
-  async function handleSaveInspection(event: FormEvent) {
-    event.preventDefault();
-    if (!inspection && photoFiles.length < 2) {
-      setError('Add at least two condition photos before saving the inspection.');
+  async function handleSaveInspection(event?: FormEvent, publish = false) {
+    event?.preventDefault();
+    if (!handoff) return;
+    if (publish && photos.length + photoFiles.length < 2) {
+      setNotice(null);
+      setError('Add at least two condition photos before publishing the inspection.');
       return;
     }
-    await perform('save-inspection', async () => {
-      const saved = await saveBookingInspection({
+    await perform(publish ? 'publish-inspection' : 'save-inspection', async () => {
+      const saved = await saveBookingInspectionDraft({
         bookingId,
         kind,
+        version: draftDirty.current && draftBaseVersion.current !== null
+          ? draftBaseVersion.current : handoff.workflow.version,
         appearanceCondition: appearance,
         existingDamage: damage,
         includedAccessories: accessories.split('\n').map((item) => item.trim()).filter(Boolean),
         functionalCondition: functional,
         serialNumber: serial,
       });
+      if (!Number.isSafeInteger(saved.workflow_version)) {
+        throw new Error('Draft saved, but its version was not returned. Refresh before publishing.');
+      }
+      draftDirty.current = false;
+      draftBaseVersion.current = saved.workflow_version ?? null;
       const pendingPhotos = [...photoFiles];
       while (pendingPhotos.length) {
         const next = pendingPhotos[0];
-        await uploadBookingInspectionPhoto(bookingId, kind, saved.id, next);
+        await uploadBookingInspectionPhoto(bookingId, kind, saved.id, next.file, next);
         pendingPhotos.shift();
         setPhotoFiles([...pendingPhotos]);
       }
       if (photoInput.current) photoInput.current.value = '';
-      setNotice('Inspection and evidence saved. Review it together, then each participant can acknowledge it.');
+      if (publish && saved.workflow_version !== undefined) {
+        await publishBookingInspection(bookingId, kind, saved.workflow_version);
+      }
+      setNotice(publish
+        ? 'Inspection published and your confirmation recorded. The renter can now review this revision.'
+        : 'Draft saved privately. Publish it when the condition and photos are ready for review.');
     });
   }
 
-  async function handleAcknowledge() {
-    await perform('acknowledge', async () => {
-      await acknowledgeBookingInspection(bookingId, kind);
-      setNotice('Your inspection acknowledgment was recorded.');
+  async function handleReview(decision: 'agree' | 'request_correction' | 'dispute') {
+    if (!handoff || !inspection?.revision) return;
+    const revision = inspection.revision;
+    await perform('review', async () => {
+      await reviewBookingInspection({
+        bookingId, kind, revision, version: handoff.workflow.version,
+        decision, reason: reviewReason,
+      });
+      setReviewDecision(null);
+      setReviewReason('');
+      setNotice(decision === 'agree' ? 'Your agreement to this inspection revision is recorded.'
+        : decision === 'dispute' ? 'Condition dispute recorded. You can still verify physical return without accepting damage charges.'
+          : 'Correction requested. The owner must publish a new revision for your review.');
     });
   }
 
@@ -258,7 +372,8 @@ export function BookingHandoff({ bookingId, kind }: Props) {
         throw new Error(`${result.error ?? 'The code could not be verified.'}${remaining !== undefined ? ` ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` : ''}`);
       }
       setOtpCode('');
-      setNotice(kind === 'pickup' ? 'Pickup verified. The rental is now active.' : 'Return verified. The settlement workflow has started.');
+      setNotice(kind === 'pickup' ? 'Pickup verified. The rental is now active.'
+        : 'Physical return verified. Condition review and financial processing remain separate.');
     });
   }
 
@@ -311,7 +426,7 @@ export function BookingHandoff({ bookingId, kind }: Props) {
       setClaimDescription('');
       setClaimAmount('');
       setClaimEvidence(null);
-      setNotice('Damage claim submitted. No deposit will be captured automatically while it is disputed.');
+      setNotice('Damage claim submitted for staff review. Receipt confirmation does not authorize a deduction.');
     });
   }
 
@@ -327,31 +442,35 @@ export function BookingHandoff({ bookingId, kind }: Props) {
     );
   }
 
-  const done = kind === 'pickup'
-    ? Boolean(handoff.actual_pickup_at) || (handoff.status === null && ['active', 'return_pending', 'completed'].includes(booking.status))
-    : handoff.status === 'returned' || booking.status === 'completed';
-  const waitingForOtp = handoff.status === (kind === 'pickup' ? 'pickup_otp_pending' : 'return_otp_pending');
+  const workflow = handoff.workflow;
+  const can = (action: string) => !busy && !refreshError && workflow.allowed_actions.includes(action);
+  const canPublishInspection = can('publish_inspection') || (!inspection && can('save_draft'));
+  const done = kind === 'pickup' ? ['active', 'returned'].includes(workflow.stage) : workflow.physical_return_verified;
+  const waitingForOtp = workflow.stage === 'verify';
   const otherInspection = kind === 'return' ? handoff.pickup : null;
   const acceptedTime = kind === 'pickup' ? handoff.actual_pickup_at : handoff.actual_return_at;
   const dueDate = dateLabel(handoff.end_date);
   const otpSeconds = otp ? Math.max(0, Math.ceil((new Date(otp.expires_at).getTime() - now) / 1000)) : 0;
-  const ownerCanInspect = handoff.is_owner && (kind === 'pickup'
-    ? handoff.status === 'pickup_checkin_started' || handoff.status === 'pickup_inspection'
-    : handoff.status === 'return_inspection');
-  const userAcknowledged = inspection && (handoff.is_owner
-    ? inspection.owner_acknowledged_at
-    : inspection.renter_acknowledged_at);
-  const inspectionLocked = Boolean(inspection?.owner_acknowledged_at || inspection?.renter_acknowledged_at);
+  const ownerCanInspect = handoff.is_owner && workflow.allowed_actions.includes('save_draft');
+  const canStart = workflow.allowed_actions.includes(kind === 'pickup' ? 'start_pickup' : 'start_return');
+  const arrangement = workflow.stage === 'arrange' ? arrangementGuidance(booking, kind, workflow, schedule) : null;
+  const blockerLabels: Record<string, string> = {
+    payment_required: 'The rental payment must be confirmed before pickup.',
+    approved_window_required: kind === 'pickup'
+      ? 'Pickup opens 2 hours before the approved time and closes when its window ends. Check the schedule below.'
+      : 'The return can only start during an approved handoff window. Check the schedule below.',
+    deposit_hold_required: 'The renter’s temporary security hold must be ready before pickup.',
+  };
+  const draftConflict = draftDirty.current && draftBaseVersion.current !== null && draftBaseVersion.current !== workflow.version;
+  const evidenceReady = photos.length >= 2 && photos.every(photo => photo.signedUrl && loadedPhotos.has(photo.signedUrl));
   const ownerName = handoff.is_owner ? 'You' : booking.counterpartName;
   const renterName = handoff.is_owner ? booking.counterpartName : 'You';
-  const rentalStatus = booking.status === 'completed' ? 'Rental complete'
+  const rentalStatus = workflow.physical_return_verified
+    ? workflow.financially_closed ? 'Booking closed' : workflow.condition_status === 'disputed'
+      ? 'Returned - condition under review' : 'Returned - financial processing'
     : booking.status === 'active' || booking.status === 'return_pending' ? 'Active rental'
       : done ? (kind === 'pickup' ? 'Active rental' : 'Returned')
         : 'Confirmed rental';
-  const signoff = [
-    { role: 'Owner', acknowledged: inspection?.owner_acknowledged_at },
-    { role: 'Renter', acknowledged: inspection?.renter_acknowledged_at },
-  ];
 
   return (
     <main className="animate-fade-in pb-20 md:pb-10">
@@ -403,13 +522,45 @@ export function BookingHandoff({ bookingId, kind }: Props) {
           </dl>
         </Surface>
 
-        <WorkflowProgress kind={kind} status={handoff.status} bookingStatus={booking.status}
-          arrived={Boolean(handoff.pickup_arrived_at)} done={done} />
+        <WorkflowProgress workflow={workflow} />
+        {!done && <Surface role="region" aria-label="What happens next" aria-live="polite" className="mb-5 p-4 sm:p-5">
+          <h2 className="font-semibold text-main">{workflow.action === 'renew_deposit'
+            ? handoff.is_owner ? 'Waiting for renter to restore deposit protection' : 'Renew your security deposit authorization'
+            : arrangement ? arrangement.title
+              : workflow.stage === 'inspection' ? handoff.is_owner ? 'Record the item condition' : 'Waiting for owner inspection'
+                : workflow.stage === 'review' ? handoff.is_owner ? 'Waiting for renter review' : 'Review the published inspection'
+                  : workflow.stage === 'verify' ? handoff.is_owner ? 'Verify the exchange' : 'Share your exchange code'
+                    : 'Exchange status'}</h2>
+          <p className="mt-1 text-sm text-sec">{workflow.action === 'renew_deposit'
+            ? 'The renter needs to renew the temporary security hold below. Your inspection evidence and approvals are preserved; do not repeat rental payment.'
+            : arrangement ? arrangement.description
+            : workflow.stage === 'inspection' ? handoff.is_owner
+              ? `Record the condition and at least two photos below. Publish the inspection for ${booking.counterpartName} to review.`
+              : `${booking.counterpartName} is recording the condition. The published notes and photos will appear here automatically.`
+              : workflow.stage === 'review' ? handoff.is_owner
+                ? `${booking.counterpartName} needs to review the published photos and condition. No action is needed from you yet.`
+                : 'Review the photos and notes below. Agree only if they are accurate, or request a correction.'
+                : kind === 'return' ? 'The renter shares the code when ready; the owner enters it below to confirm physical receipt only, not condition agreement or deductions.'
+                  : handoff.is_owner ? 'Ask the renter for their six-digit code when you are both ready. Enter it below to verify pickup and start the rental.'
+                    : 'Show your six-digit code below to the owner only when you are ready to receive the item. The owner enters it to start the rental.'}</p>
+          {kind === 'pickup' && <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-sec">
+            <span>Rental payment: {workflow.payment_ready ? 'confirmed' : 'not confirmed'}</span>
+            <span>Security hold: {booking.deposit <= 0 ? 'not required' : workflow.deposit_ready ? 'ready' : 'needs attention'}</span>
+          </p>}
+          {workflow.blockers.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-sec">
+            {workflow.blockers.map(blocker => <li key={blocker}>{blockerLabels[blocker]
+              ?? 'A handoff requirement needs review. Refresh this booking or contact support.'}</li>)}
+          </ul>}
+        </Surface>}
 
-        {kind === 'pickup' && booking.paymentFirst && !done && <BookingPrecheckin booking={booking} onReady={setPrecheckinReady} />}
-        {kind === 'return' && !done && ['active', 'return_pending'].includes(booking.status) && <BookingPrecheckin booking={booking} kind="return" onReady={setReturnReady} />}
+        {!done && workflow.stage === 'arrange' && <BookingPrecheckin booking={booking} kind={kind}
+          onReady={setPrecheckinReady} onStateChange={setSchedule} onChanged={() => setRefreshKey(key => key + 1)} />}
+        {!done && workflow.stage !== 'arrange' && <details className="mb-4 rounded-card border border-app p-4">
+          <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-main">Agreed schedule</summary>
+          <BookingPrecheckin booking={booking} kind={kind} exchangeStarted onReady={setPrecheckinReady} />
+        </details>}
         {kind === 'pickup' && <div className="mb-4"><BookingPickup key={String(precheckinReady)} bookingId={bookingId} status={booking.status} paymentFirst={booking.paymentFirst} /></div>}
-        {booking.deposit > 0 && !(kind === 'pickup' && booking.paymentFirst && !done) && <div className="mb-4"><DepositAuthorizationStatus bookingId={bookingId} deposit={booking.deposit}
+        {booking.deposit > 0 && !done && <div className="mb-4"><DepositAuthorizationStatus bookingId={bookingId} deposit={booking.deposit}
           collectionModel={booking.depositCollectionModel} isOwner={booking.isOwner} paymentFirst={booking.paymentFirst} /></div>}
         {kind === 'return' && !done && !handoff.pickup && (
           <Alert className="mb-4" tone="warning" title="No pickup-condition record is available">
@@ -432,10 +583,13 @@ export function BookingHandoff({ bookingId, kind }: Props) {
                     : `This booking reached ${kind === 'pickup' ? 'active' : 'completed'} before in-app handoff verification was available.`}
                 </p>
                 {kind === 'pickup' && <p className="mt-2 text-sm text-sec">Expected return: <strong className="font-semibold text-main">{dueDate}</strong></p>}
-                {kind === 'return' && <p className="mt-2 text-sm text-sec">Security deposit settlement is shown below. Open disputes prevent automatic settlement.</p>}
+                {kind === 'return' && <p className="mt-2 text-sm text-sec">{workflow.condition_status === 'disputed'
+                  ? 'Item returned - condition under review. Receipt verification does not accept a damage claim or authorize a deduction.'
+                  : 'Physical return verified. Security deposit and owner payout processing are separate from receipt.'}</p>}
               </div>
             </div>
-            {kind === 'return' && <div className="mt-5"><RentalSettlement bookingId={bookingId} isOwner={booking.isOwner} autoProcess /></div>}
+            {kind === 'return' && <div className="mt-5"><RentalSettlement bookingId={bookingId} isOwner={booking.isOwner} /></div>}
+            {kind === 'pickup' && <Button className="mt-5 mr-3" onClick={() => navigate({ name: 'check-out', id: bookingId })}>View return details</Button>}
             <Button className="mt-5" variant="secondary" onClick={() => navigate({ name: 'dashboard', tab: booking.isOwner ? 'lending' : 'renting' })}>View bookings</Button>
           </Surface>
           {kind === 'return' && (handoff.pickup?.inspection || handoff.return?.inspection) && (
@@ -466,62 +620,28 @@ export function BookingHandoff({ bookingId, kind }: Props) {
           </>
         ) : (
           <>
-            <div className="mb-5 grid items-start gap-5 lg:grid-cols-2">
-            <Surface className="p-4 sm:p-6">
+            <div className={`mb-5 grid items-start gap-5 ${waitingForOtp ? 'lg:grid-cols-2' : ''}`}>
+            {(workflow.stage !== 'arrange' || canStart || inspection) && <Surface className="p-4 sm:p-6">
               <SectionHeader as="h2" title={kind === 'pickup' ? 'Pickup handoff' : 'Return handoff'} subtitle={
                 kind === 'pickup'
                   ? 'The owner records the item condition and photos. Review the evidence before acknowledging.'
                   : 'Compare the item with its pickup record, verify accessories, and record its current condition.'
               } className="mb-4" />
 
-              {kind === 'pickup' && handoff.status === null && booking.status === 'confirmed' && !handoff.is_owner && (
-                <Button disabled={booking.paymentFirst && !precheckinReady} loading={busy === 'arrive'} onClick={() => void perform('arrive', async () => {
-                  await startBookingPickup(bookingId);
-                  setNotice('Arrival sent. The owner has been notified and can start the handoff.');
-                })}>{booking.deliveryMode === 'delivery' ? 'Ready for delivery' : "I'm Here – Start Pickup"}</Button>
+              {workflow.allowed_actions.includes(kind === 'pickup' ? 'start_pickup' : 'start_return') && (
+                <Button disabled={!can(kind === 'pickup' ? 'start_pickup' : 'start_return')}
+                  loading={busy === 'begin'} onClick={() => void perform('begin', async () => {
+                    await beginBookingHandoff(bookingId, kind, workflow.version);
+                    setNotice(kind === 'pickup' ? 'Pickup started. Record the condition together.' : 'Return started. The owner can record the received condition.');
+                  })}>{kind === 'pickup' ? 'Begin pickup' : handoff.is_owner ? 'Begin return inspection' : 'Begin return'}</Button>
               )}
-              {kind === 'pickup' && handoff.status === 'pickup_ready' && handoff.is_owner && (
-                <div>
-                  <Alert tone="info" title="The renter is here">Start the handoff to open the condition checklist.</Alert>
-                  <Button className="mt-3" disabled={booking.paymentFirst && !precheckinReady} loading={busy === 'start-handoff'} onClick={() => void perform('start-handoff', async () => {
-                    await startBookingHandoff(bookingId);
-                    setNotice('Handoff started. Document the item condition and upload photos.');
-                  })}>Start Handoff</Button>
-                </div>
-              )}
-              {kind === 'pickup' && handoff.status === 'pickup_checkin_started' && handoff.is_owner && (
-                <Alert tone="info">Document the item's condition and upload at least two photos to continue.</Alert>
-              )}
-              {kind === 'pickup' && handoff.status === 'pickup_ready' && !handoff.is_owner && (
-                <Alert tone="info">Arrival sent. Waiting for the owner to start the handoff.</Alert>
-              )}
-              {kind === 'return' && (handoff.status === 'rental_active' || (handoff.status === null && booking.status === 'active')) && !handoff.is_owner && (
-                <Button disabled={!returnReady} loading={busy === 'start-return'} onClick={() => void perform('start-return', async () => {
-                  await startBookingReturn(bookingId);
-                  setNotice('Return started. The owner has been notified.');
-                })}>Start Return</Button>
-              )}
-              {kind === 'return' && (handoff.status === 'rental_active' || (handoff.status === null && booking.status === 'active')) && !handoff.is_owner && !returnReady && (
-                <Alert tone="info">Schedule and get owner approval for the return window before starting return.</Alert>
-              )}
-              {kind === 'return' && (handoff.status === 'rental_active' || (handoff.status === null && booking.status === 'active')) && handoff.is_owner && (
-                <Alert tone="info">The renter has not started the return yet. You will be notified when they do.</Alert>
-              )}
-              {kind === 'return' && handoff.status === 'return_initiated' && handoff.is_owner && (
-                <div>
-                  <Alert tone="info" title="The renter started a return">Begin the inspection when the item is available.</Alert>
-                  <Button className="mt-3" loading={busy === 'begin-return'} onClick={() => void perform('begin-return', async () => {
-                    await beginBookingReturnInspection(bookingId);
-                    setNotice('Return inspection opened. Compare the item with its pickup record.');
-                  })}>Begin Return Inspection</Button>
-                </div>
-              )}
-              {kind === 'return' && handoff.status === 'return_initiated' && !handoff.is_owner && (
-                <Alert tone="info">Return started. Waiting for the owner to begin the inspection.</Alert>
-              )}
-              {kind === 'return' && handoff.status === 'return_inspection' && !handoff.is_owner && !inspection && (
-                <Alert tone="info">The owner is documenting the return condition. You can review it here once it is saved.</Alert>
-              )}
+              {!handoff.is_owner && !inspection && <p className="text-sm text-sec">
+                The owner records the condition. The published inspection and photos will appear here automatically for your review.
+              </p>}
+              {inspectionDetail?.review_reason && <Alert className="mt-3" tone="warning"
+                title={workflow.condition_status === 'disputed' ? 'Return condition disputed' : 'Correction requested'}>
+                {inspectionDetail.review_reason}
+              </Alert>}
 
               {otherInspection && (
                 <div className="mb-6 rounded-card-lg bg-subtle p-4">
@@ -529,19 +649,39 @@ export function BookingHandoff({ bookingId, kind }: Props) {
                 </div>
               )}
 
-              {ownerCanInspect && !inspectionLocked && (
-                <form onSubmit={(event) => void handleSaveInspection(event)} className="mt-5 space-y-4">
+              {ownerCanInspect && (
+                <form onSubmit={(event) => void handleSaveInspection(event, true)}
+                  onChange={() => { if (!draftDirty.current) draftBaseVersion.current = workflow.version; draftDirty.current = true; }}
+                  className="mt-5 space-y-4">
+                  {draftConflict && <Alert tone="warning" title="Newer handoff version available">
+                    Your unsaved entries are preserved. Review the latest record below before keeping your edits for this version.
+                    <Button type="button" className="mt-3" variant="secondary" disabled={!can('save_draft')}
+                      onClick={() => {
+                        draftBaseVersion.current = workflow.version;
+                        setNotice('Your edits are retained for the latest version. Save or publish when ready.');
+                      }}>Keep my edits for this version</Button>
+                  </Alert>}
+                  <fieldset disabled={Boolean(busy)} className="space-y-4">
                   <label className="block text-sm font-semibold text-main">
                     Item appearance and condition
                     <textarea required minLength={10} maxLength={2000} rows={3} value={appearance} onChange={(event) => setAppearance(event.target.value)}
                       className="mt-1.5 w-full rounded-card border border-app bg-card px-3 py-2.5 text-sm font-normal text-main focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
                   </label>
+                  <div className="flex flex-wrap gap-2" aria-label="Appearance shortcuts">
+                    {['Good condition', 'Fair condition with normal wear', 'Worn condition; see damage notes'].map(value => <Button
+                      key={value} type="button" size="sm" variant="secondary" onClick={() => {
+                        draftBaseVersion.current ??= workflow.version; draftDirty.current = true; setAppearance(value);
+                      }}>{value}</Button>)}
+                  </div>
                   <label className="block text-sm font-semibold text-main">
                     Existing scratches or damage
                     <textarea required minLength={1} maxLength={2000} rows={3} value={damage} onChange={(event) => setDamage(event.target.value)}
                       className="mt-1.5 w-full rounded-card border border-app bg-card px-3 py-2.5 text-sm font-normal text-main focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
                     <span className="mt-1 block text-xs font-normal text-sec">Describe existing wear clearly; enter “None observed” when applicable.</span>
                   </label>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => {
+                    draftBaseVersion.current ??= workflow.version; draftDirty.current = true; setDamage('None observed');
+                  }}>No damage observed</Button>
                   <label className="block text-sm font-semibold text-main">
                     Included accessories <span className="font-normal text-sec">(one per line)</span>
                     <textarea maxLength={3600} rows={3} value={accessories} onChange={(event) => setAccessories(event.target.value)}
@@ -561,42 +701,95 @@ export function BookingHandoff({ bookingId, kind }: Props) {
                   <label className="block text-sm font-semibold text-main">
                     Condition photos <span className="font-normal text-sec">(at least two; JPEG, PNG or WebP, up to 10 MB each)</span>
                     <input ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" multiple
-                      onChange={(event) => setPhotoFiles(Array.from(event.target.files ?? []).slice(0, Math.max(0, 12 - photos.length)))}
+                      disabled={Boolean(busy)}
+                      onChange={(event) => {
+                        const selected = Array.from(event.target.files ?? []);
+                        if (selected.length + photoFiles.length + photos.length > 12) {
+                          setError('An inspection can have at most 12 photos. Your existing selections have been kept.');
+                          return;
+                        }
+                        setPhotoFiles(current => [...current, ...selected.map(file => ({ file, objectPath: null, uploaded: false }))]);
+                      }}
                       className="mt-1.5 block w-full text-sm font-normal text-sec file:mr-3 file:rounded-card file:border file:border-app file:bg-subtle file:px-3 file:py-2 file:text-sm file:font-semibold file:text-main" />
                     <span className="mt-1 block text-xs font-normal text-sec">Stored privately and shared only with booking participants.</span>
                   </label>
                   {photoFiles.length > 0 && <p className="text-xs text-sec">{photoFiles.length} photo{photoFiles.length === 1 ? '' : 's'} selected</p>}
-                  <Button type="submit" loading={busy === 'save-inspection'}>
-                    {inspection ? 'Save inspection and photos' : 'Save inspection and photos'}
-                  </Button>
+                  {photoFiles.length > 0 && <ul className="space-y-1 text-xs text-sec">
+                    {photoFiles.map((photo, index) => <li key={`${photo.file.name}:${index}`} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 break-all">{photo.file.name}{photo.uploaded ? ' - uploaded, awaiting registration' : ''}</span>
+                      <Button type="button" size="sm" variant="ghost" disabled={Boolean(busy) || photo.uploaded || Boolean(photo.objectPath)}
+                        onClick={() => setPhotoFiles(current => current.filter((_, position) => position !== index))}>Remove</Button>
+                    </li>)}
+                  </ul>}
+                  <p className="text-xs text-sec">Publishing confirms your record and shares an immutable revision with the renter. Drafts remain private.</p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="submit" disabled={!canPublishInspection || draftConflict} loading={busy === 'publish-inspection'}>Publish &amp; confirm</Button>
+                    <Button type="button" variant="secondary" disabled={!can('save_draft') || draftConflict} loading={busy === 'save-inspection'}
+                      onClick={() => void handleSaveInspection()}>Save draft</Button>
+                  </div>
+                  </fieldset>
                 </form>
               )}
 
               {inspection && (
                 <div className="mt-5 space-y-4">
-                  <InspectionRecord inspection={inspection} photos={photos} title={kind === 'pickup' ? 'Pickup inspection record' : 'Return inspection record'} />
+                  <InspectionRecord inspection={inspection} photos={photos} title={kind === 'pickup' ? 'Pickup inspection record' : 'Return inspection record'}
+                    onPhotoStatus={(url, loaded) => setLoadedPhotos(current => {
+                      if (current.has(url) === loaded) return current;
+                      const next = new Set(current);
+                      if (loaded) next.add(url); else next.delete(url);
+                      return next;
+                    })} />
                   <div className="flex flex-wrap gap-2 text-xs text-sec">
-                    <Badge tone={inspection.owner_acknowledged_at ? 'success' : 'neutral'}>Owner {inspection.owner_acknowledged_at ? 'acknowledged' : 'review pending'}</Badge>
-                    <Badge tone={inspection.renter_acknowledged_at ? 'success' : 'neutral'}>Renter {inspection.renter_acknowledged_at ? 'acknowledged' : 'review pending'}</Badge>
+                    <Badge tone="neutral">Revision {inspection.revision}</Badge>
+                    <Badge tone={inspection.publication_status === 'published' ? 'success' : 'neutral'}>{inspection.publication_status === 'published' ? 'Published' : 'Private draft'}</Badge>
+                    <Badge tone={workflow.condition_status === 'agreed' ? 'success' : 'neutral'}>Condition: {workflow.condition_status.replace(/_/g, ' ')}</Badge>
                   </div>
-                  {!userAcknowledged && photos.length >= 2 && (
-                    <Button loading={busy === 'acknowledge'} onClick={() => void handleAcknowledge()}>
-                      I reviewed and acknowledge this condition
-                    </Button>
-                  )}
-                  {inspectionLocked && !userAcknowledged && <Alert tone="info">The inspection is locked because the other participant already acknowledged it. Review the saved condition, then record your acknowledgment.</Alert>}
-                  {userAcknowledged && <p className="text-sm text-success">Your acknowledgment is recorded.</p>}
+                  {!handoff.is_owner && workflow.allowed_actions.includes('agree_inspection') && <div className="space-y-3">
+                    <p className="text-sm text-sec">{kind === 'return'
+                      ? 'Review the condition separately from receipt. Sharing a return code does not authorize a damage deduction.'
+                      : 'Review the condition and photos before agreeing to this revision.'}</p>
+                    {!evidenceReady && <Alert tone="warning">All required evidence must be available before agreeing.
+                      <Button variant="secondary" size="sm" onClick={() => setRefreshKey(key => key + 1)}>Reload evidence</Button>
+                    </Alert>}
+                    <div className="flex flex-wrap gap-2">
+                      <Button disabled={!can('agree_inspection') || !evidenceReady} onClick={() => void handleReview('agree')}>Agree to condition</Button>
+                      <Button variant="secondary" disabled={!can('request_correction')}
+                        onClick={() => setReviewDecision('request_correction')}>Request correction</Button>
+                      {kind === 'return' && <Button variant="secondary" disabled={!can('dispute_condition')}
+                        onClick={() => setReviewDecision('dispute')}>Dispute condition</Button>}
+                    </div>
+                  </div>}
+                  {reviewDecision && <form className="space-y-3" onSubmit={event => {
+                    event.preventDefault(); void handleReview(reviewDecision);
+                  }}>
+                    <label className="block text-sm font-semibold text-main">{reviewDecision === 'dispute' ? 'Dispute reason' : 'Correction details'}
+                      <textarea required minLength={10} maxLength={2000} rows={3} value={reviewReason}
+                        onChange={event => setReviewReason(event.target.value)}
+                        className="mt-2 w-full rounded-card border border-app bg-card px-3 py-2 font-normal text-main" />
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="submit" loading={busy === 'review'} disabled={Boolean(busy)}>Send {reviewDecision === 'dispute' ? 'dispute' : 'correction request'}</Button>
+                      <Button type="button" variant="ghost" disabled={Boolean(busy)} onClick={() => setReviewDecision(null)}>Cancel</Button>
+                    </div>
+                  </form>}
+                  {inspectionDetail?.history && inspectionDetail.history.length > 0 && <details>
+                    <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-main">Published inspection history</summary>
+                    <div className="space-y-6">{inspectionDetail.history.map(revision => <InspectionRecord
+                      key={`${revision.inspection.id}:${revision.inspection.revision}`} inspection={revision.inspection}
+                      photos={revision.photos} title={`Published revision ${revision.inspection.revision}`} />)}</div>
+                  </details>}
                 </div>
               )}
-            </Surface>
+            </Surface>}
 
-            <Surface className="p-4 sm:p-6">
+            {waitingForOtp && <Surface className="p-4 sm:p-6">
                 <SectionHeader as="h2" title={kind === 'pickup' ? 'Pickup verification' : 'Return verification'}
-                  subtitle={waitingForOtp
-                    ? 'Both participants acknowledged the inspection. The code is shared privately with the renter.'
-                    : 'Complete the inspection and sign-off together before verifying the handoff.'}
+                  subtitle={kind === 'return'
+                    ? 'This code verifies physical receipt only. It does not accept a condition dispute or authorize a deduction.'
+                    : 'Both participants approved this inspection revision. Share the code when ready to exchange the item.'}
                   className="mb-4" />
-                {waitingForOtp ? !handoff.is_owner ? (
+                {!handoff.is_owner ? (
                   <div className="rounded-card-lg bg-accent-soft p-4 text-center">
                     <p className="text-sm font-semibold text-accent">Your private handoff code</p>
                     {otp && otpSeconds > 0 ? (
@@ -607,7 +800,7 @@ export function BookingHandoff({ bookingId, kind }: Props) {
                       </>
                     ) : (
                       <div className="mt-2 space-y-2">
-                        <p className="text-sm text-sec">{otpLoadError ?? 'Loading your code…'}</p>
+                        <p className="text-sm text-sec">{otpLoadError ?? (otp ? 'Your code has expired. Request a new code to continue.' : 'Loading your code…')}</p>
                         {otpLoadError && <Button size="sm" variant="ghost" onClick={() => setRefreshKey((key) => key + 1)}>Try loading again</Button>}
                       </div>
                     )}
@@ -622,41 +815,11 @@ export function BookingHandoff({ bookingId, kind }: Props) {
                         className="mt-1.5 h-12 w-full rounded-card border border-app bg-card px-3 text-center font-display text-xl font-bold tracking-[0.25em] text-main tnum focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
                     </label>
                     <p className="text-xs text-sec">The code expires after five minutes. Incorrect entries are limited.</p>
-                    <Button type="submit" disabled={otpCode.length !== 6} loading={busy === 'verify-otp'}>Verify and {kind === 'pickup' ? 'start rental' : 'complete return'}</Button>
+                    <Button type="submit" disabled={otpCode.length !== 6 || !can('verify_code')} loading={busy === 'verify-otp'}>Verify and {kind === 'pickup' ? 'start rental' : 'confirm receipt'}</Button>
                   </form>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="grid gap-2 sm:grid-cols-2" aria-label="Handoff sign-off">
-                      {signoff.map(({ role, acknowledged }) => (
-                        <div key={role} className="flex items-center gap-2 rounded-card border border-app bg-subtle/50 p-3">
-                          <CheckCircle2 size={18} className={acknowledged ? 'text-success' : 'text-sec'} aria-hidden="true" />
-                          <span className="text-sm font-medium text-main">{role}</span>
-                          <span className="ml-auto text-xs text-sec">{acknowledged ? 'Confirmed' : 'Pending'}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <Alert tone="info" title={inspection ? 'Waiting for both acknowledgments' : 'Inspection comes first'}>
-                      {inspection
-                        ? 'Both people should review the saved condition and photos. A private one-time code becomes available when both have acknowledged.'
-                        : 'Once the owner saves the condition record and both people acknowledge it, the renter receives a private six-digit code here.'}
-                    </Alert>
-                  </div>
                 )}
-            </Surface>
+            </Surface>}
             </div>
-
-            {kind === 'pickup' && handoff.status === 'rental_active' && (
-              <Surface className="mb-5 p-4 sm:p-6">
-                <h2 className="font-semibold text-main">Rental details</h2>
-                <p className="mt-2 text-sm text-sec">
-                  {handoff.actual_pickup_at
-                    ? `Pickup verified ${dateTimeLabel(handoff.actual_pickup_at)}.`
-                    : 'This rental was active before in-app pickup verification was available.'}
-                  {' '}Expected return: <strong className="text-main">{dueDate}</strong>.
-                </p>
-                <Button className="mt-4" onClick={() => navigate({ name: 'check-out', id: bookingId })}>View return details</Button>
-              </Surface>
-            )}
 
             {kind === 'return' && handoff.status === 'return_initiated' && (
               <Surface className="mb-5 p-4 sm:p-6">
@@ -669,10 +832,35 @@ export function BookingHandoff({ bookingId, kind }: Props) {
                 </p>
               </Surface>
             )}
+            {kind === 'return' && handoff.is_owner && workflow.allowed_actions.includes('report_receipt') && (
+              <details className="mb-5 rounded-card border border-app p-4">
+                <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-main">Received the item but cannot verify the code?</summary>
+                <p className="mt-2 text-sm text-sec">Report physical receipt for support verification. This does not complete the return or authorize settlement.</p>
+                <form className="mt-3 space-y-3" onSubmit={event => {
+                  event.preventDefault();
+                  void perform('report-receipt', async () => {
+                    await reportBookingReturnReceipt(bookingId, workflow.version, receiptReason);
+                    setReceiptReason('');
+                    setNotice('Receipt reported to support. The return remains unverified until authorized verification.');
+                  });
+                }}>
+                  <label className="block text-sm font-semibold text-main">Receipt statement
+                    <textarea required minLength={10} maxLength={2000} rows={3} value={receiptReason}
+                      onChange={event => setReceiptReason(event.target.value)}
+                      className="mt-2 w-full rounded-card border border-app bg-card px-3 py-2 font-normal text-main" />
+                  </label>
+                  <Button type="submit" variant="secondary" disabled={!can('report_receipt')} loading={busy === 'report-receipt'}>Ask support to verify receipt</Button>
+                </form>
+              </details>
+            )}
           </>
         )}
 
         {error && <Alert tone="error" title="Action not completed" className="mb-4">{error}</Alert>}
+        {refreshError && <Alert tone="error" title="Handoff updates interrupted" className="mb-4">
+          {refreshError} The details above may be out of date.
+          <Button className="mt-2" size="sm" variant="secondary" onClick={() => setRefreshKey((key) => key + 1)}>Refresh handoff</Button>
+        </Alert>}
         {notice && <Alert tone="success" className="mb-4">{notice}</Alert>}
 
         {handoff.cases.length > 0 && (
@@ -754,8 +942,8 @@ export function BookingHandoff({ bookingId, kind }: Props) {
         {done && booking.deposit > 0 && <DepositAuthorizationStatus bookingId={bookingId} deposit={booking.deposit}
           collectionModel={booking.depositCollectionModel} isOwner={booking.isOwner} paymentFirst={booking.paymentFirst} />}
         {handoff.events.length > 0 && (
-          <section className="mt-6">
-            <h2 className="mb-2 text-sm font-semibold text-main">Handoff history</h2>
+          <details className="mt-6">
+            <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-main">Handoff history</summary>
             <ul className="space-y-2">
               {handoff.events.slice().reverse().map((event) => (
                 <li key={event.id} className="flex items-center gap-2 text-xs text-sec">
@@ -765,7 +953,7 @@ export function BookingHandoff({ bookingId, kind }: Props) {
                 </li>
               ))}
             </ul>
-          </section>
+          </details>
         )}
 
         <div className="sr-only" aria-live="polite">{busy ? 'Saving changes' : ''}</div>

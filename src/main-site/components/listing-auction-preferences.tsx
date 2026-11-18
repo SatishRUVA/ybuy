@@ -4,6 +4,7 @@ import { Switch } from '@/main-site/components/shadcn/switch';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/main-site/components/shadcn/select';
 import { MonthGrid } from '@/main-site/components/date-range-picker';
 import { fieldClass } from '@/main-site/components/form-classes';
+import { MAX_AUCTION_DAILY_BID } from '@/lib/listing-auctions';
 import { addDaysIso, todayIso } from '@/lib/geo';
 import { BIDDING_RULES_TEXT, defaultBiddingOpeningTime, enableBiddingPreferences, twoHoursBeforePickup, type ListingAuctionPreferences as Preferences } from '@/lib/listing-auctions';
 
@@ -134,7 +135,7 @@ export function ListingAuctionPreferences({ value, start, end, askingPrice, disa
       </div>
       <div className="owner-auction-schedule space-y-4">
       <label className="block text-sm font-medium text-main" htmlFor="auction-opening-rate">Starting bid per day (USD)
-        <input id="auction-opening-rate" type="number" min="0.01" max="100000" step="0.01" inputMode="decimal"
+        <input id="auction-opening-rate" type="number" min="0.01" max={MAX_AUCTION_DAILY_BID} step="0.01" inputMode="decimal"
           value={value.opening_daily_rate ?? askingPrice ?? ''}
           onChange={event => onChange({ ...value, opening_daily_rate: event.target.value ? Number(event.target.value) : null })}
           className={`${fieldClass()} mt-1`} />

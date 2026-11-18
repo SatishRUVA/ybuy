@@ -888,15 +888,20 @@ for (const owner of [false, true]) {
       renter: { id: owner ? listing.owner_id : userId, full_name: 'Test renter' },
       owner: { id: owner ? userId : listing.owner_id, full_name: 'Test owner' },
     } }));
-    await page.route('**/rest/v1/rpc/get_booking_handoff', route => route.fulfill({ json: {
+    await page.route('**/rest/v1/rpc/get_booking_handoff_workflow', route => route.fulfill({ json: {
       booking_id: bookingId, booking_status: 'confirmed', start_date: futureDate(2), end_date: futureDate(4),
       is_owner: owner, status: null, pickup_arrived_at: null, actual_pickup_at: null,
       actual_return_at: null, return_initiated_at: null, pickup: null, return: null, events: [], cases: [],
+      workflow: { version: 1, kind: 'pickup', stage: 'arrange', next_actor: 'owner', action: null,
+        allowed_actions: [], blockers: [], payment_ready: true, deposit_ready: false, scheduling_ready: false,
+        condition_status: 'pending', physical_return_verified: false, financially_closed: false },
     } }));
     await page.route('**/rest/v1/rpc/get_booking_precheckin', route => route.fulfill({ json: {
       payment_first: true, slot, server_now: new Date().toISOString(), can_authorize: canAuthorize,
       handoff_ready: false, deposit_ready: false, consented: false, delivery_mode: 'pickup',
-      pickup_slot: slot, return_slot: null, pickup_windows: ['morning', 'afternoon'],
+      workflow_version: 1, pickup_proposal: slot?.status === 'proposed' ? { ...slot, proposed_by_is_owner: false, version: 1 } : null,
+      return_proposal: null,
+      pickup_slot: slot?.status === 'approved' ? slot : null, return_slot: null, pickup_windows: ['morning', 'afternoon'],
       return_windows: ['evening'], return_rules: ['Return all accessories'], return_note: '',
       return_handoff_ready: false, time_zone: 'America/New_York',
     } }));
@@ -904,32 +909,32 @@ for (const owner of [false, true]) {
       id: '80000000-0000-4000-8000-000000000011', booking_id: bookingId, status: authorizationStatus,
       authorized_amount: 24, captured_amount: 0, attempt: 1,
     }] }));
-    await page.route('**/rest/v1/rpc/propose_booking_handoff_slot_at_hour', route => {
+    await page.route('**/rest/v1/rpc/propose_booking_handoff_replacement', route => {
       mutation = route.request().postDataJSON();
       slot = { ...proposedSlot, note: String(mutation!.p_note) };
       return route.fulfill({ json: null });
     });
-    await page.route('**/rest/v1/rpc/respond_to_booking_handoff_slot', route => {
+    await page.route('**/rest/v1/rpc/respond_booking_handoff_replacement', route => {
       mutation = route.request().postDataJSON();
       slot = { ...slot!, status: 'approved' };
       return route.fulfill({ json: null });
     });
     await page.goto(`/check-in/${bookingId}`, { waitUntil: 'networkidle' });
-    await expect(page.getByRole('heading', { name: 'Check-in for pickup', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Pickup schedule', exact: true })).toBeVisible();
     await expect(page.getByText('All windows use the pickup location timezone: America/New_York.', { exact: true })).toBeVisible();
     await expect(page.locator('input[type="date"], input[type="datetime-local"]')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Set up payment method', exact: true })).toBeHidden();
     if (owner) {
-      await page.getByRole('button', { name: 'Approve slot', exact: true }).click();
+      await page.getByRole('button', { name: 'Approve time', exact: true }).click();
       await expect(page.getByText('Deposit authorization opens 24 hours before the approved window.', { exact: false })).toBeVisible();
       expect(mutation).toMatchObject({ p_booking_id: bookingId, p_kind: 'pickup', p_approve: true,
-        p_expected_updated_at: proposedSlot.updated_at });
+        p_expected_version: 1 });
     } else {
       await page.getByRole('group', { name: 'Afternoon', exact: true }).getByRole('button', { name: '1 pm', exact: true }).click();
       await page.getByRole('button', { name: proposedSlot.note, exact: true }).click();
       await page.getByRole('button', { name: 'Send proposal', exact: true }).click();
-      await expect(page.getByText('Waiting for the owner to approve this window.', { exact: true })).toBeVisible();
-      expect(mutation).toEqual({ p_booking_id: bookingId, p_kind: 'pickup', p_slot_window: 'afternoon', p_hour: 13, p_note: proposedSlot.note });
+      await expect(page.getByText('Waiting for owner approval.', { exact: true })).toBeVisible();
+      expect(mutation).toEqual({ p_booking_id: bookingId, p_kind: 'pickup', p_slot_window: 'afternoon', p_hour: 13, p_note: proposedSlot.note, p_expected_version: 1 });
       slot = { ...slot!, status: 'approved' };
       canAuthorize = true;
       authorizationStatus = 'scheduled';
@@ -944,7 +949,7 @@ for (const owner of [false, true]) {
       await expect(authorize).toBeEnabled();
       await authorize.click();
       await expect(page.getByText('Test bank declined the authorization', { exact: false })).toBeVisible();
-      await expect(page.getByRole('button', { name: /Start Pickup/ })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Begin pickup', exact: true })).toHaveCount(0);
     }
 
     await page.screenshot({ path: testInfo.outputPath('precheckin-desktop.png'), animations: 'disabled', fullPage: true });

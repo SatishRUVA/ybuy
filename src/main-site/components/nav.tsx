@@ -149,7 +149,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
                       {unreadCount === null ? 'Unread notification count unavailable' : `${unreadCount} unread notifications`}
                     </span>
                   </button>
-                  {adminAccess.access && (
+                  {adminAccess.access?.role === 'admin' && (
                     <button
                       onClick={() => go({ name: 'admin' })}
                       aria-label="Admin console"
@@ -225,7 +225,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
           </Button>
           {user ? (
             <>
-              {adminAccess.access && (
+              {adminAccess.access?.role === 'admin' && (
                 <Button fullWidth size="sm" variant="ghost" icon={<ShieldCheck size={16} />} onClick={() => go({ name: 'admin' })} className="mt-1">
                   Admin console
                 </Button>

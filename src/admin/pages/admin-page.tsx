@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
-  Activity, ArrowLeft, BarChart3, Banknote, CalendarCheck, CreditCard, Flag, Gavel, Gift, LayoutDashboard,
-  LifeBuoy, Lock, Menu, Package, ScrollText, Search, Shield, ShieldCheck, SlidersHorizontal, Star, Tags, Users,
+  ArrowLeft, BarChart3, Banknote, CalendarCheck, CreditCard, Gift, LayoutDashboard,
+  Gavel, LifeBuoy, Lock, Menu, Package, Search, Shield, ShieldCheck, Star, Tags, Users,
   type LucideIcon,
 } from 'lucide-react';
 import { useRouter } from '@/router';
@@ -12,18 +12,16 @@ import { Dialog, DialogDescription, DialogTitle, SheetContent } from '@/main-sit
 import { cn } from '@/lib/utils';
 import { OverviewSection } from '@/admin/pages/overview';
 import { BookingsSection, ListingsSection, PaymentsSection, PayoutsSection, ReviewsSection, UsersSection } from '@/admin/pages/resources';
-import { CategoriesSection, FlagsSection, SettingsSection } from '@/admin/pages/config';
-import { AdminsSection, AuditSection, IntegrationsSection } from '@/admin/pages/governance';
+import { CategoriesSection } from '@/admin/pages/config';
 import { PageHeader } from '@/main-site/components/operations/shared';
 import { CasesSection } from '@/main-site/components/operations/cases';
 import { PromotionsSection } from '@/admin/pages/promotions';
 import { RefundsSection } from '@/admin/pages/refunds';
 import { ItemRequestsSection } from '@/admin/pages/marketplace';
 import { CustomerInvestigationsSection } from '@/admin/pages/investigations';
-import { AuctionDecisionsSection } from '@/admin/pages/auction-decisions';
 
 type Icon = LucideIcon;
-interface NavItem { id: string; label: string; icon: Icon; permission?: AdminPermission; anyPermission?: AdminPermission[]; superOnly?: boolean; pending?: string }
+interface NavItem { id: string; label: string; icon: Icon; permission?: AdminPermission; anyPermission?: AdminPermission[]; pending?: string }
 
 const GROUPS: { title: string; items: NavItem[] }[] = [
   { title: 'Operations', items: [
@@ -44,14 +42,6 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
     { id: 'payouts', label: 'Payouts', icon: Banknote, permission: 'payouts.view' },
     { id: 'refunds', label: 'Refund requests', icon: CreditCard, anyPermission: ['refunds.issue', 'refunds.approve', 'refunds.senior'] },
   ] },
-  { title: 'Super admin', items: [
-    { id: 'auction-decisions', label: 'Missed bidding decisions', icon: Gavel, permission: 'config.manage' },
-    { id: 'settings', label: 'Global settings', icon: SlidersHorizontal, permission: 'config.manage' },
-    { id: 'flags', label: 'Feature flags', icon: Flag, permission: 'flags.manage' },
-    { id: 'integrations', label: 'Integrations & health', icon: Activity, permission: 'integrations.view' },
-    { id: 'audit', label: 'Audit log', icon: ScrollText, permission: 'audit.view' },
-    { id: 'admins', label: 'Administrators', icon: ShieldCheck, permission: 'admins.manage' },
-  ] },
   { title: 'Coming with their modules', items: [
     { id: 'insurance', label: 'Insurance & protection', icon: Shield, pending: 'Insurance and protection options' },
     { id: 'analytics', label: 'Analytics & exports', icon: BarChart3, pending: 'Reports and CSV exports beyond the overview' },
@@ -59,7 +49,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
 ];
 
 const ALL_ITEMS = GROUPS.flatMap((g) => g.items);
-const can = (access: AdminAccess, item: NavItem) => item.superOnly ? access.role === 'super_admin' : item.anyPermission
+const can = (access: AdminAccess, item: NavItem) => item.anyPermission
   ? item.anyPermission.some((permission) => access.permissions.includes(permission))
   : !item.permission || access.permissions.includes(item.permission);
 
@@ -112,12 +102,6 @@ function Section({ id }: { id: string }) {
     case 'categories': return <CategoriesSection />;
     case 'payments': return <PaymentsSection />;
     case 'payouts': return <PayoutsSection />;
-    case 'settings': return <SettingsSection />;
-    case 'auction-decisions': return <AuctionDecisionsSection />;
-    case 'flags': return <FlagsSection />;
-    case 'integrations': return <IntegrationsSection />;
-    case 'audit': return <AuditSection />;
-    case 'admins': return <AdminsSection />;
     default: {
       const item = ALL_ITEMS.find((i) => i.id === id);
       return (
@@ -152,13 +136,20 @@ export function AdminPage({ section }: { section?: string }) {
       </div>
     );
   }
+  if (access.role !== 'admin') {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-16">
+        <EmptyState icon={<Lock size={20} />} title="Administrator access required" description="This portal is for Admin accounts only." actionLabel="Back to YBuy" onAction={() => navigate({ name: 'home' })} />
+      </div>
+    );
+  }
 
-  const granted = ALL_ITEMS.filter((i) => (i.permission || i.anyPermission || i.superOnly) && can(access, i));
+  const granted = ALL_ITEMS.filter((i) => (i.permission || i.anyPermission) && can(access, i));
   const active = ALL_ITEMS.find((i) => i.id === section && can(access, i)) ?? granted[0];
   if (!active) {
     return (
       <div className="max-w-lg mx-auto px-4 py-16">
-        <EmptyState icon={<Lock size={20} />} title="No permissions granted" description="You are an administrator, but no permissions have been granted yet. Ask a super admin." actionLabel="Back to YBuy" onAction={() => navigate({ name: 'home' })} />
+        <EmptyState icon={<Lock size={20} />} title="No permissions granted" description="You are an administrator, but no permissions have been granted yet. Contact the platform team." actionLabel="Back to YBuy" onAction={() => navigate({ name: 'home' })} />
       </div>
     );
   }

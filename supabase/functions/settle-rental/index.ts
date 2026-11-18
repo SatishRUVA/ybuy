@@ -120,6 +120,13 @@ async function processBooking(admin: ReturnType<typeof createClient>, stripe: St
     .update({ last_attempt_at: new Date().toISOString() }).eq('booking_id', bookingId);
   if (attemptError) throw new Error(attemptError.message);
   try {
+    const { data: guard, error: guardError } = await admin.rpc('claim_rental_settlement', { p_booking_id: bookingId, p_step: 'refund' });
+    if (guardError) throw new Error(guardError.message);
+    const payment = await stripe.paymentIntents.retrieve(guard.payment_intent_id, { expand: ['latest_charge'] });
+    const charge = typeof payment.latest_charge === 'string' ? null : payment.latest_charge;
+    if (payment.livemode || payment.id !== guard.payment_intent_id || payment.currency !== 'usd'
+      || payment.status !== 'succeeded' || payment.amount_received !== Math.round(Number(guard.payment_amount) * 100)
+      || !charge || charge.disputed) throw new Error('Stripe payment does not match the verified booking payment');
     await settleDepositAuthorization(admin,stripe,bookingId);
     await settleRental(bookingId, {
       async claim(step) {
@@ -155,6 +162,7 @@ async function processBooking(admin: ReturnType<typeof createClient>, stripe: St
         return { ...refund, payment_intent: typeof refund.payment_intent === 'string' ? refund.payment_intent : refund.payment_intent?.id ?? null };
       },
       async createRefund(intent, amount, idempotencyKey) {
+        await requireSettlementEligibility(admin, bookingId);
         const refund = await stripe.refunds.create({
           payment_intent: intent, amount, metadata: { booking_id: bookingId, purpose: 'deposit' },
         }, { idempotencyKey });
@@ -170,6 +178,7 @@ async function processBooking(admin: ReturnType<typeof createClient>, stripe: St
           source_transaction: typeof transfer.source_transaction === 'string' ? transfer.source_transaction : transfer.source_transaction?.id ?? null };
       },
       async createTransfer(destination, charge, amount, idempotencyKey) {
+        await requireSettlementEligibility(admin, bookingId);
         const transfer = await stripe.transfers.create({
           amount, currency: 'usd', destination, source_transaction: charge,
           metadata: { booking_id: bookingId, purpose: 'owner_earnings' },
@@ -188,67 +197,111 @@ async function processBooking(admin: ReturnType<typeof createClient>, stripe: St
   }
 }
 
+async function requireSettlementEligibility(admin: ReturnType<typeof createClient>, bookingId: string) {
+  const { data, error } = await admin.rpc('booking_financial_settlement_eligible', { p_booking_id: bookingId });
+  if (error) throw new Error(error.message);
+  if (data !== true) throw new Error('Settlement blocked by an unresolved dispute or incomplete return.');
+}
+
 async function settleDepositAuthorization(admin: ReturnType<typeof createClient>, stripe: Stripe, bookingId: string) {
+  await requireSettlementEligibility(admin, bookingId);
   const { data: booking, error: bookingError } = await admin.from('bookings')
     .select('id,renter_id,deposit,deposit_collection_model,status,return_confirmed_at').eq('id',bookingId).single();
   if (bookingError) throw new Error(bookingError.message);
   if (booking.deposit_collection_model !== 'authorization' || Number(booking.deposit) <= 0) return;
   if (booking.status !== 'completed' || !booking.return_confirmed_at) throw new Error('Owner-confirmed return is required before settling a deposit hold.');
   const { data: claim, error: claimError } = await admin.from('booking_deposit_claims')
-    .select('id,status,approved_amount,authorization_id').eq('booking_id',bookingId).maybeSingle();
+    .select('id,status,approved_amount,authorization_id,updated_at').eq('booking_id',bookingId).maybeSingle();
   if (claimError) throw new Error(claimError.message);
-  if (claim && ['submitted','approved','capturing'].includes(claim.status)) {
-    if (claim.status !== 'approved') return;
-  }
+  if (claim && ['submitted','failed'].includes(claim.status))
+    throw new Error('Deposit claim requires resolution before settlement.');
   const { data: authorization, error: authorizationError } = await admin.from('booking_deposit_authorizations')
     .select('id,attempt,status,authorized_amount,captured_amount,stripe_payment_intent_id,capture_before')
     .eq('booking_id',bookingId).order('attempt',{ascending:false}).limit(1).maybeSingle();
   if (authorizationError) throw new Error(authorizationError.message);
   if (!authorization) throw new Error('Deposit authorization record is missing.');
-  if (authorization.status === 'captured' || authorization.status === 'released' || authorization.status === 'superseded') return;
+  const { data: older, error: olderError } = await admin.from('booking_deposit_authorizations')
+    .select('id').eq('booking_id',bookingId).lt('attempt',authorization.attempt)
+    .eq('status','authorized').gt('capture_before',new Date().toISOString()).limit(1);
+  if (olderError) throw new Error(olderError.message);
+  if (older?.length) throw new Error('Earlier deposit holds require support reconciliation before settlement.');
+  if (authorization.status === 'captured' && claim?.status === 'captured') return;
+  if (['released','superseded'].includes(authorization.status) && (!claim || claim.status === 'rejected')) return;
   if (!authorization.stripe_payment_intent_id) {
     if (claim?.status === 'approved') {
-      await admin.from('booking_deposit_claims').update({ status:'payment_required',failure_reason:'No live authorization is available; a separate renter payment is required.' }).eq('id',claim.id);
-      return;
+      const { error } = await admin.from('booking_deposit_claims').update({ status:'payment_required',failure_reason:'No live authorization is available; a separate renter payment is required.' }).eq('id',claim.id).eq('status','approved');
+      if (error) throw new Error(error.message);
+      throw new Error('Deposit claim requires a separate renter payment.');
     }
     throw new Error('No deposit PaymentIntent exists to release.');
   }
   const intent = await stripe.paymentIntents.retrieve(authorization.stripe_payment_intent_id);
-  if (intent.livemode || intent.currency !== 'usd' || intent.capture_method !== 'manual') {
+  if (intent.livemode || intent.currency !== 'usd' || intent.capture_method !== 'manual'
+    || intent.amount !== Math.round(Number(authorization.authorized_amount)*100)
+    || intent.metadata?.booking_id !== bookingId || intent.metadata?.deposit_authorization_id !== authorization.id) {
     throw new Error('Deposit PaymentIntent does not match the test-mode authorization record.');
   }
-  if (claim?.status === 'approved') {
+  if (claim && ['approved','payment_required','capturing'].includes(claim.status)) {
     const amount = Math.round(Number(claim.approved_amount ?? 0)*100);
     const authorized = Math.round(Number(authorization.authorized_amount)*100);
     if (!Number.isSafeInteger(amount) || amount<=0 || amount>authorized) throw new Error('Approved claim amount exceeds the deposit authorization.');
-    if (authorization.status !== 'authorized' || intent.status !== 'requires_capture'
+    if (claim.authorization_id !== authorization.id) throw new Error('Claim authorization does not match; contact support.');
+    if (claim.status === 'capturing' && intent.status !== 'succeeded'
+      && Date.parse(claim.updated_at) < Date.now() - 20 * 3600000)
+      throw new Error('Unknown deposit capture outcome requires support reconciliation.');
+    if (intent.status !== 'succeeded' && (authorization.status !== 'authorized' || intent.status !== 'requires_capture'
       || !authorization.capture_before || Date.parse(authorization.capture_before)<=Date.now()
-      || intent.amount_capturable<amount) {
-      await admin.from('booking_deposit_claims').update({ status:'payment_required',failure_reason:'The deposit authorization expired before the approved deduction could be captured. A separate renter payment is required.' }).eq('id',claim.id);
-      await admin.rpc('create_notification',{
+      || intent.amount_capturable<amount)) {
+      if (claim.status !== 'approved') throw new Error('Deposit capture outcome requires support reconciliation.');
+      const expired = intent.status === 'canceled' || (intent.status === 'requires_capture'
+        && !!authorization.capture_before && Date.parse(authorization.capture_before)<=Date.now());
+      if (!expired) throw new Error('Deposit authorization outcome is uncertain; contact support for reconciliation.');
+      const { data: paymentRequired, error: paymentError } = await admin.from('booking_deposit_claims')
+        .update({ status:'payment_required',failure_reason:'The deposit authorization is no longer available. A separate renter payment is required.' })
+        .eq('id',claim.id).eq('status','approved').select('id').maybeSingle();
+      if (paymentError) throw new Error(paymentError.message);
+      if (!paymentRequired) throw new Error('Deposit claim changed; retry settlement.');
+      const { error: notificationError } = await admin.rpc('create_notification',{
         p_user_id:booking.renter_id,
         p_event_key:`deposit-claim-payment-required:${claim.id}`,
         p_category:'payments',p_title:'Deposit authorization expired',
         p_body:'An approved damage deduction could not use the expired hold. Please arrange the separately authorized claim payment.',
         p_destination:`/confirmation/${bookingId}`,
       });
-      return;
+      if (notificationError) throw new Error(notificationError.message);
+      throw new Error('Deposit claim requires a separate renter payment.');
     }
-    const { error: claimStateError } = await admin.from('booking_deposit_claims')
-      .update({ status:'capturing',failure_reason:null }).eq('id',claim.id).eq('status','approved');
-    if (claimStateError) throw new Error(claimStateError.message);
-    const captured = await stripe.paymentIntents.capture(intent.id,{amount_to_capture:amount},{idempotencyKey:`deposit-claim:${claim.id}:v1`});
+    if (['approved','payment_required'].includes(claim.status)) {
+      const { data: claimed, error: claimStateError } = await admin.from('booking_deposit_claims')
+        .update({ status:'capturing',failure_reason:null }).eq('id',claim.id).eq('status',claim.status).select('id').maybeSingle();
+      if (claimStateError || !claimed) throw new Error(claimStateError?.message ?? 'Claim changed; retry settlement.');
+    }
+    await requireSettlementEligibility(admin, bookingId);
+    const captured = intent.status === 'succeeded' ? intent
+      : await stripe.paymentIntents.capture(intent.id,{amount_to_capture:amount},{idempotencyKey:`deposit-claim:${claim.id}:v1`});
     if (captured.status!=='succeeded' || captured.amount_received!==amount || captured.currency!=='usd' || captured.livemode) {
       throw new Error('Stripe did not confirm the approved deposit deduction capture.');
     }
-    const { error: authUpdateError } = await admin.from('booking_deposit_authorizations').update({
+    const { data: authUpdated, error: authUpdateError } = await admin.from('booking_deposit_authorizations').update({
       status:'captured',captured_amount:amount/100,captured_at:new Date().toISOString(),updated_at:new Date().toISOString(),
-    }).eq('id',authorization.id).eq('status','authorized');
+    }).eq('id',authorization.id).eq('status','authorized').select('id').maybeSingle();
     if (authUpdateError) throw new Error(authUpdateError.message);
-    const { error: claimUpdateError } = await admin.from('booking_deposit_claims').update({
+    if (!authUpdated) {
+      const { data: current, error } = await admin.from('booking_deposit_authorizations')
+        .select('status,captured_amount').eq('id',authorization.id).single();
+      if (error || current?.status !== 'captured' || Math.round(Number(current.captured_amount)*100) !== amount)
+        throw new Error(error?.message ?? 'Deposit capture receipt requires support reconciliation.');
+    }
+    const { data: claimUpdated, error: claimUpdateError } = await admin.from('booking_deposit_claims').update({
       status:'captured',captured_at:new Date().toISOString(),failure_reason:null,
-    }).eq('id',claim.id).eq('status','approved');
+    }).eq('id',claim.id).eq('status','capturing').select('id').maybeSingle();
     if (claimUpdateError) throw new Error(claimUpdateError.message);
+    if (!claimUpdated) {
+      const { data: current, error } = await admin.from('booking_deposit_claims')
+        .select('status,approved_amount').eq('id',claim.id).single();
+      if (error || current?.status !== 'captured' || Math.round(Number(current.approved_amount)*100) !== amount)
+        throw new Error(error?.message ?? 'Claim capture receipt requires support reconciliation.');
+    }
     const { error: eventError } = await admin.from('booking_deposit_authorization_events').insert({
       authorization_id:authorization.id,event_type:'deposit_claim_capture',status:'captured',amount:amount/100,
       operation_key:`deposit-claim:${claim.id}:v1`,detail:{claim_id:claim.id,amount_to_capture:amount/100},
@@ -256,13 +309,28 @@ async function settleDepositAuthorization(admin: ReturnType<typeof createClient>
     if (eventError && eventError.code!=='23505') throw new Error(eventError.message);
     return;
   }
-  if (intent.status === 'requires_capture' && authorization.status === 'authorized') {
-    const released = await stripe.paymentIntents.cancel(intent.id,{}, {idempotencyKey:`deposit-release:${bookingId}:${authorization.attempt}`});
+  if ((intent.status === 'requires_capture' && ['authorized','releasing'].includes(authorization.status))
+    || (intent.status === 'canceled' && authorization.status === 'releasing')) {
+    if (authorization.status === 'authorized') {
+      const { data: claimed, error } = await admin.from('booking_deposit_authorizations')
+        .update({ status:'releasing', updated_at:new Date().toISOString() })
+        .eq('id',authorization.id).eq('status','authorized').select('id').maybeSingle();
+      if (error || !claimed) throw new Error(error?.message ?? 'Deposit hold changed; retry settlement.');
+    }
+    await requireSettlementEligibility(admin, bookingId);
+    const released = intent.status === 'canceled' ? intent
+      : await stripe.paymentIntents.cancel(intent.id,{}, {idempotencyKey:`deposit-release:${bookingId}:${authorization.attempt}`});
     if (released.status!=='canceled' || released.livemode) throw new Error('Stripe did not confirm release of the deposit hold.');
-    const { error: updateError } = await admin.from('booking_deposit_authorizations').update({
+    const { data: releaseUpdated, error: updateError } = await admin.from('booking_deposit_authorizations').update({
       status:'released',released_at:new Date().toISOString(),updated_at:new Date().toISOString(),
-    }).eq('id',authorization.id).eq('status','authorized');
+    }).eq('id',authorization.id).eq('status','releasing').select('id').maybeSingle();
     if (updateError) throw new Error(updateError.message);
+    if (!releaseUpdated) {
+      const { data: current, error } = await admin.from('booking_deposit_authorizations')
+        .select('status').eq('id',authorization.id).single();
+      if (error || current?.status !== 'released')
+        throw new Error(error?.message ?? 'Deposit release receipt requires support reconciliation.');
+    }
     const { error: eventError } = await admin.from('booking_deposit_authorization_events').insert({
       authorization_id:authorization.id,event_type:'deposit_hold_released',status:'released',amount:0,
       operation_key:`deposit-release:${bookingId}:${authorization.attempt}`,detail:{stripe_payment_intent_id:intent.id},
@@ -276,7 +344,7 @@ async function settleDepositAuthorization(admin: ReturnType<typeof createClient>
       p_destination:`/confirmation/${bookingId}`,
     });
     if (notificationError) throw new Error(notificationError.message);
-  } else if (['requires_capture','processing'].includes(intent.status)) {
-    throw new Error('Deposit PaymentIntent is still processing; release will be retried.');
+  } else {
+    throw new Error('Deposit hold outcome requires reconciliation before settlement.');
   }
 }

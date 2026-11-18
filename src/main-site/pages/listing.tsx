@@ -233,7 +233,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
   const serviceFee = Math.round(rental * feePct * 100) / 100;
   const insuranceAmount = insuranceAmountCents(listing.declaredValue, days, quantity) / 100;
   const tax = bookingTaxCents(rental, serviceFee) / 100;
-  const paymentEstimate = rental + serviceFee + insuranceAmount;
+  const paymentEstimate = rental + serviceFee;
   const total = paymentEstimate + tax;
   const firstAllowedDate = addDaysIso(today, sameDayBookings.enabled ? 0 : 1);
   const minimumBookingDate = listing.availabilityStart && listing.availabilityStart > firstAllowedDate
@@ -364,13 +364,13 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
         </> : <PriceRow label={`$${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'} × ${quantity} ${quantity === 1 ? 'unit' : 'units'}`} value={grossRental} />}
         <PriceRow label="Service fee" value={serviceFee} />
         {isOwner
-          ? <PriceRow label="Insurance" value={insuranceAmount} />
+          ? <PriceRow label="Optional insurance" value={insuranceAmount} />
           : <InsuranceAmount days={days} replacementValue={listing.declaredValue} quantity={quantity} />}
         <PriceRow label="Tax (7%)" value={tax} />
         <div className="pt-3 border-t border-app flex justify-between gap-3 font-bold text-main">
-          <span>Rental and fees</span><span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount)}</span>
+          <span>Rental and fees</span><span className="tnum">${formatMoney(rental + serviceFee)}</span>
         </div>
-        <p className="text-xs text-sec leading-relaxed">Tax is 7% of discounted rental and service fees only. Insurance is calculated from the owner-declared item value and included in the total.</p>
+        <p className="text-xs text-sec leading-relaxed">Tax is 7% of discounted rental and service fees only. Optional insurance is available at checkout and is not included unless selected.</p>
       </div>}
       <div className="listing-deposit-box mt-4 flex gap-3">
         <ShieldCheck size={26} className="shrink-0 text-accent mt-0.5" aria-hidden="true" />
@@ -386,7 +386,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       {datesValid && <div className="mt-4 flex justify-between gap-3 text-sm font-bold text-main">
         <span>Estimated total</span><span className="tnum">${formatMoney(total)}</span>
       </div>}
-      <p className="text-xs text-sec mt-2">Includes rental, service fee, insurance and estimated tax only. Review the backend-confirmed total before paying.</p>
+      <p className="text-xs text-sec mt-2">Includes rental, service fee and estimated tax only. Optional insurance can be added at checkout; review the backend-confirmed total before paying.</p>
       {!isOwner && <><Button fullWidth size="lg" className="mt-5" disabled={!canBook} onClick={goToCheckout}>
         {listing.instantBooking ? 'Book instantly' : 'Request to book'}
       </Button>

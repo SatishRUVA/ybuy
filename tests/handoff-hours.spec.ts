@@ -21,10 +21,11 @@ for (const kind of ['pickup', 'return'] as const) {
       payment_first: true, slot: null, pickup_slot: null, return_slot: null,
       pickup_windows: ['morning', 'evening'], return_windows: ['morning', 'evening'],
       return_rules: [], return_note: '', time_zone: 'America/Chicago', server_now: serverNow,
+      workflow_version: 1,
       can_authorize: false, handoff_ready: false, return_handoff_ready: false,
       deposit_ready: true, consented: false, delivery_mode: 'pickup',
     } }));
-    await page.route('**/rest/v1/rpc/propose_booking_handoff_slot_at_hour', route => {
+    await page.route('**/rest/v1/rpc/propose_booking_handoff_replacement', route => {
       mutation = route.request().postDataJSON();
       return route.fulfill({ json: null });
     });
@@ -59,7 +60,8 @@ for (const kind of ['pickup', 'return'] as const) {
     await page.screenshot({ path: testInfo.outputPath(`hourly-${kind}.png`), fullPage: true, animations: 'disabled' });
     await page.getByRole('button', { name: 'Send proposal', exact: true }).click();
     await expect.poll(() => mutation).toEqual({
-      p_booking_id: bookingId, p_kind: kind, p_slot_window: 'morning', p_hour: 11, p_note: 'Please include the case.',
+      p_booking_id: bookingId, p_kind: kind, p_slot_window: 'morning', p_hour: 11,
+      p_note: 'Please include the case.', p_expected_version: 1,
     });
     serverNow = '2026-11-04T17:00:00Z';
     await page.clock.runFor(15001);

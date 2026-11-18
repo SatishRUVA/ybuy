@@ -15,6 +15,7 @@ export interface ListingAuctionPreferences {
 }
 
 export const EMPTY_AUCTION_PREFERENCES: ListingAuctionPreferences = { enabled: false, start_date: null, end_date: null };
+export const MAX_AUCTION_DAILY_BID = 100000;
 export const BIDDING_RULES_TEXT = 'Overlapping bids compete by total rental value; non-overlapping periods can both win. Select eligible bidders before bidding closes or bidding expires. Selected renters have the configured payment window. Bids in the final 2 minutes can extend closing by up to 10 minutes.';
 
 export function twoHoursBeforePickup(date: string): string {
@@ -57,8 +58,8 @@ export function earliestAuctionPickupDate(): string {
 export function listingAuctionError(value: ListingAuctionPreferences, start: string, end: string): string | null {
   if (!value.enabled) return null;
   if (value.opening_daily_rate !== undefined && value.opening_daily_rate !== null
-    && (!Number.isFinite(value.opening_daily_rate) || value.opening_daily_rate < 0.01 || value.opening_daily_rate > 100000)) {
-    return 'Enter a starting bid from $0.01 to $100,000 per day.';
+    && (!Number.isFinite(value.opening_daily_rate) || value.opening_daily_rate < 0.01 || value.opening_daily_rate > MAX_AUCTION_DAILY_BID)) {
+    return `Enter a starting bid from $0.01 to $${MAX_AUCTION_DAILY_BID.toLocaleString('en-US')} per day.`;
   }
   if (!value.start_date || !value.end_date || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end))
     || !Number.isFinite(Date.parse(value.start_date)) || !Number.isFinite(Date.parse(value.end_date))

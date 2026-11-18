@@ -2,12 +2,14 @@ import Stripe from 'npm:stripe@17';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { trustedOrigin, withCors } from '../_shared/cors.ts';
 import { requireTestSettlement } from '../settle-rental/settlement.ts';
+import { requirePendingAuthorizationReceipt } from './receipt.ts';
 
 const secret = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
 const stripe = new Stripe(secret);
 
 Deno.serve(withCors(async request => {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  let recovery: { bookingId: string; renterId: string } | undefined;
   try {
     requireTestSettlement(Deno.env.get('STRIPE_SECRET_KEY') ?? '', Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SETTLEMENT_TEST_MODE'));
     const authorization = request.headers.get('Authorization');
@@ -23,6 +25,7 @@ Deno.serve(withCors(async request => {
       return json({ error: 'A valid booking is required.' }, 400);
     }
     const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    recovery = { bookingId: body.bookingId, renterId: user.id };
     const { error: precheckinError } = await admin.rpc('require_booking_precheckin', {
       p_booking_id: body.bookingId, p_renter_id: user.id,
     });
@@ -30,7 +33,7 @@ Deno.serve(withCors(async request => {
     let prepared = await admin.rpc('prepare_booking_deposit_authorization', {
       p_booking_id: body.bookingId, p_renter_id: user.id,
     });
-    if (prepared.error) return json({ error: prepared.error.message }, 409);
+    if (prepared.error) throw new Error(prepared.error.message);
     let row = prepared.data as Record<string, unknown>;
     if (row.ready === true) return json({ authorized: true, capture_before: row.capture_before });
     if (typeof row.id !== 'string' || typeof row.idempotency_key !== 'string'
@@ -40,33 +43,25 @@ Deno.serve(withCors(async request => {
     }
     if (typeof row.authorization_checkout_session_id === 'string') {
       const existing = await stripe.checkout.sessions.retrieve(row.authorization_checkout_session_id);
+      if (existing.livemode || existing.metadata?.booking_id !== body.bookingId
+        || existing.metadata?.deposit_authorization_id !== row.id) throw new Error('Authorization session does not match the booking.');
       if (existing.status === 'open' && existing.url) return json({ url: existing.url });
       if (existing.status === 'complete') {
-        const paymentIntentId = typeof existing.payment_intent === 'string' ? existing.payment_intent : null;
-        if (!paymentIntentId) throw new Error('Completed authorization session has no PaymentIntent.');
-        const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
-        if (intent.status === 'requires_capture' || intent.status === 'processing') return json({ pending: true });
-        const failedStatus = intent.status === 'requires_action' ? 'requires_action'
-          : intent.status === 'canceled' ? 'released' : 'failed';
-        const { error: recoveryError } = await admin.from('booking_deposit_authorizations')
-          .update({ authorization_checkout_session_id: null, status: failedStatus,
-            failure_reason: intent.last_payment_error?.message ?? 'Authorization did not complete.' })
-          .eq('id', row.id).eq('authorization_checkout_session_id', existing.id);
-        if (recoveryError) throw new Error(recoveryError.message);
-        prepared = await admin.rpc('prepare_booking_deposit_authorization', {
+        const intentId = typeof existing.payment_intent === 'string'
+          ? existing.payment_intent : existing.payment_intent?.id;
+        if (!intentId) throw new Error('Completed authorization has no provider receipt; contact support.');
+        const intent = await stripe.paymentIntents.retrieve(intentId);
+        requirePendingAuthorizationReceipt(intent, body.bookingId, row.id, row.authorized_amount);
+        const { error } = await admin.rpc('flag_deposit_recovery_support', {
           p_booking_id: body.bookingId, p_renter_id: user.id,
         });
-        if (prepared.error) throw new Error(prepared.error.message);
-        row = prepared.data as Record<string, unknown>;
-        if (typeof row.id !== 'string' || typeof row.idempotency_key !== 'string'
-          || typeof row.stripe_customer_id !== 'string' || typeof row.stripe_payment_method_id !== 'string'
-          || typeof row.authorized_amount !== 'number' || typeof row.booking_id !== 'string') {
-          throw new Error('Retry deposit authorization attempt is incomplete.');
-        }
+        if (error) throw new Error(`Could not flag pending recovery for support: ${error.message}`);
+        return json({ pending: true });
       }
+      if (existing.status !== 'expired') throw new Error('Authorization session outcome is uncertain; contact support.');
       const { error: clearError } = await admin.from('booking_deposit_authorizations')
-        .update({ authorization_checkout_session_id: null, status: 'failed' })
-        .eq('id', row.id).eq('authorization_checkout_session_id', existing.id);
+        .update({ status: 'failed', failure_reason: 'Authorization session expired.' })
+        .eq('id', row.id).eq('authorization_checkout_session_id', existing.id).in('status',['scheduled','authorizing']);
       if (clearError) throw new Error(clearError.message);
       prepared = await admin.rpc('prepare_booking_deposit_authorization', {
         p_booking_id: body.bookingId, p_renter_id: user.id,
@@ -104,12 +99,18 @@ Deno.serve(withCors(async request => {
       p_authorization_id: row.id, p_session_id: session.id,
     });
     if (bound.error) {
-      if (session.status === 'open') await stripe.checkout.sessions.expire(session.id);
-      throw new Error(bound.error.message);
+      throw new Error(`Authorization session requires reconciliation; contact support: ${bound.error.message}`);
     }
     return json({ url: session.url });
   } catch (error) {
     console.error('Deposit authorization session failed', error instanceof Error ? error.message : 'Unknown failure');
+    if (recovery) {
+      const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const { error: supportError } = await admin.rpc('flag_deposit_recovery_support', {
+        p_booking_id: recovery.bookingId, p_renter_id: recovery.renterId,
+      });
+      if (supportError) console.error('Could not flag deposit recovery for support', supportError.message);
+    }
     return json({ error: error instanceof Error ? error.message : 'Could not start deposit authorization.' }, 500);
   }
 }));

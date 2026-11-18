@@ -85,18 +85,22 @@ export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel
   }
 
   const needsSetup = authorization?.status === 'setup_required';
-  const needsAuthorization = authorization && ['scheduled','authorizing','requires_action','failed','expired'].includes(authorization.status);
+  const protectionExpired = authorization?.status === 'authorized' && authorization.capture_before !== null
+    && Date.parse(authorization.capture_before) <= Date.now();
+  const recoveryRequired = precheckin?.deposit_recovery_required || protectionExpired;
+  const needsAuthorization = authorization && (['scheduled','authorizing','requires_action','failed','expired'].includes(authorization.status)
+    || recoveryRequired);
   return <Surface className="space-y-3 p-4" aria-busy={loading}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h3 className="font-semibold text-main">Security deposit</h3>
         <p className="mt-1 text-sm text-sec">${Number(authorization?.is_claim_authorization ? claim?.approved_amount ?? claim?.requested_amount ?? authorization.authorized_amount : deposit).toFixed(2)} temporary card authorization, not a booking charge.</p>
       </div>
-      {authorization && <span className="text-sm font-semibold text-main">{STATUS_LABEL[authorization.status]}</span>}
+      {authorization && <span className="text-sm font-semibold text-main">{recoveryRequired ? 'Deposit protection needs renewal' : STATUS_LABEL[authorization.status]}</span>}
     </div>
     {loading && <p role="status" className="text-xs text-sec">Checking deposit authorization…</p>}
     {!loading && !authorization && <p className="text-xs text-warning">Authorization record is not available. Contact support before pickup.</p>}
-    {authorization?.status === 'authorized' && <p role="status" className="text-sm text-success">{!paymentFirst || precheckin?.deposit_ready
+    {authorization?.status === 'authorized' && !recoveryRequired && <p role="status" className="text-sm text-success">{!paymentFirst || precheckin?.deposit_ready
       ? 'The security hold is ready.' : 'The recorded hold does not yet meet check-in requirements. Refresh its status before handoff.'} The hold expires {authorization.capture_before ? new Date(authorization.capture_before).toLocaleString() : 'at the card network deadline'}.</p>}
     {authorization?.status === 'released' && <p role="status" className="text-sm text-success">The uncaptured deposit hold has been released.</p>}
     {authorization?.status === 'captured' && <p role="status" className="text-sm text-sec">Captured amount: ${Number(authorization.captured_amount).toFixed(2)}.</p>}
@@ -115,10 +119,16 @@ export function DepositAuthorizationStatus({ bookingId, deposit, collectionModel
       <input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1" />
       I agree to the separate temporary security hold and any separately approved damage claim.
     </label>}
-    {paymentFirst && !precheckin?.can_authorize && <p className="text-sm text-sec">Complete rental payment and agree a slot in check-in. Deposit setup opens 24 hours before that time.</p>}
+    {recoveryRequired && <Alert tone="warning" title={isOwner ? 'Waiting for renter to restore deposit protection' : 'Renew your security deposit authorization'}>
+      Restore the required payment protection. Your booking, inspection evidence, and approvals are preserved; pickup and inspection do not need to be repeated.
+      {paymentFirst && !precheckin?.can_authorize && ' Contact YBuy Support to recover deposit protection.'}
+    </Alert>}
+    {precheckin?.deposit_recovery_pending && <p role="status" className="text-sm text-sec">Replacement authorization is processing. Do not start another authorization; its outcome must be confirmed first.</p>}
+    {paymentFirst && !precheckin?.can_authorize && !recoveryRequired && (needsSetup || needsAuthorization)
+      && <p className="text-sm text-sec">Deposit setup is not currently available. Before pickup starts, setup opens 24 hours before the approved time. Review scheduling or contact support.</p>}
     {!isOwner && needsSetup && (!paymentFirst || precheckin?.can_authorize) && <Button size="sm" disabled={busy || (paymentFirst && !precheckin?.consented && !consent)} loading={busy} onClick={() => void startSetup()}>Set up payment method</Button>}
     {!isOwner && needsAuthorization && !needsSetup && (!paymentFirst || precheckin?.can_authorize) && <Button size="sm" disabled={busy || (paymentFirst && !precheckin?.consented && !consent)} loading={busy} onClick={() => void authorize()}>
-      {authorization?.status === 'authorizing' || authorization?.status === 'requires_action' ? 'Continue secure authorization' : 'Authorize deposit'}
+      {authorization?.status === 'authorizing' || authorization?.status === 'requires_action' ? 'Continue secure authorization' : recoveryRequired ? 'Renew security deposit' : 'Authorize deposit'}
     </Button>}
     {isOwner && authorization?.status !== 'authorized' && authorization?.status !== 'released'
       && authorization?.status !== 'captured' && <p className="text-xs text-warning">Do not hand off the item until the deposit authorization is confirmed.</p>}

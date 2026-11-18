@@ -22,11 +22,9 @@ export function adminEnabled(request) {
 }
 
 export function adminConfigured() {
-  const { YBUY_ADMIN_TOTP_SECRET: admin, YBUY_SUPER_ADMIN_TOTP_SECRET: superAdmin,
-    YBUY_ADMIN_ACCESS_SESSION_SECRET: session } = process.env;
-  return /^[A-Z2-7]{32,}$/i.test(admin ?? '') && /^[A-Z2-7]{32,}$/i.test(superAdmin ?? '')
-    && admin.toUpperCase() !== superAdmin.toUpperCase()
-    && admin !== process.env.YBUY_TOTP_SECRET && superAdmin !== process.env.YBUY_TOTP_SECRET
+  const { YBUY_ADMIN_TOTP_SECRET: admin, YBUY_ADMIN_ACCESS_SESSION_SECRET: session } = process.env;
+  return /^[A-Z2-7]{32,}$/i.test(admin ?? '')
+    && admin !== process.env.YBUY_TOTP_SECRET
     && typeof session === 'string' && session.length >= 32
     && session !== process.env.YBUY_ACCESS_SESSION_SECRET
     && Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) && process.env.VITE_SUPABASE_URL === TEST_BACKEND;

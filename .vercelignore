@@ -30,6 +30,11 @@ graphify-out
 !index.html
 README.md
 .mcp.json
+.cursor
+.vscode
+.idea
+.playwright-mcp
+logs
 .21st
 .tmp-auction
 .tmp-auth

@@ -162,12 +162,16 @@ for (const surface of ['main', 'preview'] as const) {
         renter: { id: userId, full_name: 'Notification Tester', avatar_url: null },
         owner: { id: '10000000-0000-4000-8000-000000000002', full_name: 'Camera Owner', avatar_url: null },
       } }));
-      await page.route('**/rpc/get_booking_handoff', route => route.fulfill({ json: {
+      await page.route('**/rpc/get_booking_handoff_workflow', route => route.fulfill({ json: {
         booking_id: id, booking_status: kind === 'check-in' ? 'confirmed' : 'active',
         start_date: '2026-11-02', end_date: '2026-11-05', is_owner: false,
         status: kind === 'check-in' ? 'pickup_ready' : 'rental_active',
         pickup_arrived_at: null, actual_pickup_at: null, return_initiated_at: null, actual_return_at: null,
         pickup: null, return: null, events: [], cases: [],
+        workflow: { version: 1, kind: kind === 'check-in' ? 'pickup' : 'return', stage: 'arrange',
+          next_actor: 'owner', action: null, allowed_actions: [], blockers: [], payment_ready: true,
+          deposit_ready: true, scheduling_ready: false, condition_status: 'pending',
+          physical_return_verified: false, financially_closed: false },
       } }));
       await page.route('**/rpc/get_booking_pickup', route => route.fulfill({ json: {
         address: '123 Test Street', city: 'Dallas', state: 'TX', postalCode: '75201',

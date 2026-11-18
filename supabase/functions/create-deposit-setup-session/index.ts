@@ -8,6 +8,7 @@ const stripe = new Stripe(stripeSecret);
 
 Deno.serve(withCors(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  let recovery: { bookingId: string; renterId: string } | undefined;
   try {
     requireTestSettlement(Deno.env.get('STRIPE_SECRET_KEY') ?? '', Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SETTLEMENT_TEST_MODE'));
     const authorization = req.headers.get('Authorization');
@@ -27,8 +28,9 @@ Deno.serve(withCors(async (req) => {
       .eq('id', body.bookingId).maybeSingle();
     if (bookingError) throw new Error(bookingError.message);
     if (!booking || booking.renter_id !== user.id) return json({ error: 'Booking not found.' }, 404);
+    recovery = { bookingId: booking.id, renterId: user.id };
     if (booking.deposit_collection_model !== 'authorization' || Number(booking.deposit) <= 0
-      || !booking.deposit_hold_consent_at || !['requested','pending_payment','confirmed'].includes(booking.status)) {
+      || !booking.deposit_hold_consent_at || !['requested','pending_payment','confirmed','active','return_pending'].includes(booking.status)) {
       return json({ error: 'This booking is not ready for deposit card setup.' }, 409);
     }
 
@@ -67,6 +69,7 @@ Deno.serve(withCors(async (req) => {
       if (saveCustomerError) throw new Error(saveCustomerError.message);
     }
 
+    let setupAttempt = authorizationRow.setup_attempt;
     if (authorizationRow.stripe_checkout_session_id) {
       const existing = await stripe.checkout.sessions.retrieve(authorizationRow.stripe_checkout_session_id);
       if (existing.status === 'open' && existing.url) return json({ url: existing.url });
@@ -77,6 +80,7 @@ Deno.serve(withCors(async (req) => {
           .update({ setup_attempt: authorizationRow.setup_attempt + 1, stripe_checkout_session_id: null })
           .eq('id', authorizationRow.id).eq('stripe_checkout_session_id', existing.id);
         if (retryError) throw new Error(retryError.message);
+        setupAttempt++;
       }
     }
     const setupSession = await stripe.checkout.sessions.create({
@@ -87,7 +91,7 @@ Deno.serve(withCors(async (req) => {
       metadata: { purpose: 'security_deposit_setup', booking_id: booking.id, renter_id: user.id },
       success_url: `${trustedOrigin(req)}/${booking.payment_first ? 'check-in' : 'confirmation'}/${booking.id}?deposit_setup=complete`,
       cancel_url: `${trustedOrigin(req)}/${booking.payment_first ? 'check-in' : 'confirmation'}/${booking.id}?deposit_setup=cancelled`,
-    }, { idempotencyKey: `deposit-setup:${booking.id}:${authorizationRow.setup_attempt}` });
+    }, { idempotencyKey: `deposit-setup:${booking.id}:${setupAttempt}` });
     if (setupSession.livemode || !setupSession.url) throw new Error('Stripe did not return a sandbox card-setup URL.');
     const { error: saveSessionError } = await admin.from('booking_deposit_authorizations')
       .update({ stripe_customer_id: customerId, stripe_checkout_session_id: setupSession.id })
@@ -96,6 +100,13 @@ Deno.serve(withCors(async (req) => {
     return json({ url: setupSession.url });
   } catch (error) {
     console.error('Deposit setup session failed', error instanceof Error ? error.message : 'Unknown failure');
+    if (recovery) {
+      const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const { error: supportError } = await admin.rpc('flag_deposit_recovery_support', {
+        p_booking_id: recovery.bookingId, p_renter_id: recovery.renterId,
+      });
+      if (supportError) console.error('Could not flag deposit recovery for support', supportError.message);
+    }
     return json({ error: error instanceof Error ? error.message : 'Could not start secure card setup.' }, 500);
   }
 }));

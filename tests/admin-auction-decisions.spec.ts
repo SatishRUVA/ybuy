@@ -74,24 +74,7 @@ window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type; window
       const { UsersSection } = await import('/src/admin/pages/resources.tsx');
       mountComponent(() => h(ThemeProvider, { fixedTheme: 'main' }, h(UsersSection)));
     });
-    await expect(page.getByText('2 missed bidding decisions', { exact: true })).toBeVisible();
     await expect(page.getByText('access active', { exact: true })).toBeVisible();
-    await page.getByRole('searchbox', { name: 'Name, email or Customer ID' }).fill('YB-0000000001');
-    await page.getByRole('button', { name: 'Bidding history', exact: true }).click();
-    const history = page.getByRole('dialog', { name: 'Bidding history: Test Owner' });
-    await expect(history).toContainText('Missed decisions do not automatically restrict an account');
-    await expect(history.getByText('Travel camera', { exact: true })).toBeVisible();
-    await expect.poll(() => filters.at(-1)).toEqual({ search: '', owner: 'owner-id', offset: 0 });
-    await history.getByRole('button', { name: 'Close', exact: true }).click();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.evaluate(async () => {
-      Object.assign(window, { __plainAdmin: true });
-      const { createElement: h, mountComponent } = await import('/tests/component-mount.tsx');
-      const { ThemeProvider } = await import('/src/theme-context.tsx');
-      const { UsersSection } = await import('/src/admin/pages/resources.tsx');
-      mountComponent(() => h(ThemeProvider, { fixedTheme: 'main' }, h(UsersSection)));
-    });
-    await expect(page.getByText('owner@example.test', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Bidding history', exact: true })).toHaveCount(0);
     await expect(page.getByText('2 missed bidding decisions', { exact: true })).toHaveCount(0);
   });

@@ -90,6 +90,7 @@ interface Scenario {
   pickupFails?: boolean;
   rejectAuctionPreferences?: boolean;
   auctionSupported?: boolean;
+  platformFeePct?: number;
   readyDraft?: boolean;
 }
 
@@ -145,10 +146,20 @@ async function createListingForReview(page: Page, scenario: Scenario = {}, captu
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await checkStep(5, 'Location');
   await expect(page.locator('#pickup-address')).toBeFocused();
-  await page.locator('test-place-autocomplete').click();
+  await page.getByLabel('Pickup address').fill('123 Test Street, Irving, TX 75039');
+  await page.getByRole('option', { name: /123 Test Street, Irving, TX 75039/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await checkStep(6, 'Review');
 }
+
+test('daily owner estimate uses the configured fee and shows only the amount', async ({ page }) => {
+  await createListingForReview(page, { platformFeePct: 0.2 });
+  await page.getByRole('list', { name: 'Listing progress' }).getByRole('button').nth(2).click();
+  const payout = page.getByLabel('Estimated net payable to you per day');
+  await expect(payout).toHaveText('$20.00');
+  await page.getByLabel('Daily price (USD)', { exact: true }).fill('10.01');
+  await expect(payout).toHaveText('$8.01');
+});
 
 async function setup(page: Page, scenario: Scenario = {}) {
   let aiAnalysisCount = 0;
@@ -204,35 +215,39 @@ async function setup(page: Page, scenario: Scenario = {}) {
         expect(body).toContain('"test-google-key"');
         return route.fulfill({ response, body });
       }
+      if (url.pathname === '/src/main-site/components/pickup-location.tsx') {
+        const response = await route.fetch();
+        const body = (await response.text()).replace(/const googleKey = [^\n]+;/, 'const googleKey = "test-google-key";');
+        expect(body).toContain('"test-google-key"');
+        return route.fulfill({ response, body });
+      }
       return route.continue();
     }
     if (url.hostname === 'maps.googleapis.com') return route.fulfill({
       contentType: 'application/javascript',
       body: `
-        class TestPlace extends HTMLElement {
-          connectedCallback() {
-            this.textContent = 'Select test pickup address';
-            this.addEventListener('click', () => {
-              const city = this.dataset.city ?? 'Irving';
-              const e = new Event('gmp-select');
-              e.placePrediction = { toPlace: () => ({
-                id: 'test-place', formattedAddress: '123 Test Street, ' + city + ', TX 75039, US',
-                location: { lat: () => 32.8, lng: () => -96.9 },
-                addressComponents: [
-                  { longText: '123', types: ['street_number'] },
-                  { longText: 'Test Street', types: ['route'] },
-                  { longText: city, types: ['locality'] },
-                  { shortText: 'TX', types: ['administrative_area_level_1'] },
-                  { longText: '75039', types: ['postal_code'] },
-                  { shortText: 'US', types: ['country'] }
-                ], fetchFields: async () => {}
-              }) };
-              this.dispatchEvent(e);
-            });
+        window.google.maps.importLibrary = async name => name === 'places' ? ({
+          AutocompleteSuggestion: {
+            fetchAutocompleteSuggestions: async ({ input }) => {
+              const city = input.includes('Austin') ? 'Austin' : 'Irving';
+              return { suggestions: [{ placePrediction: {
+                text: '123 Test Street, ' + city + ', TX 75039, US',
+                toPlace: () => ({
+                  id: 'test-place', formattedAddress: '123 Test Street, ' + city + ', TX 75039, US',
+                  location: { lat: () => 32.8, lng: () => -96.9 },
+                  addressComponents: [
+                    { longText: '123', types: ['street_number'] },
+                    { longText: 'Test Street', types: ['route'] },
+                    { longText: city, types: ['locality'] },
+                    { longText: 'Texas', shortText: 'TX', types: ['administrative_area_level_1'] },
+                    { longText: '75039', types: ['postal_code'] },
+                    { longText: 'United States', shortText: 'US', types: ['country'] }
+                  ], fetchFields: async () => {}
+                })
+              } }] };
+            }
           }
-        }
-        if (!customElements.get('test-place-autocomplete')) customElements.define('test-place-autocomplete', TestPlace);
-        window.google.maps.importLibrary = async () => ({ PlaceAutocompleteElement: TestPlace });
+        }) : ({ Geocoder: class { async geocode() { return { results: [] }; } } });
         window.google.maps.__ybuyGoogleMapsReady();
       `,
     });
@@ -244,7 +259,9 @@ async function setup(page: Page, scenario: Scenario = {}) {
     if (url.pathname === '/rest/v1/feature_flags') body = [{ key: 'bidding', enabled: scenario.auctionSupported === true }];
     if (url.pathname === '/rest/v1/rpc/get_listing_auction') body = scheduledAuction;
     if (url.pathname === '/rest/v1/rpc/get_listing_time_zone') body = null;
-    if (url.pathname === '/rest/v1/app_settings') body = { value: ['US'] };
+    if (url.pathname === '/rest/v1/app_settings') body = {
+      value: url.searchParams.get('key') === 'eq.platform_fee_pct' ? scenario.platformFeePct ?? 0.1 : ['US'],
+    };
     if (url.pathname === '/rest/v1/reference_countries') body = [{ code: 'US', name: 'United States' }];
     if (url.pathname === '/rest/v1/rpc/get_listing_flow_policy') body = {
       listing_duration_days: 30, max_quantity: 3, max_photos: 6, max_photo_bytes: 10485760,
@@ -712,13 +729,13 @@ test('pickup authorization errors never show an address and can be retried', asy
 });
 
 async function waitForItemStep(page: Page) {
-  await expect(page.getByRole('region', { name: 'Step 1: The item', exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('region', { name: 'Step 2: Details', exact: true })).toBeVisible({ timeout: 60_000 });
 }
 
 async function selectWizardOption(page: Page, label: string, option: string) {
-  await page.getByRole('combobox', { name: label, exact: true }).click();
-  await page.getByRole('option', { name: option, exact: true }).click();
-  await expect(page.getByRole('combobox', { name: label, exact: true })).toHaveText(option);
+  const control = page.getByRole('combobox', { name: label, exact: true });
+  await control.selectOption({ label: option });
+  await expect(control.locator('option:checked')).toHaveText(option);
 }
 
 async function openWizardStep(page: Page, label: string) {
@@ -729,22 +746,17 @@ async function openWizardStep(page: Page, label: string) {
 async function fillRequiredItemStep(page: Page) {
   await waitForItemStep(page);
   await selectWizardOption(page, 'Category', 'Electronics');
-  await page.getByLabel('Give it a useful title', { exact: true }).fill(listing.title);
-  await page.locator('summary').filter({ hasText: 'Brand, included items & optional details' }).click();
+  await page.getByLabel('Title', { exact: true }).fill(listing.title);
   await page.getByRole('radio', { name: 'Good', exact: true }).check();
-  await page.getByLabel('What should renters know?', { exact: false }).fill(listing.description);
+  await page.getByLabel('Description', { exact: true }).fill(listing.description);
 }
 
 async function fillListing(page: Page, review = true) {
   await page.goto(`${appUrl}/create-listing`, { waitUntil: 'domcontentloaded' });
-  await fillRequiredItemStep(page);
-  await page.getByLabel('Brand (optional)', { exact: true }).fill('Sony');
-  await page.getByLabel('Model (optional)', { exact: true }).fill('FX3');
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Step 1: Photos', exact: true })).toBeVisible({ timeout: 60_000 });
   const photoBase64 = await page.evaluate(() => {
     const canvas = document.createElement('canvas');
-    canvas.width = 1000;
-    canvas.height = 1000;
+    canvas.width = canvas.height = 1000;
     const context = canvas.getContext('2d')!;
     context.fillStyle = '#1b8d7a';
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -752,10 +764,12 @@ async function fillListing(page: Page, review = true) {
   });
   await page.locator('input[type="file"]').setInputFiles({ name: 'camera.png', mimeType: 'image/png', buffer: Buffer.from(photoBase64, 'base64') });
   await expect(page.getByRole('button', { name: 'Remove photo 1' })).toBeVisible();
-  await expect(page.getByText('Your declared value is used for security policies', { exact: false })).toHaveCount(0);
-  await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good terms make good rentals.', exact: true })).toBeVisible();
+  await fillRequiredItemStep(page);
+  await page.getByLabel('Brand (optional)', { exact: true }).fill('Sony');
+  await page.getByLabel('Model (optional)', { exact: true }).fill('FX3');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Set rental settings', exact: true })).toBeVisible();
   await expect(page.getByLabel('Daily price (USD)', { exact: true })).not.toHaveAttribute('placeholder');
   await expect(page.getByLabel('Daily price (USD)', { exact: true })).toBeEditable();
   await expect(page.getByLabel('Daily price (USD)', { exact: true })).not.toHaveAttribute('readonly');
@@ -766,19 +780,21 @@ async function fillListing(page: Page, review = true) {
   }
   await page.getByLabel('Estimated replacement value (USD)', { exact: true }).fill('1000');
   await page.getByLabel('Daily price (USD)', { exact: true }).fill('25');
-  await page.locator('test-place-autocomplete').click();
-  await expect(page.getByRole('button', { name: 'Confirm Location', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Set availability', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Step 5: Location', exact: true })).toBeVisible();
+  await page.getByLabel('Pickup address').fill('123 Test Street, Irving, TX 75039');
+  await page.getByRole('option', { name: /123 Test Street, Irving, TX 75039/ }).click();
   await expect(page.getByLabel('State', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('ZIP code', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Pricing period', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('region', { name: 'Pickup and delivery settings', exact: true }))
-    .toContainText('Your exact address stays private until an eligible booking is confirmed.');
+  await expect(page.getByRole('region', { name: 'Step 5: Location', exact: true }))
+    .toContainText('Your exact pickup address is shared only after booking confirmation.');
   await expect(page.getByText('Your security deposit is calculated automatically', { exact: false })).toHaveCount(0);
   if (review) {
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Choose availability', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Ready for its second job.', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Review and publish', exact: true })).toBeVisible();
   }
 }
 
@@ -847,15 +863,13 @@ test('pickup search uses the marketplace city and derives saved city from the se
   await setup(page);
   await fillListing(page, false);
   await expect(page.getByLabel('City', { exact: true })).toHaveCount(0);
-  await expect(page.locator('test-place-autocomplete')).toHaveAttribute('placeholder', 'Search pickup address in Irving, TX');
-  await expect(page.locator('test-place-autocomplete')).toHaveJSProperty('locationBias', { center: { lat: 32.8, lng: -96.9 }, radius: 25000 });
-  await page.locator('test-place-autocomplete').evaluate(element => { element.dataset.city = 'Austin'; });
-  await page.locator('test-place-autocomplete').click();
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.getByLabel('Pickup address')).toHaveAttribute('placeholder', 'Enter street address, city, ZIP code');
+  await page.getByLabel('Pickup address').fill('123 Test Street, Austin, TX 75039');
+  await page.getByRole('option', { name: /123 Test Street, Austin, TX 75039/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.locator('.owner-listing-review')).toContainText('Austin, TX');
   await expect(page.locator('.owner-listing-review')).not.toContainText('123 Test Street');
-  await expect(page.getByRole('region', { name: 'Step 5: Review', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Step 6: Review', exact: true })).toBeVisible();
 });
 
 for (const width of [375, 768, 1440]) {
@@ -1139,7 +1153,8 @@ test('unchanged photos are not reanalyzed and edited contact text is actually re
   await expect(page.getByRole('region', { name: 'Step 4: Availability', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Step 5: Location', exact: true })).toBeVisible();
-  await page.locator('test-place-autocomplete').click();
+  await page.getByLabel('Pickup address').fill('123 Test Street, Irving, TX 75039');
+  await page.getByRole('option', { name: /123 Test Street, Irving, TX 75039/ }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Step 6: Review', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Publish listing', exact: true }).click();

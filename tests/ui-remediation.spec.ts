@@ -473,6 +473,29 @@ test('listing redesign keeps a single cost-first booking panel and photo-first r
   await expect(page.locator('.listing-detail')).toHaveCSS('animation-name', 'none');
 });
 
+test('listing section links scroll to their targets on desktop and mobile', async ({ page }) => {
+  await setup(page);
+  await page.goto(`${appUrl}/listing/${listingId}`, { waitUntil: 'domcontentloaded' });
+  const sections = page.getByRole('navigation', { name: 'Listing sections' });
+  for (const [width, height] of [[1440, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    for (const [label, targetId] of [
+      ['Overview', 'listing-overview'],
+      ['Specifications', 'listing-specifications'],
+      ['Availability', 'listing-availability'],
+      ['Reviews', 'listing-reviews'],
+    ]) {
+      await sections.scrollIntoViewIfNeeded();
+      await sections.getByRole('link', { name: label, exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`#${targetId}$`));
+      const target = page.locator(`#${targetId}`);
+      await expect(target).toBeInViewport();
+      await expect.poll(() => target.evaluate(element => element.getBoundingClientRect().top)).toBeGreaterThanOrEqual(64);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+  }
+});
+
 test('listing dates recalculate default tax and preserve it through checkout navigation', async ({ page }) => {
   test.slow();
   await setup(page, {}, renterId);

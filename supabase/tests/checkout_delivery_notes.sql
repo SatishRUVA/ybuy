@@ -13,8 +13,10 @@ insert into public.listings(id,owner_id,category_id,title,description,price_per_
  ('94000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000001','93000000-0000-4000-8000-000000000001','Delivery test camera','Camera with its case and charger.',10,'draft',200,'good',true,15,current_date+1,current_date+20,true);
 insert into public.listing_images(listing_id,url,sort_order) values
  ('94000000-0000-4000-8000-000000000001','https://example.test/delivery-camera.png',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude) values
- ('94000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000001','Private pickup','Dallas','TX','75201','US',32.8,-96.8);
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method) values
+ ('94000000-0000-4000-8000-000000000001','https://example.test/delivery-camera.png','approved','Test fixture photo','system');
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,time_zone,latitude,longitude) values
+ ('94000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000001','Private pickup','123 Delivery Test Way','Dallas','TX','75201','US','America/Chicago',32.8,-96.8);
 update public.listings set status='published' where id='94000000-0000-4000-8000-000000000001';
 update public.feature_flags set enabled=false where key='insurance';
 update public.app_settings set value='0.1'::jsonb where key='platform_fee_pct';
@@ -52,6 +54,11 @@ update public.feature_flags set enabled=true where key='insurance';
 set local role authenticated;
 select lives_ok($$select public.create_booking_request('94000000-0000-4000-8000-000000000001',current_date+13,current_date+15,1,'delivery',null)$$,'Insurance and delivery are priced in the same insert');
 select is((select total from public.bookings where listing_id='94000000-0000-4000-8000-000000000001' and start_date=current_date+13),42.54::numeric,'Insurance, delivery and tax are included without leaking the previous promo');
+select lives_ok($$select public.create_booking_request('94000000-0000-4000-8000-000000000001',current_date+16,current_date+18,1,'pickup',null,false)$$,'Renter can decline optional insurance at booking creation');
+select is((select insurance_selected from public.bookings where listing_id='94000000-0000-4000-8000-000000000001' and start_date=current_date+16),false,'Insurance choice is persisted');
+select is((select insurance_amount from public.bookings where listing_id='94000000-0000-4000-8000-000000000001' and start_date=current_date+16),0::numeric,'Declined insurance is not charged');
+select is((select total from public.bookings where listing_id='94000000-0000-4000-8000-000000000001' and start_date=current_date+16),23.54::numeric,'Backend total excludes declined insurance');
+select is((select a.snapshot->>'insurance_selected' from public.rental_agreements a join public.bookings b on b.id=a.booking_id where b.listing_id='94000000-0000-4000-8000-000000000001' and b.start_date=current_date+16),'false','Agreement freezes the insurance choice');
 reset role;
 update public.listings set delivery_available=false,delivery_fee=0 where id='94000000-0000-4000-8000-000000000001';
 set local role authenticated;

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
   fetchBookingPrecheckin,
-  proposeBookingHandoffSlot,
-  respondToBookingHandoffSlot,
+  proposeBookingHandoffReplacement,
+  respondBookingHandoffReplacement,
   type BookingPrecheckin,
   type HandoffKind,
 } from '@/lib/booking-precheckin';
@@ -10,7 +10,6 @@ import type { UiBooking } from '@/lib/bookings';
 import { HANDOFF_WINDOWS, type HandoffWindow } from '@/lib/listing-item-details';
 import { availableHandoffHours, handoffHourLabel } from '@/lib/handoff-hours';
 import { Alert, Button, Surface } from '@/main-site/components/ui';
-import { DepositAuthorizationStatus } from '@/main-site/components/deposit-authorization-status';
 
 const SLOT_LABELS: Record<HandoffWindow, string> = { morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' };
 const NOTE_SUGGESTIONS = [
@@ -27,10 +26,16 @@ export function BookingPrecheckin({
   booking,
   kind = 'pickup',
   onReady,
+  onStateChange,
+  onChanged,
+  exchangeStarted = false,
 }: {
   booking: UiBooking;
   kind?: HandoffKind;
   onReady: (ready: boolean) => void;
+  onStateChange?: (state: BookingPrecheckin | null) => void;
+  onChanged?: () => void;
+  exchangeStarted?: boolean;
 }) {
   const [state, setState] = useState<BookingPrecheckin | null>(null);
   const [slotWindow, setSlotWindow] = useState<HandoffWindow>('morning');
@@ -39,6 +44,7 @@ export function BookingPrecheckin({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  const [changingTime, setChangingTime] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -46,26 +52,34 @@ export function BookingPrecheckin({
       try {
         const next = await fetchBookingPrecheckin(booking.id);
         if (!active) return;
+        setError(null);
         setState(next);
         onReady(kind === 'pickup' ? next.handoff_ready : next.return_handoff_ready);
+        onStateChange?.(next);
       } catch (reason) {
-        if (active) { setError(reason instanceof Error ? reason.message : 'Could not load handoff scheduling.'); onReady(false); }
+        if (active) {
+          setError(reason instanceof Error ? reason.message : 'Could not load handoff scheduling.');
+          onReady(false);
+          onStateChange?.(null);
+        }
       }
     }
     void refresh();
     const timer = window.setInterval(() => void refresh(), 15000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [booking.id, retry, onReady, kind]);
+  }, [booking.id, retry, onReady, onStateChange, kind]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
-    try { await action(); setRetry(value => value + 1); }
+    try { await action(); setChangingTime(false); setRetry(value => value + 1); onChanged?.(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update the handoff slot.'); }
     finally { setBusy(false); }
   }
 
   const slot = kind === 'pickup' ? state?.pickup_slot : state?.return_slot;
+  const proposal = kind === 'pickup' ? state?.pickup_proposal : state?.return_proposal;
+  const workflowVersion = state?.workflow_version;
   const windows = (kind === 'pickup' ? state?.pickup_windows : state?.return_windows) ?? [...HANDOFF_WINDOWS];
   const slotDate = kind === 'pickup' ? booking.startDate : booking.endDate;
   const timeZone = state?.time_zone;
@@ -73,15 +87,17 @@ export function BookingPrecheckin({
     window, hours: availableHandoffHours(slotDate, window, timeZone, new Date(state.server_now)),
   })).filter(option => option.hours.length > 0) : [];
   const selectionAvailable = hour !== null && options.some(option => option.window === slotWindow && option.hours.includes(hour));
-  const waitingOwner = slot?.status === 'proposed' && !booking.isOwner;
-  const canPropose = state && slot?.status !== 'approved' && !booking.isOwner
-    && state.time_zone && (kind === 'pickup' ? booking.status === 'confirmed' : booking.status === 'active');
+  const pendingProposal = proposal?.status === 'proposed';
+  const canRespond = pendingProposal && proposal.proposed_by_is_owner !== booking.isOwner && !exchangeStarted;
+  const canPropose = state && Number.isSafeInteger(state.workflow_version) && !exchangeStarted && !pendingProposal
+    && state.time_zone && (kind === 'pickup' ? booking.status === 'confirmed' : booking.status === 'active')
+    && (slot?.status !== 'approved' || changingTime);
   const heading = kind === 'pickup'
-    ? `Check-in for ${booking.deliveryMode === 'delivery' ? 'delivery' : 'pickup'}`
-    : 'Return scheduling';
+    ? 'Pickup schedule'
+    : 'Return schedule';
   const helper = kind === 'pickup'
-    ? `Booking date is fixed to ${dateLabel(slotDate)}. Pick a time and add an optional note for the owner.`
-    : `Return date is fixed to ${dateLabel(slotDate)}. Pick a time and add an optional note for the owner.`;
+    ? `Pickup date: ${dateLabel(slotDate)}. ${exchangeStarted ? 'Pickup is already in progress; the schedule does not reset your inspection.' : 'A new time needs the other participant’s approval.'}`
+    : `Return date: ${dateLabel(slotDate)}. ${exchangeStarted ? 'Return is already in progress.' : 'A new time needs the other participant’s approval.'}`;
 
   return <Surface className="mb-5 space-y-4 p-5" aria-busy={(!state && !error) || busy}>
     <h2 className="text-lg font-semibold text-main">{heading}</h2>
@@ -90,20 +106,34 @@ export function BookingPrecheckin({
     {state && !state.time_zone && <Alert tone="warning">Pickup location timezone is missing. Ask the owner to confirm the pickup location or contact support.</Alert>}
     {!state && !error && <p role="status" className="text-sm text-sec">Loading handoff scheduling…</p>}
     {error && <Alert tone="error">{error}<Button variant="secondary" size="sm" className="mt-2" onClick={() => setRetry(value => value + 1)}>Retry</Button></Alert>}
-    {slot && <p role="status" className="text-sm text-main">
+    {state && !Number.isSafeInteger(workflowVersion) && <Alert tone="error">Scheduling readiness is unavailable. Refresh this booking or contact support.</Alert>}
+    {slot?.status === 'approved' && <p role="status" className="text-sm text-main">
       {dateLabel(slot.selected_date)} · {SLOT_LABELS[slot.slot_window]} · {slot.status}{slot.note ? ` · "${slot.note}"` : ''}
       {' · '}{new Date(slot.starts_at).toLocaleTimeString(undefined, { timeZone: slot.time_zone, hour: 'numeric', minute: '2-digit' })}
       {' - '}{new Date(slot.ends_at).toLocaleTimeString(undefined, { timeZone: slot.time_zone, hour: 'numeric', minute: '2-digit' })} ({slot.time_zone})
     </p>}
-    {slot?.status === 'proposed' && booking.isOwner && <div className="flex flex-wrap gap-3">
-      <Button loading={busy} onClick={() => void run(() => respondToBookingHandoffSlot(booking.id, kind, true, slot.updated_at))}>Approve slot</Button>
-      <Button variant="secondary" disabled={busy} onClick={() => void run(() => respondToBookingHandoffSlot(booking.id, kind, false, slot.updated_at))}>Decline slot</Button>
+    {pendingProposal && !exchangeStarted && <div className="space-y-3 rounded-card bg-subtle p-3">
+      <p className="text-sm font-semibold text-main">{slot?.status === 'approved' ? 'Proposed replacement' : 'Proposed time'}</p>
+      <p className="text-sm text-main">{dateLabel(proposal.selected_date)} · {new Date(proposal.starts_at).toLocaleTimeString(undefined, {
+        timeZone: proposal.time_zone, hour: 'numeric', minute: '2-digit',
+      })} - {new Date(proposal.ends_at).toLocaleTimeString(undefined, {
+        timeZone: proposal.time_zone, hour: 'numeric', minute: '2-digit',
+      })} ({proposal.time_zone})</p>
+      {proposal.note && <p className="text-sm text-sec">{proposal.note}</p>}
+      {slot?.status === 'approved' && <p className="text-xs text-sec">The existing agreed time stays in effect until this replacement is approved.</p>}
+      {canRespond && workflowVersion !== undefined ? <div className="flex flex-wrap gap-3">
+        <Button loading={busy} onClick={() => void run(() => respondBookingHandoffReplacement(booking.id, kind, true, workflowVersion))}>Approve time</Button>
+        <Button variant="secondary" disabled={busy} onClick={() => void run(() => respondBookingHandoffReplacement(booking.id, kind, false, workflowVersion))}>Decline time</Button>
+      </div> : <p className="text-sm text-sec">Waiting for {proposal.proposed_by_is_owner ? 'renter' : 'owner'} approval.</p>}
     </div>}
-    {waitingOwner && <p className="text-sm text-sec">Waiting for the owner to approve this window.</p>}
+    {slot?.status === 'approved' && !exchangeStarted && !pendingProposal && !changingTime && <Button variant="secondary"
+      onClick={() => setChangingTime(true)}>Propose a different time</Button>}
     {canPropose && <form className="space-y-3" onSubmit={event => {
       event.preventDefault();
-      if (selectionAvailable && hour !== null) {
-        void run(() => proposeBookingHandoffSlot(booking.id, kind, slotWindow, hour, note));
+      if (selectionAvailable && hour !== null && workflowVersion !== undefined) {
+        void run(() => proposeBookingHandoffReplacement({
+          bookingId: booking.id, kind, slotWindow, hour, note, version: workflowVersion,
+        }));
       }
     }}>
       <p className="text-sm font-semibold text-main">Choose a {kind} time</p>
@@ -127,21 +157,22 @@ export function BookingPrecheckin({
           placeholder="Example: I’ll arrive about 10 minutes early."
           className="mt-2 w-full rounded-card border border-app bg-card px-3 py-2 text-sm text-main focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
       </label>
-      <Button type="submit" loading={busy} disabled={!selectionAvailable}>Send proposal</Button>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" loading={busy} disabled={!selectionAvailable}>Send proposal</Button>
+        {changingTime && <Button type="button" variant="ghost" disabled={busy} onClick={() => setChangingTime(false)}>Keep current time</Button>}
+      </div>
     </form>}
-    {kind === 'pickup' && slot?.status === 'approved' && <p className="text-sm text-sec">{state?.handoff_ready
-      ? booking.deliveryMode === 'delivery' ? 'Check-in setup complete. The owner can deliver during the agreed window.' : 'Check-in setup complete. You can meet the owner during the agreed window.'
-      : booking.deposit <= 0 ? 'No security hold is required. Handoff opens during the approved window.'
-        : state?.deposit_ready ? 'The security hold is ready. Handoff opens during the approved window.'
-        : state?.can_authorize ? 'Complete the separate deposit step below. Handoff opens during the approved window.'
+    {!exchangeStarted && kind === 'pickup' && slot?.status === 'approved' && <p className="text-sm text-sec">{state?.handoff_ready
+      ? 'Pickup requirements are ready. When you are together, the owner can begin pickup from 2 hours before the agreed time. Code verification starts the rental immediately; the scheduled return date does not change.'
+      : booking.deposit <= 0 ? 'No security hold is required. Pickup opens 2 hours before the approved time, once rental payment is confirmed.'
+        : state?.deposit_ready ? 'The security hold is ready. Pickup opens 2 hours before the approved time, once rental payment is confirmed.'
+        : state?.can_authorize ? 'Complete the separate deposit step below. Once rental payment and the hold are confirmed, pickup opens 2 hours before the approved time.'
         : 'Deposit authorization opens 24 hours before the approved window. Contact support if the window has passed or needs rescheduling.'}</p>}
-    {kind === 'return' && slot?.status === 'approved' && <p className="text-sm text-sec">Return window approved. Start return during this window.</p>}
+    {!exchangeStarted && kind === 'return' && slot?.status === 'approved' && <p className="text-sm text-sec">Return window approved. Begin return during this window.</p>}
     {kind === 'return' && (state?.return_rules.length || state?.return_note) && <div className="rounded-card bg-subtle p-3">
       <p className="text-sm font-semibold text-main">Owner return expectations</p>
       {state.return_rules.length > 0 && <ul className="mt-2 space-y-1">{state.return_rules.map((rule) => <li key={rule} className="text-xs text-sec">• {rule}</li>)}</ul>}
       {state.return_note && <p className="mt-2 text-xs text-sec">{state.return_note}</p>}
     </div>}
-    {kind === 'pickup' && booking.deposit > 0 && <DepositAuthorizationStatus key={String(state?.can_authorize)} bookingId={booking.id} deposit={booking.deposit}
-      collectionModel={booking.depositCollectionModel} isOwner={booking.isOwner} paymentFirst />}
   </Surface>;
 }

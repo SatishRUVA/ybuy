@@ -659,13 +659,21 @@ export async function fetchOwnerPickup(listingId: string): Promise<ListingPickup
   if (error) throw new Error(error.message);
   return data ? { formattedAddress: data.address, streetAddress: data.street_address, city: data.city,
     state: data.state, postalCode: data.postal_code, country: data.country, latitude: data.latitude,
-    longitude: data.longitude, placeId: data.place_id ?? '' } : null;
+    longitude: data.longitude, placeId: data.place_id ?? '', timeZone: data.time_zone ?? undefined } : null;
+}
+
+function listingPickupTimeZone(location: ListingPickupLocation): string {
+  if (location.timeZone) return location.timeZone;
+  if (location.latitude !== null && location.longitude !== null) {
+    return pickupTimeZone(location.latitude, location.longitude);
+  }
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 
 export async function saveOwnerListing(listingId: string, revision: number, details: ListingDetailsUpdate, pickup?: ListingPickupLocation): Promise<number> {
   const { data, error } = await supabase.rpc('owner_save_listing', {
     p_listing_id: listingId,p_revision: revision,p_details: details,
-    p_pickup: pickup ? { ...pickup, timeZone: pickupTimeZone(pickup.latitude, pickup.longitude) } : null,
+    p_pickup: pickup ? { ...pickup, timeZone: listingPickupTimeZone(pickup) } : null,
   });
   if (error) throw new Error(error.message);
   if (!Number.isSafeInteger(data)) throw new Error('Could not verify the saved listing revision.');
@@ -696,9 +704,10 @@ export interface ListingPickupLocation {
   state: string;
   postalCode: string;
   country: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   placeId: string;
+  timeZone?: string;
 }
 
 export async function saveListingPickupLocation(listingId: string, ownerId: string, location: ListingPickupLocation): Promise<void> {
@@ -719,7 +728,7 @@ export async function saveListingPickupLocation(listingId: string, ownerId: stri
     country: location.country,
     latitude: location.latitude,
     longitude: location.longitude,
-    time_zone: pickupTimeZone(location.latitude, location.longitude),
+    time_zone: listingPickupTimeZone(location),
     place_id: location.placeId || null,
   }, { onConflict: 'listing_id' });
   if (error) throw error;

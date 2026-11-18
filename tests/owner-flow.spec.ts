@@ -97,11 +97,16 @@ test('discovery day refreshes at UTC midnight and after a sleeping tab returns',
   expect(cleared && removed).toBe(true);
 });
 
-test('owner dates store exclusive returns and location failures retain the address', async ({ page, context }) => {
+test('owner can confirm a manual pickup address without browser geolocation', async ({ page }) => {
     test.setTimeout(60_000);
     await page.clock.setFixedTime(new Date('2026-10-22T12:00:00'));
-    await context.grantPermissions(['geolocation']);
-    await context.setGeolocation({ latitude: 32.8, longitude: -96.9 });
+    await page.addInitScript(() => {
+      const current = window as Window & { geoCalls: number };
+      current.geoCalls = 0;
+      Object.defineProperty(navigator, 'geolocation', { configurable: true, value: {
+        getCurrentPosition: () => { current.geoCalls += 1; },
+      } });
+    });
     await page.route('**/src/lib/google-maps.ts', async route => {
       const response = await route.fetch();
       return route.fulfill({ response, body: (await response.text()).replace(/const key = [^\n]+;/, 'const key = "test-google-key";') });
@@ -131,7 +136,7 @@ test('owner dates store exclusive returns and location failures retain the addre
       window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type;
       window.__vite_plugin_react_preamble_installed__ = true;</script></head><body></body></html>`,
     }));
-    await page.goto('/__owner-flow-fixture');
+    await page.goto('/__owner-flow-fixture?test=manual-pickup');
     await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__ === true);
     await page.evaluate(async () => {
       const { mountComponent } = await import('/tests/component-mount.tsx');
@@ -151,18 +156,28 @@ test('owner dates store exclusive returns and location failures retain the addre
     await calendar.getByRole('button', { name: /Monday, October 26, 2026/ }).click();
     await calendar.getByRole('button', { name: /Monday, October 26, 2026/ }).click();
     await expect(page.getByLabel('Stored availability')).toHaveText('{"start":"2026-10-26","end":"2026-10-27"}');
-    await page.getByRole('button', { name: 'Use my location' }).click();
-    await expect(page.getByLabel('Stored pickup')).toContainText('"placeId":"gps-place"');
+    await expect(page.getByRole('button', { name: /Use my location/i })).toHaveCount(0);
+    await page.getByLabel('Pickup address').fill('123 Test Street');
+    await page.getByLabel('City', { exact: true }).fill('Irving');
+    await page.getByLabel('State', { exact: true }).fill('TX');
+    await page.getByLabel('ZIP code', { exact: true }).fill('75039');
+    await page.getByLabel('I confirm this city, state, ZIP code and pickup time zone are correct.').check();
     await expect(page.getByLabel('Stored pickup')).toContainText('"streetAddress":"123 Test Street"');
-    await page.evaluate(() => Object.defineProperty(navigator, 'geolocation', { configurable: true, value: {
-      getCurrentPosition: (_resolve: unknown, reject: (error: { code: number }) => void) => reject({ code: 1 }),
-    } }));
-    await page.getByRole('button', { name: 'Use my location' }).click();
-    await expect(page.getByRole('status').filter({ hasText: 'Location permission denied' })).toBeVisible();
-    await expect(page.getByLabel('Stored pickup')).toContainText('"placeId":"gps-place"');
+    await expect(page.getByLabel('Stored pickup')).toContainText('"manualConfirmed":true');
+    expect(await page.evaluate(() => (window as Window & { geoCalls: number }).geoCalls)).toBe(0);
     for (const width of [1440, 375]) {
       await page.setViewportSize({ width, height: 1000 });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const layout = await page.evaluate(() => ({
+        fits: document.documentElement.scrollWidth <= innerWidth,
+        viewport: innerWidth,
+        document: document.documentElement.scrollWidth,
+        overflow: [...document.querySelectorAll('body *')]
+          .map(element => ({ element, bounds: element.getBoundingClientRect() }))
+          .filter(({ bounds }) => bounds.width > 0 && bounds.right > innerWidth + 1)
+          .slice(0, 10)
+          .map(({ element, bounds }) => `${element.tagName.toLowerCase()}.${String((element as HTMLElement).className).slice(0, 80)}: ${Math.round(bounds.left)}-${Math.round(bounds.right)}`),
+      }));
+      expect(layout.fits, JSON.stringify(layout)).toBe(true);
       await page.screenshot({ path: test.info().outputPath(`main-owner-${width}.png`), fullPage: true });
     }
 });

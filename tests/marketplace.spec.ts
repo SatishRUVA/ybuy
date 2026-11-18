@@ -460,16 +460,6 @@ test('request discovery and offer tabs are exposed only when item requests are e
   await expect(page.getByRole('tab', { name: 'Offers & negotiations' })).toHaveCount(0);
 });
 
-test('the admin flag switch reflects changes from another client without user action', async ({ page }) => {
-  const live = await setup(page, { item_requests: false, bidding: false }, true);
-  await signIn(page, '/admin/flags');
-  await expect(page.getByRole('switch', { name: 'Enable bidding', exact: true })).not.toBeChecked();
-  live.update('bidding', true);
-  await expect(page.getByRole('switch', { name: 'Disable bidding', exact: true })).toBeChecked();
-  live.update('bidding', false);
-  await expect(page.getByRole('switch', { name: 'Enable bidding', exact: true })).not.toBeChecked();
-});
-
 test('an open request form disappears immediately when item_requests is disabled', async ({ page }) => {
   const live = await setup(page, { item_requests: true, bidding: false });
   await signIn(page, '/need-something');

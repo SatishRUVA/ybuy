@@ -4,14 +4,19 @@ import { Alert, Button, Field } from '@/main-site/components/ui';
 import { fieldClass } from '@/main-site/components/form-classes';
 import { useAuth } from '@/auth-context';
 import { useRouter } from '@/router';
-import { getListingAuction, placeListingAuctionBid, type ListingAuction } from '@/lib/listing-auctions';
+import { getListingAuction, MAX_AUCTION_DAILY_BID, placeListingAuctionBid, type ListingAuction } from '@/lib/listing-auctions';
 import { auctionCountdown } from '@/lib/auction-countdown';
 import { DateBiddingPanel } from '@/main-site/components/date-bidding-panel';
 import { MonthGrid } from '@/main-site/components/date-range-picker';
 import { todayIso } from '@/lib/geo';
+import { calculateRentalPricing } from '@/lib/rental-pricing';
+import { bookingTaxCents } from '@/lib/booking-tax';
+import { insuranceAmountCents } from '@/lib/insurance-pricing';
+import { usePlatformFee } from '@/lib/settings';
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Could not load competitive bidding. Please retry.';
 const deadlineLabel = (iso: string | null) => iso ? new Date(iso).toLocaleString() : 'Not started';
+const money = (amount: number) => amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 const NO_DATES = new Set<string>();
 
 function FixedAuctionCalendar({ start, end }: { start: string; end: string }) {
@@ -32,14 +37,18 @@ function FixedAuctionCalendar({ start, end }: { start: string; end: string }) {
   </section>;
 }
 
-export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0 }: { listingId: string; deposit?: number; listedPrice?: number }) {
+export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0, replacementValue = 0 }: {
+  listingId: string; deposit?: number; listedPrice?: number; replacementValue?: number;
+}) {
   const { user, openSignIn } = useAuth();
   const { navigate } = useRouter();
+  const fee = usePlatformFee();
   const [auction, setAuction] = useState<ListingAuction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [rate, setRate] = useState('');
+  const amount = Number(rate);
   const [depositConsent, setDepositConsent] = useState(false);
   const [now, setNow] = useState(Date.now());
   const serverOffset = useRef(0);
@@ -68,10 +77,12 @@ export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0 }:
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!auction) return;
-    const amount = Number(rate);
     setBusy(true); setError(null);
     try {
-      if (!rate.trim() || !Number.isFinite(amount) || amount < auction.minimum_next_bid) throw new Error(`Bid at least $${auction.minimum_next_bid.toFixed(2)} per day.`);
+      if (fee.error || fee.loading || fee.pct === null) throw new Error(fee.error ?? 'Wait for the current service fee to load before bidding.');
+      if (!rate.trim() || !Number.isFinite(amount) || amount < auction.minimum_next_bid || amount > MAX_AUCTION_DAILY_BID) {
+        throw new Error(`Bid between $${auction.minimum_next_bid.toFixed(2)} and $${MAX_AUCTION_DAILY_BID.toLocaleString('en-US')} per day.`);
+      }
       if (deposit > 0 && !depositConsent) throw new Error('Agree to the temporary deposit authorization before placing a bid.');
       if (!pendingBid.current || pendingBid.current.rate !== amount) pendingBid.current = { rate: amount, key: crypto.randomUUID() };
       apply(await placeListingAuctionBid(listingId, amount, pendingBid.current.key, depositConsent));
@@ -81,7 +92,16 @@ export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0 }:
   }
   const deadline = auction?.status === 'scheduled' ? auction.starts_at ?? null : auction?.status === 'owner_selection' ? auction.selection_deadline : auction?.status === 'awaiting_payment' ? auction.payment_deadline : auction?.ends_at ?? null;
   const open = auction?.status === 'open' && !!deadline && Date.parse(deadline) > now;
-  if (auction?.date_flexible) return <DateBiddingPanel listingId={listingId} deposit={deposit} listedPrice={listedPrice} initialAuction={auction} />;
+  const rentalDays = auction ? Math.max(1, (Date.parse(auction.end_date) - Date.parse(auction.start_date)) / 86400000) : 0;
+  const estimate = auction && Number.isFinite(amount) && amount > 0 && Number.isInteger(rentalDays) && fee.pct !== null
+    ? calculateRentalPricing(amount, rentalDays) : null;
+  const serviceFee = estimate ? Math.round(estimate.subtotal * (fee.pct ?? 0) * 100) / 100 : 0;
+  const tax = estimate ? bookingTaxCents(estimate.subtotal, serviceFee) / 100 : 0;
+  const insurance = estimate ? insuranceAmountCents(replacementValue, rentalDays) / 100 : 0;
+  const totalWithoutInsurance = estimate ? estimate.subtotal + serviceFee + tax : 0;
+  if (auction?.date_flexible) return <DateBiddingPanel listingId={listingId} deposit={deposit} listedPrice={listedPrice}
+    replacementValue={replacementValue} serviceFeePct={fee.pct} serviceFeeLoading={fee.loading} serviceFeeError={fee.error}
+    initialAuction={auction} />;
   return <section id="competitive-auction" aria-labelledby="competitive-auction-title" className="scroll-mt-24 rounded-card-lg border border-app overflow-hidden">
     <header className="flex items-start gap-3 bg-accent-soft px-5 py-4">
       <Gavel size={21} aria-hidden="true" className="text-accent mt-0.5" /><div>
@@ -133,15 +153,30 @@ export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0 }:
                 <div className="flex justify-between items-center"><p className="text-xs font-semibold">Your bids ({auction.my_bid_count}/3 used)</p><div className="flex gap-1" aria-hidden="true">{[1, 2, 3].map(at => <span key={at} className={`h-3 w-3 rounded-full border ${at <= auction.my_bid_count ? 'bg-accent border-accent' : 'border-strong'}`} />)}</div></div>
                 {auction.my_daily_rate !== null && <p role="status" className="text-xs text-sec">Your highest bid: ${auction.my_daily_rate.toFixed(2)}/day.</p>}
                 <Field label="Your competitive bid per day (USD)" htmlFor="auction-bid-rate">
-                  <input id="auction-bid-rate" required type="number" step="0.01" min={auction.minimum_next_bid} max={100000} inputMode="decimal" value={rate}
+                  <input id="auction-bid-rate" required type="number" step="0.01" min={auction.minimum_next_bid} max={MAX_AUCTION_DAILY_BID} inputMode="decimal" value={rate}
                     disabled={busy || auction.my_bid_count >= 3} onChange={event => setRate(event.target.value)} className={fieldClass()} />
-                    <p className="mt-2 text-xs text-sec">Minimum next bid: ${auction.minimum_next_bid.toFixed(2)}/day. The platform-configured increase is ${auction.minimum_increment.toFixed(2)}/day.</p>
+                    <p className="mt-2 text-xs text-sec">Bid range: ${auction.minimum_next_bid.toFixed(2)}–${MAX_AUCTION_DAILY_BID.toLocaleString('en-US')}/day. Minimum increase: ${auction.minimum_increment.toFixed(2)}/day.</p>
                 </Field>
+                {fee.error && <Alert tone="error" title="Could not estimate the service fee">{fee.error}</Alert>}
+                {estimate && <div className="rounded-card bg-accent-soft p-3" aria-label="Estimated bid price breakdown">
+                  <p className="text-sm font-semibold text-main">Estimated rental cost</p>
+                  <dl className="mt-2 space-y-1.5 text-xs">
+                    <div className="flex justify-between gap-3"><dt className="text-sec">Rental bid subtotal ({money(amount)}/day × {rentalDays} days)</dt><dd className="font-semibold text-main">{money(estimate.subtotal)}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-sec">Service fee</dt><dd className="text-main">{money(serviceFee)}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-sec">Estimated tax (7%)</dt><dd className="text-main">{money(tax)}</dd></div>
+                    <div className="flex justify-between gap-3 border-t border-app pt-2 font-semibold"><dt className="text-main">Total without optional insurance</dt><dd className="text-main">{money(totalWithoutInsurance)}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-sec">Optional insurance estimate</dt><dd className="text-main">{money(insurance)}</dd></div>
+                    <div className="flex justify-between gap-3 font-bold"><dt className="text-main">Total with optional insurance</dt><dd className="text-main">{money(totalWithoutInsurance + insurance)}</dd></div>
+                  </dl>
+                  <p className="mt-2 text-xs text-sec">Estimate only; insurance is selected at checkout. Placing a bid does not charge you. Checkout recalculates the final rental payment.</p>
+                </div>}
+                {!fee.error && (fee.loading || fee.pct === null) && <p role="status" className="text-xs text-sec">Loading the current service fee to estimate your total…</p>}
+                {deposit > 0 && <p className="text-xs text-sec">Separate security hold: {money(deposit)}. Not included in the rental payment estimate; temporary authorization only if your bid wins.</p>}
                 {deposit > 0 && <label className="flex items-start gap-2 text-xs text-sec">
                   <input type="checkbox" checked={depositConsent} disabled={busy} onChange={event => setDepositConsent(event.target.checked)} className="mt-0.5" />
-                  <span>I agree to save my card for a temporary ${deposit.toFixed(2)} security-deposit authorization if my bid wins. It is not charged with this bid.</span>
+                  <span>I agree to a temporary {money(deposit)} security-hold authorization if my bid wins. It is not charged with this bid.</span>
                 </label>}
-                <Button type="submit" className="w-full" disabled={busy || !!error || auction.my_bid_count >= 3} loading={busy} loadingLabel="Placing bid...">Place bid</Button>
+                <Button type="submit" className="w-full" disabled={busy || !!error || fee.loading || !!fee.error || auction.my_bid_count >= 3} loading={busy} loadingLabel="Placing bid...">Place bid</Button>
               </form> : !user && open ? <Button className="w-full" onClick={openSignIn}>Sign in to bid</Button> :
                 <p role="status" className="text-xs text-sec">{auction.my_bid_count > 0 ? 'Your bid is recorded. You will be notified if selected.' : 'New bids are not being accepted.'}</p>}
         </div>

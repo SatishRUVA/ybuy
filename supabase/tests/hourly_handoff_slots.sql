@@ -25,9 +25,11 @@ values('f4000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000
  current_date,current_date+10,array['morning','afternoon'],array['evening']);
 insert into public.listing_images(listing_id,url,sort_order)
 values('f4000000-0000-4000-8000-000000000001','https://example.test/hour.jpg',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude,time_zone)
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+values('f4000000-0000-4000-8000-000000000001','https://example.test/hour.jpg','approved','Handoff fixture','system');
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone)
 values('f4000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000001',
- 'Private fixture','Fixture','TX','75201','US',32.8,-96.8,(select zone from hour_calendar));
+ 'Private fixture','123 Hourly Way','Fixture','TX','75201','US',32.8,-96.8,(select zone from hour_calendar));
 update public.listings set status='published' where id='f4000000-0000-4000-8000-000000000001';
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,
  service_fee_pct,service_fee_amount,deposit,total,status,payment_first)

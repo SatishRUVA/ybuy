@@ -14,10 +14,10 @@ export function OwnerFlowHarness() {
     state: 'TX', postalCode: '75039', country: 'US', latitude: 32.8, longitude: -96.9, placeId: 'original',
   });
   return <LocationProvider><main className="mx-auto max-w-3xl p-4 space-y-6">
-    <output aria-label="Discovery day">{utcDay}</output>
+    <output className="sr-only" aria-label="Discovery day">{utcDay}</output>
     <ListingAvailabilityPicker {...dates} onChange={(start, end) => setDates({ start, end })} />
-    <output aria-label="Stored availability">{JSON.stringify(dates)}</output>
+    <output className="sr-only" aria-label="Stored availability">{JSON.stringify(dates)}</output>
     <PickupLocation value={address} onChange={setAddress} />
-    <output aria-label="Stored pickup">{JSON.stringify(address)}</output>
+    <output className="sr-only" aria-label="Stored pickup">{JSON.stringify(address)}</output>
   </main></LocationProvider>;
 }

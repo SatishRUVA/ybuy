@@ -18,6 +18,9 @@ export interface BookingPickupSlot {
 }
 
 export interface BookingPrecheckin {
+  workflow_version?: number;
+  pickup_proposal?: (BookingPickupSlot & { proposed_by_is_owner: boolean; version: number }) | null;
+  return_proposal?: (BookingPickupSlot & { proposed_by_is_owner: boolean; version: number }) | null;
   payment_first: boolean;
   slot: BookingPickupSlot | null;
   pickup_slot: BookingPickupSlot | null;
@@ -32,6 +35,8 @@ export interface BookingPrecheckin {
   handoff_ready: boolean;
   return_handoff_ready: boolean;
   deposit_ready: boolean;
+  deposit_recovery_required?: boolean;
+  deposit_recovery_pending?: boolean;
   consented: boolean;
   delivery_mode: 'pickup' | 'delivery';
 }
@@ -53,6 +58,9 @@ function isPrecheckin(value: unknown): value is BookingPrecheckin {
     && HANDOFF_WINDOWS.includes(slot.slot_window as HandoffWindow)
     && ['proposed', 'approved', 'declined'].includes(String(slot.status))
     && typeof slot.note === 'string' && isTimestamp(slot.updated_at));
+  const hasValidProposal = (proposal: unknown) => proposal === undefined || proposal === null
+    || (isRecord(proposal) && hasValidSlot(proposal)
+      && typeof proposal.proposed_by_is_owner === 'boolean' && Number.isSafeInteger(proposal.version));
   return typeof value.payment_first === 'boolean' && typeof value.can_authorize === 'boolean'
     && typeof value.handoff_ready === 'boolean' && typeof value.return_handoff_ready === 'boolean' && typeof value.deposit_ready === 'boolean'
     && typeof value.consented === 'boolean' && isTimestamp(value.server_now)
@@ -62,7 +70,11 @@ function isPrecheckin(value: unknown): value is BookingPrecheckin {
     && typeof value.return_note === 'string'
     && (value.time_zone === null || (typeof value.time_zone === 'string' && value.time_zone.length > 0))
     && (value.delivery_mode === 'pickup' || value.delivery_mode === 'delivery')
-    && hasValidSlot(value.slot) && hasValidSlot(value.pickup_slot) && hasValidSlot(value.return_slot);
+    && hasValidSlot(value.slot) && hasValidSlot(value.pickup_slot) && hasValidSlot(value.return_slot)
+    && (value.workflow_version === undefined || Number.isSafeInteger(value.workflow_version))
+    && hasValidProposal(value.pickup_proposal) && hasValidProposal(value.return_proposal)
+    && (value.deposit_recovery_required === undefined || typeof value.deposit_recovery_required === 'boolean')
+    && (value.deposit_recovery_pending === undefined || typeof value.deposit_recovery_pending === 'boolean');
 }
 
 export async function fetchBookingPrecheckin(bookingId: string): Promise<BookingPrecheckin> {
@@ -91,6 +103,30 @@ export async function respondToBookingHandoffSlot(bookingId: string, kind: Hando
   if (!isTimestamp(expectedUpdatedAt)) throw new Error('Refresh check-in before responding to this proposal.');
   const { error } = await supabase.rpc('respond_to_booking_handoff_slot', {
     p_booking_id: bookingId, p_kind: kind, p_approve: approve, p_expected_updated_at: expectedUpdatedAt,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function proposeBookingHandoffReplacement(input: {
+  bookingId: string; kind: HandoffKind; slotWindow: HandoffWindow; hour: number; note: string; version: number;
+}): Promise<void> {
+  assertUuid(input.bookingId, 'booking id');
+  if (!HANDOFF_WINDOWS.includes(input.slotWindow) || !HANDOFF_HOURS[input.slotWindow].includes(input.hour)
+    || input.note.length > 240 || !Number.isSafeInteger(input.version)) {
+    throw new Error('Choose a valid handoff time and refresh the booking version.');
+  }
+  const { error } = await supabase.rpc('propose_booking_handoff_replacement', {
+    p_booking_id: input.bookingId, p_kind: input.kind, p_slot_window: input.slotWindow,
+    p_hour: input.hour, p_note: input.note.trim(), p_expected_version: input.version,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function respondBookingHandoffReplacement(bookingId: string, kind: HandoffKind, approve: boolean, version: number): Promise<void> {
+  assertUuid(bookingId, 'booking id');
+  if (!Number.isSafeInteger(version)) throw new Error('Refresh scheduling before responding.');
+  const { error } = await supabase.rpc('respond_booking_handoff_replacement', {
+    p_booking_id: bookingId, p_kind: kind, p_approve: approve, p_expected_version: version,
   });
   if (error) throw new Error(error.message);
 }

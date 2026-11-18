@@ -79,7 +79,13 @@ export async function saveListingFlow(
 ): Promise<ListingFlowResult> {
   const args = {
     p_listing_id: listingId, p_revision: revision,
-    p_pickup: pickup ? { ...pickup, timeZone: pickupTimeZone(pickup.latitude, pickup.longitude) } : null,
+    p_pickup: pickup ? {
+      ...pickup,
+      timeZone: pickup.timeZone
+        ?? (pickup.latitude !== null && pickup.longitude !== null
+          ? pickupTimeZone(pickup.latitude, pickup.longitude)
+          : Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
+    } : null,
     p_publish: publish,
   };
   const { data, error } = await supabase.rpc('owner_save_listing_flow', {

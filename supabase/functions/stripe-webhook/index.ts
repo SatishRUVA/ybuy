@@ -94,6 +94,7 @@ Deno.serve(async (req) => {
         return new Response('Incomplete deposit setup receipt', { status: 400 });
       }
       try {
+        if (event.livemode || !/^(sk|rk)_test_/.test(stripeKey)) throw new Error('Test Stripe credentials required');
         const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
         const paymentMethodId = typeof setupIntent.payment_method === 'string'
           ? setupIntent.payment_method : setupIntent.payment_method?.id ?? null;
@@ -128,7 +129,8 @@ Deno.serve(async (req) => {
     if (incoming.metadata?.purpose === 'security_deposit_authorization') {
       try {
         const intent = await stripe.paymentIntents.retrieve(incoming.id, { expand: ['latest_charge'] });
-        if (intent.livemode !== event.livemode || !intent.metadata.booking_id || !intent.metadata.deposit_authorization_id
+        if (intent.livemode || event.livemode || !/^(sk|rk)_test_/.test(stripeKey) || intent.currency !== 'usd'
+          || !intent.metadata.booking_id || !intent.metadata.deposit_authorization_id
           || intent.capture_method !== 'manual') throw new Error('Deposit PaymentIntent metadata or capture mode is invalid');
         const latestCharge = typeof intent.latest_charge === 'string' ? null : intent.latest_charge;
         const paymentMethodId = typeof intent.payment_method === 'string'
@@ -151,39 +153,6 @@ Deno.serve(async (req) => {
           p_failure_reason: intent.last_payment_error?.message ?? null,
         });
         if (error) throw new Error(error.message);
-        if (event.type === 'payment_intent.amount_capturable_updated') {
-          const { data: authorizationRow, error: authorizationRowError } = await supabaseAdmin
-            .from('booking_deposit_authorizations').select('supersedes_authorization_id,is_claim_authorization')
-            .eq('id', intent.metadata.deposit_authorization_id).single();
-          if (authorizationRowError) throw new Error(authorizationRowError.message);
-          if (authorizationRow.is_claim_authorization) {
-            const { data: claim, error: claimError } = await supabaseAdmin.from('booking_deposit_claims')
-              .select('id,status,approved_amount').eq('authorization_id',intent.metadata.deposit_authorization_id).maybeSingle();
-            if (claimError) throw new Error(claimError.message);
-            if (claim && ['approved','payment_required'].includes(claim.status) && Number(claim.approved_amount)>0) {
-              const captureCents=Math.round(Number(claim.approved_amount)*100);
-              if (!Number.isSafeInteger(captureCents) || captureCents>intent.amount_capturable) {
-                throw new Error('Approved deposit deduction exceeds the live authorization amount');
-              }
-              const { error: claimStateError }=await supabaseAdmin.from('booking_deposit_claims')
-                .update({status:'capturing',failure_reason:null}).eq('id',claim.id).in('status',['approved','payment_required']);
-              if (claimStateError) throw new Error(claimStateError.message);
-              const captured=await stripe.paymentIntents.capture(intent.id,{amount_to_capture:captureCents},
-                {idempotencyKey:`deposit-claim:${claim.id}:v1`});
-              if (captured.status!=='succeeded' || captured.amount_received!==captureCents || captured.livemode!==event.livemode) {
-                throw new Error('Stripe did not confirm the approved deposit deduction');
-              }
-            }
-          }
-          if (authorizationRow.supersedes_authorization_id) {
-            const { data: previous } = await supabaseAdmin.from('booking_deposit_authorizations')
-              .select('stripe_payment_intent_id,status').eq('id', authorizationRow.supersedes_authorization_id).maybeSingle();
-            if (previous?.status === 'authorized' && previous.stripe_payment_intent_id) {
-              const oldIntent = await stripe.paymentIntents.retrieve(previous.stripe_payment_intent_id);
-              if (oldIntent.status === 'requires_capture') await stripe.paymentIntents.cancel(oldIntent.id);
-            }
-          }
-        }
       } catch (error) {
         console.error('Deposit PaymentIntent reconciliation failed', event.id, error instanceof Error ? error.message : error);
         return new Response('Deposit authorization not reconciled', { status: 500 });

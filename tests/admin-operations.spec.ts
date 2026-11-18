@@ -43,34 +43,17 @@ async function setup(page: Page, permissions: string[]) {
   });
 }
 
-test('configuration administrator can add marketplace countries with an audit reason', async ({ page }) => {
-  await setup(page, ['config.manage']);
-  await page.route('**/rest/v1/rpc/admin_get_agreement_terms', route =>
-    route.fulfill({ contentType: 'application/json', body: 'null' }));
-  await page.route('**/rest/v1/rpc/admin_list_settings', route =>
-    route.fulfill({ contentType: 'application/json', body: JSON.stringify([{
-      key: 'marketplace_country_codes', value: ['US'], value_type: 'country_codes',
-      min_value: null, max_value: null, description: 'Enabled marketplace countries', is_public: true, updated_at: now,
-    }]) }));
-  await page.route('**/rest/v1/reference_countries?**', route =>
-    route.fulfill({ contentType: 'application/json', body: JSON.stringify([
-      { code: 'US', name: 'United States' }, { code: 'CA', name: 'Canada' },
-    ]) }));
-  await page.route('**/rest/v1/rpc/admin_update_setting', route =>
-    route.fulfill({ contentType: 'application/json', body: '{"ok":true}' }));
-  await page.goto(`${appUrl}/admin/settings`);
-  await expect(page.getByRole('heading', { name: 'Global settings', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Change', exact: true }).click();
-  const dialog = page.getByRole('alertdialog');
-  await expect(dialog.getByRole('checkbox', { name: 'United States', exact: true })).toBeChecked();
-  await dialog.getByRole('checkbox', { name: 'Canada', exact: true }).check();
-  await dialog.getByLabel('Reason (recorded in the audit log)').fill('Enable Canadian marketplace locations');
-  const save = page.waitForRequest(request => request.url().endsWith('/admin_update_setting'));
-  await dialog.getByRole('button', { name: 'Save change', exact: true }).click();
-  expect((await save).postDataJSON()).toEqual({
-    p_key: 'marketplace_country_codes', p_value: ['US', 'CA'], p_reason: 'Enable Canadian marketplace locations',
+test('customer admin routes redirect to the dedicated portal, not control-plane tools', async ({ page }) => {
+  const controlReads: string[] = [];
+  page.on('request', request => {
+    if (/admin_(list_settings|list_admins|set_feature_flag)/.test(request.url())) controlReads.push(request.url());
   });
-  await expect(page.getByText('marketplace_country_codes updated.', { exact: true })).toBeVisible();
+  await page.goto(`${appUrl}/admin/settings`);
+  await expect(page.locator('main h1')).toHaveText('Administration has moved');
+  await expect(page.getByRole('link', { name: 'Open YBuy administration' }))
+    .toHaveAttribute('href', 'https://ybuy-admin.vercel.app');
+  await expect(page.getByRole('heading', { name: 'Global settings', exact: true })).toHaveCount(0);
+  expect(controlReads).toEqual([]);
 });
 
 test('support operator sees supported modules, but not financial grants', async ({ page }) => {

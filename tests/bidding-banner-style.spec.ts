@@ -15,7 +15,8 @@ window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type; window
     }));
     await page.route('**/src/lib/listing-auctions.ts*', route => route.fulfill({
       contentType: 'text/javascript',
-      body: `export async function getTopListingBids() { return [{
+      body: `export const MAX_AUCTION_DAILY_BID=100000;
+      export async function getTopListingBids() { return [{
         listing_id: '30000000-0000-4000-8000-000000000001', title: 'Pressure washer',
         daily_rate: 5, has_bids: false, bid_count: 0, participant_count: 0,
         start_date: '2099-01-01', end_date: '2099-01-04', expires_at: '2098-12-31T12:00:00Z', image_url: null

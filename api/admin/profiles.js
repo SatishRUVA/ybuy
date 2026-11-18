@@ -12,7 +12,7 @@ export default async function handler(request) {
   }
   if (!adminConfigured()) return adminJson(503, { error: 'Administrator access is not configured.' });
   const role = await readAdminRole(request);
-  if (!role) return adminJson(401, { error: 'Administrator verification expired. Enter your authenticator code again.' });
+  if (role !== 'admin') return adminJson(401, { error: 'Administrator verification expired. Enter your authenticator code again.' });
   try {
     const db = adminDb();
     const users = [];
@@ -30,7 +30,7 @@ export default async function handler(request) {
     if (!allowed.length) return adminJson(503, { error: 'No active test profiles have the required administrator role.' });
     if (request.method === 'GET') return adminJson(200, allowed.map(user => ({
       id: user.id, name: user.user_metadata.full_name || user.email,
-      role: role === 'admin' ? 'Admin' : 'Super Admin',
+      role: 'Admin',
     })));
     let body;
     try { body = await request.json(); } catch { return adminJson(400, { error: 'Choose a valid administrator profile.' }); }

@@ -47,10 +47,19 @@ Deno.serve(async request => {
         if (!slot || Date.parse(slot.starts_at) > now.getTime() + 24 * 3600000 || Date.parse(slot.ends_at) <= now.getTime()) continue;
       }
       const { data: authorization, error: authorizationError } = await admin.from('booking_deposit_authorizations')
-        .select('id,status,capture_before').eq('booking_id',booking.id).order('attempt',{ascending:false}).limit(1).maybeSingle();
+        .select('id,status,capture_before,last_attempt_at').eq('booking_id',booking.id).order('attempt',{ascending:false}).limit(1).maybeSingle();
       if (authorizationError) throw new Error(authorizationError.message);
       if (!authorization) continue;
       const captureBefore = authorization.capture_before ? Date.parse(authorization.capture_before) : 0;
+      if (booking.status === 'active' && (['failed','expired'].includes(authorization.status)
+        || (authorization.status === 'authorized' && captureBefore <= now.getTime())
+        || (['scheduled','authorizing','requires_action'].includes(authorization.status)
+          && authorization.last_attempt_at && Date.parse(authorization.last_attempt_at) < now.getTime() - 20 * 3600000))) {
+        const { error: supportError } = await admin.rpc('flag_deposit_recovery_support', {
+          p_booking_id: booking.id, p_renter_id: booking.renter_id,
+        });
+        if (supportError) throw new Error(supportError.message);
+      }
       const needsSetup = authorization.status === 'setup_required';
       const initialDue = ['scheduled','failed','expired','released'].includes(authorization.status)
         && (booking.payment_first || booking.start_date <= duePickupDate);

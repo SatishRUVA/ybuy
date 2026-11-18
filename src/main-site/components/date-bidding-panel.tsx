@@ -4,18 +4,23 @@ import { useAuth } from '@/auth-context';
 import { useRouter } from '@/router';
 import { fetchUnavailableDates } from '@/lib/availability';
 import { addDaysIso, todayIso } from '@/lib/geo';
-import { getListingAuction, placeListingAuctionBid, type ListingAuction } from '@/lib/listing-auctions';
+import { getListingAuction, MAX_AUCTION_DAILY_BID, placeListingAuctionBid, type ListingAuction } from '@/lib/listing-auctions';
 import { auctionCountdown } from '@/lib/auction-countdown';
 import { DateRangePicker } from '@/main-site/components/date-range-picker';
 import { Alert, Button, Field } from '@/main-site/components/ui';
 import { fieldClass } from '@/main-site/components/form-classes';
+import { calculateRentalPricing } from '@/lib/rental-pricing';
+import { bookingTaxCents } from '@/lib/booking-tax';
+import { insuranceAmountCents } from '@/lib/insurance-pricing';
 
 const money = (amount: number) => amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 const label = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Could not confirm bidding. Please retry.';
+const MAX_BID_RENTAL_DAYS = 30;
 
-export function DateBiddingPanel({ listingId, listedPrice, deposit, initialAuction }: {
-  listingId: string; listedPrice: number; deposit: number; initialAuction: ListingAuction;
+export function DateBiddingPanel({ listingId, listedPrice, deposit, replacementValue = 0, serviceFeePct, serviceFeeLoading, serviceFeeError, initialAuction }: {
+  listingId: string; listedPrice: number; deposit: number; replacementValue?: number;
+  serviceFeePct: number | null; serviceFeeLoading: boolean; serviceFeeError: string | null; initialAuction: ListingAuction;
 }) {
   const { user, openSignIn } = useAuth();
   const { navigate } = useRouter();
@@ -32,7 +37,8 @@ export function DateBiddingPanel({ listingId, listedPrice, deposit, initialAucti
   const pending = useRef<{ rate: number; start: string; end: string; key: string } | null>(null);
   const [message, setMessage] = useState('');
   const [quote, setQuote] = useState<{ start: string; end: string; minimum: number } | null>(null);
-  const validRange = !!start && !!end && end > start && start >= initialAuction.start_date && end <= initialAuction.end_date;
+  const validRange = !!start && !!end && end > start && (Date.parse(end) - Date.parse(start)) / 86400000 <= MAX_BID_RENTAL_DAYS
+    && start >= initialAuction.start_date && end <= initialAuction.end_date;
   useEffect(() => {
     let active = true;
     setQuote(null);
@@ -58,6 +64,12 @@ export function DateBiddingPanel({ listingId, listedPrice, deposit, initialAucti
   const days = start && end ? (Date.parse(end) - Date.parse(start)) / 86400000 : 0;
   const amount = Number(rate);
   const total = days > 0 && Number.isFinite(amount) ? Math.round(amount * 100) * days / 100 : 0;
+  const estimate = validRange && Number.isInteger(days) && days > 0 && Number.isFinite(amount) && amount > 0 && serviceFeePct !== null
+    ? calculateRentalPricing(amount, days) : null;
+  const serviceFee = estimate ? Math.round(estimate.subtotal * (serviceFeePct ?? 0) * 100) / 100 : 0;
+  const tax = estimate ? bookingTaxCents(estimate.subtotal, serviceFee) / 100 : 0;
+  const insurance = estimate ? insuranceAmountCents(replacementValue, days) / 100 : 0;
+  const totalWithoutInsurance = estimate ? estimate.subtotal + serviceFee + tax : 0;
   const quoted = quote?.start === start && quote.end === end;
   const minimum = quoted ? quote.minimum : auction.minimum_next_bid;
   const open = auction.status === 'open' && !!auction.ends_at && Date.parse(auction.ends_at) > now;
@@ -65,6 +77,9 @@ export function DateBiddingPanel({ listingId, listedPrice, deposit, initialAucti
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(null); setMessage('');
     try {
+      if (serviceFeeError || serviceFeeLoading || serviceFeePct === null) {
+        throw new Error(serviceFeeError ?? 'Wait for the current service fee to load before bidding.');
+      }
       if (!unavailable) throw new Error('Wait for availability to load, then retry.');
       if (!start || !end || days < 1 || start < minDate || end > auction.end_date) throw new Error('Choose rental dates inside the bidding window.');
       for (let day = start; day < end; day = addDaysIso(day, 1)) {
@@ -73,7 +88,9 @@ export function DateBiddingPanel({ listingId, listedPrice, deposit, initialAucti
       const currentQuote = await getListingAuction(listingId, { start, end });
       if (!currentQuote) throw new Error('This auction is no longer available.');
       setAuction(currentQuote); setQuote({ start, end, minimum: currentQuote.minimum_next_bid });
-      if (!rate.trim() || !Number.isFinite(amount) || amount < currentQuote.minimum_next_bid) throw new Error(`Bid at least ${money(currentQuote.minimum_next_bid)} per day for these dates.`);
+      if (!rate.trim() || !Number.isFinite(amount) || amount < currentQuote.minimum_next_bid || amount > MAX_AUCTION_DAILY_BID) {
+        throw new Error(`Bid between ${money(currentQuote.minimum_next_bid)} and ${money(MAX_AUCTION_DAILY_BID)} per day for these dates.`);
+      }
       if (deposit > 0 && !consent) throw new Error('Agree to the temporary deposit authorization before bidding.');
       if (!pending.current || pending.current.rate !== amount || pending.current.start !== start || pending.current.end !== end) {
         pending.current = { rate: amount, start, end, key: crypto.randomUUID() };
@@ -101,6 +118,7 @@ export function DateBiddingPanel({ listingId, listedPrice, deposit, initialAucti
             endDate={end}
             minimumDate={minDate}
             maximumDate={auction.end_date}
+            maximumDurationDays={MAX_BID_RENTAL_DAYS}
             bookedDates={unavailable?.booked}
             blockedDates={unavailable?.blocked}
             disabled={busy || !open || !unavailable}
@@ -110,26 +128,38 @@ export function DateBiddingPanel({ listingId, listedPrice, deposit, initialAucti
               setMessage('');
             }}
           />
-          <p role="status" className="text-xs text-sec">Choose pickup, then return. The return date is not a charged rental day.</p>
+          <p role="status" className="text-xs text-sec">Choose pickup, then return. The return date is not charged; rentals are limited to 30 days.</p>
         </fieldset>
-        <fieldset disabled={busy || !open} className="space-y-3 border-t border-app pt-4">
+        <fieldset disabled={busy || !open || serviceFeeLoading || !!serviceFeeError} className="space-y-3 border-t border-app pt-4">
           <legend className="text-base font-semibold text-main">2. Place your bid</legend>
           <Field label="Your competitive bid per day (USD)" htmlFor="date-bid-rate">
             <div className="flex items-center gap-2">
               <Button type="button" variant="secondary" aria-label="Decrease daily bid" disabled={!rate || amount <= minimum} onClick={() => setRate(Math.max(minimum, amount - auction.minimum_increment).toFixed(2))}><Minus size={16} /></Button>
-              <input id="date-bid-rate" type="number" required min={minimum} max={100000} step="0.01" value={rate} onChange={e => setRate(e.target.value)} className={fieldClass('min-w-0')} />
+              <input id="date-bid-rate" type="number" required min={minimum} max={MAX_AUCTION_DAILY_BID} step="0.01" value={rate} onChange={e => setRate(e.target.value)} className={fieldClass('min-w-0')} />
               <Button type="button" variant="secondary" aria-label="Increase daily bid" onClick={() => setRate((Math.max(minimum, amount || minimum) + auction.minimum_increment).toFixed(2))}><Plus size={16} /></Button>
             </div>
           </Field>
-          <p className="text-xs text-sec">{quoted ? `Minimum ${money(minimum)}/day for these dates.` : 'Choose dates and wait for the current minimum bid.'} Up to 3 bids per renter. Your chosen dates are saved with each bid.</p>
-          <div className="rounded-card bg-accent-soft p-4">
-            <p className="text-sm text-sec">Your total rental bid</p><p className="text-3xl font-bold text-main">{money(total)}</p>
-            <p className="mt-1 text-xs text-sec">{days > 0 ? `${days} rental days. Listed rental total: ${money(listedPrice * days)}.` : 'Choose dates to calculate your total.'} Fees and deposit are confirmed at checkout.</p>
+          <p className="text-xs text-sec">{quoted ? `Bid range ${money(minimum)}–${money(MAX_AUCTION_DAILY_BID)}/day for these dates.` : 'Choose dates and wait for the current minimum bid.'} Up to 3 bids per renter. Your chosen dates are saved with each bid.</p>
+          {serviceFeeError && <Alert tone="error" title="Could not estimate the service fee">{serviceFeeError}</Alert>}
+          {serviceFeeLoading && <p role="status" className="text-xs text-sec">Loading the current service fee to estimate your total…</p>}
+          {estimate ? <div className="rounded-card bg-accent-soft p-4" aria-label="Estimated bid price breakdown">
+            <p className="text-sm font-semibold text-main">Estimated rental cost</p>
+            <dl className="mt-2 space-y-1.5 text-xs">
+              <div className="flex justify-between gap-3"><dt className="text-sec">Rental bid subtotal ({money(amount)}/day × {days} days)</dt><dd className="font-semibold text-main">{money(estimate.subtotal)}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-sec">Service fee</dt><dd className="text-main">{money(serviceFee)}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-sec">Estimated tax (7%)</dt><dd className="text-main">{money(tax)}</dd></div>
+              <div className="flex justify-between gap-3 border-t border-app pt-2 font-semibold"><dt className="text-main">Total without optional insurance</dt><dd className="text-main">{money(totalWithoutInsurance)}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-sec">Optional insurance estimate</dt><dd className="text-main">{money(insurance)}</dd></div>
+              <div className="flex justify-between gap-3 font-bold"><dt className="text-main">Total with optional insurance</dt><dd className="text-main">{money(totalWithoutInsurance + insurance)}</dd></div>
+            </dl>
+            <p className="mt-2 text-xs text-sec">Estimate only; insurance is selected at checkout. Placing a bid does not charge you. Checkout recalculates the final rental payment.</p>
+            <p className="mt-1 text-xs text-sec">{days} rental days. Listed rental total: {money(listedPrice * days)}.</p>
             {days > 0 && total > 0 && total < listedPrice * days && <p className="mt-2 text-xs font-semibold text-accent">Rental-price savings: {money(listedPrice * days - total)}</p>}
-          </div>
-          {deposit > 0 && <label className="flex gap-3 text-xs leading-relaxed text-sec"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1 h-4 w-4 shrink-0" /><span>I agree to a temporary {money(deposit)} security-deposit authorization if I win. No payment is taken with this bid.</span></label>}
+          </div> : <p className="text-xs text-sec">{days > 0 ? 'Enter a bid to see the estimated total.' : 'Choose dates to calculate your estimated total.'}</p>}
+          {deposit > 0 && <p className="text-xs text-sec">Separate security hold: {money(deposit)}. Not included in the rental payment estimate; temporary authorization only if your bid wins.</p>}
+          {deposit > 0 && <label className="flex gap-3 text-xs leading-relaxed text-sec"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1 h-4 w-4 shrink-0" /><span>I agree to a temporary {money(deposit)} security-hold authorization if I win. No payment is taken with this bid.</span></label>}
         </fieldset>
-        {user && !auction.is_owner ? <Button type="submit" className="w-full" disabled={busy || !open || !unavailable || !quoted || auction.my_bid_count >= 3} loading={busy} loadingLabel="Submitting bid...">Submit Bid</Button> : !user ? <Button type="button" className="w-full" onClick={openSignIn}>Sign in to bid</Button> : <p className="text-sm text-sec">Owners cannot bid on their own listing.</p>}
+        {user && !auction.is_owner ? <Button type="submit" className="w-full" disabled={busy || !open || !unavailable || !quoted || serviceFeeLoading || !!serviceFeeError || auction.my_bid_count >= 3} loading={busy} loadingLabel="Submitting bid...">Submit Bid</Button> : !user ? <Button type="button" className="w-full" onClick={openSignIn}>Sign in to bid</Button> : <p className="text-sm text-sec">Owners cannot bid on their own listing.</p>}
         {!open && <p role="status" className="text-sm text-sec">{auction.status === 'scheduled' ? 'Bidding has not opened yet.' : 'New bids are not being accepted.'}</p>}
         {auction.my_booking_id && <Button type="button" className="w-full" onClick={() => navigate({ name: 'confirmation', id: auction.my_booking_id! })}>View winner booking and payment</Button>}
         {auction.my_payment_deadline && <p className="text-xs text-sec">Your payment: {auction.my_payment_status}. Deadline: {new Date(auction.my_payment_deadline).toLocaleString()}.</p>}

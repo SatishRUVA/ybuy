@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import type { Plugin } from 'vite';
+import { seedLocalRenterPoints } from './local-renter-points.mjs';
 
 const marker = 'ybuy-local-profile-picker-v1';
 const names = [
@@ -74,6 +75,7 @@ export function localProfileLogin(url: string, serviceKey: string): Plugin {
       }
       profiles.push({ id: user.id, name: persona.name, role: persona.role, email });
     }
+    seedLocalRenterPoints();
     return profiles;
   }
 

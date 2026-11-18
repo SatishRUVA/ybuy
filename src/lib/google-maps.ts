@@ -1,6 +1,28 @@
+export interface GoogleAddressComponent {
+  longText?: string;
+  shortText?: string;
+  types: string[];
+}
+
+export interface GooglePlace {
+  id?: string;
+  formattedAddress?: string;
+  addressComponents?: GoogleAddressComponent[];
+  location?: { lat: () => number; lng: () => number };
+  fetchFields: (options: { fields: string[] }) => Promise<void>;
+}
+
+export interface GooglePlacePrediction {
+  text?: string | { toString(): string };
+  toPlace: () => GooglePlace;
+}
+
 export interface GooglePlacesLibrary {
-  PlaceAutocompleteElement: new () => HTMLElement & {
-    locationBias?: { center: { lat: number; lng: number }; radius: number };
+  AutocompleteSuggestion: {
+    fetchAutocompleteSuggestions: (request: {
+      input: string;
+      includedRegionCodes?: string[];
+    }) => Promise<{ suggestions: { placePrediction?: GooglePlacePrediction }[] }>;
   };
 }
 

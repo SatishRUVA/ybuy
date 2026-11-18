@@ -152,6 +152,7 @@ export function DateRangePicker({
   minimumDate, maximumDate, timeZone,
   presentation = 'dialog',
   disabled = false,
+  maximumDurationDays,
 }: {
   startDate: string;
   endDate: string;
@@ -164,6 +165,7 @@ export function DateRangePicker({
   timeZone?: string | null;
   presentation?: 'dialog' | 'listing' | 'search';
   disabled?: boolean;
+  maximumDurationDays?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
@@ -184,7 +186,10 @@ export function DateRangePicker({
   const horizon = addDaysIso(todayStr, MAX_BOOKING_RANGE_DAYS);
   const maxDate = maximumDate && maximumDate < horizon ? maximumDate : horizon;
   const validRange = (start: string, end: string) => start >= minDate && end > start && end <= maxDate
+    && (maximumDurationDays === undefined || daysBetweenIso(start, end) <= maximumDurationDays)
     && !rangeHasUnavailable(start, end, bookedDates, blockedDates);
+  const durationEnd = draftStart && maximumDurationDays !== undefined ? addDaysIso(draftStart, maximumDurationDays) : maxDate;
+  const selectionMaxDate = activeEndpoint === 'end' && durationEnd < maxDate ? durationEnd : maxDate;
   const canApply = Boolean(
     (draftStart && draftEnd && validRange(draftStart, draftEnd))
     || (!draftStart && !draftEnd && (startDate || endDate)),
@@ -249,7 +254,7 @@ export function DateRangePicker({
   function openPicker() {
     const safeStart = startDate >= minDate && startDate <= maxDate ? startDate : '';
     setDraftStart(safeStart);
-    setDraftEnd(safeStart && endDate > safeStart && endDate <= maxDate ? endDate : null);
+    setDraftEnd(safeStart && endDate > safeStart && validRange(safeStart, endDate) ? endDate : null);
     setActiveEndpoint('start');
     const firstMonth = parseIsoLocal(safeStart || minDate);
     const currentMonth = parseIsoLocal(todayStr);
@@ -258,7 +263,7 @@ export function DateRangePicker({
   }
 
   function handlePick(date: string) {
-    if (date < minDate || date > maxDate) return;
+    if (date < minDate || date > selectionMaxDate) return;
     setActivePreset('custom');
     if (activeEndpoint === 'start' || !draftStart) {
       const keepEnd = Boolean(draftEnd && date < draftEnd && !rangeHasUnavailable(date, draftEnd, bookedDates, blockedDates));
@@ -399,7 +404,7 @@ export function DateRangePicker({
                   <ChevronLeft size={20} aria-hidden="true" />
                 </button>
                 <strong aria-live="polite">{monthLabel(leftMonth)}</strong>
-                <button type="button" onClick={() => setMonthOffset((offset) => offset + 1)} disabled={rightMonth > parseIsoLocal(maxDate)} className="calendar-month-nav" aria-label="Next month">
+                <button type="button" onClick={() => setMonthOffset((offset) => offset + 1)} disabled={rightMonth > parseIsoLocal(selectionMaxDate)} className="calendar-month-nav" aria-label="Next month">
                   <ChevronRight size={20} aria-hidden="true" />
                 </button>
               </div>
@@ -409,14 +414,14 @@ export function DateRangePicker({
                 <button type="button" onClick={() => setMonthOffset((offset) => Math.max(0, offset - 1))} disabled={monthOffset === 0} className="calendar-month-nav" aria-label="Previous month">
                   <ChevronLeft size={18} />
                 </button>
-                <button type="button" onClick={() => setMonthOffset((offset) => offset + 1)} disabled={new Date(rightMonth.getFullYear(), rightMonth.getMonth(), 1) > parseIsoLocal(maxDate)} className="calendar-month-nav" aria-label="Next month">
+                <button type="button" onClick={() => setMonthOffset((offset) => offset + 1)} disabled={new Date(rightMonth.getFullYear(), rightMonth.getMonth(), 1) > parseIsoLocal(selectionMaxDate)} className="calendar-month-nav" aria-label="Next month">
                   <ChevronRight size={18} />
                 </button>
               </div>
             </div>}
             <div className="calendar-months">
-              <MonthGrid monthDate={leftMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} rangeView showMonthLabel={!rentalPresentation} />
-              {!rentalPresentation && <MonthGrid monthDate={rightMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={maxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} rangeView />}
+              <MonthGrid monthDate={leftMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={selectionMaxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} rangeView showMonthLabel={!rentalPresentation} />
+              {!rentalPresentation && <MonthGrid monthDate={rightMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={selectionMaxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} rangeView />}
             </div>
             {rentalPresentation && <p className="rental-calendar-help">Arrow keys move between days. Choose pickup, then return.</p>}
           </div>

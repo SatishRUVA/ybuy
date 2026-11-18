@@ -42,6 +42,7 @@ export interface DbBookingRow {
   renter_note?: string | null;
   service_fee_amount: number;
   insurance_amount: number;
+  insurance_selected?: boolean;
   tax_amount?: number;
   tax_rate?: number;
   sandbox_tax?: boolean;
@@ -207,6 +208,7 @@ export async function createBookingRequest(params: {
   quantity?: number;
   deliveryMode?: 'pickup' | 'delivery';
   renterNote?: string;
+  insuranceSelected: boolean;
 }): Promise<DbBookingRow> {
   const note = params.renterNote?.trim();
   const args = {
@@ -216,6 +218,7 @@ export async function createBookingRequest(params: {
     p_quantity: params.quantity ?? 1,
     p_delivery_mode: params.deliveryMode ?? 'pickup',
     p_renter_note: note ? note : null,
+    p_insurance_selected: params.insuranceSelected,
   };
   return callBookingRpc('create_booking_request', args);
 }

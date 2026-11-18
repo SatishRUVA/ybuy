@@ -29,6 +29,8 @@ import { pickupToday } from '@/lib/pickup-timezone';
 import { useUtcDay } from '@/lib/use-utc-day';
 import { createDepositAuthorizationSession, createDepositSetupSession, recordDepositHoldConsent } from '@/lib/security-deposit';
 import { PageBackButton } from '@/main-site/components/page-back-button';
+import { CheckoutPointsPicker, CheckoutRewards } from '@/main-site/components/rewards';
+import { redeemTestRewardPoints } from '@/lib/rewards';
 
 function formatDay(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
@@ -52,8 +54,12 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
   const [paymentBookingId, setPaymentBookingId] = useState<string | null>(null);
   const [createdBooking, setCreatedBooking] = useState<DbBookingRow | null>(null);
   const [deliveryMode, setDeliveryMode] = useState<'pickup' | 'delivery'>('pickup');
+  const [insuranceSelected, setInsuranceSelected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [depositConsent, setDepositConsent] = useState(false);
+  const [pointsSelected, setPointsSelected] = useState(false);
+  const [pointsApplied, setPointsApplied] = useState(false);
+  const localRewards = import.meta.env.DEV && ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,7 +141,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
   const deliveryFeeAmount = createdBooking ? Number(createdBooking.delivery_fee_amount ?? 0)
     : deliveryMode === 'delivery' && listing.deliveryAvailable ? Number(listing.deliveryFee ?? 0) : 0;
   const insuranceAmount = createdBooking ? Number(createdBooking.insurance_amount)
-    : insuranceAmountCents(listing.declaredValue, days, quantity) / 100;
+    : insuranceSelected ? insuranceAmountCents(listing.declaredValue, days, quantity) / 100 : 0;
   const deposit = createdBooking ? Number(createdBooking.deposit) : listing.deposit;
   const isTaxDemo = createdBooking?.sandbox_tax === true;
   const tax = createdBooking ? Number(createdBooking.tax_amount ?? 0) : bookingTaxCents(rental, serviceFee) / 100;
@@ -147,17 +153,23 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
     setSubmitting(true);
     setError(null);
     try {
-      if (paymentBookingId) {
-        window.location.href = await createCheckoutSession(paymentBookingId);
-        return;
-      }
-      if (availabilityStatus !== 'available') {
+      if (!paymentBookingId && availabilityStatus !== 'available') {
         throw new Error(availabilityStatus === 'error'
           ? 'Availability could not be verified. Please retry before booking.'
           : 'These dates are not available for the selected quantity. Choose another range.');
       }
-      const booking = createdBooking ?? await createBookingRequest({ listingId: id, startDate: startDate!, endDate: endDate!, quantity, deliveryMode });
+      const booking = createdBooking ?? await createBookingRequest({
+        listingId: id, startDate: startDate!, endDate: endDate!, quantity, deliveryMode, insuranceSelected,
+      });
       if (!createdBooking) setCreatedBooking(booking);
+      if (pointsSelected && !pointsApplied) {
+        await redeemTestRewardPoints(booking.id);
+        setPointsApplied(true);
+      }
+      if (paymentBookingId) {
+        window.location.href = await createCheckoutSession(paymentBookingId);
+        return;
+      }
       if (!booking.payment_first && booking.deposit_collection_model === 'authorization' && Number(booking.deposit) > 0) {
         if (!depositConsent) throw new Error('Consent is required to save your card for a temporary security-deposit authorization.');
         await recordDepositHoldConsent(booking.id);
@@ -257,7 +269,9 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
             <Row label="Service fee" value={serviceFee} />
             {deliveryFeeAmount > 0 && <Row label="Delivery fee" value={deliveryFeeAmount} />}
             {createdBooking ? <Row label="Insurance" value={insuranceAmount} />
-              : <InsuranceAmount days={days} replacementValue={listing.declaredValue} quantity={quantity} />}
+              : <InsuranceAmount days={days} replacementValue={listing.declaredValue} quantity={quantity}
+                selected={insuranceSelected} onSelectionChange={setInsuranceSelected}
+                disabled={submitting || Boolean(paymentBookingId)} />}
             <Row label={isTaxDemo ? 'Tax (7% test)' : createdBooking?.tax_rate === 0 ? 'Tax' : 'Tax (7%)'} value={tax} />
             <div className="pt-3 border-t border-app flex justify-between font-bold text-base text-main">
               <span>Rental and fees</span>
@@ -268,7 +282,10 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
             <span>{createdBooking ? 'Backend-confirmed total' : 'Estimated total'}</span><span className="tnum">${formatMoney(total)}</span>
           </div>
           <p className="text-xs text-sec mt-2">{createdBooking ? 'Stored tax and total confirmed by the backend.' : 'Tax is 7% of discounted rental and service fees only. The server confirms the final amount.'}</p>
-          <p className="text-xs text-sec mt-2 leading-relaxed">Rental payment only, including applicable fees, insurance and tax. The security hold is a separate check-in transaction.</p>
+          <p className="text-xs text-sec mt-2 leading-relaxed">Rental payment only, including applicable fees, selected optional insurance and tax. The security hold is a separate check-in transaction.</p>
+          {localRewards && <CheckoutPointsPicker
+            selected={pointsSelected} applied={pointsApplied} onSelectionChange={setPointsSelected}
+            rentalSubtotal={rental} total={total} disabled={submitting} />}
         </Surface>
 
           {deposit > 0 && (
@@ -285,9 +302,9 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
             </Surface>
           )}
 
-        {error && <Alert tone="error" title={paymentBookingId ? 'Could not open payment' : 'Booking not created'} className="mb-4">
+        {error && <Alert tone="error" title={createdBooking ? 'Booking saved - action required' : 'Booking not created'} className="mb-4">
           {error}
-          {paymentBookingId && <p className="mt-2">Your booking was created. Retry payment below, or open it from Bookings. Do not submit a new booking.</p>}
+          {createdBooking && <p className="mt-2">Your booking was created. Retry below, or open it from Bookings. Do not submit a new booking.</p>}
         </Alert>}
         {availabilityStatus !== 'available' && !paymentBookingId && <Alert
           tone={availabilityStatus === 'unavailable' ? 'warning' : 'info'}
@@ -344,7 +361,7 @@ const NEXT_STEP: Record<UiBooking['status'], string> = {
   confirmed: 'Paid and confirmed. Arrange pickup in messages.',
   active: 'The rental is under way. Start the return when you are done.',
   return_pending: 'Return started - the owner confirms once they have it back.',
-  completed: 'All done. Leave a review from your bookings.',
+  completed: 'Item returned. Condition review and financial processing are tracked separately.',
   cancelled: 'This booking was cancelled.',
   rejected: 'The owner declined this request.',
 };
@@ -445,6 +462,7 @@ export function ConfirmationPage({ id }: { id: string }) {
         </div>
 
         {confirmationError && <Alert tone="error" className="mb-4">{confirmationError}</Alert>}
+        {!booking.isOwner && booking.status === 'pending_payment' && <CheckoutRewards key={booking.id} bookingId={booking.id} rentalSubtotal={booking.subtotal} />}
         {(booking.status==='pending_payment' || booking.status==='cancelled') && <CheckoutReservation
           bookingId={booking.id} canPay={!booking.isOwner}
           requiresDepositAuthorization={!booking.paymentFirst && booking.depositCollectionModel==='authorization' && booking.deposit>0} /> }
@@ -493,7 +511,7 @@ export function ConfirmationPage({ id }: { id: string }) {
           <div className="flex justify-between"><span className="text-sec">Rental charge after discount</span><span className="font-semibold text-main tnum">${formatMoney(booking.depositCollectionModel === 'authorization' ? booking.total : booking.total - booking.deposit)}</span></div>
           <div className="flex justify-between pt-3 border-t border-app">
             <span className="text-sec">Status</span>
-            <span className="font-semibold text-main">{booking.status.replace('_', ' ')}</span>
+            <span className="font-semibold text-main">{booking.status === 'completed' ? 'returned' : booking.status.replace('_', ' ')}</span>
           </div>
         </Surface>
         {booking.deposit > 0 && <Surface className="p-4 mb-4">
@@ -504,7 +522,7 @@ export function ConfirmationPage({ id }: { id: string }) {
         </Surface>}
         {booking.paymentFirst && booking.status === 'confirmed' && <Button className="mb-4" onClick={() => navigate({ name: 'check-in', id: booking.id })}>Check-in: choose a slot</Button>}
 
-        {booking.status === 'completed' && <RentalSettlement bookingId={booking.id} isOwner={booking.isOwner} autoProcess />}
+        {booking.status === 'completed' && <RentalSettlement bookingId={booking.id} isOwner={booking.isOwner} />}
         <div className="flex flex-col sm:flex-row gap-3">
           <Button fullWidth onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>View Bookings</Button>
           <Button fullWidth variant="secondary" icon={<MessageSquare size={16} />} onClick={handleMessageOwner}>

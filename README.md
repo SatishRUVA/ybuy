@@ -1,5 +1,52 @@
 # ybuy
 
+## YBuy Points MVP (test only)
+
+Apply `20261117000008_signup_points_mvp.sql` for the separate points wallet and
+transaction-safe ledger. Signup rewards default to disabled. Local database
+seeding and `pnpm dev:local` enable `admin_financial_test_gate` automatically
+with `environment='local_test'`; hosted migrations leave it disabled.
+Administrators can then change
+`signup_reward_enabled` and `signup_reward_points` (default 500) in Global
+settings. The first enable permanently sets the launch cutoff: earlier accounts
+do not qualify, and toggling the setting never resets it.
+
+Only trusted email **and** phone confirmation earns points automatically.
+Unique hashed email/phone claims prevent duplicate rewards, even after changing
+phones; metadata and editable profile fields are not verification. SMS and
+customer phone-verification UI remain disabled; tests use trusted local fixtures.
+Disabling signup awards does not remove existing balances or prevent simulated
+redemption while the financial test gate is enabled.
+
+The renter dashboard and wallet show points and history. Checkout simulates
+spending exactly 500 points ($5), once per booking with at least $5 in rental
+subtotal. No fee/deposit redemption, cash-out, transfer, expiry or advanced
+campaigns. Cancellation/rejection restores simulated points once.
+Local checkout shows a 0-or-500-point slider inside the price breakdown before
+booking creation. Selection previews the simulated total without spending
+points; continuing saves the booking and redeems once against that booking.
+The actual payment amount remains separately displayed and unchanged.
+**Stripe payments, booking totals, tax, agreements and owner earnings never
+change.** Real checkout discounts, production rollout and SMS configuration are
+deferred. Existing legacy test credits remain separate and unchanged.
+
+Local renter picker profiles receive a one-time 500-point starting grant during
+local setup/provisioning, including existing renter fixtures. Grants are real
+test ledger entries and never refill balances after points are spent. Only
+marked `renterN@profiles.ybuy.test` fixtures in the fixed local database qualify;
+owners, staff, unrelated users and hosted accounts are unchanged. This synthetic
+fixture grant does not mark a phone verified or enable the public signup offer.
+
+The local development homepage and sign-in/signup dialog preview the
+"500 YBuy Points = $5" offer, with email/phone verification requirements and an
+explicit test-only disclaimer. The promotion is restricted to development on
+loopback hosts and is excluded from production builds; showing it does not
+enable signup rewards or award points to existing test profiles.
+
+Validation: `node dev\supabase-local.mjs test db supabase\tests\signup_points.sql` on a disposable
+local stack, `pnpm exec playwright test rewards.spec.ts --reporter=list`,
+`node --test tests\payment-confirmation.test.mjs`, and `pnpm run typecheck`.
+
 ## Rental-first check-in
 
 Owners can create and publish a listing available today, and renters can book
@@ -672,25 +719,24 @@ Configure these production environment variables **only on the admin project**:
 - `VITE_SITE_VARIANT=admin`, `VITE_TEST_ENVIRONMENT=true`, `YBUY_ADMIN_PORTAL=true`.
 - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for the isolated test backend,
   plus server-only `SUPABASE_SERVICE_ROLE_KEY`.
-- Separate server-only `YBUY_ADMIN_TOTP_SECRET` and `YBUY_SUPER_ADMIN_TOTP_SECRET`
-  (distinct Base32 seeds of at least 32 characters), plus a separate
-  `YBUY_ADMIN_ACCESS_SESSION_SECRET` (at least 32 characters).
+- Server-only `YBUY_ADMIN_TOTP_SECRET` (a Base32 seed of at least 32 characters)
+  and a separate `YBUY_ADMIN_ACCESS_SESSION_SECRET` (at least 32 characters).
 - `YBUY_TEMP_ACCESS_ENABLED=false`, `YBUY_TEST_PROFILE_LOGIN=false` and
   `VITE_TEST_PROFILE_LOGIN=false`; the customer authenticator is not used here.
 
-Select Admin or Super Admin, enter that role's authenticator code, then choose
-a profile. Admin codes unlock only `admin@example.test`; Super Admin codes
-unlock only `super-admin@example.test`. Both accounts must carry the
-`ybuy-local-lifecycle-v1` fixture marker and their matching active database role.
-Switching within the verified role does not ask for another code. Changing roles
-requires locking access and entering the other role's code. Tokens are signed
-with a host-and-role-specific key and kept in a host-only HttpOnly, Secure,
+Enter the Admin authenticator code, then choose an Admin profile. The portal
+admits only `admin@example.test` profiles carrying the
+`ybuy-local-lifecycle-v1` fixture marker and matching active database role.
+Switching profiles does not ask for another code. Tokens are signed with a
+host-and-role-specific key and kept in a host-only HttpOnly, Secure,
 SameSite=Strict cookie for up to two hours. Supabase sessions on the portal are
-memory-only; profile selection is required again after a reload.
+memory-only; profile selection is required again after a reload. Super Admin
+access and management features are not available in this portal; backend role
+records are retained.
 
 Apply `20261103000003_admin_portal_login_limit.sql` to the **test backend only**.
 It limits verification to five attempts per hashed IP in five minutes across
-both roles and all server instances. Database counter access is service-only.
+all server instances. Database counter access is service-only.
 Profile selection rechecks active roles on every request; database RPC permission
 checks remain authoritative. The role code gates test profile issuance, not
 Supabase MFA or the lifetime of an already-issued Supabase access token.
@@ -1070,8 +1116,8 @@ show an item icon; the banner never invents percentage gains or bid activity.
   verified payment must revalidate inventory; conflicts enter a private
   reconciliation queue rather than displacing another renter.
 - Agreement snapshots without approved legal terms are explicitly operational
-  records, not approved rental contracts. A Super Admin can publish externally
-  approved terms in Global Settings. Historical snapshots are never rewritten.
+  records, not approved rental contracts. Policy publication controls are not
+  available in the admin portal. Historical snapshots are never rewritten.
 - New publications require an Owner-declared item value and condition. Category
   deposit suggestions are editable within configured limits; a declared value
   is neither insurance coverage nor an independent appraisal.
@@ -1339,35 +1385,12 @@ Home's category tiles use fixed artwork defined in `src/lib/listings.ts`.
 Publishing or editing listings never changes category thumbnails. Categories
 without mapped artwork use their category icon.
 
-## Super Admin Vault Chest
+## Admin portal scope
 
-The admin console includes a Super Admin-only Vault Chest at `/admin/vault`.
-It requires Supabase Auth TOTP step-up verification; Postgres checks the active
-Super Admin role, verified factor, `aal2` JWT and a five-minute TOTP age on
-every vault RPC. The UI locks and clears its secret field when that interval
-expires. Secrets are write-only in the page, encrypted by Supabase Vault, and
-excluded from audit payloads.
-
-This is a storage foundation, not a migration or runtime-secret source. No
-existing `.env`, Edge Function, OAuth, deployment or hosted secret values were
-moved. Stripe/Resend/provider integrations continue reading their existing
-server-side environment configuration. The initial allowlist is Stripe,
-Resend and OpenRouter only; Supabase/service-role, Google OAuth and signing
-credentials remain in platform secret stores. To make entries operational,
-separately review provider-specific cutover and deployment procedures.
-
-Apply [migration 12](supabase/migrations/20261018000012_super_admin_vault.sql)
-and enable authenticator enrollment/verification in Supabase Auth before
-unlocking the page. TOTP is enabled in the local `supabase/config.toml` only;
-hosted Auth configuration was not changed. Migration and a real Authenticator
-flow were verified against local Supabase; nothing was deployed to hosted
-Supabase.
-
-Run local policy and real TOTP/encrypted-write checks with
-`pnpm supabase:local test db supabase\tests\super_admin_vault.sql --local` and
-`node --experimental-websocket scripts\verify-vault-local.mjs`. The smoke
-script uses temporary local test credentials, refuses to overwrite a populated
-test slot, and cleans up its test account and value.
+The dedicated admin portal is Admin-only. Super Admin sign-in, profile
+selection, navigation and management tools have been removed from the portal.
+Existing database roles, permissions, migrations and audit records are retained;
+this change does not delete or rewrite backend data.
 
 ## Item requests and rental offers
 
@@ -1497,6 +1520,23 @@ Set `LISTING_STORAGE_ORIGIN=http://127.0.0.1:54321` in `.env.local` when the
 browser uses that local Supabase URL. Function workers do not receive the
 runtime's internal host-port setting. Photo validation accepts this explicit
 origin and still checks each photo against the authenticated owner's listing images.
+
+For local Stripe test payments, a successful Checkout redirect is not enough:
+the signed payment webhook must reach local Supabase. With Stripe CLI installed
+and a test-mode `STRIPE_SECRET_KEY` in `.env.local`, run these in separate terminals:
+
+```powershell
+node dev\stripe-local.mjs
+node dev\supabase-local.mjs functions serve --env-file .env.local-stripe.local
+```
+
+Start the listener first so it can generate the ignored local-functions
+environment with its matching signing secret. Keep both commands running while
+using `http://localhost:5174/`; this replaces the functions command above, not the
+frontend server. The helper does not change `.env.local` or hosted webhook
+settings, refuses live Stripe keys, and redacts the listener secret from output.
+If a completed payment predates the listener, do not pay again: its existing
+Stripe test receipt needs reconciliation through the local webhook.
 
 Email is redirected to `NOTIFICATION_TEST_RECIPIENT` unless the trusted
 Edge Function environment explicitly sets `NOTIFICATION_LIVE_DELIVERY=true`.

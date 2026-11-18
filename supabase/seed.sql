@@ -15,3 +15,5 @@ on conflict (name) do update set icon = excluded.icon, active = excluded.active,
 -- migrations keep these features disabled in other environments until an admin enables them.
 update public.feature_flags set enabled = true, updated_at = now()
 where key in ('bidding','item_requests','disputes','duration_discounts','owner_promotions','test_dummy_legal_terms');
+
+update public.admin_financial_test_gate set environment='local_test',enabled=true where singleton;

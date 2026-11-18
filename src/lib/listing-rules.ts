@@ -103,7 +103,7 @@ export function validateListing(v: ListingFormValues): Partial<Record<ListingFie
   else if (UNSAFE_TEXT.test(descriptionText)) errors.description = 'Description can only contain plain text (no HTML, scripts or hidden characters).';
   else if (GIBBERISH_TEXT.test(descriptionText)) errors.description = 'Enter a clear, meaningful description instead of gibberish or placeholder text.';
 
-  if (!v.pickupConfirmed) errors.pickup = 'Choose a complete pickup address from the search results. Your exact address stays private until the booking is confirmed.';
+  if (!v.pickupConfirmed) errors.pickup = 'Enter a complete pickup address and confirm its city, state and ZIP code, or select an address suggestion.';
   else {
     const unsafePickup = v.pickupFields.map((field) => plainTextError('Pickup location', field, PICKUP_TEXT_MAX)).find(Boolean);
     if (unsafePickup) errors.pickup = unsafePickup;
