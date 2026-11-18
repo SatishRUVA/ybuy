@@ -58,6 +58,8 @@ credentials, so restrict merge permissions and review workflow changes.
   replace a queued pending run with a newer push; the newest release contains
   the intervening committed migrations.
 - CLI versions come from the committed pnpm lockfile; installs are frozen.
+- Public dependencies resolve through public npm tarball URLs, retaining pinned
+  versions and integrity hashes; no workstation registry credentials are needed.
 - Functions use API-side bundling (`--use-api`), so deployment does not depend on
   the workstation's authenticated npm registry. JWT verification settings come
   from `supabase/config.toml`; do not globally disable verification.
