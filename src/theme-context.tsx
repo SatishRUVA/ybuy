@@ -13,10 +13,10 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = 'rental-theme';
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children, fixedTheme }: { children: ReactNode; fixedTheme?: ThemeId }) {
   const [themeId, setThemeId] = useState<ThemeId>(() => {
-    // Only honor a stored theme when the demo switcher is enabled; otherwise the app is
-    // locked to the Ocean Green palette regardless of any stale localStorage value.
+    if (fixedTheme) return fixedTheme;
+    // Saved demo themes are only used when the demo switcher is enabled.
     if (SHOW_DEMO_THEMES && typeof localStorage !== 'undefined') {
       const stored = localStorage.getItem(STORAGE_KEY) as ThemeId | null;
       if (stored && themes.some((t) => t.id === stored)) return stored;
@@ -24,7 +24,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return defaultTheme;
   });
 
-  const theme = themes.find((t) => t.id === themeId)!;
+  const activeThemeId = fixedTheme ?? themeId;
+  const theme = themes.find((t) => t.id === activeThemeId)!;
 
   useEffect(() => {
     const root = document.documentElement;
@@ -37,7 +38,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [theme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, themeId, setThemeId, themes }}>
+    <ThemeContext.Provider value={{ theme, themeId: activeThemeId, setThemeId, themes }}>
       {children}
     </ThemeContext.Provider>
   );

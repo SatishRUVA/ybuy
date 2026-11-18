@@ -1,0 +1,51 @@
+.quiet-luxury {
+  --canvas: #f5f1e8;
+  --paper: #fffdf8;
+  --ink: #24362b;
+  --muted: #586257;
+  --line: #ded9cd;
+  --accent: #344e3b;
+  --accent-strong: #243a2c;
+  --accent-contrast: #fffdf8;
+  --surface-soft: #e9e5d9;
+  --focus: #165bb3;
+  --body-font: "DM Sans", sans-serif;
+  --display-font: "Gloock", Georgia, serif;
+}
+.quiet-luxury .site-header { border-bottom: 1px solid var(--line); }
+.quiet-luxury .site-header nav a { font-size: 0.82rem; letter-spacing: 0.02em; }
+.quiet-luxury .header-list-link { border-radius: 999px; }
+.quiet-hero { grid-template-columns: minmax(0, 0.92fr) minmax(20rem, 1.08fr); min-height: 35rem; }
+.quiet-luxury .hero h1 { max-width: 8ch; font-size: clamp(3.5rem, 6.8vw, 6rem); font-weight: 400; letter-spacing: -0.035em; line-height: 1; }
+.quiet-luxury .hero-lede { max-width: 36ch; }
+.quiet-luxury .hero-media { min-height: 27rem; border-radius: 11rem 0.7rem 0.7rem 0.7rem; }
+.quiet-luxury .hero-media img { min-height: 27rem; }
+.quiet-luxury .hero-caption { right: 1.25rem; bottom: 1.25rem; left: auto; max-width: 17rem; padding: 0.75rem 1rem; border-radius: 0.15rem; }
+.quiet-luxury .search-form { border-color: #d5d0c4; border-radius: 999px; }
+.quiet-luxury .search-field { padding-left: 1rem; }
+.quiet-luxury .search-button, .quiet-luxury .owner-link { border-radius: 999px; }
+.quiet-luxury .hero-assurance { margin: 0.8rem 0 0; color: var(--muted); font-size: 0.78rem; }
+.quiet-section-heading { align-items: flex-end; }
+.quiet-section-heading > div:first-child { flex: 1; }
+.quiet-luxury .content-note { margin: 0.55rem 0 0; color: var(--muted); font-size: 0.84rem; }
+.quiet-luxury .filter-button { min-height: 2.75rem; padding: 0.5rem 0.7rem; border: 0; border-bottom: 1px solid transparent; border-radius: 0; color: var(--muted); background: transparent; }
+.quiet-luxury .filter-button:hover, .quiet-luxury .filter-button[aria-pressed="true"] { color: var(--ink); background: transparent; border-color: var(--accent); }
+.quiet-luxury .listing-grid { gap: 1.6rem; }
+.quiet-luxury .listing-card { background: transparent; border: 0; }
+.quiet-luxury .listing-image { aspect-ratio: 1.2; border-radius: 0.35rem; }
+.quiet-luxury .listing-content { padding: 0.9rem 0.1rem; }
+.quiet-luxury .listing-card h3 { font-family: var(--display-font); font-size: 1.3rem; font-weight: 400; }
+.quiet-luxury .sample-tag { color: #43543e; background: #e5e7d8; border-radius: 999px; }
+.quiet-luxury .save-button { border-radius: 999px; }
+.quiet-luxury .how-section { border-color: #d3cdbc; }
+.quiet-luxury .steps li { border-color: #9c8e6b; }
+.quiet-luxury .owner-section { background: #e7e4d9; border-radius: 0.45rem; }
+.quiet-luxury .site-footer { border-color: #d3cdbc; }
+
+@media (max-width: 760px) {
+  .quiet-hero { grid-template-columns: 1fr; }
+  .quiet-luxury .hero-media, .quiet-luxury .hero-media img { min-height: 19rem; }
+  .quiet-section-heading { align-items: flex-start; }
+  .quiet-luxury .filter-list { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+  .quiet-luxury .filter-button { flex: 0 0 auto; }
+}

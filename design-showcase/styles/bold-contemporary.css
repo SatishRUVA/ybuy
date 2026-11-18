@@ -1,0 +1,59 @@
+.bold-contemporary {
+  --canvas: #f4f3e9;
+  --paper: #fff;
+  --ink: #1d2a21;
+  --muted: #38483c;
+  --line: #d5d9c6;
+  --accent: #1d2a21;
+  --accent-strong: #111b14;
+  --accent-contrast: #fff;
+  --surface-soft: #d8ed65;
+  --focus: #104da9;
+  --body-font: "Archivo", sans-serif;
+  --display-font: "Archivo", sans-serif;
+}
+.bold-contemporary .site-header { min-height: 4.5rem; border-bottom: 1px solid var(--line); }
+.bold-contemporary .site-header nav a { font-weight: 700; }
+.bold-contemporary .header-list-link { color: #fff; background: #1d2a21; border-color: #1d2a21; }
+.bold-contemporary .header-list-link:hover { color: #fff; background: #111b14; border-color: #111b14; }
+.bold-hero { grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.92fr); gap: 0; padding: 2.7rem 0 4rem; }
+.bold-hero .hero-copy { position: relative; z-index: 1; padding: clamp(1.5rem, 4vw, 3.5rem); background: #d8ed65; }
+.bold-contemporary .hero h1 { max-width: 8ch; font-size: clamp(4.2rem, 10vw, 6rem); font-weight: 800; letter-spacing: -0.04em; line-height: 0.88; }
+.bold-contemporary .hero h1::first-line { color: #1d2a21; }
+.bold-contemporary .hero-lede { max-width: 38ch; margin-top: 1.4rem; color: #334137; font-size: 1.02rem; }
+.bold-contemporary .search-form { max-width: 38rem; border: 2px solid #1d2a21; }
+.bold-contemporary .search-button, .bold-contemporary .owner-link { border-radius: 0; }
+.bold-hero .hero-media { min-height: 30rem; margin-left: -1.1rem; }
+.bold-hero .hero-media img { min-height: 30rem; }
+.bold-hero .hero-caption { right: 1rem; bottom: 1rem; left: auto; }
+.bold-contemporary .section-heading h2, .bold-contemporary .owner-section h2 { font-weight: 700; letter-spacing: -0.04em; }
+.bold-section-heading { align-items: center; }
+.bold-contemporary .content-note { margin: 0.55rem 0 0; color: var(--muted); font-size: 0.82rem; }
+.bold-contemporary .filter-button { border: 1px solid #b8c79c; border-radius: 0; }
+.bold-contemporary .filter-button[aria-pressed="true"] { color: #1d2a21; background: #d8ed65; border-color: #1d2a21; }
+.bold-contemporary .listing-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.bold-contemporary .listing-card { border: 2px solid #1d2a21; border-radius: 0; }
+.bold-contemporary .listing-image { aspect-ratio: 1.18; }
+.bold-contemporary .listing-content { padding: 1rem; }
+.bold-contemporary .sample-tag { color: #1d2a21; background: #d8ed65; }
+.bold-contemporary .save-button { border-radius: 0; }
+.bold-contemporary .steps { gap: 0; }
+.bold-contemporary .steps li { padding: 0.8rem; border-top: 3px solid #1d2a21; }
+.bold-contemporary .steps li + li { border-left: 1px solid #c5cbb8; }
+.bold-contemporary .owner-section { color: #fff; background: #bd3c27; border-radius: 0; }
+.bold-contemporary .owner-section p { color: #fff5ee; }
+.bold-contemporary .owner-link { color: #1d2a21; background: #d8ed65; border-color: #d8ed65; }
+.bold-contemporary .owner-link:hover { color: #1d2a21; background: #e7f5a3; border-color: #e7f5a3; }
+
+@media (max-width: 760px) {
+  .bold-hero { grid-template-columns: 1fr; gap: 0; padding-top: 2rem; }
+  .bold-hero .hero-copy { padding: 1.5rem; }
+  .bold-contemporary .hero h1 { font-size: clamp(4rem, 19vw, 6rem); }
+  .bold-hero .hero-media { min-height: 17rem; margin: 0; }
+  .bold-hero .hero-media img { min-height: 17rem; }
+  .bold-section-heading { align-items: flex-start; }
+  .bold-contemporary .listing-grid { grid-template-columns: 1fr; }
+  .bold-contemporary .steps { gap: 1rem; }
+  .bold-contemporary .steps li { padding: 0.6rem 0; border-top-width: 2px; }
+  .bold-contemporary .steps li + li { border-left: 0; }
+}

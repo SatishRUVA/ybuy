@@ -10,6 +10,7 @@ export interface User {
   bio: string;
   onTimeReturns: number;
   unresolvedClaims: number;
+  missedAuctionDecisionCount?: number;
 }
 
 export interface Component {
@@ -39,6 +40,7 @@ export interface Listing {
   reviewCount: number;
   rentalCount: number;
   available: boolean;
+  listingStatus?: 'draft' | 'published' | 'archived' | 'suspended' | 'pending_approval';
   instantBooking: boolean;
   verifiedOwner: boolean;
   protectionEligible: boolean;
@@ -46,6 +48,10 @@ export interface Listing {
   condition: string;
   description: string;
   whatsIncluded: string[];
+  brand?: string;
+  model?: string;
+  additionalDetails?: string;
+  deliveryRadiusMiles?: number | null;
   components: Component[];
   declaredValue: number;
   assetId: string;
@@ -58,6 +64,18 @@ export interface Listing {
   cancellation: string;
   reviews: Review[];
   deposit: number;
+  availableQuantity?: number;
+  availabilityStart?: string | null;
+  availabilityEnd?: string | null;
+  pickupTimeZone?: string | null;
+  availabilityExpired?: boolean;
+  deliveryFee?: number | null;
+  auctionEnabled?: boolean;
+  durationDiscount?: { minimumDays: number; percent: number } | null;
+  weeklyDiscountEnabled?: boolean;
+  weeklyDiscountPercent?: number;
+  monthlyDiscountEnabled?: boolean;
+  monthlyDiscountPercent?: number;
   lat: number;
   lng: number;
 }
@@ -221,7 +239,7 @@ const users: User[] = [
     responseRate: 100,
     verified: true,
     joinedYear: 2025,
-    bio: 'Mom of two. Baby gear that my kids have outgrown — clean, safe, and ready to go.',
+    bio: 'Mom of two. Baby gear that my kids have outgrown - clean, safe, and ready to go.',
     onTimeReturns: 28,
     unresolvedClaims: 0,
   },
@@ -342,7 +360,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 42,
     damageHistory: 'None',
-    pickup: 'Irving, TX — approximate location shown until booking',
+    pickup: 'Irving, TX - approximate location shown until booking',
     delivery: 'Delivery available within 10 miles for $15',
     cancellation: 'Free cancellation up to 48 hours before pickup',
     reviews: makeReviews('l1', 128),
@@ -388,7 +406,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 67,
     damageHistory: 'Minor cosmetic wear',
-    pickup: 'Dallas, TX — approximate location shown until booking',
+    pickup: 'Dallas, TX - approximate location shown until booking',
     delivery: 'Pickup only',
     cancellation: 'Free cancellation up to 24 hours before pickup',
     reviews: makeReviews('l2', 89),
@@ -418,7 +436,7 @@ export const listings: Listing[] = [
     protectionEligible: true,
     deliveryAvailable: true,
     condition: 'Excellent',
-    description: 'Ultra short throw 4K laser projector. 3,000 lumens — perfect for backyard movie nights or presentations. Includes 100" screen.',
+    description: 'Ultra short throw 4K laser projector. 3,000 lumens - perfect for backyard movie nights or presentations. Includes 100" screen.',
     whatsIncluded: ['Projector', '100" screen', 'Power cable', 'HDMI cable', 'Remote', 'Carrying case'],
     components: [
       { name: 'Projector', present: true },
@@ -434,7 +452,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 31,
     damageHistory: 'None',
-    pickup: 'Irving, TX — approximate location shown until booking',
+    pickup: 'Irving, TX - approximate location shown until booking',
     delivery: 'Delivery available within 15 miles for $20',
     cancellation: 'Free cancellation up to 48 hours before pickup',
     reviews: makeReviews('l3', 56),
@@ -482,7 +500,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 28,
     damageHistory: 'Minor scuff on stuff sack',
-    pickup: 'Las Colinas, TX — approximate location shown until booking',
+    pickup: 'Las Colinas, TX - approximate location shown until booking',
     delivery: 'Delivery available within 20 miles for $15',
     cancellation: 'Free cancellation up to 24 hours before pickup',
     reviews: makeReviews('l4', 42),
@@ -526,7 +544,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 34,
     damageHistory: 'Minor stains on linens',
-    pickup: 'Dallas, TX — approximate location shown until booking',
+    pickup: 'Dallas, TX - approximate location shown until booking',
     delivery: 'Delivery + setup available for $75 within 25 miles',
     cancellation: 'Free cancellation up to 72 hours before event',
     reviews: makeReviews('l5', 67),
@@ -571,7 +589,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 22,
     damageHistory: 'None',
-    pickup: 'Irving, TX — approximate location shown until booking',
+    pickup: 'Irving, TX - approximate location shown until booking',
     delivery: 'Delivery available within 15 miles for $25',
     cancellation: 'Free cancellation up to 48 hours before pickup',
     reviews: makeReviews('l6', 38),
@@ -615,7 +633,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 73,
     damageHistory: 'Minor paint chips',
-    pickup: 'Coppell, TX — approximate location shown until booking',
+    pickup: 'Coppell, TX - approximate location shown until booking',
     delivery: 'Pickup only',
     cancellation: 'Free cancellation up to 24 hours before pickup',
     reviews: makeReviews('l7', 54),
@@ -659,7 +677,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 28,
     damageHistory: 'None',
-    pickup: 'Irving, TX — approximate location shown until booking',
+    pickup: 'Irving, TX - approximate location shown until booking',
     delivery: 'Delivery available within 10 miles for $10',
     cancellation: 'Free cancellation up to 24 hours before pickup',
     reviews: makeReviews('l8', 31),
@@ -705,7 +723,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 67,
     damageHistory: 'Minor fret wear',
-    pickup: 'Dallas, TX — approximate location shown until booking',
+    pickup: 'Dallas, TX - approximate location shown until booking',
     delivery: 'Pickup only',
     cancellation: 'Free cancellation up to 48 hours before pickup',
     reviews: makeReviews('l9', 45),
@@ -750,7 +768,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 19,
     damageHistory: 'None',
-    pickup: 'Plano, TX — approximate location shown until booking',
+    pickup: 'Plano, TX - approximate location shown until booking',
     delivery: 'Delivery available within 20 miles for $30',
     cancellation: 'Free cancellation up to 48 hours before pickup',
     reviews: makeReviews('l10', 33),
@@ -796,7 +814,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 18,
     damageHistory: 'None',
-    pickup: 'Irving, TX — approximate location shown until booking',
+    pickup: 'Irving, TX - approximate location shown until booking',
     delivery: 'Delivery available within 10 miles for $10',
     cancellation: 'Free cancellation up to 24 hours before pickup',
     reviews: makeReviews('l11', 24),
@@ -842,7 +860,7 @@ export const listings: Listing[] = [
     ownershipVerified: true,
     rentalHistory: 15,
     damageHistory: 'None',
-    pickup: 'Irving, TX — approximate location shown until booking',
+    pickup: 'Irving, TX - approximate location shown until booking',
     delivery: 'Delivery available within 10 miles for $10',
     cancellation: 'Free cancellation up to 24 hours before pickup',
     reviews: makeReviews('l12', 19),

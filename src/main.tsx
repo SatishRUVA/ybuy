@@ -1,10 +1,14 @@
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
-import './index.css';
+
+const RootApp = import.meta.env.VITE_SITE_VARIANT === 'admin'
+  ? lazy(() => import('./admin/App'))
+  : lazy(() => import('./main-site/App'));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <Suspense fallback={null}>
+      <RootApp />
+    </Suspense>
   </StrictMode>
 );

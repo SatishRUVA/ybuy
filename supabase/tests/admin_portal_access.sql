@@ -1,0 +1,15 @@
+begin;
+select plan(10);
+select is(public.consume_admin_login_attempt(repeat('a',64)), true, 'First attempt is allowed');
+select is(public.consume_admin_login_attempt(repeat('a',64)), true, 'Second attempt is allowed');
+select is(public.consume_admin_login_attempt(repeat('a',64)), true, 'Third attempt is allowed');
+select is(public.consume_admin_login_attempt(repeat('a',64)), true, 'Fourth attempt is allowed');
+select is(public.consume_admin_login_attempt(repeat('a',64)), true, 'Fifth attempt is allowed');
+select is(public.consume_admin_login_attempt(repeat('a',64)), false, 'Sixth attempt is denied');
+update public.admin_login_attempts set window_start = now() - interval '6 minutes' where key = repeat('a',64);
+select is(public.consume_admin_login_attempt(repeat('a',64)), true, 'Counter resets after five minutes');
+select ok(not has_function_privilege('anon', 'public.consume_admin_login_attempt(text)', 'EXECUTE'), 'Anonymous clients cannot consume counters');
+select ok(not has_function_privilege('authenticated', 'public.consume_admin_login_attempt(text)', 'EXECUTE'), 'Authenticated clients cannot consume counters');
+select ok(has_function_privilege('service_role', 'public.consume_admin_login_attempt(text)', 'EXECUTE'), 'Only trusted service can consume counters');
+select * from finish();
+rollback;

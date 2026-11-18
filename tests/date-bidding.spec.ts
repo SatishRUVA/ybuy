@@ -1,0 +1,159 @@
+import { expect, test } from '@playwright/test';
+
+const auction = {
+  id: '60000000-0000-4000-8000-000000000001', listing_id: '30000000-0000-4000-8000-000000000001',
+  date_flexible: true, status: 'open', start_date: '2026-11-10', end_date: '2026-12-31',
+  ends_at: '2026-11-09T10:00:00Z', server_now: '2026-11-03T12:00:00Z',
+  minimum_increment: 1, minimum_next_bid: 10, participant_count: 2, total_bid_count: 2,
+  my_daily_rate: null,
+  top_bids: [{ id: 'bid-a', rank: 1, daily_rate: 30, total_value: 150, start_date: '2026-11-10', end_date: '2026-11-15', bid_count: 1 },
+    { id: 'bid-b', rank: 2, daily_rate: 40, total_value: 80, start_date: '2026-11-11', end_date: '2026-11-13', bid_count: 1 }],
+  my_bids: [], my_bid_count: 0, my_booking_id: null, is_owner: false,
+};
+
+for (const width of [1440, 390]) {
+  test(`fixed-date bidding shows a read-only calendar at ${width}px`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width, height: 900 });
+    await page.route('**/__fixed-bidding-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><script type="module">
+import RefreshRuntime from '/@react-refresh'; RefreshRuntime.injectIntoGlobalHook(window);
+window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type; window.__vite_plugin_react_preamble_installed__ = true;
+</script></head><body></body></html>` }));
+    await page.route('**/src/auth-context.tsx*', route => route.fulfill({ contentType: 'text/javascript', body: 'export const useAuth = () => ({user:{id:"renter"},openSignIn:()=>{}});' }));
+    await page.route('**/src/router.tsx*', route => route.fulfill({ contentType: 'text/javascript', body: 'export const useRouter = () => ({navigate:()=>{}});' }));
+    await page.route('**/src/lib/settings.ts*', route => route.fulfill({ contentType: 'text/javascript', body: 'export const usePlatformFee = () => ({pct:0.1,loading:false,error:null});' }));
+    await page.route('**/src/lib/listing-auctions.ts*', route => route.fulfill({ contentType: 'text/javascript', body: `export const MAX_AUCTION_DAILY_BID=100000; export async function getListingAuction(){return ${JSON.stringify({ ...auction, date_flexible: false, end_date: '2026-12-03' })};} export async function placeListingAuctionBid(){throw new Error('Read-only calendar must not submit a bid');}` }));
+    await page.goto('/__fixed-bidding-fixture');
+    await page.evaluate(async listingId => {
+      const { createElement: h, mountComponent } = await import('/tests/component-mount.tsx');
+      await import('/src/main-site/index.css');
+      await import('/src/main-site/theme.css');
+      const { ThemeProvider } = await import('/src/theme-context.tsx');
+      const { ListingAuctionPanel } = await import('/src/main-site/components/listing-auction-panel.tsx');
+      mountComponent(() => h(ThemeProvider, { fixedTheme: 'main' }, h(ListingAuctionPanel, { listingId, deposit: 60, replacementValue: 200 })));
+    }, auction.listing_id);
+    const calendar = page.getByRole('region', { name: 'Auction rental calendar' });
+    await expect(calendar).toBeVisible();
+    await expect(calendar).toContainText('These dates are fixed by the owner.');
+    await expect(calendar.getByRole('button', { name: /November 10, 2026, start date/ })).toBeDisabled();
+    await expect(calendar.getByRole('button', { name: /November 11, 2026, within selected range/ })).toHaveAttribute('aria-pressed', 'true');
+    await expect(calendar.getByRole('button', { name: /November 10, 2026, start date/ })).toHaveCSS('background-color', 'rgb(32, 88, 73)');
+    await expect(calendar.getByRole('button', { name: /November 11, 2026, within selected range/ })).toHaveCSS('background-color', 'rgb(237, 243, 234)');
+    const bidInput = page.getByLabel('Your competitive bid per day (USD)', { exact: true });
+    await expect(bidInput).toHaveAttribute('min', '10');
+    await expect(bidInput).toHaveAttribute('max', '100000');
+    await bidInput.fill('41');
+    const breakdown = page.getByLabel('Estimated bid price breakdown');
+    await expect(breakdown).toBeVisible();
+    await expect(page.getByText('$943.00', { exact: true })).toBeVisible();
+    await expect(breakdown).toContainText('Service fee');
+    await expect(breakdown).toContainText('$94.30');
+    await expect(breakdown).toContainText('$72.61');
+    await expect(breakdown).toContainText('Total without optional insurance');
+    await expect(breakdown).toContainText('$1,109.91');
+    await expect(breakdown).toContainText('Optional insurance estimate');
+    await expect(breakdown).toContainText('$46.00');
+    await expect(breakdown).toContainText('$1,155.91');
+    await expect(page.getByText('Separate security hold: $60.00.', { exact: false })).toBeVisible();
+    await expect(breakdown).not.toContainText('$60.00');
+    await calendar.getByRole('button', { name: 'Next rental month' }).click();
+    await expect(calendar.getByRole('button', { name: /December 3, 2026, end date/ })).toBeDisabled();
+    await expect(calendar.getByRole('button', { name: 'Next rental month' })).toBeDisabled();
+    await calendar.getByRole('button', { name: 'Previous rental month' }).click();
+    await expect(calendar).toContainText('November 2026');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+
+  test(`renter-selected date bidding calculates exclusive days and submits dates at ${width}px`, async ({ page }, testInfo) => {
+    test.setTimeout(60000);
+    await page.clock.setFixedTime(new Date('2026-11-03T12:00:00Z'));
+    await page.setViewportSize({ width, height: 900 });
+    const calls: Record<string, unknown>[] = [];
+    const quotes: Record<string, unknown>[] = [];
+    await page.route('**/__date-bidding-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><script type="module">
+import RefreshRuntime from '/@react-refresh'; RefreshRuntime.injectIntoGlobalHook(window);
+window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type; window.__vite_plugin_react_preamble_installed__ = true;
+</script></head><body></body></html>` }));
+    await page.route('**/src/auth-context.tsx*', route => route.fulfill({ contentType: 'text/javascript', body: `export const useAuth = () => ({user:{id:'renter'},openSignIn:()=>{}});` }));
+    await page.route('**/src/router.tsx*', route => route.fulfill({ contentType: 'text/javascript', body: 'export const useRouter = () => ({navigate:route=>{window.__bidRoute=route;}});' }));
+    await page.route('**/src/lib/availability.ts*', route => route.fulfill({ contentType: 'text/javascript', body: 'export async function fetchUnavailableDates(){return {blocked:new Set(["2026-11-19"]),booked:new Set()};}' }));
+    await page.route('**/src/lib/settings.ts*', route => route.fulfill({ contentType: 'text/javascript', body: 'export const usePlatformFee = () => ({pct:0.1,loading:false,error:null});' }));
+    await page.route('**/src/lib/listing-auctions.ts*', route => route.fulfill({ contentType: 'text/javascript', body: `export const MAX_AUCTION_DAILY_BID=100000; const auction=${JSON.stringify(auction)}; export async function getListingAuction(listingId,range){if(range){await fetch('/__date-quote',{method:'POST',body:JSON.stringify({listingId,range})});return {...auction,minimum_next_bid:20};}return auction;}
+export async function placeListingAuctionBid(listingId,rate,key,consent,range){await fetch('/__date-bid',{method:'POST',body:JSON.stringify({listingId,rate,key,consent,range})});return {...auction,my_bid_count:1,my_bids:[
+{id:'selected-a',daily_rate:35,total_value:105,start_date:'2026-11-10',end_date:'2026-11-13',selected:true,booking_id:'booking-a',payment_status:'pending',payment_deadline:'2026-11-04T12:00:00Z'},
+{id:'selected-b',daily_rate:35,total_value:70,start_date:'2026-11-15',end_date:'2026-11-17',selected:true,booking_id:'booking-b',payment_status:'paid'}
+]};}` }));
+    await page.route('**/__date-bid', async route => { calls.push(route.request().postDataJSON()); await route.fulfill({ json: {} }); });
+    await page.route('**/__date-quote', async route => { quotes.push(route.request().postDataJSON()); await route.fulfill({ json: {} }); });
+    await page.goto('/__date-bidding-fixture');
+    await page.evaluate(async initialAuction => {
+      const { createElement: h, mountComponent } = await import('/tests/component-mount.tsx');
+      await import('/src/main-site/index.css');
+      await import('/src/main-site/theme.css');
+      const { ThemeProvider } = await import('/src/theme-context.tsx');
+      const { DateBiddingPanel } = await import('/src/main-site/components/date-bidding-panel.tsx');
+      mountComponent(() => h(ThemeProvider, { fixedTheme: 'main' },
+        h(DateBiddingPanel, { listingId: initialAuction.listing_id, initialAuction, deposit: 60, listedPrice: 45,
+          replacementValue: 100, serviceFeePct: 0.1, serviceFeeLoading: false, serviceFeeError: null })));
+    }, auction);
+    const dateTrigger = page.getByRole('button', { name: /^Choose a date range/ });
+    await expect(dateTrigger).toBeEnabled();
+    await dateTrigger.click();
+    const dateDialog = page.getByRole('dialog', { name: 'Choose rental dates', exact: true });
+    await expect(dateDialog.getByRole('button', { name: /^Choose pickup date/ })).toBeVisible();
+    await expect(dateDialog.getByRole('button', { name: /^Choose return date/ })).toBeVisible();
+    await expect(dateDialog.getByRole('button', { name: 'Reset', exact: true })).toBeVisible();
+    await expect(dateDialog).toContainText('November 2026');
+    await expect(dateDialog.locator('.calendar-months > div')).toHaveCount(1);
+    await dateDialog.getByRole('button', { name: /Tuesday, November 10, 2026/ }).click();
+    await dateDialog.getByRole('button', { name: 'Next month' }).click();
+    await expect(dateDialog.getByRole('button', { name: /Thursday, December 10, 2026/ })).toBeEnabled();
+    await expect(dateDialog.getByRole('button', { name: /Friday, December 11, 2026/ })).toBeDisabled();
+    await dateDialog.getByRole('button', { name: 'Previous month' }).click();
+    await dateDialog.getByRole('button', { name: /Friday, November 13, 2026/ }).click();
+    await expect(dateDialog.getByRole('button', { name: /Tuesday, November 10, 2026/ })).toHaveCSS('background-color', 'rgb(32, 88, 73)');
+    await expect(dateDialog.getByRole('button', { name: /Wednesday, November 11, 2026/ })).toHaveCSS('background-color', 'rgb(237, 243, 234)');
+    await dateDialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(dateTrigger).toContainText('Nov 10');
+    const bidInput = page.getByLabel('Your competitive bid per day (USD)', { exact: true });
+    await expect(page.getByText(/Bid range \$20\.00–\$100,000\.00\/day/)).toBeVisible();
+    await expect(bidInput).toHaveAttribute('min', '20');
+    await expect(bidInput).toHaveAttribute('max', '100000');
+    await bidInput.fill('35');
+    const breakdown = page.getByLabel('Estimated bid price breakdown');
+    await expect(breakdown).toContainText('$105.00');
+    await expect(breakdown).toContainText('$10.50');
+    await expect(breakdown).toContainText('$8.09');
+    await expect(breakdown).toContainText('$123.59');
+    await expect(breakdown).toContainText('$3.00');
+    await expect(breakdown).toContainText('$126.59');
+    await expect(page.getByText('Separate security hold: $60.00.', { exact: false })).toBeVisible();
+    await expect(breakdown).not.toContainText('$60.00');
+    await expect(page.getByText('Rental-price savings: $30.00', { exact: true })).toBeVisible();
+    await bidInput.fill('36');
+    await expect(breakdown).toContainText('$127.12');
+    await bidInput.fill('35');
+    await page.getByLabel(/I agree to a temporary \$60.00 security-hold authorization/).check();
+    await page.getByRole('button', { name: 'Submit Bid', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Bid saved for' })).toBeVisible();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ rate: 35, consent: true, range: { start: '2026-11-10', end: '2026-11-13' } });
+    expect(calls[0].key).toMatch(/^[0-9a-f-]{36}$/);
+    expect(quotes.at(-1)).toEqual({ listingId: auction.listing_id, range: { start: '2026-11-10', end: '2026-11-13' } });
+    await expect(page.getByText('Payment: pending', { exact: false })).toBeVisible();
+    await expect(page.getByText('Payment: paid', { exact: true })).toBeVisible();
+    for (const [dates, id] of [['Nov 10, 2026 – Nov 13, 2026', 'booking-a'], ['Nov 15, 2026 – Nov 17, 2026', 'booking-b']]) {
+      await page.getByRole('button', { name: `View booking for ${dates}`, exact: true }).click();
+      expect(await page.evaluate(() => Reflect.get(window, '__bidRoute'))).toEqual({ name: 'confirmation', id });
+    }
+    await page.screenshot({ path: testInfo.outputPath(`date-bidding-${width}.png`), fullPage: true });
+    await dateTrigger.click();
+    const revisedRange = page.getByRole('dialog', { name: 'Choose rental dates', exact: true });
+    await revisedRange.getByRole('button', { name: /^Choose pickup date/ }).click();
+    await revisedRange.getByRole('button', { name: /Wednesday, November 18, 2026/ }).click();
+    await expect(revisedRange.getByRole('button', { name: /Thursday, November 19, 2026/ })).toBeDisabled();
+    expect(calls).toHaveLength(1);
+    await revisedRange.getByRole('button', { name: 'Close calendar', exact: true }).click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}

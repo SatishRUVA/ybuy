@@ -1,1 +1,1596 @@
 # ybuy
+
+## CI/CD
+
+See [GitHub Actions staging releases](docs/implementation/CI_CD.md) for required
+environment secrets, branch protection, and the backend-first Vercel/Supabase
+deployment pipeline.
+
+## YBuy Points MVP (test only)
+
+Apply `20261117000008_signup_points_mvp.sql` for the separate points wallet and
+transaction-safe ledger. Signup rewards default to disabled. Local database
+seeding and `pnpm dev:local` enable `admin_financial_test_gate` automatically
+with `environment='local_test'`; hosted migrations leave it disabled.
+Administrators can then change
+`signup_reward_enabled` and `signup_reward_points` (default 500) in Global
+settings. The first enable permanently sets the launch cutoff: earlier accounts
+do not qualify, and toggling the setting never resets it.
+
+Only trusted email **and** phone confirmation earns points automatically.
+Unique hashed email/phone claims prevent duplicate rewards, even after changing
+phones; metadata and editable profile fields are not verification. SMS and
+customer phone-verification UI remain disabled; tests use trusted local fixtures.
+Disabling signup awards does not remove existing balances or prevent simulated
+redemption while the financial test gate is enabled.
+
+The renter dashboard and wallet show points and history. Checkout simulates
+spending exactly 500 points ($5), once per booking with at least $5 in rental
+subtotal. No fee/deposit redemption, cash-out, transfer, expiry or advanced
+campaigns. Cancellation/rejection restores simulated points once.
+Local checkout shows a 0-or-500-point slider inside the price breakdown before
+booking creation. Selection previews the simulated total without spending
+points; continuing saves the booking and redeems once against that booking.
+The actual payment amount remains separately displayed and unchanged.
+**Stripe payments, booking totals, tax, agreements and owner earnings never
+change.** Real checkout discounts, production rollout and SMS configuration are
+deferred. Existing legacy test credits remain separate and unchanged.
+
+Local renter picker profiles receive a one-time 500-point starting grant during
+local setup/provisioning, including existing renter fixtures. Grants are real
+test ledger entries and never refill balances after points are spent. Only
+marked `renterN@profiles.ybuy.test` fixtures in the fixed local database qualify;
+owners, staff, unrelated users and hosted accounts are unchanged. This synthetic
+fixture grant does not mark a phone verified or enable the public signup offer.
+
+The local development homepage and sign-in/signup dialog preview the
+"500 YBuy Points = $5" offer, with email/phone verification requirements and an
+explicit test-only disclaimer. The promotion is restricted to development on
+loopback hosts and is excluded from production builds; showing it does not
+enable signup rewards or award points to existing test profiles.
+
+Validation: `node dev\supabase-local.mjs test db supabase\tests\signup_points.sql` on a disposable
+local stack, `pnpm exec playwright test rewards.spec.ts --reporter=list`,
+`node --test tests\payment-confirmation.test.mjs`, and `pnpm run typecheck`.
+
+## Rental-first check-in
+
+Owners can create and publish a listing available today, and renters can book
+pickup today with return on a later calendar date. "Today" is determined by the
+pickup location timezone, including after UTC midnight; payment, owner approval,
+capacity and unexpired handoff-window checks still apply. Before a draft has a
+pickup location, its calendar uses the editor timezone; publication revalidates
+against the confirmed pickup location. Apply
+`20261105000001_same_day_location_dates.sql`,
+`20261105000002_unlocated_draft_calendar.sql` and
+`20261105000003_same_day_category_counts.sql` for these date rules and
+pickup-local category counts.
+
+New customer bookings use `payment_first=true` and a separate authorization
+deposit. Checkout charges rental, applicable fees, insurance and tax only.
+Signed Stripe webhook receipts remain the authority for payment confirmation;
+return URL parameters never mark a booking paid.
+
+After payment, the renter proposes an hour within an owner-available Morning
+(7, 8, 9, 10, 11 am), Afternoon (noon, 1, 2, 3, 4 pm), or Evening (5, 6, 7 pm)
+group on the rental start date, with an optional note. Each new selection is a
+one-hour handoff window. For same-day pickup and return, only future starting
+hours are shown, with no extra lead time: at 10:20 am, 11 am is the next option.
+If all owner-available hours have passed, scheduling shows an explicit empty
+state rather than offering a past hour. Owners still set general groups for all
+available dates; creating a listing later today does not remove tomorrow's hours.
+Apply `20261105000004_hourly_handoff_slots.sql` for hourly proposals.
+Existing approved broad-window and 30-minute arrangements retain their stored
+boundaries; the legacy broad-window API remains compatible.
+Windows use the pickup location's IANA timezone,
+resolved offline from coordinates, not either participant's device. The owner approves or
+declines it. An approved slot is locked; contact support to reschedule.
+Card setup and consent to the temporary security hold open 24 hours before
+the approved slot and close at its end. No deposit is captured at checkout.
+An adequate, unexpired hold (or a zero-deposit booking) unlocks the private
+handoff address during that window, so the renter can plan travel. Arrival and
+owner handoff start additionally require the current agreed slot.
+
+The same scheduling applies to return on the booked end date. A date change
+requires an extension, not a note. Existing rentals retain their return access;
+new rentals require an approved return window. Historical 30-minute agreements
+keep their exact boundaries. Both parties receive an agreed-window reminder
+within 24 hours; notification event keys prevent duplicate reminders.
+
+Apply `20261104000001_handoff_windows_and_return_rules.sql` and
+`20261104000002_pickup_location_timezone.sql` and
+`20261104000003_pickup_timezone_metadata.sql` and
+`20261104000004_listing_validation_order.sql` together. For retained local data,
+run `node scripts\backfill-pickup-timezones.mjs` after applying them.
+Without arguments the backfill touches only local Podman and does not reset data.
+For the authorized test backend, run
+`node scripts\backfill-pickup-timezones.mjs jzyjmsixfuwzfnntewqn` before release.
+It uses the Supabase CLI's existing login, resolves coordinates offline, and only fills absent timezones;
+unresolved locations produce an explicit scheduling error, never a UTC fallback.
+
+### Handoff-window release
+
+The subsequent same-day and hourly-handoff release was promoted to the same
+authorized test site's production channel on November 5, 2026 (UTC):
+`dpl_5UCCgLCwTLZtnskgoMXD9FTdHtV4` at
+`https://ybuy-e2e-test.vercel.app`. Vercel frontend and API functions were built
+from the current workspace. Migrations `20261105000001` through
+`20261105000004` were applied atomically to `jzyjmsixfuwzfnntewqn`.
+All 247 hosted rollback-only SQL assertions passed. Post-promotion checks
+confirmed the READY alias, HTTP 200 homepage and entry assets, main-site bundle
+using the intended Supabase project, hourly scheduling bundles, access API
+method rejection, active handoff reminders, no unresolved pickup timezones,
+and no retained synthetic regression fixtures. Focused local browser tests,
+mobile/desktop visual checks, typecheck, targeted lint and production build
+passed before deployment. No Supabase Edge Function source changes were
+required; the existing deployed functions remain active. Real payment and
+notification-email delivery were not exercised. The separate live marketplace
+Supabase backend was not changed.
+
+The complete workspace app and Vercel APIs were promoted to
+`https://ybuy-e2e-test.vercel.app` as
+`dpl_Da2QkrNQ3JhsTvqStbQBT9SdwK1J` on November 5, 2026 (UTC).
+The four handoff migrations were applied together to the explicitly authorized
+test Supabase project `jzyjmsixfuwzfnntewqn`, with 76 pickup timezones backfilled
+offline in the same transaction. No pickup locations remain unresolved.
+The separate live-production database and redesign deployment were not changed.
+
+Validation passed: 14 focused browser tests on port 5174, all 206 local and
+hosted SQL assertions, typecheck, targeted lint, and production builds.
+Hosted checks confirmed the production alias, entry bundle, access-API rejection
+of unauthorized requests, reminder job and owner-approval RPC permissions.
+Regression fixtures were rolled back. Full hosted user journeys, real payment
+transactions and email delivery were not exercised.
+
+Both customer interfaces share check-in at `/check-in/:bookingId`.
+Rental totals and security-hold transactions are displayed separately;
+customer references use the human-readable booking reference, not a UUID.
+Existing bookings keep their original payment sequence and immutable agreement
+snapshots. The sequence flag cannot be changed to bypass the handoff gates.
+Active-rental authorization renewals and approved-claim handling remain separate.
+
+Backend installation requires migration
+`20261103000005_rental_first_precheckin` and the response-shape follow-up
+`20261103000006_precheckin_empty_slot_response`, plus the matching
+`create-checkout-session`, `create-deposit-setup-session`,
+`create-deposit-authorization-session`, and `process-deposit-authorizations`
+functions. Deploy only to the explicitly authorized test project
+`jzyjmsixfuwzfnntewqn`; do not use the repository's implicit Supabase link.
+Rollback-only SQL fixtures simulate receipts and holds without calling Stripe.
+
+### Test release verification
+
+Installed the migration and its four matching Edge Functions on the explicit
+test backend. The verified main and Preview-adapted customer builds are live at
+`https://ybuy-e2e-test.vercel.app` and `https://ybuy-redesign-v1.vercel.app`.
+No production or administrator deployment was changed.
+
+All 31 rental-first and 60 legacy handoff SQL assertions passed again after
+deployment. All 32 focused pricing/settlement tests passed, including rental-first
+checkout with a nonzero deposit and no saved card; the handler sends one rental
+line item only. Both compiled customer bundles passed renter proposal, owner
+approval, timing/consent gates, explicit bank-error and disabled-pickup checks.
+The active Preview checkout also preserved the exact backend rental total and
+displayed the hold separately. Frontend typecheck passed; targeted lint had no
+errors (the existing mixed-export Fast Refresh warning remains).
+
+The follow-up migration returns `"slot": null` when no slot has been proposed,
+rather than a composite object with null fields. A real database response
+regression verifies that new bookings can load the initial check-in state.
+
+Both live test aliases serve the verified handoff bundles. Browser-callable
+functions accept preflights from both test origins and reject signed-out calls;
+the worker rejects missing credentials and the webhook rejects unsigned requests.
+Browser workflow checks mocked authenticated backend responses and financial
+providers. A real signed-in rental-first Stripe payment/hold round trip remains
+to be exercised; this release did not charge, authorize, capture or refund funds.
+
+## Test-backend handoff repair (November 3, 2026)
+
+Applied `20261103000001_owner_renter_handoff` and
+`20261103000002_seed_existing_booking_handoffs` atomically to the explicit test
+project `jzyjmsixfuwzfnntewqn`, with both versions recorded in migration history.
+The deployed frontend previously called missing pickup and handoff RPCs.
+The repair installs the complete inspection/OTP workflow and initializes
+existing active/return-pending handoffs without inventing pickup timestamps.
+
+Rollback-only validation passed all 60 existing handoff SQL assertions before
+deployment. Post-deployment checks confirmed both migrations, authenticated RPC
+permissions, and REST schema-cache resolution: anonymous pickup/handoff calls
+now receive permission-denied responses instead of missing-function errors.
+Booking `YB-26-000070` remains confirmed; no pickup or return was performed for
+the user. Production was not changed. Signed-in hosted UI verification remains
+outstanding.
+
+### Inspection storage permission follow-up
+
+Applied `20261103000004_booking_inspection_storage_permissions` to the same
+test backend. The handoff migration revoked authenticated execution of
+`can_access_booking_inspection_photo`, despite authenticated storage policies
+calling it. PostgreSQL policy evaluation therefore blocked listing-photo reads
+with a helper permission error. The follow-up grants execution only to
+`authenticated`; anonymous access remains denied and the helper's session,
+participant, path, and inspection checks are unchanged.
+
+The rollback-only storage regression test passed before and after deployment.
+An authenticated RLS check also confirmed the affected listing image remains
+readable. No storage objects, booking records, or production settings changed.
+
+## Test-backend deposit function repair (November 3, 2026)
+
+The test backend `jzyjmsixfuwzfnntewqn` had the deposit database migrations
+but was missing `create-deposit-setup-session` and
+`create-deposit-authorization-session`. Their browser preflights returned 404,
+surfacing as "Failed to send a request to the Edge Function" during checkout.
+The booking insert precedes deposit setup, so this error does not mean that no
+booking exists; check rental history before starting another request.
+
+The authorized repair deployed those functions, `process-deposit-authorizations`,
+and the matching `create-checkout-session`, `stripe-webhook`, and `settle-rental`
+handlers to that explicit test project. No database migrations, secret changes,
+frontend changes, or production deployments were required.
+
+Verification: all four browser-callable handlers returned 204 preflights with
+the exact `http://localhost:5174` origin and required request headers. Browser
+invocations of checkout and both deposit functions reached HTTP 401 when signed
+out, rather than failing at the network/CORS boundary. The reminder worker
+rejected missing credentials (401), and the webhook rejected a missing Stripe
+signature (400). All 32 focused checkout-pricing and rental-settlement tests
+passed. Authenticated card setup, authorization, payment, and signed webhook
+delivery were not exercised in this repair; no provider transaction was made.
+
+### Deposit webhook subscription repair (November 3, 2026)
+
+The Stripe sandbox endpoint for this test backend also requires these events,
+in addition to its existing Checkout, refund, and transfer subscriptions:
+
+- `payment_intent.amount_capturable_updated`
+- `payment_intent.succeeded`
+- `payment_intent.canceled`
+- `payment_intent.payment_failed`
+- `payment_intent.requires_action`
+
+Without them, a successful manual-capture security hold remains `authorizing`
+in YBuy and blocks the separate rental payment. The enabled sandbox endpoint
+was updated to include all five events without removing its existing events.
+Stripe then redelivered the original hold event for booking `YB-26-000069`
+using its configured signing secret. The backend recorded the $60 hold as
+`authorized`, including its provider expiry, and changed the confirmation gate
+from `awaiting_authorization` to `awaiting_payment`.
+
+The completed card-setup and hold sessions are not rental charges. At repair
+verification, this booking had no rental Checkout Session or payment receipt;
+the $14.84 rental payment remained due. No charge, capture, or manual booking
+confirmation was performed. No frontend deployment or secret change was needed.
+For missed events, use Stripe's authenticated event resend rather than marking
+bookings paid or assuming a local webhook signing secret matches the hosted one.
+
+Confirmation receipt checks use major currency units for both `payments.amount`
+and `bookings.total`, comparing both amounts in rounded cents. A dollar receipt
+must never be compared directly to a cent total. Both confirmation pages share
+this validation and keep missing, unsettled, wrong-currency, or mismatched
+receipts unverified. Separate authorization deposits are labeled as refundable
+holds rather than charges and excluded from the displayed rental charge.
+
+## Main-site renter request journey
+
+The main-site interface uses YBuy's evergreen, citrus and sage design tokens.
+Photos and celebration confetti retain their colors.
+Status meaning remains available through text and icons, not color alone.
+
+Main-site pages share a keyboard skip link, a flexible content landmark, and an
+announced skeleton while lazy routes load. Navigation uses the full desktop row
+from 1280px; smaller viewports use the existing Radix sheet with focus trapping,
+Escape dismissal, focus return, body-scroll locking, and internally scrollable
+content. Shared small buttons keep 44px touch targets on phones and coarse-pointer
+devices, and long-text form controls can be resized vertically. The listing
+shortcut is hidden during both listing edits and request creation so it does not
+compete with form actions. These changes do not affect the default UI or previews,
+and the separately managed admin destination is unchanged.
+
+Signed-in main-site customers use a workspace-first layout: a persistent desktop
+sidebar (1280px+) groups Discover, Rent, Lend, and Account, and the mobile menu
+uses the same destinations. Visitors retain the public marketplace home.
+The signed-in home prioritizes rental, inventory, request, and lending shortcuts
+above discovery instead of replaying the marketing hero.
+
+Owner/renter pages use a centered, full-width workspace without the global sidebar.
+A compact underline navigation connects My rentals, Lending activity, My listings,
+and Earnings & payouts. Shared metric strips replace individual KPI cards; owner
+requests sit beside a filterable rental list, and secondary listing tools are
+disclosed under More options instead of filling every inventory row.
+
+Lending activity stays at `/dashboard?tab=lending`; inventory and availability
+have their own `/dashboard/listings` page, and earnings and Stripe payout status
+live at `/payouts`. Only the selected renting/lending panel is mounted, and owner
+pages load the data needed for their section. Existing booking actions, listing
+editing, and payout verification remain unchanged.
+
+Creation, checkout, confirmation, and pickup/return pages use a focused layout
+with a route back to bookings and no sidebar, bidding ticker, mobile bottom
+navigation, or floating listing action. Discovery grids and search controls
+respond to the width remaining beside the workspace sidebar.
+
+Listing photos remain in the private `listing-images` bucket. Both auction feeds
+and bidding ribbons sign stored image URLs with the same helper as listing cards
+and details; a stored `/object/public/` URL is not directly readable from this
+private bucket. Signing failures are displayed as feed errors rather than hidden.
+Cards and checkout photos try the remaining listing photos if one fails, then
+show an explicit "Photo unavailable" state. Lifecycle fixtures now upload the
+bundled synthetic camera image instead of inserting a nonexistent `example.test`
+URL. Existing photos locked by an outstanding rental and immutable agreement
+snapshots must not be rewritten to repair test data.
+
+The main-site request journey uses the same production components and services
+as the rest of the marketplace.
+
+- Renters choose open-to-offers or fixed daily budget, and a per-request **in-app**
+  matching notification preference. Fixed budgets require a positive daily amount.
+  Existing daily-price-per-unit matching semantics are retained; this choice does
+  not create a competitive auction or a private negotiation.
+- Category suggestions use matching published inventory and can be overridden.
+  Posting success summarizes the item, dates, area, daily budget and preferences.
+- Owners can select a verified city/postal area, filter requests within 5, 10, 25
+  or 50 miles, and inspect actual geographic distances or requests needed in the
+  next seven days. Without coordinates, the page explicitly labels unfiltered
+  results instead of claiming proximity.
+- Owners respond with an eligible existing rental or a request-linked listing
+  wizard. Fresh drafts inherit the request details without overwriting resumed
+  drafts or edits. Request context survives local draft resume and the
+  `/edit-listing/:id?request=:requestId` approval follow-up.
+- Only confirmed **published** listings expose link-and-notify/skip actions.
+  Listings awaiting approval cannot notify the renter as available.
+- Renter notification links open `/requests/:requestId/matches`. Results use the
+  authoritative category, budget, geographic, quantity and date-capacity matcher,
+  not generic search. Listing links preserve request dates and quantity through
+  checkout, including modified clicks/new tabs. Booking and payment validation
+  remain authoritative. Matching cards use real saved-item mutations, not
+  mock favorite state.
+
+The new [request journey migration](supabase/migrations/20261102000003_main_request_journey.sql)
+depends on the
+[notification policy migration](supabase/migrations/20261102000002_notification_center_policy.sql).
+Creation saves preferences atomically and checks idempotent retries. RPCs require
+an active, unrestricted session; renter preference/match operations verify
+ownership and owner links require the caller's published matching inventory.
+Nearby discovery returns only eligible public, active requests, excluding the
+caller's own requests.
+
+Per-request opt-outs cannot override account category opt-outs or mute required
+booking/payment/safety alerts. The preference affects future in-app alerts, not
+email settings or existing inbox history. Notify/skip actions deduplicate against
+automatic matching events; skipping cannot retract an alert already created by
+the matcher and does not reserve inventory. **Web Push/device notifications are
+explicitly deferred.**
+
+Local verification uses
+[rollback-only SQL assertions](supabase/tests/main_request_journey.sql) against the
+explicit `supabase_db_YBuy` container and
+[compiled main-site browser tests](tests/main-site-variant.spec.ts).
+The SQL assertions cover creation/retries, authorization, distance filters,
+date/quantity capacity, notify/skip, automatic alert suppression, mandatory alerts
+and legacy/redesign isolation. Browser tests cover posting, owner linking,
+publication/approval, notification routing, preference failures, mobile/desktop
+matching and original main-site regressions.
+
+```powershell
+$env:VITE_SITE_VARIANT='main'
+npm run typecheck
+npm run build
+npx playwright test --config playwright.main-site.config.ts --reporter=list --workers=2
+```
+
+On November 2, 2026, the validated main-site build was deployed to
+https://ybuy-e2e-test.vercel.app as `dpl_AGCzhitsmJrAMpPSn7PQUrmGzvwo`.
+Only migration `20261102000003` was applied transactionally to the explicit test
+Supabase project `jzyjmsixfuwzfnntewqn`, with migration history recorded.
+The implicitly linked production database was not changed. Local SQL validation
+rolls back both schema and fixture changes.
+
+Hosted smoke checks confirmed the READY deployment and correct E2E alias, an
+entry bundle matching the validated build byte-for-byte, accessible request
+journey chunks, the enabled access-code gate, and the new database columns/RPCs
+with anonymous match reads denied. The independently managed redesign deployment remains on
+`dpl_BvvDmFinF65quJ2aKSiGBVJud6ay`. Unrelated concurrent booking/tax/discovery
+changes were excluded by deploying the preserved validated build, not rebuilding
+the current worktree. Authenticated hosted journeys and real payment transactions
+were not rerun by these deployment smoke checks.
+
+On November 2, 2026, a subsequent hosted sandbox test used the synthetic owner5
+and renter5 accounts. Request posting, five-mile owner discovery, listing
+link/notification, notification-to-matches navigation, preference toggling and
+request dates/two-unit quantity reaching checkout passed through the main-site UI.
+Stripe Checkout used a `cs_test_` session; the $40 USD payment succeeded and the
+booking became confirmed before any rental lifecycle calls. Booking reference:
+`6e255776-7ef6-4590-9cd4-087b3c74a22c`. Normal authenticated RPCs then verified
+pickup, return initiation, denial of renter-only return completion, and owner
+completion. The synthetic listing was withdrawn and its request closed; financial
+and booking audit records were retained.
+
+This was not a clean full UI pass: checkout estimated $39.50 with $0.50 insurance,
+while the authoritative two-unit booking and Stripe charged $40 with $1 insurance.
+The renter Bookings dashboard reported `Cannot read properties of null (reading
+'listing_images')`, so lifecycle checks used authenticated APIs rather than that
+dashboard. At that point, deposit refund and owner payout were pending: `settle-rental`
+returned HTTP 503 because its isolated-backend/test-credential safety gate is not
+enabled for this environment. No settlement configuration or safety gate was
+changed during that initial run, and no live-mode payment was submitted.
+
+### Rental history, pricing and sandbox settlement follow-up
+
+Booking history loaders now tolerate RLS-hidden listing/profile relationships.
+They retain the booking, use the participant-visible immutable agreement snapshot
+for saved titles/names, and explicitly label unavailable legacy details. They do
+not widen listing RLS to expose an owner's unpublished inventory.
+
+Main-site listing and checkout insurance estimates include the requested quantity.
+Main-site pricing waits for the current platform service fee rather than briefly
+displaying the legacy default. A fee lookup failure is shown explicitly and
+blocks booking submission. Instant checkout now creates one pending-payment
+booking, displays its authoritative line items and final total, and requires a
+second confirmation before opening Stripe. Payment retries reuse that booking.
+
+On November 2, the missing `SETTLEMENT_TEST_MODE=true` opt-in was enabled only on
+the test backend `jzyjmsixfuwzfnntewqn`; live-key and backend allowlist checks remain
+intact. The synthetic booking above received its $15 deposit refund
+(`re_3UXMCfKV5pAwlJVi09y2BddG`). Owner transfer remains pending because the synthetic
+owner has no Stripe Connect account. The test-only `settle-rental` deployment now
+preserves database errors and returns `Owner must complete Stripe Connect setup`
+instead of the misleading generic `Provider settlement failed`. Repeating the
+request did not create a second refund. Connect onboarding must be completed
+before the $20 owner transfer can be verified; no onboarding details were invented.
+
+Customer-facing references are added by
+[`20261102000006_customer_rental_references.sql`](supabase/migrations/20261102000006_customer_rental_references.sql):
+booking `YB-26-000123`, matching agreement `RA-26-000123`, and a separate
+`Version 1` document revision. References are database-assigned and permanent;
+existing bookings/agreements are backfilled. UUIDs remain internal identifiers for
+routes, joins and authorization. Main, shared and preview booking/agreement
+displays use the stored reference and show `Not assigned` for an unmigrated
+record rather than inventing a reference from its UUID. Adding a number does not
+change the agreement's legal approval or acceptance status.
+
+On November 2, the isolated rental-fixes release was deployed to the main E2E
+site as `dpl_2gzhQisn1bffsWqAmNssMyX3ujRR`. Its source snapshot uses the tracked
+baseline plus the restored main site, existing bidding/request journey and
+approved rental fixes; unrelated frontend tax and discovery changes were excluded.
+Only reference migration `20261102000006` was applied by this release to test
+backend `jzyjmsixfuwzfnntewqn`. It backfilled 66 bookings and 47 agreements.
+Rollback and apply assertions verified that existing booking/agreement data,
+including booking update timestamps and agreement acceptances, were preserved
+apart from the new reference fields. The synthetic completed rental is now
+`YB-26-000066`, agreement `RA-26-000066`, Version 1.
+
+The exact isolated release passed typechecking, its build and all 22 main-site
+browser tests. Hosted checks verified matching entry/checkout/CSS hashes,
+the enabled access gate, and normal renter-authenticated access to the saved
+agreement while withdrawn listing details remain hidden by RLS. The shared
+browser connection was unavailable, so no new hosted UI payment was performed.
+
+During final verification, an independent deployment moved the separate redesign site to
+`dpl_tdtcgfrkR3TFa6NenMd6Wr2dhJpd` and added migrations `20261102000004`,
+`20261102000005` and `20261102000007` to the shared test backend. This release
+did not perform those deployments or revert them. Their integration with the
+isolated main frontend has not been fully retested; backend tax changes may
+affect new bookings. The user then requested skipping further deployment, so
+no additional rollout or rollback was performed.
+
+Local validation passed the build, TypeScript checking, scoped lint, and 38
+booking-history, reference-formatting, pricing and settlement tests. All 22
+main-site browser cases passed across the initial run and isolated reruns of five
+cases whose first run lost trace files to a shared-output collision. These checks
+include mobile/desktop quantity pricing, the explicit final-price confirmation,
+fee-load failures, request notification routing and preserved dashboard layouts.
+The reference migration also passed 26 rollback-only SQL assertions, including
+supplied-reference protection. An isolated local concurrency check verified
+distinct allocations across the six-digit boundary under overlapping sessions;
+it uses minimal booking/agreement tables rather than the complete booking flow.
+
+## Main-site marketplace implementation
+
+### Local city inventory
+
+Run `node dev\seed-local-marketplace.mjs` to insert the same ten existing rental
+templates in Dallas, Irving and Omaha (30 listings total). This command only
+targets the isolated `supabase_db_YBuy` container and requires the local profile
+picker accounts. It is transactional and idempotent: reruns leave existing seed
+IDs unchanged. Existing listings, bookings and accounts are not replaced.
+Availability starts on the insertion date and spans 30 days; enabled delivery
+costs $15. Existing listing image URLs are reused, so image loading still depends
+on the image host. Seeded listings do not invent ratings or owner verification.
+
+The shared marketplace cards use the supplied card design: rounded photo/cards,
+lime instant-booking badges, actual photo counts, owner avatars, handoff badges,
+daily price and a working View Details link. Favorites retain their real mutation.
+Rental, bidding and community request cards share the same bordered white
+surface, corner radius, title scale and body spacing, with actions aligned at
+the bottom. List views retain their horizontal layout. Shared dialogs
+keep their headers visible and scroll long content internally; date/filter
+actions use a separate footer, while request form actions stay in their form
+with a sticky footer. Existing Radix dialog action footers also remain sticky.
+
+The main application defaults to the `main` theme. Its evergreen, citrus and sage
+tokens are defined in `src/main-site/ybuy-design.css`; saved theme preferences
+cannot switch the production marketplace to a retired palette.
+
+The notification center is available at `/notifications`, with category/day
+grouping and responsive layouts.
+Production uses real account notifications (including marketplace requests),
+saved in-app category preferences, selection/mark-read actions and a numeric
+unread bell. Counts within the center describe loaded history; older updates
+remain available through pagination. Email preferences remain in Profile &
+settings. Bookings, payments and safety/support cannot be muted in either
+channel. Winning bids and time-sensitive auction actions bypass optional
+bid-activity preferences. Database constraints and delivery triggers enforce
+this policy, including direct notification inserts. Muting does not remove
+existing inbox history.
+All production notification surfaces share the app router's validated destination
+resolver, including pickup/check-in, return, booking confirmation, listings,
+request matches, bids, conversations and support cases. Dashboard and request
+tabs are preserved. Unknown or malformed destinations show an error without
+marking the notification read or silently returning to the inbox.
+Owners now define general pickup/return handoff windows (morning/afternoon/evening)
+and return expectations on listings. Bookings keep their selected dates fixed;
+renters propose a window with an optional note, owners approve/decline, and the
+same scheduling model applies to both pickup and return flows.
+Home, browse/search, listing details, favorites and checkout are implemented in
+`src/main-site` and use the real marketplace services for inventory, availability,
+favorites, messages and booking/payment commands. Confirmation loads authoritative
+booking state. The header, workspace navigation and footer are main-site
+components; production routes do not install sample data or demo providers.
+
+Renter and owner dashboards, inventory, listing creation/editing, payouts,
+messages, notifications, requests and profile/settings use the main-site
+components and live data. Bidding and administrator tools retain their protected
+operations and permissions. Listing creation stays focused on the wizard, while
+workflow actions remain in their corresponding dialogs or detail pages.
+
+| Marketplace surface | Main route |
+| --- | --- |
+| Home / browse / details | `/`, `/search`, `/listing/:id` |
+| Bidding / bidding room | `/bidding`, `/auction/:id` |
+| Requests | `/requests` |
+| Booking / result | `/checkout/:id`, `/confirmation/:id` |
+| Rentals / saved items | `/dashboard?tab=renting`, `/favorites` |
+| Owner / inventory | `/dashboard?tab=lending`, `/dashboard/listings` |
+| Listing wizard / earnings | `/create-listing`, `/edit-listing/:id`, `/payouts` |
+| Messages / notifications / profile | `/messages`, `/messages/:id`, `/notifications`, `/profile` |
+| Admin and its six sections | `/admin`, `/admin/:section` |
+
+The standalone `design-showcase/` remains separate from the product. Main routes
+show real loading, empty, failure and success states rather than simulated controls.
+Administrator deep links retain their protected tool destinations and individual
+permissions. Owners link published rentals to requests at the advertised price;
+the new UI does not create private offers or counteroffers.
+
+Real listing validation, uploads, draft saving, publication review, authentication
+and booking/payment verification remain authoritative. Listing creation uses one
+validated main-site wizard instead of a second wizard inside a modal. Required
+condition, pricing and private
+pickup controls are available inline; AI assistance and optional item fields use
+a details disclosure. Blocked-day failures offer a reload and prevent continuing
+until availability can be verified. No sample photos,
+fake publication success or demo payments are added to the main app.
+The Photos step uses a full-width neutral upload area, no listing sidebar, and
+secondary Back / primary Continue actions. Sample-photo controls are replaced by
+real draft saving.
+Uploaded photos retain cover selection, ordering, replacement and removal.
+
+Earlier staging verification below describes the previous Ocean Green rollout;
+it is not evidence of complete pixel parity for the current redesign.
+Sharing tokens alone is not
+pixel-level proof. Shared CSS resets have deliberately low specificity so they
+cannot replace primary-button text, selected-filter colors or semantic feedback
+with inherited ink. Main-site typography defines heading styles. Dialogs and
+dropdown portals share the same presentation scope.
+Shared overlay roots explicitly stay transparent with no page minimum height:
+a closed calendar must not inherit the page's white background and cover the app.
+Incomplete descriptions can be saved privately as drafts; advancing and publishing
+still enforce validation.
+
+Earlier, pre-direct-integration local verification included a successful build and typecheck,
+17 route layouts at 375/768/1440px, wizard template geometry/typography/colors at
+those sizes, calendar and modal focus/viewport checks, exact primary/filter colors,
+owner approval-before-payment, renter status routing, payment retry on the same
+booking, and delivery/note RPC payloads and estimates. Account regressions also
+cover favorites, notifications, handoff retry and return confirmation. The build
+still reports its existing large-chunk warning.
+
+Current main-site regressions are maintained in
+`tests/main-site-variant.spec.ts` and related focused workflow tests. They cover
+responsive layouts, real catalog states, listing and checkout flows, bidding,
+authentication and visible recovery states. These checks do not create live
+bookings, charge cards, transfer payouts or send notification emails. Missing
+fixture photos are reported rather than replaced with misleading listing images.
+Hosted deployment and live provider transactions require separate validation.
+
+Native checkout creates a booking once before starting Stripe, then retries
+payment against that same returned ID. It cannot simulate card success or a
+decline on a main route. Owner approval is not payment confirmation; a confirmed
+ticket requires the webhook-written receipt to match the booking amount in cents
+and USD currency. Promo codes, booking agreements, pickup/reservation/settlement,
+wallet/support/claims and sign-out remain accessible in separate dialogs.
+Rental occupancy is `[pickup, return)`: a booked return day is allowed when the
+occupied days are clear, but cannot be selected as pickup.
+
+### Current validation and deployment
+
+On November 1, 2026, the current frontend was deployed to
+`https://ybuy-redesign-v1.vercel.app` and all ten repository Edge Functions were
+deployed to its authorized test backend, `jzyjmsixfuwzfnntewqn`. The checkout
+delivery/notes, atomic availability, request-listing link and profile bio
+migrations were applied there; the hosted migration history is up to date.
+Anonymous execution of the new owner/checkout RPCs is denied, profile RLS remains
+enabled, and the rollback-only 30-day scheduling checks passed. Provider secrets
+were unchanged and notification email delivery remains disabled. Full hosted
+checkout, settlement and payout regression has not been rerun.
+
+On November 1, 2026, the current workspace frontend was subsequently deployed to
+both `https://ybuy-redesign-v1.vercel.app` and
+`https://ybuy-e2e-test.vercel.app`. Competitive bidding migration
+`20261102000001_competitive_bidding_completion.sql` was applied first to their
+shared test backend, `jzyjmsixfuwzfnntewqn`; the production backend was not changed.
+Rollback-only checks passed before and after applying the migration, covering
+the two-hour cutoff, configured increments, bidder privacy/history, one-hour
+owner decision window, pending-payment booking and missed-decision notification.
+They leave no synthetic fixture users behind. Rerun those checks with:
+
+```powershell
+npx supabase db query --linked --project-ref jzyjmsixfuwzfnntewqn --file tests\staging\competitive-bidding-completion.sql
+```
+
+Typecheck, focused bidding lint, the production build and the hosted test-profile
+safety test passed. Both deployed entry bundles returned HTTP 200. The redesign
+site's live bidding directory loaded real auctions; the main test site's security
+code gate remains enabled. These are deployment smoke checks, not a full hosted
+payment regression or a run of the complete pgTAP suite. Deposits still use the existing combined checkout charge,
+not a separate authorization hold.
+
+The application entry loads `src/main-site` by default; `VITE_SITE_VARIANT=admin`
+selects the separately protected administrator portal. The main site reuses
+current marketplace APIs and authentication.
+The restored bidding screens retain scheduled opening/closing times, configured
+increments, renter-only bid history/rank, owner full history/profiles/ratings,
+and owner-only winner selection before bidding closes. There is no post-close
+decision window or automatic winner selection. Both UUID auction URL forms
+use real bidding; sample auction IDs and empty-feed samples require `mock_bidding`.
+The main entry loads its stylesheet and fixes its theme to `main`, ignoring saved
+theme preferences, and uses DM Sans and Manrope typography.
+Legacy `/dashboard/listings` and `/payouts` URLs open the original lending
+dashboard, which contains inventory, availability and earnings together.
+Its palette is primary `#0E7C66`, hover `#096653`, deep green `#075B4D`,
+light green `#D8F0E8`, pale green `#EFF8F4`, highlight `#E9B949`,
+secondary accent `#F28B64`, background `#F6F7F3`, cards `#FFFFFF`,
+text `#172321`, secondary text `#687873`, borders `#E1E8E4`,
+success `#25865B`, warning `#D99A29`, and error `#C94C4C`.
+The compiled-browser regression checks the main palette, page background,
+primary-button states and recovery from an obsolete saved theme preference.
+The earlier router/homepage-only restoration was incomplete: shared redesigned
+components still changed inner pages. The full isolated UI replaces that partial
+fix without rolling back the bidding database or deploying the redesign project.
+The focused compiled-browser regression covers public home/search/listing/bidding,
+sign-in, authenticated renter/owner dashboards, listing creation and notifications
+at 390, 768 and 1440 pixels using mocked API responses. This is UI regression
+coverage, not a hosted authentication/payment regression. Run it with:
+
+```powershell
+$env:VITE_SITE_VARIANT='main'
+npm run build
+npx playwright test --config playwright.main-site.config.ts --reporter=list
+```
+
+The full restoration is deployed to `ybuy-e2e-test.vercel.app` as
+`dpl_FVkEzAi75E4zE33AL6hAkjCJvxWF`. Typecheck, focused lint (no errors), both
+variant builds and all eight compiled-browser tests passed. The owner bidding
+test also verifies full bidder profiles/history and selection beyond rank three
+only after bidding closes. Hosted checks confirmed deployment readiness, all
+15 palette tokens, original fonts/radii and the enabled security-code gate.
+The redesign deployment remains `dpl_BvvDmFinF65quJ2aKSiGBVJud6ay`; no database
+changes were made for this restoration.
+
+Main-site form controls have persistent borders and padding before focus.
+Native checkboxes use the accent checked state and retain keyboard, disabled,
+indeterminate and system high-contrast behavior. Sign-in fields and actions use
+consistent spacing.
+The homepage retains the supplied camping, mixer and drill imagery. Production
+only shows a rental price and listing link when the matching published inventory
+exists; otherwise those are editorial category links.
+
+Hosted passwordless test-profile selection is restricted to
+`ybuy-redesign-v1.vercel.app` and `jzyjmsixfuwzfnntewqn`. Enable
+`VITE_TEST_PROFILE_LOGIN=true` and `YBUY_TEST_PROFILE_LOGIN=true`, and configure
+server-only `YBUY_TOTP_SECRET`, `YBUY_ACCESS_SESSION_SECRET` and
+`SUPABASE_SERVICE_ROLE_KEY`. The existing authenticator verifier grants a signed,
+HttpOnly, two-hour tester cookie; both listing and selecting profiles require it.
+Only marked `owner1`-`owner5` and `renter1`-`renter5` synthetic accounts are allowed.
+Any fixture with administrator access is excluded, even when its role is inactive.
+No accounts, permissions or emails are created by the picker. Keep the site-wide
+`YBUY_TEMP_ACCESS_ENABLED` flag separate; missing tester configuration fails closed.
+The top-right avatar opens a compact anchored dropdown with Sign out and, in
+enabled test environments, Switch profile. It does not open a modal; workspace
+links remain in the existing navigation.
+
+### Dedicated administrator test portal
+
+`https://ybuy-admin.vercel.app/` is a separate Vercel deployment from the same
+repository and the same isolated `jzyjmsixfuwzfnntewqn` test backend.
+Build it with `VITE_SITE_VARIANT=admin`; administrator pages and RPCs live under
+`src/admin`. Customer builds no longer import administrator dashboards. Shared
+claims, support, wallet and read-only role lookup stay available to customers;
+staff case controls are compiled only into the admin build. Customer `/admin`
+routes link to the dedicated portal.
+
+Configure these production environment variables **only on the admin project**:
+
+- `VITE_SITE_VARIANT=admin`, `VITE_TEST_ENVIRONMENT=true`, `YBUY_ADMIN_PORTAL=true`.
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for the isolated test backend,
+  plus server-only `SUPABASE_SERVICE_ROLE_KEY`.
+- Server-only `YBUY_ADMIN_TOTP_SECRET` (a Base32 seed of at least 32 characters)
+  and a separate `YBUY_ADMIN_ACCESS_SESSION_SECRET` (at least 32 characters).
+- `YBUY_TEMP_ACCESS_ENABLED=false`, `YBUY_TEST_PROFILE_LOGIN=false` and
+  `VITE_TEST_PROFILE_LOGIN=false`; the customer authenticator is not used here.
+
+Enter the Admin authenticator code, then choose an Admin profile. The portal
+admits only `admin@example.test` profiles carrying the
+`ybuy-local-lifecycle-v1` fixture marker and matching active database role.
+Switching profiles does not ask for another code. Tokens are signed with a
+host-and-role-specific key and kept in a host-only HttpOnly, Secure,
+SameSite=Strict cookie for up to two hours. Supabase sessions on the portal are
+memory-only; profile selection is required again after a reload. Super Admin
+access and management features are not available in this portal; backend role
+records are retained.
+
+Apply `20261103000003_admin_portal_login_limit.sql` to the **test backend only**.
+It limits verification to five attempts per hashed IP in five minutes across
+all server instances. Database counter access is service-only.
+Profile selection rechecks active roles on every request; database RPC permission
+checks remain authoritative. The role code gates test profile issuance, not
+Supabase MFA or the lifetime of an already-issued Supabase access token.
+Shared role authenticators are for synthetic testing, never production admin MFA.
+Keep enrollment seeds private and out of Git; rotating a role seed should also
+rotate the admin signing secret to invalidate existing portal cookies.
+
+Validation:
+
+```powershell
+node --test tests\admin-portal-access.test.mjs tests\hosted-profile-gate.test.mjs tests\hosted-profile-list.test.mjs
+$env:VITE_SITE_VARIANT='admin'
+npx vite build --outDir dist-admin --manifest
+npx playwright test --config playwright.admin.config.ts --reporter=list
+$env:VITE_SITE_VARIANT='main'
+npx vite build --outDir dist-customer --manifest
+node --test tests\admin-bundle-separation.test.mjs
+```
+
+The admin portal was deployed on November 3, 2026 as
+`dpl_Hv2HAKmdsfg6FN2RJMKq2gLkEHX6`. Both roles were verified with real TOTP codes,
+real Supabase profile sign-in, permission-filtered dashboard navigation,
+same-role profile switching without another code, and the mobile navigation.
+The persistent rate limiter was checked against the isolated hosted database.
+Typecheck, focused lint (no errors), both variant builds, four Node regression
+tests and two compiled-browser tests passed. Customer deployment changes were
+intentionally left local at the user's request; existing customer sites were
+not redeployed as part of this admin rollout.
+
+The essential TypeScript check and production build pass. The local Vite server
+responds at `http://localhost:5174`. All 24 Preview views (including six admin
+sections and the state gallery) rendered without JavaScript errors. The main
+route render check also found no JavaScript crashes; this is not full workflow QA.
+
+The earlier local-only validation included these migrations (now also applied
+to the authorized hosted test backend as recorded above):
+
+- `20261101000001_atomic_owner_availability.sql`: one owner-only transaction for
+  availability and blocked days, with revision and booking guards.
+- `20261101000002_public_request_listing_links.sql`: links an owner's matching
+  published listing using existing matching rules and notification deduplication.
+- `20261101000003_profile_bio.sql`: restores the Preview's About you field with
+  owner-scoped profile persistence, length and database plain-text validation.
+
+### Owner-flow corrections and default charged tax
+
+- Discovery queries and auction feeds exclude a listing when its exclusive
+  `availability_end` is today or earlier (UTC). Owner inventory keeps the record
+  and displays **Expired**, so it can be recovered without deleting rental history.
+  Mounted discovery and owner pages recheck at UTC midnight and after returning
+  to a visible browser tab.
+- Owners choose **Available from** and **Available through**, including both dates.
+  A one-day selection is valid; the saved return cutoff is the following day.
+  The existing 30-day limit and 180-day scheduling horizon still apply.
+- Photo validation tells owners to select a larger original and upload again.
+  Replacement-value limits remain controlled by `listing_max_estimated_value`
+  and enforced by the database, rather than a hard-coded form maximum.
+- **Use my location** fills a complete pickup address using browser geolocation
+  and Google reverse geocoding. It requires location permission, configured Google
+  Maps access and an enabled marketplace country. A failed lookup keeps the prior
+  address and gives recovery instructions.
+- Private-offer controls are removed from both production variants. The discovery
+  migration turns off the private-offer flag without deleting historical records.
+- Saved bidding settings confirm the actual opening/closing schedule and link to
+  auction management. The ribbon is mounted in both variants, includes zero-bid
+  open auctions at their opening rate, shows the newest 24 first, and refreshes
+  after saving and every 15 seconds. Scheduled auctions appear only when they open.
+  Sample ribbon cards require the explicit `mock_bidding` flag.
+- **Default charged tax** is 7% of discounted rental plus service fees for new
+  bookings, with both test and live Stripe keys. Deposits, insurance and delivery
+  are excluded. Migration `20261102000007_default_booking_tax.sql` supersedes the
+  old sandbox gate without changing existing booking/agreement tax snapshots or
+  totals. Historical sandbox-only bookings still cannot use live Stripe keys.
+  Both variants show **Tax (7%)** and use the server-confirmed total for payment.
+  This is a fixed policy, not jurisdiction-based Stripe Tax.
+
+On November 2, 2026, migrations `20261102000004` through `20261102000007` and
+checkout function version 13 were deployed to the authorized hosted test backend
+`jzyjmsixfuwzfnntewqn`. All 66 existing booking totals were preserved
+(aggregate $5,156.05). The redesign test site serves the updated tax UI.
+The main tax release `dpl_AMBNoFh2w8V85oEsPSAx6r9V1hfH` is ready and its
+tax-enabled assets were verified, but a concurrent main-site deployment replaced
+the public alias; the user chose to keep that newer deployment. Its pre-booking
+estimate UI is not this tax release. The shared backend still charges new bookings.
+The production backend was not changed and no payment was initiated.
+
+Validation passed: 49 tax, 14 discovery and 26 customer-reference SQL assertions,
+13 checkout pricing tests, five compiled browser tests across both variants with
+test mode disabled, TypeScript, both builds and focused lint (no errors).
+
+Local `item_requests` and `bidding` feature flags remain disabled. The local
+`owner-payout-status` function returns 503 because Stripe settlement is not
+configured; that failure is surfaced, not replaced by simulated payout data.
+Hosted migrations are now applied; authorized provider configuration and full
+workflow verification remain release gates. Do not enable private offers.
+
+Deferred QA: full owner/renter workflow regression; mutation failures and retries;
+all-screen pixel, mobile/tablet and accessibility checks; hosted Stripe checkout,
+webhooks, settlement and bank-payout verification. No new automated tests or
+full regression suites were executed in this minimal-validation phase.
+
+### Checkout delivery and notes
+
+The local database has applied `20261031000002_checkout_delivery_notes.sql`.
+Only this exact, successfully applied version was recorded using local migration
+repair; unrelated historical drift was not marked as applied or reset. The authorized hosted test database now has the same migration, as recorded above.
+
+Pickup/delivery, the listing's delivery fee and the renter's optional
+500-character note are frozen on booking creation. The fee is calculated during
+the insert, before instant bookings capture their immutable rental agreement;
+that agreement therefore includes the correct total and handoff details. Owner
+settlement includes the frozen delivery fee, but excludes platform fees, insurance
+and deposit. Promotions do not discount delivery. Availability, active-session
+checks, RLS and exact verified payment remain authoritative.
+
+`supabase/tests/checkout_delivery_notes.sql` exercises 23 local SQL assertions:
+pickup and delivery amounts, note bounds/persistence, capacity, direct-write RLS,
+immutable agreement totals, promotion/insurance combinations, verified payment
+and owner-only return/settlement. Fixtures and synthetic payment receipts are
+rolled back; no provider charge, refund, transfer or email is sent by these tests.
+
+## Main v1 staging
+
+`existing/main-v1` starts from the `redesign` application's real workflows and
+retains the Ocean Green theme. The separate Vercel project is
+`ybuy-redesign-v1`; its authorized backend is the existing `ybuy-e2e-test`
+Supabase project. This backend is shared with other test deployments, not
+production. Do not reset it or import production customer data.
+
+This section describes the earlier staging rollout, not the current direct
+Preview integration. The current build includes the Preview source directories
+because main routes import shared templates from them; `.vercelignore` no longer
+excludes those sources. The isolated demo route remains separate from live data
+and action providers. Remaining financial release gates are recorded below.
+
+Use Stripe test mode only. Set `NOTIFICATION_DELIVERY_DISABLED=true` on the test
+backend before booking tests: `NOTIFICATION_LIVE_DELIVERY=false` alone still
+allows redirected test emails. The delivery-disabled switch leaves jobs queued
+and returns an explicit disabled response before claiming jobs or calling Resend.
+
+Run `pnpm exec playwright test --config playwright.staging.config.ts` for the
+deployed baseline smoke checks: real listing data at three viewport sizes,
+Ocean Green, listing navigation, persisted sign-in and the no-email guard.
+The staging suite also verifies real owner block/unblock persistence and renter
+RLS denial, plus real UI instant checkout through Stripe sandbox card payment,
+the signed webhook's persisted payment receipt, check-in, return initiation and
+owner-only completion. It rejects live checkout sessions before entering payment
+details and does not enroll test actors in Link. Synthetic payment/agreement
+records are retained for audit; their listings are returned to draft.
+
+Owner availability spans at most 30 calendar days, including blocked days.
+The stored end date remains exclusive: November 1 through December 1 makes
+November 1-30 available, before blocking. The existing 180-day advance scheduling
+horizon is unchanged. Retained historical windows are not rewritten; the guard
+checks new windows, changed dates and draft publication without bypassing
+reservation protection. Validate it without persistent fixture writes using
+`pnpm exec supabase db query --linked --project-ref jzyjmsixfuwzfnntewqn --file tests\staging\listing-window.sql`.
+
+### Workflow component rollout
+
+The application reuses its Radix select primitive for shared dropdowns, search
+sorting, listing category/delivery radius, dashboard availability selection,
+notification filters and admin operation forms. Menu selection uses Ocean Green
+tokens, keyboard/typeahead navigation and right-aligned checkmarks; named admin
+controls still participate in `FormData`.
+
+Both listing-card variants show the actual owner's name, the backend verification
+badge beside that name, and distance when available. Reviews never grant a
+verification badge. Ratings remain independent of owner identity.
+
+The creation/edit wizard now includes immediate owner-blocked-date management
+within its availability step, reusing the same API and booked-date protection as
+the dashboard. Blocking errors require reloading authoritative dates before retry;
+the UI does not claim an unsaved change succeeded.
+
+### Page workflows
+
+The main site provides production workflows across the marketplace:
+
+- Marketplace: persistent search filters, grid/list/map results, uploaded-photo
+  listing galleries, owner contact, date continuity and authoritative favorites.
+- Renting: stepped checkout, task-led bookings, pickup/return, messages,
+  notifications, saved items, item requests and account/trust pages.
+- Owning: inventory and incoming approvals, a five-step listing wizard,
+  real draft/publish controls, availability and blocked-date management.
+- Administration: permission-filtered task groups for queues, people, cases,
+  bookings/money, marketplace configuration and platform controls; existing
+  operation forms retain audit reasons and named form values.
+
+These workflows retain the existing backend APIs. Private pricing and
+counteroffer creation are not part of the new navigation/workflows; historical
+records remain available where required. Booking approval and checkout redirects
+never count as verified payment. Provider webhook confirmation remains
+authoritative. The public bidding directory displays real auctions or a real
+empty/offline state, never automatic sample auctions or a mock fallback.
+
+Focused workflow regressions are in `admin-console.spec.ts`,
+`success-feedback.spec.ts`, `workflow-components.spec.ts`,
+`hero-search.spec.ts` and `ui-remediation.spec.ts`. Browser tests using mock data
+are separate from the real-backend staging checks.
+
+### Main v1 verification and remaining gates
+
+- Application typecheck and production build pass. Focused source lint has no
+  errors; the existing search-map dependency warning and bundle-size warning
+  remain.
+- Page-family layout checks pass at 375, 768 and 1440 pixels. Owner wizard,
+  admin navigation/dialogs, galleries, dropdowns, date bounds, bidding privacy,
+  checkout and handoff/return failure recovery have focused passing regressions.
+- The deployed baseline and real owner availability/RLS checks pass. Real
+  owner-approval UI independently reaches payment-pending, rejects unauthorized
+  approval/premature handoff and verifies cancellation releases the dates.
+- Real staged UI checkout, sandbox charge, signed payment webhook, exact
+  persisted amount/currency and authorized rental lifecycle pass. An approval
+  or a successful redirect alone is never reported as paid.
+
+Deposit-refund and owner-payout provider receipts have not been verified in this
+rollout. Privileged admin writes are covered by frontend/API fixtures, not
+hosted financial/configuration mutations. Check-in photo/evidence capture remains
+explicitly unavailable; the checklist does not pretend to save images or file a
+claim. These are release/feature gaps, not success-shaped substitutes.
+
+## Brand assets
+
+The shared `BrandLogo` uses the latest supplied transparent wordmark and a
+compact favicon-derived mark on phone navigation. Empty margins are trimmed
+without changing the artwork. Dark mode adds a light backing to keep its dark
+lettering readable. The supplied ICO is served as the favicon, with derived
+Apple touch and web-manifest icons. Social previews use the same wordmark on
+a light background. These assets do not add offline support or change routing.
+
+## Marketplace countries
+
+Global Settings → `marketplace_country_codes` controls countries allowed for
+city/postal-code discovery, GPS/IP location detection, pickup address selection
+and new item requests. The initial setting is United States (`US`) only.
+Administrators with `config.manage` can add/remove countries from the existing
+country reference; at least one must remain enabled. Changes require a reason
+and are audited. This does not restrict self-reported profile nationality/region.
+
+Apply `20261026000005_marketplace_countries.sql` before deploying this frontend.
+Missing or unreadable configuration blocks location selection explicitly.
+New/changed pickup addresses and new requests validate the configured country
+on the server; request creation without a country is no longer available.
+Existing rentals, request history and unchanged pickup addresses are retained.
+Saved city selections are rechecked on load and when the window regains focus.
+New lookups read the current policy without a frontend deployment.
+
+## Local frontend with hosted Supabase
+
+To run against the isolated hosted test backend, configure the ignored
+`.env.hosted.local` with that project's `VITE_SUPABASE_URL` and public
+`VITE_SUPABASE_ANON_KEY`, then run:
+
+```powershell
+pnpm dev -- --host localhost --mode hosted
+```
+
+Open `http://localhost:5174/`. This mode overrides the default Supabase
+configuration without changing `.env.local` or applying hosted migrations.
+Use only a public anonymous key in the frontend, never a service-role key.
+Browsing supports hosted schemas without optional duration-discount columns;
+newer write flows still require their corresponding migrations.
+
+[Owner & Renter validation status report](docs/implementation/OWNER_RENTER_VALIDATION_STATUS.md)
+separates verified local behavior, unresolved failures and hosted release gates.
+
+## Homepage category discovery
+
+The homepage pairs a photographic hero and prominent search with image-led
+categories, discovery shelves and renter/owner entry points. It uses real
+inventory only; empty or failed catalog loads never substitute sample listings.
+The outdoor story
+appears only when its category and a real outdoor listing are available.
+When coordinates are selected, discovery uses the server's radius-filtered
+search rather than claiming nearby results from a global 24-item sample.
+Saved-item failures are visible, and hearts are disabled during initial loading
+and writes. The homepage and remaining page families have been migrated and
+checked; the verification section distinguishes frontend checks from provider
+and real-backend evidence.
+Listings without uploaded photos no longer receive an unrelated stock photo.
+Cards and rental thumbnails share an explicit photo-unavailable fallback; the
+existing detail gallery already handles an empty photo collection.
+
+Browse by category uses the active database categories in their configured order
+and fixed, distinct category artwork (never user listing uploads). Cards form a
+two-column phone grid, expanding to four columns on tablets and eight on desktops, with full-card
+navigation, visible keyboard focus and reduced-motion-aware hover feedback.
+Missing or failed photos retain the category icon and destination. Loading
+skeletons, empty categories and catalog errors remain distinct states.
+
+Category cards open the existing category-filtered search. **Explore all
+categories** and **More** open the existing unfiltered search with its category
+filters; there is no separate category discovery route. Search, dates, location
+and filter logic are unchanged.
+
+## Top Offers banner
+
+The shared mint offer banner retains the reference's curved accents, white cards,
+top-corner ranks/status pills and green TEST DATA pill. It is 100px tall on desktop
+and phones, with compact
+site typography and continuous news-style scrolling instead of navigation arrows.
+Cards share fixed dimensions, equal padding, a one-pixel border and aligned
+48px images. Long titles truncate with an ellipsis and retain their full tooltip.
+Displayed daily prices round to whole dollars; underlying offer amounts do not
+change. LIVE BIDDING has a slow double-heartbeat glow and toggles motion on click.
+Hover pauses scrolling; keyboard focus and reduced motion provide a static,
+manually scrollable feed. Visual loop copies are hidden from assistive technology
+and cannot receive keyboard focus.
+
+The existing bidding flag, fifteen-second refresh, expiry filtering, retry and
+listing destinations remain unchanged. Real offers always take priority.
+Only an empty test-environment feed shows clearly labeled sample offers; its
+first three photos are cropped from the supplied reference. HOT, POPULAR and
+GREAT DEAL are illustrative sample labels, never inferred claims for real offers.
+
+## Owner and Renter implementation increment (2026-10-21)
+
+The listing detail uses a gallery-led, two-column desktop layout with one sticky
+booking panel (non-sticky on short screens). On mobile the same panel follows
+the gallery, and a bottom **Review booking** shortcut sits above the existing
+navigation. One date-range picker handles availability; rental, configured
+service fee, refundable deposit and estimated total appear before requesting.
+Tax is not calculated by the current estimate; this is disclosed rather than
+inventing a tax amount. Checkout still uses backend-authoritative prices, owner
+approval and the existing fifteen-minute payment reservation. Eligible listings
+retain secondary offers only when bidding is enabled. Owner reviews do not imply
+identity verification, account age or a completed-rental count.
+
+The owner listing journey follows five sequential screens: Photos, Details,
+Rental settings, Availability, and Location & review. It preserves revision-safe
+drafts, photo/AI editing, private pickup, and backend-confirmed publication.
+Owners can select 1–30 consecutive available calendar days within the next 90
+days. The owner selects pickup and return dates: November 19–20 is one rental
+day, returned by November 20. The return date is exclusive, matching the rental
+API. Return dates beyond pickup + 30 days or the 90-day horizon are disabled.
+The city is derived from the selected pickup address, with the marketplace
+location used as a search hint only. Drafts are saved before publication review;
+review failures expose Retry publication, not a misleading Retry save.
+Existing reservations cannot
+be displaced. Apply `20261027000001_listing_scheduling_window.sql` before releasing
+this policy to a hosted environment; it has only been applied locally. Offer
+preferences retain their existing post-publication authorization gate.
+
+The current implementation adds stable Customer IDs; private country and
+region settings; server-side five-mile discovery with optional dates; listing
+value/condition and revision-safe edits; fifteen-minute payment reservations;
+immutable rental snapshots; listing bidding rules and a real top-five feed; and
+coordinate-based Request an Item matching.
+
+Apply the additive `20261021000005` through `20261021000023` migrations with
+`pnpm supabase:local migration up --local`. Do not reset a database containing retained
+payment or agreement evidence. The isolated
+[hosted test application](https://ybuy-e2e-test.vercel.app) received migrations
+05–23, all nine current Edge Functions and the latest frontend on 2026-10-21.
+Its existing test-site authenticator setup is unchanged. All 16 hosted smoke
+cases passed (ten account sessions, five booking-to-payment-pending journeys and
+invalid-password rejection). Production is unchanged. Hosted Stripe credentials,
+approved legal terms and complete paid/recovery journeys remain release gates.
+
+The isolated test site's `bidding` flag is enabled. Its five published Owner
+fixture listings accept offers, with five persisted synthetic Renter offers for
+the top-five news ribbon. These demo offers expire seven days after creation;
+they are not real customer demand and are not automatically renewed. The banner
+appears above marketplace page content, refreshes every 15 seconds, and retains
+keyboard-accessible bid links. It stays visible with an honest
+empty state when enabled but no eligible offers exist. Production flags are unchanged.
+The compact, approximately 72px dark emerald ribbon scrolls continuously like a
+TV news feed, with mint prices, gold ranks and a slow heartbeat glow on LIVE BIDDING.
+It has no navigation arrows or separate pause/resume buttons. The LIVE BIDDING
+badge toggles motion; hover pauses scrolling, and keyboard focus or reduced-motion
+preferences expose a static, wrapping list with no glow animation. Duplicate visual
+copies are hidden from screen readers and keyboard navigation. Missing or failed images
+show an item icon; the banner never invents percentage gains or bid activity.
+
+- The server, not the browser countdown, controls checkout expiry. A late
+  verified payment must revalidate inventory; conflicts enter a private
+  reconciliation queue rather than displacing another renter.
+- Agreement snapshots without approved legal terms are explicitly operational
+  records, not approved rental contracts. Policy publication controls are not
+  available in the admin portal. Historical snapshots are never rewritten.
+- New publications require an Owner-declared item value and condition. Category
+  deposit suggestions are editable within configured limits; a declared value
+  is neither insurance coverage nor an independent appraisal.
+- Request locations require an explicit city/postal-code selection. Matching is
+  based on coordinates, dates, quantity, category and budget, not city-name
+  substrings. More than 100 matches are processed across durable batches.
+- Country and region are optional self-reported profile fields, separate from
+  the permanent Customer ID and payment currency. New rentals snapshot them;
+  existing transactions are not retroactively populated. Public profile joins
+  cannot read them. The reference uses pinned MIT-licensed
+  `country-region-data@4.1.0`: 249 countries/territories and 4,208 coded
+  subdivisions. Uncoded source entries are not invented as valid region codes.
+  Generate a future additive reference refresh with
+  `node scripts\build-region-reference.mjs <new-migration.sql>`; review it before
+  applying, retaining old codes needed by historical records.
+- Authorized investigations can filter and group a bounded Customer ID batch
+  by current self-reported country/subdivision before pagination. Invalid and
+  unknown IDs remain visible. Each query and its geographic filters are audited;
+  country changes never generate a fraud verdict or invented risk score.
+
+Hosted Stripe configuration, real provider-side session expiration, legal-policy
+approval, bank payouts and the complete paid browser journey remain separate
+acceptance gates. A successful build does not establish any of these.
+
+## Local lifecycle test accounts
+
+### Podman Desktop backend
+
+The local Supabase backend uses a rootful `podman-machine-default` machine.
+Install Podman Desktop and the Podman CLI, then create/start that machine:
+
+```powershell
+podman machine init --rootful podman-machine-default
+podman machine start podman-machine-default
+pnpm supabase:local start
+```
+
+Only run `machine init` on a new installation. On this Windows machine, the
+Podman virtual disk is on `D:\Podman\podman-machine-default`. WSL 2.7.14 is
+installed; the previous WSL 2.2.4 kernel could not boot Podman's Fedora image.
+Keep Podman's own WSL bootstrap configuration rather than enabling native
+`systemd=true` in that distribution.
+
+Use `pnpm supabase:local` instead of bare `supabase` for all local lifecycle,
+migration, SQL-test and Edge Function commands. The wrapper selects Podman's
+Docker-compatible API explicitly, even while Docker Desktop is installed.
+It does not change the global Docker context, environment or hosted project
+link. Local SQL helpers call Podman directly. Hosted deployment commands still
+use the normal Supabase CLI with an explicitly authorized project reference.
+On Windows, `start` also replaces Vector's Docker TCP endpoint with a mounted
+Podman Unix socket so Studio log collection works without exposing a TCP API.
+Do not expose the local container socket or Studio to untrusted users.
+
+Docker Desktop and its original YBuy containers/volumes are retained as a
+rollback snapshot. Only the Podman copy should run on ports 54321 (API),
+54322 (Postgres), 54323 (Studio), 54324 (mail), and 54327 (analytics); the
+application stays on port 5174.
+Docker's YBuy containers have automatic restart disabled to prevent port
+conflicts. Do not delete either runtime's volumes or run `db reset`.
+The copies do not synchronize: new Podman writes are not in the Docker snapshot.
+
+To return temporarily to the original Docker snapshot, stop any local
+`functions serve` process, then:
+
+```powershell
+pnpm supabase:local stop
+$containers = docker --context desktop-linux ps -a --format '{{.Names}}' |
+  Where-Object { $_ -match '^supabase_.+_YBuy$' }
+docker --context desktop-linux start $containers
+```
+
+Local development scripts intentionally remain Podman-only. For a permanent
+rollback, copy newer Podman data back first and update those scripts; do not
+silently point them at Docker's older data. Other Docker workloads are unchanged.
+Private database and volume backups are kept outside the repository.
+
+The November 5, 2026 cutover verified all 4,356 persistent-volume files against
+SHA-256 checksums, and matching database fingerprints for 22 Auth users,
+4 listings, 6 bookings, 4 Storage objects and 130 applied migrations.
+The installed Supabase CLI uses Storage API `v1.80.2` rather than the old
+Docker image `v1.77.5`; all four stored objects were downloaded successfully.
+All 12 services run on Podman, including Edge Functions and stable Vector logs.
+Keep at least 5 GB free on the Windows drive containing Podman's virtual disk;
+Linux's reported virtual-disk capacity is not the available Windows free space.
+
+Verification passed 74 pgTAP assertions, the plain SQL inspection-storage
+permissions check, concurrent reference allocation, all 22 real local account
+identities/staff permissions, and main-site browser sign-in/reload persistence.
+Existing profile UI tests contain stale button/heading assumptions for the main
+site; they were not changed by this runtime migration. Real payment, email and
+hosted backend workflows were not exercised.
+
+To rerun the local Auth, Storage-download, Edge-auth, Realtime and log-socket smoke:
+
+```powershell
+node --experimental-websocket tests\podman-local.mjs
+```
+
+### Password-free local profile selection
+
+Start the rootful machine in Podman Desktop, then run:
+
+```powershell
+pnpm supabase:local start
+pnpm supabase:local migration up --local
+pnpm dev
+```
+
+Click **Login**, then select a named profile from the **Profile** dropdown:
+ten Owners, ten Renters, Grace Mitchell (Admin), or Daniel Lawson (Super Admin).
+There is no password prompt and no automatic login. The selected profile persists
+across reloads. Click the current name in the header to switch profiles; the
+existing mobile menu also offers Switch account and Sign out.
+Loopback development skips the hosted `/access` security-code screen and returns
+to its requested destination. Production and hosted site-access verification
+remain unchanged.
+
+Normal `pnpm dev` startup at `http://localhost:5174/` always uses the isolated
+local profile setup and fails explicitly if local Supabase is not running.
+`pnpm dev:local` remains an explicit alias for this setup. Builds, preview servers,
+and explicit `--mode e2e` runs do not invoke local profile configuration. Unchanged
+local configuration is not rewritten, so starting another dev process does not
+trigger an environment-file restart of the running app.
+
+This mode configures the ignored `.env.local-profiles.local` file from the running
+local Supabase CLI. Existing hosted environment files and lifecycle test accounts
+are unchanged. The dev-only endpoint provisions its own marked synthetic accounts
+and issues a one-use local Auth token; no password or service-role key is sent to
+the browser. Profile/session validation, RLS, actual database admin permissions,
+and additional sensitive-action MFA requirements remain enforced. Owners and
+Renters are personas, not exclusive permission roles.
+
+The picker is unavailable in production builds, hosted-backend modes, and the
+existing `e2e` mode. Its endpoint only accepts loopback clients and same-origin
+selection requests. Anyone with access to this development machine can select
+these local staff accounts; never expose the local server or database publicly.
+Local mode clears inherited payment/email provider credentials rather than
+sending real payments or emails.
+
+Verify the 22 real account sessions, Owner/Renter versus staff permissions,
+profile switching, reload persistence, mobile layout, sign-out, and rejected
+invalid/cross-origin requests with:
+
+```powershell
+pnpm exec playwright test --config playwright.profiles.config.ts
+```
+
+The sign-in dialog offers Supabase email/password sign-in and registration alongside
+Google sign-in (including Gmail accounts). It preserves the destination route and existing session/RLS
+checks. Registration displays a confirmation notice when Auth requires email
+verification; the client never treats an unverified signup as authenticated.
+Hosted deployments must enable email and Google Auth in their own project settings.
+Google requires a server-side OAuth client ID/secret and an authorized Google Cloud
+redirect URI of `https://<project-ref>.supabase.co/auth/v1/callback`. Allow the app's
+return URLs in Supabase Auth URL Configuration. Never put the OAuth client secret
+in a `VITE_` variable. Account switching ends the local session before starting a
+new sign-in; Google asks the user to select an account. Initialization and callback
+errors remain visible, and email/password stays available.
+On 2026-10-22, the e2e project (`jzyjmsixfuwzfnntewqn`) was verified to have email
+Auth enabled and Google disabled. An operator must enable/configure Google before
+hosted Google sign-in can complete; rendering the button does not establish this.
+
+Local `supabase/config.toml` enables email/password Auth for isolated test actors.
+Production hosted Auth settings are unchanged. Restart local Supabase after changing that
+configuration. With it running, create or reuse five Owner and five Renter test
+personas with real password authentication:
+
+```powershell
+$status = node dev\supabase-local.mjs status --output json
+if ($LASTEXITCODE -ne 0) { throw 'Local Supabase must be running.' }
+($status -join "`n") | node --experimental-websocket scripts\seed-local-test-users.mjs
+```
+
+By default the script accepts only `http://localhost:54321`, never loads hosted environment
+files, and refuses to overwrite unrelated users. Accounts use
+`owner1@example.test` through `owner5@example.test` and
+`renter1@example.test` through `renter5@example.test`. Generated passwords are
+saved to the Git-ignored `ybuy-test-accounts.local` file; keep it private.
+Rerunning reuses these accounts and verifies real sign-in, profile/session
+identity, wrong-password rejection and sign-out. No emails are sent.
+
+These are admin-created fixtures, not registration E2E passes.
+Owner/Renter are test personas, not exclusive permission roles.
+
+The separate demo-catalog script also requires explicit `DEMO_MODE=true` and
+accepts only the exact local Supabase URLs. Disabled mode makes no changes;
+it never removes existing data. Missing local service credentials fail explicitly.
+
+## Isolated deployed test environment
+
+The standalone test app is https://ybuy-e2e-test.vercel.app and uses only Supabase
+project `jzyjmsixfuwzfnntewqn` (`ybuy-e2e-test`), not the production backend.
+Its banner identifies it as a test environment. Production application/backend
+settings are unchanged. Hosted email confirmation remains enabled. The existing
+Resend integration is configured with its sandbox sender; all application and
+Auth verification emails are redirected only to `satish.babu1777@gmail.com`.
+The unverified `ybuy.com` sender domain is not used.
+
+The test site requires the existing shared authenticator-code access gate,
+using new test-only secrets. This is an additional site gate, not per-account
+Supabase MFA. Provision the test seed privately in your authenticator. Hosted
+Playwright runs require `YBUY_E2E_GATE_SECRET`; tests submit genuine TOTP codes
+to obtain the secure access cookie rather than manufacturing sessions.
+
+Notification emails include escaped HTML, a plaintext alternative, intended
+test actor, booking/item/dates and authoritative price and settlement details.
+The first rendered notification payload is frozen for retry stability.
+Resend acceptance is `sent`; only a signed provider receipt marks it `delivered`.
+The five-minute scheduler is bound to this test backend through Vault.
+`send-test-auth-email` is a signed, test-only Supabase Send Email Hook for signup,
+recovery, magic links, invitations, reauthentication and email changes. It
+preserves real verification tokens and restricts redirects to the test app.
+Auth email rate limits remain enforced; HTTP 429 is not a successful send.
+
+The account script has an explicit `--hosted-test` mode restricted to that exact
+test project. Supply `API_URL`, `ANON_KEY` and `SERVICE_ROLE_KEY` JSON through stdin
+from that project's CLI output; never use production keys. Hosted passwords are
+saved to Git-ignored `ybuy-hosted-test-accounts.local` and differ from local ones.
+Pass `--with-admins` to `scripts/seed-local-test-users.mjs --hosted-test` to
+create the two marked administrator fixtures and grant their database roles.
+This explicitly enables privileged tester access; use only the isolated test project.
+Existing fixture credentials are preserved, and subsequent seed runs retain the
+added administrators.
+`--with-listings` creates/reuses five published synthetic camera listings for
+manual testing, using authenticated Owner APIs rather than a simulated backend.
+They are persistent fixtures, not proof that the listing wizard passed.
+
+Run real browser checks with:
+
+```powershell
+$env:NODE_OPTIONS = '--experimental-websocket' # Node 20; not needed on Node 22+
+npx playwright test --config playwright.local.config.ts
+npx playwright test --config playwright.hosted.config.ts
+```
+
+Local tests use real local Supabase keys obtained from the running CLI; hosted
+tests are hard-bound to the separate test URL/backend. Tests never confirm
+payment synthetically. Fixtures without rental agreements are deleted.
+Agreement-backed fixtures are instead cancelled when unpaid and taken out of
+public inventory; immutable bookings/agreements are retained and identified in
+test attachments. The ten accounts and optional manual-test listings remain available.
+HTML reports are in `playwright-local-report` / `playwright-hosted-report`.
+Reports, traces and credentials are ignored by Git and excluded from deployment.
+Keep traces private because they can contain authenticated requests.
+The latest hosted run passed all ten account-session tests, all five real
+request/approval pairs and invalid-password rejection (16 passed). The two local
+auto-confirm registration tests are intentionally skipped on hosted Auth.
+A separate real UI registration, delivered HTML confirmation and verified
+email-link sign-in passed. Password-recovery email verification remains blocked
+by Auth's HTTP 429 email-send quota; no rate limit was disabled to bypass it.
+
+Payment, pickup, return, completed-review and payout E2E verification remains
+blocked on the hosted test site until its Stripe sandbox secrets/webhook are
+configured. Local sandbox Checkout, charged-deposit refund and Stripe Connect
+transfer have been verified separately; a Connect balance transfer is not
+confirmation of a bank payout. Cancellation refunds remain disabled pending a
+policy decision. Settlement functions fail closed outside explicitly allowed
+test backends and test-mode credentials.
+Listing publication through the UI also needs a test Google Maps key: currently
+the wizard requires address selection and has no manual-address fallback.
+
+## Category artwork
+
+Home's category tiles use fixed artwork defined in `src/lib/listings.ts`.
+Publishing or editing listings never changes category thumbnails. Categories
+without mapped artwork use their category icon.
+
+## Admin portal scope
+
+The dedicated admin portal is Admin-only. Super Admin sign-in, profile
+selection, navigation and management tools have been removed from the portal.
+Existing database roles, permissions, migrations and audit records are retained;
+this change does not delete or rewrite backend data.
+
+## Item requests and rental offers
+
+`/requests` lets signed-in renters post and manage item requests. Owners can
+discover active requests, submit offers, link published listings and negotiate
+through a persistent proposal history. Real offers remain in `/requests`.
+
+`/bidding` is the live competitive-auction section. Owners manage their listings'
+auctions in My auctions. Explore auctions excludes the signed-in user's own listings
+before pagination and category counts; anonymous visitors see all eligible auctions.
+Renters explore auctions and place bids on the dedicated
+`/bidding/:listingId` page. Listings only link into Bidding; they do not contain a
+bid form or leaderboard. Renters see the anonymous top three and their own bid
+history and current rank; competing renter identities remain private. Owners see
+all bids, bidder profiles, ratings, payment state and the decision deadline in My
+auctions. Owners must choose eligible bidders before bidding closes; undecided
+bidding expires immediately. Missed-decision counts and audit records are
+admin-only, never displayed beside marketplace ratings. Review stars are unchanged. The system never selects a bidder
+automatically, including after a winner fails to pay. Flexible-date auctions
+allow renters to choose their own pickup and exclusive return dates inside the
+owner's window. Overlapping bids compete by total rental value, while owners
+can select multiple non-overlapping rentals when inventory permits. The
+minimum bid increase is configured in Admin global settings.
+Regular bookings can coexist with open bidding. Pending booking requests do not
+reserve auction capacity, while a confirmed overlapping booking closes the
+auction. A selected winner's pending checkout reserves inventory until payment or
+verified checkout expiry is reconciled.
+Each accepted new bid creates an unread owner in-app notification linking to
+Bidding, without exposing the bidder's identity. Bid retries do not duplicate
+alerts, and the owner's Bookings and rentals in-app preference is respected.
+Renters also receive bid-accepted and outbid alerts. Owners and participating
+renters receive auction-extension and bidding-closed updates. Selected renters
+keep the existing winner alert and receive one payment reminder in the last
+15 minutes of their checkout window. Not-selected alerts are final: they are
+sent only after another renter pays or the auction ends without a booking,
+preserving runner-up selection. Existing verified-booking confirmation alerts
+are reused for both parties. All new alerts are in-app only, respect the
+Bookings and rentals preference, and do not duplicate on retries.
+Auction countdowns use days and weeks for longer waits and approximate 30-day
+months (labeled "About") beyond a month. Within 24 hours they show live hours,
+minutes and seconds; actual auction deadlines and payment windows are unchanged.
+
+`/auction/:id` remains a mock-only demo route using the existing sample auctions.
+Enable `mock_bidding` in Admin Feature flags to show the Home demo rail and allow
+demo bids. Disabling it immediately hides the rail and replaces the demo route
+with an offline banner. Demo bids live only in page memory, reset when leaving
+the auction or disabling the flag, and never create real offers, bookings or
+payments. The independent `bidding` flag does not enable this demo.
+
+The `item_requests` feature flag controls request discovery, creation and
+request-based offers. The `bidding` flag controls direct offers on listings that
+opted into negotiation and all counteroffers. Both flags remain off by default
+and are managed in Admin Feature flags. Admins with `listings.moderate` can review
+and close active requests with an audited reason.
+
+Accepting an offer creates a booking in `pending_payment`; it does not confirm
+payment. Existing Stripe Checkout and the signature-verified webhook remain the
+source of truth for confirmation. Fixed-price booking remains available and
+unchanged. Listings default to quantity 1 and negotiation disabled.
+
+The database implementation is in
+[20261018000006_item_requests_and_negotiation.sql](supabase/migrations/20261018000006_item_requests_and_negotiation.sql).
+Run its focused SQL assertions locally with
+`pnpm supabase:local test db --local`; do not apply this migration to hosted Supabase
+without separate authorization.
+
+## UI/UX skill
+
+[UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) is installed
+for this project in [.github/skills/ui-ux-pro-max](.github/skills/ui-ux-pro-max).
+Source: `ui-ux-pro-max-cli@2.15.0` (MIT). The installer output is adapted from the
+legacy Copilot prompt layout to a discoverable `SKILL.md`, with Windows script paths.
+Only the requested skill is included.
+
+Start a new Copilot session after installation to discover the skill. Python 3 is
+required for its local searches; no additional Python packages are needed.
+
+```powershell
+python .github\skills\ui-ux-pro-max\scripts\search.py "keyboard focus" --domain ux -n 1
+```
+
+The skill provides guidance; repository instructions still govern implementation.
+Preserve YBuy's existing Vite/React UI and design system.
+
+## 21st MCP in VS Code
+
+The local [.vscode/mcp.json](.vscode/mcp.json) configuration already registers `21st`
+using streamable HTTP at `https://21st.dev/api/mcp`. It sends `x-api-key` through
+`${input:21st_api_key}`, a password-masked VS Code input, rather than a literal key.
+This local configuration is ignored by Git.
+
+1. Run **MCP: List Servers** in the VS Code Command Palette.
+2. Select **21st**, start the server, approve trust if prompted, and enter your API
+   key in VS Code's password prompt. Do not paste the key into chat or source files.
+3. In chat's **Configure Tools** menu, enable the 21st tools and confirm `search`
+   and `get_component` are listed. Start a new chat session if tools are not refreshed.
+
+Configuration alone does not establish a verified connection: successful
+authentication and tool discovery are required.
+
+## Notifications and email
+
+In-app notifications are persisted in Supabase and are created from booking
+state changes, new messages, marketplace notifications, case notifications and
+reviews. Row-level security limits notification history and preferences to the
+signed-in recipient. Email jobs are written transactionally with those events;
+Resend calls are made only by the server-side `send-notification-emails`
+Edge Function. Signed-in users can process their own queue; a Vercel Cron
+endpoint can process the global queue using a separately shared worker secret.
+Resend webhooks update accepted email jobs to delivered or failed after
+signature verification.
+
+For local development, keep `RESEND_API_KEY` in the ignored `.env.local` file,
+set `RESEND_FROM_EMAIL`, `PUBLIC_APP_URL`, and a controlled
+`NOTIFICATION_TEST_RECIPIENT`, then run:
+
+```powershell
+pnpm supabase:local functions serve --env-file .env.local
+```
+
+Keep this command running for local AI listing analysis as well. The ignored
+`.env.local` file must contain the server-only `OPENROUTER_API_KEY`. A response
+of `503 {"message":"name resolution failed"}` from `/functions/v1/` can mean
+the local `supabase_edge_runtime_YBuy` container is stopped; check its status
+and rerun the command above to restore the runtime with the local secrets.
+Set `LISTING_STORAGE_ORIGIN=http://127.0.0.1:54321` in `.env.local` when the
+browser uses that local Supabase URL. Function workers do not receive the
+runtime's internal host-port setting. Photo validation accepts this explicit
+origin and still checks each photo against the authenticated owner's listing images.
+
+For local Stripe test payments, a successful Checkout redirect is not enough:
+the signed payment webhook must reach local Supabase. With Stripe CLI installed
+and a test-mode `STRIPE_SECRET_KEY` in `.env.local`, run these in separate terminals:
+
+```powershell
+node dev\stripe-local.mjs
+node dev\supabase-local.mjs functions serve --env-file .env.local-stripe.local
+```
+
+Start the listener first so it can generate the ignored local-functions
+environment with its matching signing secret. Keep both commands running while
+using `http://localhost:5174/`; this replaces the functions command above, not the
+frontend server. The helper does not change `.env.local` or hosted webhook
+settings, refuses live Stripe keys, and redacts the listener secret from output.
+If a completed payment predates the listener, do not pay again: its existing
+Stripe test receipt needs reconciliation through the local webhook.
+
+Email is redirected to `NOTIFICATION_TEST_RECIPIENT` unless the trusted
+Edge Function environment explicitly sets `NOTIFICATION_LIVE_DELIVERY=true`.
+Production requires a Resend-verified sender domain and matching
+`RESEND_FROM_EMAIL`; configure a `RESEND_WEBHOOK_SECRET` for the `resend-webhook`
+function and subscribe it to email sent, delivered, bounced, complained and
+failed events. Configure the public Vercel origin in `PUBLIC_APP_URL` and the
+Supabase `APP_ORIGIN` allowlist. Never use a `VITE_` prefix for provider
+credentials.
+
+Retries are bounded to five attempts, use exponential backoff and the same
+Resend idempotency key. Messages are batched per conversation for email for
+five minutes; in-app message notices are not throttled. Resend acceptance is
+recorded as `sent`, never `delivered`; signed provider webhook events provide
+delivery state. Each worker invocation processes up to ten jobs. Supabase Cron
+runs every five minutes using `pg_cron` and `pg_net`, independently of Vercel's
+Hobby plan. Migration 11 creates the schedule and generates a worker secret in
+Vault. Set Vault's `notification_project_url` to your Supabase project URL and
+copy Vault's `notification_worker_secret` into the Edge Function's
+`NOTIFICATION_WORKER_SECRET` server environment; never expose it to clients.
+
+Supabase migrations through `20261018000011`, all six Edge Functions, and the
+Vite app at `https://ybuy.vercel.app` were deployed on 2026-10-18. The existing
+temporary access gate remains enabled. Hosted email stays in test-recipient
+mode with the Resend test sender; email links now target the production app.
+A worker check processed one queued email accepted by Resend. Actual delivery
+confirmation still requires Resend webhook registration/signing-secret setup.
+## Live feature flags
+
+Database-backed feature flags use one shared Supabase Realtime/WebSocket
+subscription per active app instance. Admin flag switches and the implemented
+`item_requests` / `bidding` consumers update without refresh, focus, or navigation.
+The `bidding` flag controls competitive listing auctions and continues to update
+their directory and owner-management view without refresh, focus, or navigation.
+The separate `mock_bidding` flag only controls the simulated demo route.
+
+Apply [migration 10](supabase/migrations/20261018000010_feature_flags_realtime.sql)
+to publish flag changes. The client waits for the database subscription before
+loading its snapshot, refetches after insert/update/delete events and reconnects,
+and retries failed reads automatically. Disconnected consumers show an error
+and temporarily disable feature actions rather than trusting stale enabled flags.
+Delivery is network-dependent, not a zero-latency guarantee. Database permissions,
+RLS, mutation-time feature checks and financial gates remain authoritative.
+
+Flags without implemented consumers do not activate unavailable modules.
+Build-time UI constants in `src/lib/feature-flags.ts` remain build-time switches,
+not database flags. Focused checks (with Vite running on port 5174):
+
+```powershell
+npx playwright test feature-flag-store.spec.ts marketplace.spec.ts --workers=1 --output "$env:TEMP\ybuy-realtime-tests"
+```

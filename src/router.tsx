@@ -1,60 +1,76 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { readSearchState, searchStateParams, type SearchState } from '@/lib/search-state';
+import { UUID_RE } from '@/lib/text-safety';
 
 export type Route =
   | { name: 'home' }
-  | { name: 'dashboard' }
-  | { name: 'search'; category?: string; q?: string; lat?: number; lng?: number; locationLabel?: string; start?: string; end?: string }
-  | { name: 'listing'; id: string }
+  | { name: 'dashboard'; tab?: 'renting' | 'lending' }
+  | { name: 'owner-listings' }
+  | { name: 'owner-payouts' }
+  | ({ name: 'search'; lat?: number; lng?: number; locationLabel?: string } & Partial<SearchState>)
+  | { name: 'listing'; id: string; requestId?: string }
   | { name: 'checkout'; id: string; startDate?: string; endDate?: string; quantity?: number }
   | { name: 'confirmation'; id: string }
   | { name: 'renter-dashboard' }
   | { name: 'owner-dashboard' }
-  | { name: 'create-listing' }
+  | { name: 'create-listing'; requestId?: string }
+  | { name: 'edit-listing'; id: string; requestId?: string }
   | { name: 'check-in'; id: string }
   | { name: 'check-out'; id: string }
   | { name: 'item-passport'; id: string }
   | { name: 'claims' }
   | { name: 'claim-detail'; id: string }
+  | { name: 'support'; id?: string }
+  | { name: 'wallet' }
   | { name: 'trust-profile' }
   | { name: 'messaging' }
   | { name: 'conversation'; id: string }
-  | { name: 'requests' }
+  | { name: 'requests'; tab?: 'browse' | 'mine' | 'offers'; requestId?: string; matches?: boolean }
   | { name: 'favorites' }
   | { name: 'need-something' }
   | { name: 'protection' }
   | { name: 'notifications' }
   | { name: 'bidding' }
+  | { name: 'bidding-detail'; id: string }
   | { name: 'auction'; id: string }
-  | { name: 'guidelines' };
+  | { name: 'guidelines' }
+  | { name: 'admin'; section?: string }
+  | { name: 'access' };
 
 interface RouterContextValue {
   route: Route;
   navigate: (route: Route) => void;
-  back: () => void;
+  back: (fallback: Route) => void;
 }
 
 const RouterContext = createContext<RouterContextValue | null>(null);
+const HISTORY_INDEX = '__ybuyIndex';
+
+function historyIndex(): number {
+  const state = window.history.state;
+  return state && typeof state === 'object' && typeof state[HISTORY_INDEX] === 'number'
+    ? state[HISTORY_INDEX]
+    : 0;
+}
 
 /** Route <-> real URL path mapping so pages are deep-linkable (no `#` hash routes). */
 function routeToPath(route: Route): string {
   switch (route.name) {
     case 'home': return '/';
-    case 'dashboard': return '/dashboard';
+    case 'dashboard': return route.tab ? `/dashboard?tab=${route.tab}` : '/dashboard';
+    case 'owner-listings': return '/dashboard/listings';
+    case 'owner-payouts': return '/payouts';
     case 'search': {
-      const params = new URLSearchParams();
-      if (route.category) params.set('category', route.category);
-      if (route.q) params.set('q', route.q);
+      const params = searchStateParams(route);
       if (route.lat != null && route.lng != null) {
         params.set('lat', String(route.lat));
         params.set('lng', String(route.lng));
       }
       if (route.locationLabel) params.set('loc', route.locationLabel);
-      if (route.start) params.set('start', route.start);
-      if (route.end) params.set('end', route.end);
       const qs = params.toString();
       return qs ? `/search?${qs}` : '/search';
     }
-    case 'listing': return `/listing/${route.id}`;
+    case 'listing': return `/listing/${route.id}${route.requestId ? `?request=${encodeURIComponent(route.requestId)}` : ''}`;
     case 'checkout': {
       const params = new URLSearchParams();
       if (route.startDate) params.set('start', route.startDate);
@@ -64,25 +80,32 @@ function routeToPath(route: Route): string {
       return `/checkout/${route.id}${qs ? `?${qs}` : ''}`;
     }
     case 'confirmation': return `/confirmation/${route.id}`;
-    case 'renter-dashboard': return '/dashboard/renter';
-    case 'owner-dashboard': return '/dashboard/owner';
-    case 'create-listing': return '/create-listing';
+    case 'renter-dashboard': return '/dashboard?tab=renting';
+    case 'owner-dashboard': return '/dashboard?tab=lending';
+    case 'create-listing': return `/create-listing${route.requestId ? `?request=${encodeURIComponent(route.requestId)}` : ''}`;
+    case 'edit-listing': return `/edit-listing/${route.id}${route.requestId ? `?request=${encodeURIComponent(route.requestId)}` : ''}`;
     case 'check-in': return `/check-in/${route.id}`;
     case 'check-out': return `/check-out/${route.id}`;
     case 'item-passport': return `/item-passport/${route.id}`;
     case 'claims': return '/claims';
     case 'claim-detail': return `/claims/${route.id}`;
+    case 'support': return route.id ? `/support/${route.id}` : '/support';
+    case 'wallet': return '/wallet';
     case 'trust-profile': return '/profile';
     case 'messaging': return '/messages';
     case 'conversation': return `/messages/${route.id}`;
-    case 'requests': return '/requests';
+    case 'requests': return route.requestId && route.matches ? `/requests/${route.requestId}/matches`
+      : route.tab && route.tab !== 'browse' ? `/requests?tab=${route.tab}` : '/requests';
     case 'favorites': return '/favorites';
     case 'need-something': return '/need-something';
     case 'protection': return '/protection';
     case 'notifications': return '/notifications';
     case 'bidding': return '/bidding';
+    case 'bidding-detail': return `/bidding/${route.id}`;
     case 'auction': return `/auction/${route.id}`;
     case 'guidelines': return '/guidelines';
+    case 'admin': return route.section ? `/admin/${route.section}` : '/admin';
+    case 'access': return '/access';
   }
 }
 
@@ -90,6 +113,7 @@ function pathToRoute(pathname: string, search: string): Route {
   const parts = pathname.split('/').filter(Boolean);
   const [first, second] = parts;
   switch (first) {
+    case 'edit-listing': return second ? { name: 'edit-listing',id: second, requestId: new URLSearchParams(search).get('request') ?? undefined } : { name: 'owner-dashboard' };
     case undefined: return { name: 'home' };
     case 'search': {
       const qp = new URLSearchParams(search);
@@ -97,16 +121,13 @@ function pathToRoute(pathname: string, search: string): Route {
       const lng = Number(qp.get('lng'));
       return {
         name: 'search',
-        category: qp.get('category') ?? undefined,
-        q: qp.get('q') ?? undefined,
+        ...readSearchState(qp),
         lat: Number.isFinite(lat) && qp.has('lat') ? lat : undefined,
         lng: Number.isFinite(lng) && qp.has('lng') ? lng : undefined,
         locationLabel: qp.get('loc') ?? undefined,
-        start: qp.get('start') ?? undefined,
-        end: qp.get('end') ?? undefined,
       };
     }
-    case 'listing': return second ? { name: 'listing', id: second } : { name: 'home' };
+    case 'listing': return second ? { name: 'listing', id: second, requestId: new URLSearchParams(search).get('request') ?? undefined } : { name: 'home' };
     case 'checkout': {
       if (!second) return { name: 'home' };
       const qp = new URLSearchParams(search);
@@ -120,26 +141,57 @@ function pathToRoute(pathname: string, search: string): Route {
       };
     }
     case 'confirmation': return second ? { name: 'confirmation', id: second } : { name: 'home' };
-    case 'dashboard':
-      if (second === 'owner') return { name: 'owner-dashboard' };
-      if (second === 'renter') return { name: 'renter-dashboard' };
-      return { name: 'dashboard' };
-    case 'create-listing': return { name: 'create-listing' };
+    case 'dashboard': {
+      const params = new URLSearchParams(search);
+      if (second === 'listings') return { name: 'owner-listings' };
+      if (second === 'owner') return { name: 'dashboard', tab: 'lending' };
+      if (second === 'renter') return { name: 'dashboard', tab: 'renting' };
+      return { name: 'dashboard', tab: params.get('tab') === 'lending' ? 'lending' : 'renting' };
+    }
+    case 'create-listing': return { name: 'create-listing', requestId: new URLSearchParams(search).get('request') ?? undefined };
     case 'check-in': return second ? { name: 'check-in', id: second } : { name: 'home' };
     case 'check-out': return second ? { name: 'check-out', id: second } : { name: 'home' };
     case 'item-passport': return second ? { name: 'item-passport', id: second } : { name: 'home' };
     case 'claims': return second ? { name: 'claim-detail', id: second } : { name: 'claims' };
+    case 'support': return { name: 'support', id: second };
+    case 'wallet': return { name: 'wallet' };
+    case 'payouts': return { name: 'owner-payouts' };
     case 'profile': return { name: 'trust-profile' };
     case 'messages': return second ? { name: 'conversation', id: second } : { name: 'messaging' };
-    case 'requests': return { name: 'requests' };
+    case 'requests': {
+      if (second && parts[2] === 'matches') return { name: 'requests', requestId: second, matches: true };
+      const tab = new URLSearchParams(search).get('tab');
+      return { name: 'requests', tab: tab === 'mine' || tab === 'offers' ? tab : 'browse' };
+    }
     case 'favorites': return { name: 'favorites' };
     case 'need-something': return { name: 'need-something' };
     case 'protection': return { name: 'protection' };
     case 'notifications': return { name: 'notifications' };
-    case 'bidding': return { name: 'bidding' };
+    case 'bidding': return second ? { name: 'bidding-detail', id: second } : { name: 'bidding' };
     case 'auction': return second ? { name: 'auction', id: second } : { name: 'home' };
     case 'guidelines': return { name: 'guidelines' };
+    case 'admin': return { name: 'admin', section: second };
+    case 'access': return { name: 'access' };
     default: return { name: 'home' };
+  }
+}
+
+export function notificationRoute(destination: string): Route | null {
+  const match = /^([^?#]+)(\?[^#]*)?$/.exec(destination);
+  if (!match) return null;
+  const [, pathname, search = ''] = match;
+  const staticPath = /^\/(dashboard(?:\/(?:listings|owner|renter))?|requests|bidding|profile|payouts|wallet|messages|support|claims)$/;
+  const detail = /^\/(listing|bidding|auction|confirmation|messages|support|claims|check-in|check-out)\/([^/]+)$/.exec(pathname);
+  const matches = /^\/requests\/([^/]+)\/matches$/.exec(pathname);
+  if (!staticPath.test(pathname) && !(detail && UUID_RE.test(detail[2])) && !(matches && UUID_RE.test(matches[1]))) {
+    return null;
+  }
+  return pathToRoute(pathname, search);
+}
+
+function replaceLegacyDashboardPath(nextRoute: Route) {
+  if (nextRoute.name === 'dashboard' && /^\/dashboard\/(owner|renter)\/?$/.test(window.location.pathname)) {
+    window.history.replaceState(null, '', routeToPath(nextRoute));
   }
 }
 
@@ -147,16 +199,27 @@ export function RouterProvider({ children }: { children: ReactNode }) {
   const [route, setRoute] = useState<Route>(() => pathToRoute(window.location.pathname, window.location.search));
 
   const navigate = (r: Route) => {
-    setRoute(r);
-    window.history.pushState(null, '', routeToPath(r));
+    const next: Route = r.name === 'owner-dashboard'
+      ? { name: 'dashboard', tab: 'lending' }
+      : r.name === 'renter-dashboard'
+        ? { name: 'dashboard', tab: 'renting' }
+        : r;
+    setRoute(next);
+    window.history.pushState({ [HISTORY_INDEX]: historyIndex() + 1 }, '', routeToPath(next));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const back = () => window.history.back();
+  const back = (fallback: Route) => {
+    if (historyIndex() > 0) window.history.back();
+    else navigate(fallback);
+  };
 
   useEffect(() => {
+    replaceLegacyDashboardPath(pathToRoute(window.location.pathname, window.location.search));
     function onPopState() {
-      setRoute(pathToRoute(window.location.pathname, window.location.search));
+      const nextRoute = pathToRoute(window.location.pathname, window.location.search);
+      setRoute(nextRoute);
+      replaceLegacyDashboardPath(nextRoute);
     }
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);

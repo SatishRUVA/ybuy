@@ -1,0 +1,2 @@
+export function isVpnDetectionEnabled(supabaseUrl: string | undefined, anonKey: string | undefined): Promise<boolean>;
+export function checkVpn(ip: string | undefined, apiKey: string | undefined): Promise<boolean>;

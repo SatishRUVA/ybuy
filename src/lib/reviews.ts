@@ -1,5 +1,8 @@
 import { supabase } from '@/lib/supabase';
+import { assertPlainText, InputValidationError } from '@/lib/text-safety';
 import type { Review } from '@/data';
+
+export const REVIEW_MAX_LENGTH = 2000;
 
 interface DbReviewRow {
   id: string;
@@ -16,6 +19,7 @@ export interface OwnerReviewsResult {
   reviews: Review[];
   rating: number;
   reviewCount: number;
+  missedDecisionCount: number;
 }
 
 /** Fetches all reviews left for a given user (as the reviewee), newest first, plus the average rating. */
@@ -33,13 +37,13 @@ export async function fetchReviewsForUser(userId: string): Promise<OwnerReviewsR
     avatar: r.reviewer?.avatar_url ?? '',
     rating: r.rating,
     date: new Date(r.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short' }),
-    text: r.body ?? '',
+    text: r.body?.split('\u2014').join('-') ?? '',
   }));
-  const rating = reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
-  return { reviews, rating, reviewCount: reviews.length };
+  const stats = (await fetchOwnerRatings([userId])).get(userId);
+  return { reviews, rating: stats?.rating ?? 0, reviewCount: reviews.length, missedDecisionCount: stats?.missedDecisionCount ?? 0 };
 }
 
-/** Booking ids (among the given set) that the current user has already reviewed — used to hide the "leave a review" button. */
+/** Booking ids (among the given set) that the current user has already reviewed - used to hide the "leave a review" button. */
 export async function fetchReviewedBookingIds(reviewerId: string, bookingIds: string[]): Promise<Set<string>> {
   if (bookingIds.length === 0) return new Set();
   const { data, error } = await supabase
@@ -54,33 +58,27 @@ export async function fetchReviewedBookingIds(reviewerId: string, bookingIds: st
 export interface OwnerRatingStats {
   rating: number;
   count: number;
+  missedDecisionCount: number;
+  ratingAdjustment: number;
 }
 
 /**
  * Aggregates each owner's rating + review count from the public `reviews` table (reviewee = owner).
  * Owner-level because `bookings` is participant-only under RLS, so per-listing rental counts can't
- * be read by a non-participant — the owner's completed-rental reviews are the readable signal.
+ * be read by a non-participant - the owner's completed-rental reviews are the readable signal.
  */
 export async function fetchOwnerRatings(ownerIds: string[]): Promise<Map<string, OwnerRatingStats>> {
   const result = new Map<string, OwnerRatingStats>();
   const ids = [...new Set(ownerIds)].filter(Boolean);
   if (ids.length === 0) return result;
 
-  const { data, error } = await supabase
-    .from('reviews')
-    .select('reviewee_id, rating')
-    .in('reviewee_id', ids);
+  const { data, error } = await supabase.rpc('get_owner_rating_stats', { p_owner_ids: ids });
   if (error) throw error;
-
-  const sums = new Map<string, { total: number; count: number }>();
-  for (const row of (data ?? []) as { reviewee_id: string; rating: number }[]) {
-    const acc = sums.get(row.reviewee_id) ?? { total: 0, count: 0 };
-    acc.total += row.rating;
-    acc.count += 1;
-    sums.set(row.reviewee_id, acc);
-  }
-  for (const [ownerId, { total, count }] of sums) {
-    result.set(ownerId, { rating: count > 0 ? total / count : 0, count });
+  for (const row of (data ?? []) as {
+    owner_id: string; rating: number; review_count: number; missed_decision_count: number; rating_adjustment: number;
+  }[]) {
+    result.set(row.owner_id, { rating: Number(row.rating), count: row.review_count,
+      missedDecisionCount: row.missed_decision_count, ratingAdjustment: Number(row.rating_adjustment) });
   }
   return result;
 }
@@ -92,6 +90,8 @@ export async function createReview(params: {
   rating: number;
   body: string;
 }): Promise<void> {
+  if (!Number.isInteger(params.rating) || params.rating < 1 || params.rating > 5) throw new InputValidationError('Choose a star rating from 1 to 5.');
+  assertPlainText('Review', params.body.trim(), REVIEW_MAX_LENGTH);
   const { error } = await supabase.from('reviews').insert({
     booking_id: params.bookingId,
     reviewer_id: params.reviewerId,

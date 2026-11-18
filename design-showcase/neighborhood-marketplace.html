@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f2f5ed">
+    <meta name="description" content="Fresh Neighborhood, a local-first YBuy design direction.">
+    <title>Fresh Neighborhood — YBuy design direction</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/concept-base.css">
+    <link rel="stylesheet" href="styles/neighborhood-marketplace.css">
+    <script src="assets/concept-interactions.js" defer></script>
+  </head>
+  <body>
+    <div class="concept neighborhood-marketplace" data-concept>
+      <a class="skip-link" href="#main">Skip to content</a>
+      <header class="site-header page-shell">
+        <a class="site-brand" href="index.html" aria-label="Back to all YBuy design directions"><img src="assets/logo.png" width="120" height="42" alt="YBuy"></a>
+        <nav aria-label="Main navigation"><a href="#browse">Explore nearby</a><a href="#how-it-works">How it works</a><a class="header-list-link" href="#owner">Share an item</a></nav>
+      </header>
+      <main id="main" class="page-shell">
+        <section class="hero neighborhood-hero" aria-labelledby="hero-title">
+          <div class="hero-copy">
+            <h1 id="hero-title">Your neighborhood has <em>more.</em></h1>
+            <p class="hero-lede">Borrow the useful things already nearby. Meet the owner, choose your dates, and get on with your day.</p>
+            <form class="search-form" data-listing-search role="search">
+              <div class="search-field"><label for="neighborhood-search">Find something near you</label><input id="neighborhood-search" name="q" type="search" placeholder="Camera, drill, projector..." autocomplete="off"></div>
+              <button class="search-button" type="submit">Explore nearby</button>
+            </form>
+            <p class="location-note"><span aria-hidden="true">⌖</span> Irving &amp; Dallas sample area <span>·</span> Approximate locations only</p>
+          </div>
+          <figure class="hero-media neighborhood-media">
+            <img src="https://images.pexels.com/photos/30413428/pexels-photo-30413428.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=1200&amp;h=800&amp;fit=crop" width="1200" height="800" alt="Sample cordless drill ready to borrow">
+            <figcaption class="hero-caption">A good tool is closer than you think. <span>Sample listing · Dallas, TX</span></figcaption>
+            <span class="neighborhood-stamp" aria-hidden="true">SHARE<br>LOCAL</span>
+          </figure>
+        </section>
+
+        <section id="browse" class="browse-section" aria-labelledby="browse-title">
+          <div class="section-heading neighborhood-section-heading">
+            <div><h2 id="browse-title">Find your next useful thing.</h2><p class="content-note">Items and prices are sample fixtures, not live inventory.</p></div>
+            <div class="filter-list" aria-label="Filter sample items by category">
+              <button class="filter-button" type="button" data-filter="all" aria-pressed="true">All</button>
+              <button class="filter-button" type="button" data-filter="Cameras" aria-pressed="false">Cameras</button>
+              <button class="filter-button" type="button" data-filter="Tools" aria-pressed="false">Tools</button>
+              <button class="filter-button" type="button" data-filter="Electronics" aria-pressed="false">Electronics</button>
+            </div>
+          </div>
+          <p class="results-status" data-results-status aria-live="polite"></p>
+          <div class="listing-grid">
+            <article class="listing-card" data-listing-card data-category="Cameras">
+              <div class="listing-image"><img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=1200&amp;h=800&amp;fit=crop" width="1200" height="800" alt="Sample camera rental listing" loading="lazy"></div>
+              <div class="listing-content"><div class="listing-meta"><span>Cameras · Irving, TX</span><span class="sample-tag">Sample</span></div><h3>Sony A7 IV Mirrorless Camera</h3><p class="listing-detail">Request dates from the owner</p><div class="listing-bottom"><p class="listing-price">$85 <span>/ day</span></p><button class="save-button" type="button" data-save aria-pressed="false">Save</button></div></div>
+            </article>
+            <article class="listing-card" data-listing-card data-category="Tools">
+              <div class="listing-image"><img src="https://images.pexels.com/photos/30413428/pexels-photo-30413428.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=1200&amp;h=800&amp;fit=crop" width="1200" height="800" alt="Sample cordless drill rental listing" loading="lazy"></div>
+              <div class="listing-content"><div class="listing-meta"><span>Tools · Dallas, TX</span><span class="sample-tag">Sample</span></div><h3>DeWalt 20V Cordless Drill Kit</h3><p class="listing-detail">Batteries, charger, and bit set</p><div class="listing-bottom"><p class="listing-price">$25 <span>/ day</span></p><button class="save-button" type="button" data-save aria-pressed="false">Save</button></div></div>
+            </article>
+            <article class="listing-card" data-listing-card data-category="Electronics">
+              <div class="listing-image"><img src="https://images.pexels.com/photos/5515482/pexels-photo-5515482.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=1200&amp;h=800&amp;fit=crop" width="1200" height="800" alt="Sample projector rental listing" loading="lazy"></div>
+              <div class="listing-content"><div class="listing-meta"><span>Electronics · Dallas, TX</span><span class="sample-tag">Sample</span></div><h3>4K Ultra Short Throw Projector</h3><p class="listing-detail">Ask the owner about available dates</p><div class="listing-bottom"><p class="listing-price">$60 <span>/ day</span></p><button class="save-button" type="button" data-save aria-pressed="false">Save</button></div></div>
+            </article>
+          </div>
+          <p class="empty-state" data-empty-state role="status">No sample listings match. Try a different search.</p>
+        </section>
+
+        <section id="how-it-works" class="how-section" aria-labelledby="how-title">
+          <div class="section-heading"><div><h2 id="how-title">Borrow well. Bring it back.</h2></div><p>Clear steps for renters and owners, from the first request to the return.</p></div>
+          <ol class="steps"><li><strong>Choose dates</strong><span>Pick the time you need the item.</span></li><li><strong>Request to rent</strong><span>The owner reviews your request.</span></li><li><strong>Pay after approval</strong><span>Checkout happens after the owner approves.</span></li><li><strong>Use and return</strong><span>Bring it back and leave a review.</span></li></ol>
+        </section>
+        <section id="owner" class="owner-section">
+          <div><h2>Put your good gear to work.</h2><p>List an item, set its availability, and respond to requests from people nearby.</p></div>
+          <a class="owner-link" href="journey.html?direction=neighborhood-marketplace&amp;screen=listing">See the owner flow</a>
+        </section>
+      </main>
+      <footer class="site-footer page-shell"><a href="index.html">All eight design directions</a><span>Static concept preview · Sample fixture content</span></footer>
+    </div>
+  </body>
+</html>

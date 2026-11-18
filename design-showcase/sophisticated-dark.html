@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" class="dark-mode">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#111a16">
+    <meta name="description" content="Sophisticated Dark visual direction for the YBuy rental marketplace.">
+    <title>Sophisticated Dark — YBuy design direction</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Sora:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/concept-base.css">
+    <link rel="stylesheet" href="styles/sophisticated-dark.css">
+    <script src="assets/concept-interactions.js" defer></script>
+  </head>
+  <body>
+    <div class="concept sophisticated-dark" data-concept>
+      <a class="skip-link" href="#main">Skip to content</a>
+      <header class="site-header page-shell">
+        <a class="site-brand" href="index.html" aria-label="Back to all YBuy design directions"><img src="assets/logo.png" width="120" height="42" alt="YBuy"></a>
+        <nav aria-label="Main navigation"><a href="#browse">Explore</a><a href="#how-it-works">How it works</a><a class="header-list-link" href="#owner">List an item</a></nav>
+      </header>
+      <main id="main" class="page-shell">
+        <section class="hero dark-hero" aria-labelledby="hero-title">
+          <figure class="hero-media">
+            <img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=1200&amp;h=800&amp;fit=crop" width="1200" height="800" alt="Sample camera rental listing" fetchpriority="high">
+            <figcaption class="hero-caption">Sample camera listing · Irving, Texas</figcaption>
+          </figure>
+          <div class="hero-copy">
+            <h1 id="hero-title">A better way to get what you need.</h1>
+            <p class="hero-lede">Discover useful gear nearby, then rent directly from the people who own it.</p>
+            <form class="search-form" data-listing-search role="search">
+              <div class="search-field"><label for="dark-search">Search sample rentals</label><input id="dark-search" name="q" type="search" placeholder="Try cameras or tools…" autocomplete="off"></div>
+              <button class="search-button" type="submit">Explore</button>
+            </form>
+          </div>
+        </section>
+
+        <section id="browse" class="browse-section" aria-labelledby="browse-title">
+          <div class="section-heading dark-section-heading">
+            <div><h2 id="browse-title">Find your next useful thing.</h2><p class="content-note">Sample fixture content only; not live availability or prices.</p></div>
+            <div class="filter-list" aria-label="Filter sample items by category">
+              <button class="filter-button" type="button" data-filter="all" aria-pressed="true">All</button>
+              <button class="filter-button" type="button" data-filter="Cameras" aria-pressed="false">Cameras</button>
+              <button class="filter-button" type="button" data-filter="Tools" aria-pressed="false">Tools</button>
+              <button class="filter-button" type="button" data-filter="Electronics" aria-pressed="false">Electronics</button>
+            </div>
+          </div>
+          <p class="results-status" data-results-status aria-live="polite"></p>
+          <div class="listing-grid">
+            <article class="listing-card" data-listing-card data-category="Cameras"><div class="listing-image"><img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=1200&amp;h=800&amp;fit=crop" width="1200" height="800" alt="Sample camera rental listing" loading="lazy"></div><div class="listing-content"><div class="listing-meta"><span>Cameras · Irving, TX</span><span class="sample-tag">Sample</span></div><h3>Sony A7 IV Mirrorless Camera</h3><p class="listing-detail">Request dates from the owner</p><div class="listing-bottom"><p class="listing-price">$85 <span>/ day</span></p><button class="save-button" type="button" data-save aria-pressed="false">Save</button></div></div></article>
+            <article class="listing-card" data-listing-card data-category="Tools"><div class="listing-image"><img src="https://images.pexels.com/photos/30413428/pexels-photo-30413428.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=1200&amp;h=800&amp;fit=crop" width="1200" height="800" alt="Sample cordless drill rental listing" loading="lazy"></div><div class="listing-content"><div class="listing-meta"><span>Tools · Dallas, TX</span><span class="sample-tag">Sample</span></div><h3>DeWalt 20V Cordless Drill Kit</h3><p class="listing-detail">Batteries, charger, and bit set</p><div class="listing-bottom"><p class="listing-price">$25 <span>/ day</span></p><button class="save-button" type="button" data-save aria-pressed="false">Save</button></div></div></article>
+            <article class="listing-card" data-listing-card data-category="Electronics"><div class="listing-image"><img src="https://images.pexels.com/photos/5515482/pexels-photo-5515482.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=1200&amp;h=800&amp;fit=crop" width="1200" height="800" alt="Sample projector rental listing" loading="lazy"></div><div class="listing-content"><div class="listing-meta"><span>Electronics · Dallas, TX</span><span class="sample-tag">Sample</span></div><h3>4K Ultra Short Throw Projector</h3><p class="listing-detail">Ask the owner about available dates</p><div class="listing-bottom"><p class="listing-price">$60 <span>/ day</span></p><button class="save-button" type="button" data-save aria-pressed="false">Save</button></div></div></article>
+          </div>
+          <p class="empty-state" data-empty-state role="status">No sample listings match. Try a different search.</p>
+        </section>
+
+        <section id="how-it-works" class="how-section" aria-labelledby="how-title">
+          <div class="section-heading"><div><h2 id="how-title">Clear from start to return.</h2><p>Owners and renters see the next step.</p></div></div>
+          <ol class="steps"><li><strong>Choose dates</strong><span>Pick the time you need the item.</span></li><li><strong>Request to rent</strong><span>The owner reviews your request.</span></li><li><strong>Pay after approval</strong><span>Complete secure checkout after the owner approves.</span></li><li><strong>Use and return</strong><span>Bring the item back and leave a review.</span></li></ol>
+        </section>
+
+        <section id="owner" class="owner-section" aria-labelledby="owner-title">
+          <div><h2 id="owner-title">Let good gear move.</h2><p>List an item, set its availability, and review rental requests from nearby people.</p></div>
+          <a class="owner-link" href="index.html">Compare directions</a>
+        </section>
+      </main>
+      <footer class="site-footer page-shell"><a href="index.html">All eight design directions</a><span>Static concept preview · Sample fixture content</span></footer>
+    </div>
+  </body>
+</html>
