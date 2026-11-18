@@ -12,7 +12,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: `pnpm run dev -- --host localhost --port ${appPort} --strictPort --mode e2e`,
+    command: `pnpm run dev --host localhost --port ${appPort} --strictPort --mode e2e`,
     url: appUrl,
     reuseExistingServer: !process.env.CI,
     env: {
