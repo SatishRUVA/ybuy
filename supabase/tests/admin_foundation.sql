@@ -59,19 +59,22 @@ select throws_ok($$update public.listings set status = 'published' where id = 'a
   '42501', 'Only an administrator can change a suspended listing', 'An owner cannot lift an admin suspension');
 select is((select status from public.listings where id = 'a3000000-0000-4000-8000-000000000001'), 'suspended', 'A suspended listing is no longer public');
 
--- Super admin: settings validation, audit, flags, administrator management.
+-- Super admin: settings validation, fee scheduling, audit, flags, administrator management.
 reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"a1000000-0000-4000-8000-000000000001","exp":4102444800}';
 select is((public.admin_update_setting('platform_fee_pct', '0.9', 'Too high') ->> 'ok')::boolean, false, 'An out-of-range fee is rejected');
 select is((select outcome from public.admin_audit_log where action = 'setting.update' order by created_at desc limit 1), null, 'Audit rows stay hidden from the Data API even for admins');
-select is((public.admin_update_setting('platform_fee_pct', '0.05', 'Promo period') ->> 'ok')::boolean, true, 'A valid fee is accepted');
+select throws_ok($$select public.admin_update_setting('platform_fee_pct', '0.05', 'Promo period')$$,
+  '42501', 'Use the effective-dated service fee configuration instead', 'Legacy fee setting is read-only');
+select lives_ok($$select public.admin_schedule_service_fee_configuration(5, 100, now(), null, 'Promo period')$$,
+  'Super admin schedules a new effective-dated fee');
 select is((public.admin_set_feature_flag('bidding', true, 'Pilot') ->> 'ok')::boolean, true, 'Super admin can toggle a flag');
 select throws_ok($$select public.admin_upsert_admin('super@admin.test', 'admin', '{}', true, 'self edit')$$, '22023', 'You cannot change your own administrator access', 'Self-edits are blocked');
 select throws_ok($$select public.admin_upsert_admin('newadmin@admin.test', 'admin', '{config.manage}', true, 'escalation')$$, '22023', 'Unknown permission', 'Super-only permissions are not grantable to admins');
 select is((public.admin_upsert_admin('newadmin@admin.test', 'admin', '{audit.view}', true, 'Support hire') ->> 'ok')::boolean, true, 'Super admin can create an administrator');
 select is((select count(*)::int from jsonb_array_elements(public.admin_list_audit(null,null,100) -> 'rows') r
-  where r->>'actor_id' in ('a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000002')), 5,
+  where r->>'actor_id' in ('a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000002')), 6,
   'Audit view returns the fixture actors'' failed and successful operations');
 select is((select count(*)::int from jsonb_array_elements(public.admin_list_audit(null, 'setting.update') -> 'rows') r where r ->> 'outcome' = 'failed'), 1, 'The rejected setting change is recorded with outcome failed');
 
