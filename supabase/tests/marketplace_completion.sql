@@ -201,34 +201,34 @@ select is((select count(*)::integer from public.notification_email_jobs
 -- Owner-funded discounts: a promo replaces (never stacks with) a duration discount.
 update public.feature_flags set enabled=true where key in ('duration_discounts','owner_promotions');
 update public.listings set price_per_day=12 where id='94000000-0000-4000-8000-000000000001';
-update public.listings set duration_discount_min_days=3,duration_discount_percent=10
+update public.listings set weekly_discount_enabled=true,weekly_discount_percent=10
  where id='94000000-0000-4000-8000-000000000001';
 set local role authenticated;
 set local request.jwt.claims='{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"92000000-0000-4000-8000-000000000001","exp":4102444800}';
 select lives_ok($$select public.owner_save_promotion('94000000-0000-4000-8000-000000000001','CAMERA20',20,true)$$,
  'Owner configures a single listing promotion');
-select is((public.owner_quote_promotion('94000000-0000-4000-8000-000000000001','camera20',3,1)->>'discount_amount')::numeric,7.2::numeric,
+select is((public.owner_quote_promotion('94000000-0000-4000-8000-000000000001','camera20',7,1)->>'discount_amount')::numeric,16.8::numeric,
  'Promotion quote returns the owner-funded discount');
 reset role;
 select set_config('ybuy.owner_promotion_code','CAMERA20',true);
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status)
 values('95000000-0000-4000-8000-000000000004','94000000-0000-4000-8000-000000000001',
  '91000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000002',
- current_date+26,current_date+29,12,3,36,.1,3.6,50,89.6,'pending_payment');
-select is((select owner_discount_amount from public.bookings where id='95000000-0000-4000-8000-000000000004'),7.2::numeric,
+ current_date+1,current_date+8,12,7,84,.1,8.4,50,142.4,'pending_payment');
+select is((select owner_discount_amount from public.bookings where id='95000000-0000-4000-8000-000000000004'),16.8::numeric,
  'Promotion overrides the eligible long-rental discount');
 select is((select owner_discount_source from public.bookings where id='95000000-0000-4000-8000-000000000004'),'promotion',
  'Booking records which owner-funded discount was used');
-select is((select subtotal from public.bookings where id='95000000-0000-4000-8000-000000000004'),28.8::numeric,
+select is((select subtotal from public.bookings where id='95000000-0000-4000-8000-000000000004'),67.2::numeric,
  'Promotion reduces rental subtotal before service fee');
-select is((select total from public.bookings where id='95000000-0000-4000-8000-000000000004'),39.90::numeric,
+select is((select total from public.bookings where id='95000000-0000-4000-8000-000000000004'),93.09::numeric,
  'Promotion-adjusted amount includes service fee, selected insurance and tax, not the separate deposit hold');
 select set_config('ybuy.owner_promotion_code','',true);
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status)
 values('95000000-0000-4000-8000-000000000005','94000000-0000-4000-8000-000000000001',
  '91000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000002',
- current_date+13,current_date+16,12,3,36,.1,3.6,50,89.6,'requested');
-select is((select owner_discount_amount from public.bookings where id='95000000-0000-4000-8000-000000000005'),3.6::numeric,
+ current_date+9,current_date+16,12,7,84,.1,8.4,50,142.4,'requested');
+select is((select owner_discount_amount from public.bookings where id='95000000-0000-4000-8000-000000000005'),8.4::numeric,
  'Eligible long rental receives the configured duration discount');
 select is((select owner_discount_source from public.bookings where id='95000000-0000-4000-8000-000000000005'),'duration',
  'Booking records duration as the discount source when no promo is used');
