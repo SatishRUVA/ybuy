@@ -413,6 +413,16 @@ verify_jwt = false
 [functions.resend-webhook]
 verify_jwt = false
 
+# These endpoints verify the user and active session in-handler.
+[functions.create-checkout-session]
+verify_jwt = false
+
+[functions.create-deposit-authorization-session]
+verify_jwt = false
+
+[functions.create-deposit-setup-session]
+verify_jwt = false
+
 [functions.send-test-auth-email]
 verify_jwt = false
 

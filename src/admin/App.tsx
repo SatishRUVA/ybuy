@@ -140,7 +140,8 @@ function AdminPortal() {
         {authorized && <Button variant="secondary" className="mt-4" onClick={() => setSwitching(false)}>Back to dashboard</Button>}
       </main>
       : <Suspense fallback={<p role="status" className="p-8">Loading admin console...</p>}>
-        <AdminPage key={user.id} section={route.name === 'admin' && route.section !== 'login' ? route.section : undefined} />
+        <AdminPage key={user.id} section={route.name === 'admin' && route.section !== 'login' ? route.section : undefined}
+          recordId={route.name === 'admin' ? route.recordId : undefined} />
         {route.name !== 'admin' && <Button className="sr-only focus:not-sr-only" onClick={() => navigate({ name: 'admin' })}>Open admin dashboard</Button>}
       </Suspense>}
   </div>;

@@ -30,6 +30,8 @@ export interface RentalSettlement {
   booking_id: string;
   deposit_amount: number;
   owner_amount: number;
+  owner_service_fee_pct: number;
+  owner_service_fee_amount: number;
   refund_status: string;
   transfer_status: string;
   last_error: string | null;
@@ -67,7 +69,7 @@ export async function fetchBankPayoutStatus(): Promise<{ connected: boolean; pay
 
 export async function fetchRentalSettlement(bookingId: string): Promise<RentalSettlement | null> {
   const { data, error } = await supabase.from('rental_settlements')
-    .select('booking_id,deposit_amount,owner_amount,refund_status,transfer_status,last_error').eq('booking_id', bookingId).maybeSingle();
+    .select('booking_id,deposit_amount,owner_amount,owner_service_fee_pct,owner_service_fee_amount,refund_status,transfer_status,last_error').eq('booking_id', bookingId).maybeSingle();
   if (error) throw new Error(error.message);
   return data;
 }

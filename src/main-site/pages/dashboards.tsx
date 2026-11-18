@@ -695,8 +695,12 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
                       </p>
                       <p className="flex items-center gap-1.5 text-xs text-sec mt-1.5">
                         <Calendar size={13} /> {formatRange(booking.startDate, booking.endDate)}
-                        <span className="text-muted">·</span>
-                        <span className="tnum">You earn ${booking.subtotal}</span>
+                      </p>
+                      <p className="mt-1 text-xs text-sec">
+                        Expected owner net: ${booking.subtotal.toFixed(2)} rental
+                        {booking.deliveryFeeAmount > 0 && ` + $${booking.deliveryFeeAmount.toFixed(2)} delivery`}
+                        {booking.ownerServiceFeeAmount > 0 && ` − $${booking.ownerServiceFeeAmount.toFixed(2)} owner service fee`}
+                        {' = '}<strong className="text-main tnum">${(booking.subtotal + booking.deliveryFeeAmount - booking.ownerServiceFeeAmount).toFixed(2)}</strong>
                       </p>
                     </div>
                     <p className="font-bold text-main shrink-0 tnum">${booking.total}</p>
@@ -978,7 +982,9 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
 
 function PayoutControl({ booking }: { booking: UiBooking }) {
   if (booking.status !== 'completed') return null;
-  return <RentalSettlement bookingId={booking.id} isOwner autoProcess />;
+  return <RentalSettlement bookingId={booking.id} isOwner autoProcess
+    expectedOwnerNet={booking.subtotal + booking.deliveryFeeAmount - booking.ownerServiceFeeAmount}
+    ownerServiceFeeAmount={booking.ownerServiceFeeAmount} />;
 }
 
 /** Bottom sheet on mobile, centered dialog from `sm`. One implementation for both dashboards. */

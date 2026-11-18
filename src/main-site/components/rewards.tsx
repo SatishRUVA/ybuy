@@ -21,8 +21,12 @@ export function RewardsPanel({ compact = false }: { compact?: boolean }) {
         : !data.signup_enabled ? <p className="text-sm text-sec">Signup rewards are paused. Existing points remain available for testing.</p>
         : data.awarded ? <p className="text-sm text-sec">Your signup reward has been added.</p>
         : !data.eligible ? <p className="text-sm text-sec">Signup rewards are for accounts created after the rewards launch.</p>
-        : !data.verified ? <p className="text-sm text-sec">Get {data.signup_points.toLocaleString()} points after email and phone verification. SMS verification is not enabled in this test build.</p>
+        : !data.verified ? <p className="text-sm text-sec">Get {(data.signup_offer?.final_points ?? data.signup_points).toLocaleString()} points after email and phone verification. SMS verification is not enabled in this test build.</p>
         : <p className="text-sm text-sec">This account is not eligible for another signup reward.</p>}
+      {data.enabled && data.signup_enabled && data.eligible && !data.awarded && data.signup_offer?.campaign && <p className="text-sm text-sec">
+        {data.signup_offer.campaign.name}: {data.signup_offer.base_points} base points × {data.signup_offer.multiplier} = {data.signup_offer.final_points} points.
+        {' '}Complete verification and earn before {fmtDate(data.signup_offer.campaign.ends_at)}. Subject to eligibility; no stacking. Whole points, halves rounded up.
+      </p>}
       {compact ? <Button variant="secondary" size="sm" onClick={() => navigate({ name: 'wallet' })}>View rewards wallet</Button> : <>
         <Alert tone="warning">Simulation only. Points do not reduce Stripe payments or represent cash.</Alert>
         <p className="text-sm text-sec">100 points = $1. Redeem 500 points for a simulated $5 rental discount per booking with at least $5 in rental charges. Fees and security deposits are excluded. No cash withdrawals, transfers or expiration.</p>
@@ -34,6 +38,10 @@ export function RewardsPanel({ compact = false }: { compact?: boolean }) {
               <span className="tnum shrink-0">{entry.points > 0 ? '+' : ''}{entry.points} PTS</span>
             </div>
             <p className="text-xs text-sec mt-1">{fmtDate(entry.created_at)}</p>
+            {entry.kind === 'signup' && entry.base_points != null && <p className="text-xs text-sec mt-1">
+              {entry.base_points} base points × {entry.multiplier} = {entry.final_points} points
+              {entry.campaign_snapshot ? ` · ${entry.campaign_snapshot.name}` : ' · Standard signup reward'}
+            </p>}
           </li>)}
         </ul>}
       </>}

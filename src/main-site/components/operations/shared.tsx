@@ -48,14 +48,14 @@ export function SearchBox({ onChange, placeholder }: { onChange: (v: string) => 
 export interface Column<T> { header: string; cell: (row: T) => ReactNode; className?: string }
 
 /** `all` is the sentinel for "no filter" because Radix Select does not accept an empty value. */
-export function StatusFilter({ value, onChange, options, label }: {
-  value: string; onChange: (v: string) => void; options: string[]; label: string;
+export function StatusFilter({ value, onChange, options, label, allLabel = 'All statuses' }: {
+  value: string; onChange: (v: string) => void; options: string[]; label: string; allLabel?: string;
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger aria-label={label} className="!h-10 w-full sm:w-48"><SelectValue /></SelectTrigger>
       <SelectContent>
-        <SelectItem value="all">All statuses</SelectItem>
+        <SelectItem value="all">{allLabel}</SelectItem>
         {options.map((o) => <SelectItem key={o} value={o}>{o.replace(/_/g, ' ')}</SelectItem>)}
       </SelectContent>
     </Select>

@@ -23,6 +23,8 @@ export interface ListingFlowDetails {
   description?: string;
   category_id?: string;
   price_per_day?: number;
+  price_per_week?: number | null;
+  price_per_month?: number | null;
   weekly_discount_enabled?: boolean;
   weekly_discount_percent?: number;
   monthly_discount_enabled?: boolean;

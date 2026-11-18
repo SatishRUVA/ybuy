@@ -160,7 +160,7 @@ export function AuditSection() {
   return (
     <>
       <PageHeader title="Audit log" subtitle="Append-only record of every administrative action: who, what, when, previous and new values, reason and outcome." />
-      <div className="mb-4"><StatusFilter label="Filter by entity" value={entity} onChange={setEntity} options={ENTITY_TYPES} /></div>
+      <div className="mb-4"><StatusFilter label="Filter by entity" value={entity} onChange={setEntity} options={ENTITY_TYPES} allLabel="All entity types" /></div>
       <PagedTable
         query={query} rowKey={(r) => r.id} emptyTitle="No administrative actions yet" emptyDescription="Actions appear here as soon as an administrator makes a change."
         columns={[

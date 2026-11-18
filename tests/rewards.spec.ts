@@ -53,6 +53,94 @@ test('points wallet explains test-only value, history and recoverable loading er
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test('wallet displays the eligible campaign offer and immutable historical multiplier', async ({ page }) => {
+  const campaign = {
+    id: 'boost', name: 'Signup week', multiplier: 1.5,
+    starts_at: '2026-11-17T00:00:00Z', ends_at: '2026-11-24T00:00:00Z',
+  };
+  let awarded = false;
+  await page.route('**/rest/v1/rpc/get_my_rewards', route => route.fulfill({ json: {
+    ...wallet, verified: awarded, awarded, balance: awarded ? 750 : 0,
+    signup_offer: { base_points: 500, multiplier: 1.5, final_points: 750, campaign },
+    transactions: awarded ? [{
+      ...wallet.transactions[0], points: 750, base_points: 500, multiplier: 1.5,
+      final_points: 750, campaign_snapshot: { ...campaign, name: 'Original signup boost' },
+    }] : [],
+  } }));
+  await prepare(page);
+  await mount(page);
+  await expect(page.getByText('Get 750 points after email and phone verification.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Signup week: 500 base points × 1.5 = 750 points.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Subject to eligibility; no stacking.', { exact: false })).toBeVisible();
+  awarded = true;
+  await page.reload();
+  await mount(page);
+  await expect(page.getByText('500 base points × 1.5 = 750 points · Original signup boost')).toBeVisible();
+  await expect(page.getByText('+750 PTS', { exact: true })).toBeVisible();
+  await expect(page.getByText('Signup week:', { exact: false })).toHaveCount(0);
+});
+
+test('admin creates an inactive points draft, activates separately and sees overlap failures', async ({ page }) => {
+  const saved: Record<string, unknown>[] = [];
+  let failList = true;
+  let campaign: Record<string, unknown> | null = null;
+  await page.route('**/rest/v1/rpc/**', async route => {
+    const fn = new URL(route.request().url()).pathname.split('/').pop();
+    if (fn === 'get_my_admin_access') return route.fulfill({ json: { role: 'admin', permissions: ['promotions.manage'] } });
+    if (fn === 'admin_list_promotions') return route.fulfill({ json: { total: 0, rows: [] } });
+    if (fn === 'admin_list_reward_campaigns') {
+      if (failList) return route.fulfill({ status: 503, json: { message: 'Campaigns temporarily unavailable' } });
+      return route.fulfill({ json: { total: campaign ? 1 : 0, rows: campaign ? [campaign] : [] } });
+    }
+    if (fn === 'admin_save_reward_campaign') {
+      const args = route.request().postDataJSON();
+      saved.push(args);
+      if (args.p_active) return route.fulfill({ status: 409, json: { message: 'Active signup reward campaigns cannot overlap' } });
+      campaign = { id: 'boost', name: args.p_name, event_type: 'signup', multiplier: args.p_multiplier,
+        starts_at: args.p_starts_at, ends_at: args.p_ends_at, active: false, awards: 0, bonus_points: 0 };
+      return route.fulfill({ json: campaign });
+    }
+    return route.fulfill({ status: 400, json: { message: `Unexpected RPC: ${fn}` } });
+  });
+  await prepare(page);
+  await page.evaluate(async () => {
+    const { mountComponent } = await import('/tests/component-mount.tsx');
+    const { PromotionsSection } = await import('/src/admin/pages/promotions.tsx');
+    await import('/src/main-site/index.css');
+    mountComponent(PromotionsSection);
+  });
+  const section = page.getByRole('region', { name: 'Points multiplier campaigns' });
+  await expect(section.getByText('Campaigns temporarily unavailable')).toBeVisible();
+  failList = false;
+  await section.getByRole('button', { name: 'Try again' }).click();
+  await expect(section.getByText('No points campaigns yet')).toBeVisible();
+  await section.getByRole('button', { name: 'New points campaign' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Points campaign name').fill('Signup week');
+  await dialog.getByLabel('Points multiplier').selectOption('2.5');
+  await dialog.getByLabel('Points campaign starts (local time)').fill('2026-11-17T09:00');
+  await dialog.getByLabel('Points campaign ends (local time)').fill('2026-11-24T09:00');
+  await expect(dialog.getByLabel('Points campaign activation')).toHaveCount(0);
+  await dialog.getByLabel('Points campaign change reason').fill('Test verified signup boost');
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(section.getByText('Signup week', { exact: true })).toBeVisible();
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).toMatchObject({ p_id: null, p_multiplier: 2.5, p_active: false, p_reason: 'Test verified signup boost' });
+  expect(Number.isNaN(Date.parse(saved[0].p_starts_at as string))).toBe(false);
+  await section.getByRole('button', { name: 'Edit points campaign' }).click();
+  await expect(dialog.getByLabel('Points campaign activation')).toHaveValue('false');
+  await dialog.getByLabel('Points campaign activation').selectOption('true');
+  await dialog.getByLabel('Points campaign change reason').fill('Activate verified signup boost');
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(dialog.getByText('Active signup reward campaigns cannot overlap')).toBeVisible();
+  expect(saved[1]).toMatchObject({ p_id: 'boost', p_active: true, p_reason: 'Activate verified signup boost' });
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(section.getByRole('button', { name: 'New points campaign' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('checkout spends points once and explicitly leaves the real payment unchanged', async ({ page }) => {
   let calls = 0;
   let redeemed = false;

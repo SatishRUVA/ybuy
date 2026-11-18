@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Alert, Button } from '@/main-site/components/ui';
 import { fetchRentalSettlement, processRentalSettlement, type RentalSettlement as Settlement } from '@/lib/payouts';
 
-export function RentalSettlement({ bookingId, isOwner, autoProcess = false }: {
+export function RentalSettlement({ bookingId, isOwner, autoProcess = false, expectedOwnerNet, ownerServiceFeeAmount }: {
   bookingId: string; isOwner: boolean; autoProcess?: boolean;
+  expectedOwnerNet?: number; ownerServiceFeeAmount?: number;
 }) {
   const [row, setRow] = useState<Settlement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,7 +39,14 @@ export function RentalSettlement({ bookingId, isOwner, autoProcess = false }: {
     <div className="space-y-2 text-xs text-sec" aria-live="polite">
       {row && <>
         <p>Deposit ${Number(row.deposit_amount).toFixed(2)}: {row.refund_status.split('_').join(' ')}</p>
-        {isOwner && <p>Owner transfer ${Number(row.owner_amount).toFixed(2)}: {row.transfer_status}</p>}
+        {isOwner && expectedOwnerNet !== undefined && <>
+          <p>Expected owner net: ${expectedOwnerNet.toFixed(2)}{ownerServiceFeeAmount !== undefined
+            ? ` after the $${ownerServiceFeeAmount.toFixed(2)} owner service fee` : ''}.</p>
+          <p>Actual Stripe Connect transfer: ${Number(row.owner_amount).toFixed(2)} · {row.transfer_status}
+            {row.transfer_status === 'succeeded' && ` · difference $${(Number(row.owner_amount) - expectedOwnerNet).toFixed(2)}`}</p>
+          {Number(row.owner_service_fee_amount) > 0 && <p>Owner service fee at settlement: ${Number(row.owner_service_fee_amount).toFixed(2)}</p>}
+        </>}
+        {isOwner && expectedOwnerNet === undefined && <p>Owner transfer ${Number(row.owner_amount).toFixed(2)}: {row.transfer_status}</p>}
         {isOwner && <p>Transfers go to your Stripe balance. Bank payout timing and status are managed by Stripe.</p>}
       </>}
       {!row && !busy && !error && <p>No automatic settlement is recorded for this rental.</p>}

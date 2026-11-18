@@ -32,8 +32,7 @@ import {
   type ListingItemDetails,
 } from '@/lib/listing-item-details';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
-import { calculateRentalPricing } from '@/lib/rental-pricing';
-import { usePlatformFee } from '@/lib/settings';
+import { fetchOwnerEarningsQuote, type ListingPriceQuote } from '@/lib/listing-pricing';
 import { fetchMainItemRequest, type MainItemRequest } from '../request-flow';
 import { RequestFulfillment } from '../components/request-fulfillment';
 import { maskListingContact } from '../../../supabase/functions/_shared/listing-contact';
@@ -46,12 +45,13 @@ const CONDITION_LABELS: Record<string, string> = { new: 'New', like_new: 'Like n
 const formatListingDate = (date: string) => date ? new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Choose date';
 type Form = {
   title: string; categoryId: string; description: string; value: string; condition: string; price: string;
+  weeklyRate: string; monthlyRate: string;
   weeklyDiscountEnabled: boolean; weeklyDiscount: string; monthlyDiscountEnabled: boolean; monthlyDiscount: string;
   instant: boolean; delivery: boolean; deliveryFee: string; quantity: number; start: string; end: string;
   itemDetails: ListingItemDetails;
 };
-const EMPTY_FORM: Form = { title: '', categoryId: '', description: '', value: '', condition: '', price: '', weeklyDiscountEnabled: true, weeklyDiscount: '20', monthlyDiscountEnabled: true, monthlyDiscount: '30', instant: false, delivery: false, deliveryFee: '', quantity: 1, start: '', end: '', itemDetails: EMPTY_ITEM_DETAILS };
-type FlowErrors = Partial<Record<ListingField | 'availability' | 'delivery' | 'quantity' | 'item-details' | 'weekly-discount' | 'monthly-discount', string>>;
+const EMPTY_FORM: Form = { title: '', categoryId: '', description: '', value: '', condition: '', price: '', weeklyRate: '', monthlyRate: '', weeklyDiscountEnabled: true, weeklyDiscount: '20', monthlyDiscountEnabled: true, monthlyDiscount: '30', instant: false, delivery: false, deliveryFee: '', quantity: 1, start: '', end: '', itemDetails: EMPTY_ITEM_DETAILS };
+type FlowErrors = Partial<Record<ListingField | 'availability' | 'delivery' | 'quantity' | 'item-details' | 'weekly-discount' | 'monthly-discount' | 'weekly-rate' | 'monthly-rate', string>>;
 const fieldStep = (field: keyof FlowErrors) => field === 'photos' ? 1
   : field === 'item-details' || (ITEM_STEP_FIELDS.includes(field as ListingField) && field !== 'value') ? 2
     : field === 'availability' ? 4 : ['pickup', 'delivery'].includes(field) ? 5 : 3;
@@ -71,15 +71,13 @@ const textKey = (form: Form) => JSON.stringify([form.title, listingText(form)]);
 export function CreateListingPage({ editId, requestId }: { editId?: string; requestId?: string }) {
   const { navigate } = useRouter();
   const { profile } = useAuth();
-  const fee = usePlatformFee();
   const durationDiscountFlag = useFeatureFlag('duration_discounts');
   const biddingFlag = useFeatureFlag('bidding');
   const reducedMotion = useReducedMotion();
   const [form, setForm] = useState<Form>(EMPTY_FORM);
   const priceForPreview = parseMoney(form.price) ?? 0;
-  const ownerDailyEstimate = fee.pct === null ? null : Math.round(priceForPreview * (1 - fee.pct) * 100) / 100;
-  const weeklyPreview = calculateRentalPricing(priceForPreview, 7, { weeklyEnabled: true, weeklyPercent: Number(form.weeklyDiscount) || 0 });
-  const monthlyPreview = calculateRentalPricing(priceForPreview, 30, { monthlyEnabled: true, monthlyPercent: Number(form.monthlyDiscount) || 0 });
+  const [earningsQuotes, setEarningsQuotes] = useState<Record<number, ListingPriceQuote> | null>(null);
+  const [earningsQuoteError, setEarningsQuoteError] = useState<string | null>(null);
   const formRef = useRef(form);
   formRef.current = form;
   const [photos, setPhotos] = useState<string[]>([]);
@@ -221,7 +219,9 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
           setForm({
             title: ownRow.title, description: ownRow.description ?? '', categoryId: ownRow.category_id,
             value: ownRow.estimated_value == null ? '' : String(ownRow.estimated_value), condition: ownRow.item_condition ?? '',
-            price: String(ownRow.price_per_day), weeklyDiscountEnabled: ownRow.weekly_discount_enabled === true, weeklyDiscount: String(ownRow.weekly_discount_enabled && Number(ownRow.weekly_discount_percent) <= 0 ? 20 : ownRow.weekly_discount_percent ?? 20), monthlyDiscountEnabled: ownRow.monthly_discount_enabled === true, monthlyDiscount: String(ownRow.monthly_discount_enabled && Number(ownRow.monthly_discount_percent) <= 0 ? 30 : ownRow.monthly_discount_percent ?? 30), instant: ownRow.instant_booking, delivery: ownRow.delivery_available,
+            price: String(ownRow.price_per_day), weeklyRate: ownRow.price_per_week == null ? '' : String(ownRow.price_per_week),
+            monthlyRate: ownRow.price_per_month == null ? '' : String(ownRow.price_per_month),
+            weeklyDiscountEnabled: ownRow.weekly_discount_enabled === true, weeklyDiscount: String(ownRow.weekly_discount_enabled && Number(ownRow.weekly_discount_percent) <= 0 ? 20 : ownRow.weekly_discount_percent ?? 20), monthlyDiscountEnabled: ownRow.monthly_discount_enabled === true, monthlyDiscount: String(ownRow.monthly_discount_enabled && Number(ownRow.monthly_discount_percent) <= 0 ? 30 : ownRow.monthly_discount_percent ?? 30), instant: ownRow.instant_booking, delivery: ownRow.delivery_available,
             deliveryFee: String(ownRow.delivery_fee ?? 0), quantity: ownRow.available_quantity,
             start: ownRow.availability_start ?? todayIso(), end: ownRow.availability_end ?? addDaysIso(ownRow.availability_start ?? todayIso(), Math.min(LISTING_DEFAULT_AVAILABLE_DAYS, nextPolicy.listing_duration_days)),
             itemDetails: { brand: ownRow.brand ?? '', model: ownRow.model ?? '', included_items: ownRow.included_items ?? [],
@@ -270,6 +270,38 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
     })();
     return () => { active = false; aiRun.current += 1; };
   }, [editId, requestId, profile]);
+
+  useEffect(() => {
+    const dailyRate = parseMoney(form.price);
+    const weeklyRate = form.weeklyRate.trim() ? parseMoney(form.weeklyRate) : null;
+    const monthlyRate = form.monthlyRate.trim() ? parseMoney(form.monthlyRate) : null;
+    const weeklyDiscount = Number(form.weeklyDiscount || 0);
+    const monthlyDiscount = Number(form.monthlyDiscount || 0);
+    setEarningsQuotes(null);
+    setEarningsQuoteError(null);
+    if (!listingId || dailyRate === null || dailyRate < LISTING_RULES.price.min || dailyRate > LISTING_RULES.price.max
+      || (form.weeklyRate.trim() && (weeklyRate === null || weeklyRate < LISTING_RULES.price.min || weeklyRate > LISTING_RULES.price.max))
+      || (form.monthlyRate.trim() && (monthlyRate === null || monthlyRate < LISTING_RULES.price.min || monthlyRate > LISTING_RULES.price.max))
+      || !Number.isFinite(weeklyDiscount) || weeklyDiscount < 0 || weeklyDiscount > 50
+      || !Number.isFinite(monthlyDiscount) || monthlyDiscount < 0 || monthlyDiscount > 50) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      Promise.all([1, 7, 30].map(days => fetchOwnerEarningsQuote({
+        listingId, dailyRate, weeklyRate, monthlyRate,
+        weeklyDiscountEnabled: form.weeklyDiscountEnabled && durationDiscountFlag.enabled,
+        weeklyDiscountPercent: weeklyDiscount,
+        monthlyDiscountEnabled: form.monthlyDiscountEnabled && durationDiscountFlag.enabled,
+        monthlyDiscountPercent: monthlyDiscount,
+        days,
+      }))).then(quotes => {
+        if (active) setEarningsQuotes(Object.fromEntries(quotes.map(quote => [quote.days, quote])));
+      }).catch(error => {
+        if (active) setEarningsQuoteError(message(error, 'Could not load an earnings estimate.'));
+      });
+    }, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [listingId, form.price, form.weeklyRate, form.monthlyRate, form.weeklyDiscountEnabled,
+    form.weeklyDiscount, form.monthlyDiscountEnabled, form.monthlyDiscount, durationDiscountFlag.enabled]);
 
   useEffect(() => {
     if (!ready || completed) return;
@@ -335,6 +367,14 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
     photoCount: photos.length, title: form.title, categoryId: form.categoryId, description: form.description,
     pickupConfirmed, pickupFields, priceText: form.price, depositText: '0', valueText: form.value, maxValue: policy?.max_estimated_value, condition: form.condition,
   });
+  for (const [field, text] of [['weekly-rate', form.weeklyRate], ['monthly-rate', form.monthlyRate]] as const) {
+    if (text.trim()) {
+      const amount = parseMoney(text);
+      if (amount === null || amount < LISTING_RULES.price.min || amount > LISTING_RULES.price.max) {
+        errors[field] = `Enter a package price from $${LISTING_RULES.price.min} to $${LISTING_RULES.price.max}, or leave it blank.`;
+      }
+    }
+  }
   delete errors.deposit;
   const retainedAvailability = status !== 'draft' && originalWindow.current?.start === form.start && originalWindow.current?.end === form.end;
   if (!retainedAvailability) {
@@ -356,7 +396,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   }
   const fieldsForStep: (keyof FlowErrors)[] = step === 1 ? ['photos'] : step === 2
     ? [...ITEM_STEP_FIELDS.filter((field) => field !== 'photos' && field !== 'value'), 'item-details'] : step === 3
-      ? ['price', 'value', 'quantity', 'weekly-discount', 'monthly-discount'] : step === 4 ? ['availability'] : step === 5 ? ['pickup', 'delivery', 'item-details'] : Object.keys(errors) as (keyof FlowErrors)[];
+      ? ['price', 'weekly-rate', 'monthly-rate', 'value', 'quantity', 'weekly-discount', 'monthly-discount'] : step === 4 ? ['availability'] : step === 5 ? ['pickup', 'delivery', 'item-details'] : Object.keys(errors) as (keyof FlowErrors)[];
   const visibleErrors = attempted ? fieldsForStep.filter((field) => errors[field]) : [];
   const blockingFlags = flags.filter((flag) => flag.confidence === 'high' && BLOCKING_FLAG_TYPES.has(flag.type));
   const photoLimit = Math.min(policy?.max_photos ?? 4, 4);
@@ -387,6 +427,8 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
         const weeklyEnabled = current.weeklyDiscountEnabled && (durationDiscountFlag.enabled || Boolean(editId));
         const monthlyEnabled = current.monthlyDiscountEnabled && (durationDiscountFlag.enabled || Boolean(editId));
         const price = current.price.trim() ? parseMoney(current.price) : 1;
+        const weeklyRate = current.weeklyRate.trim() ? parseMoney(current.weeklyRate) : null;
+        const monthlyRate = current.monthlyRate.trim() ? parseMoney(current.monthlyRate) : null;
         const value = current.value.trim() ? parseMoney(current.value) : null;
         if ((step === 3 || step === STEPS.length) && (price === null || price < LISTING_RULES.price.min || price > LISTING_RULES.price.max)) throw new Error('Enter a valid daily rental price before saving. Your entry has been kept.');
         for (const discount of [current.weeklyDiscount, current.monthlyDiscount]) {
@@ -395,7 +437,8 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
         const id = await ensureDraft();
         const allDetails: ListingFlowDetails = {
           title: current.title.trim(), description: current.description.trim(), category_id: current.categoryId || categories[0].id,
-          price_per_day: price ?? undefined, estimated_value: value, item_condition: current.condition || null,
+          price_per_day: price ?? undefined, price_per_week: weeklyRate, price_per_month: monthlyRate,
+          estimated_value: value, item_condition: current.condition || null,
           weekly_discount_enabled: weeklyEnabled, weekly_discount_percent: Number(current.weeklyDiscount || 0),
           monthly_discount_enabled: monthlyEnabled, monthly_discount_percent: Number(current.monthlyDiscount || 0),
           location_label: [pickup.city, pickup.state].filter(Boolean).join(', '),
@@ -407,7 +450,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
         const stepKeys: (keyof ListingFlowDetails)[][] = [
           [],
           ['title', 'description', 'category_id', 'item_condition', 'item_details'],
-          ['price_per_day', 'weekly_discount_enabled', 'weekly_discount_percent', 'monthly_discount_enabled', 'monthly_discount_percent', 'estimated_value', 'instant_booking', 'available_quantity'],
+          ['price_per_day', 'price_per_week', 'price_per_month', 'weekly_discount_enabled', 'weekly_discount_percent', 'monthly_discount_enabled', 'monthly_discount_percent', 'estimated_value', 'instant_booking', 'available_quantity'],
           ['availability_start', 'availability_end'],
           ['location_label', 'delivery_available', 'delivery_fee', 'item_details'],
         ];
@@ -1100,16 +1143,36 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                     </div>
                     <p className="mt-2 text-xs text-sec">Your regular price for each rental day.</p>
                   </Field>
-                  {priceForPreview > 0 && ownerDailyEstimate !== null && !fee.loading && <div className="flex items-center justify-between gap-3 rounded-card bg-subtle px-4 py-3">
-                    <span className="text-sm font-semibold text-main">Estimated net payable to you per day</span>
-                    <output aria-label="Estimated net payable to you per day" className="text-lg font-bold text-main tnum">
-                      {ownerDailyEstimate.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                    </output>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Independent 7-day package rate (USD, optional)" htmlFor="listing-weekly-rate">
+                      <input id="listing-weekly-rate" inputMode="decimal" value={form.weeklyRate}
+                        onChange={event => update('weeklyRate', event.target.value)} className={fieldClass()} aria-invalid={Boolean(invalid('weekly-rate'))}
+                        aria-describedby={invalid('weekly-rate') ? 'listing-weekly-rate-error' : undefined} placeholder="Use discount settings" />
+                      {invalid('weekly-rate') && <p id="listing-weekly-rate-error" role="alert" className="mt-1 text-xs text-error">{invalid('weekly-rate')}</p>}
+                    </Field>
+                    <Field label="Independent 30-day package rate (USD, optional)" htmlFor="listing-monthly-rate">
+                      <input id="listing-monthly-rate" inputMode="decimal" value={form.monthlyRate}
+                        onChange={event => update('monthlyRate', event.target.value)} className={fieldClass()} aria-invalid={Boolean(invalid('monthly-rate'))}
+                        aria-describedby={invalid('monthly-rate') ? 'listing-monthly-rate-error' : undefined} placeholder="Use discount settings" />
+                      {invalid('monthly-rate') && <p id="listing-monthly-rate-error" role="alert" className="mt-1 text-xs text-error">{invalid('monthly-rate')}</p>}
+                    </Field>
+                  </div>
+                  <p className="text-xs text-sec">These are independent package prices, not daily prices multiplied by a conversion. Extra days use your daily rate. Leave either blank to use its existing discount setting.</p>
+                  {priceForPreview > 0 && earningsQuotes && <div className="rounded-card bg-subtle p-4 space-y-2 text-sm">
+                    <h4 className="font-semibold text-main">Estimated owner earnings · backend quote</h4>
+                    {[1, 7, 30].map(days => {
+                      const quote = earningsQuotes[days];
+                      return quote && <div key={days} className="flex justify-between gap-3">
+                        <span className="text-sec">{days === 1 ? '1 day' : `${days}-day rental`} · owner fee ${quote.owner_service_fee_amount?.toFixed(2)}</span>
+                        <strong className="text-main tnum">${quote.estimated_owner_net?.toFixed(2)}</strong>
+                      </div>;
+                    })}
+                    <p className="text-xs text-sec">Estimate only; the booking snapshots final rates and fees when created.</p>
                   </div>}
-                  {priceForPreview > 0 && fee.error && <Alert tone="error" title="Estimated payout unavailable">{fee.error}</Alert>}
+                  {earningsQuoteError && <Alert tone="error" title="Earnings estimate unavailable">{earningsQuoteError}</Alert>}
                   <div className="space-y-3">
                     <h4 className="text-sm font-semibold text-main">Offer weekly and monthly rentals</h4>
-                    <p className="mt-1 text-sm leading-relaxed text-sec">Choose a discount for 7-day and 30-day rentals. Extra days use your daily price. Changes apply to new bookings only.</p>
+                    <p className="mt-1 text-sm leading-relaxed text-sec">Choose a legacy discount when no independent package rate is set. Changes apply to new bookings only.</p>
                     {!durationDiscountFlag.loading && !durationDiscountFlag.enabled && <p className="mt-2 text-xs text-sec">Rental packages are turned off for this test environment.</p>}
                     <fieldset disabled={!durationDiscountFlag.enabled || durationDiscountFlag.loading} className="mt-3 space-y-3">
                       <div className="border-b border-app pb-3">
@@ -1121,7 +1184,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                           <Field label="Weekly discount" htmlFor="listing-weekly-discount" error={invalid('weekly-discount')}>
                             <div className="relative"><input id="listing-weekly-discount" aria-invalid={Boolean(invalid('weekly-discount'))} aria-describedby={invalid('weekly-discount') ? 'listing-weekly-discount-error' : undefined} type="number" min={0} max={50} step="0.5" inputMode="decimal" value={form.weeklyDiscount} onChange={event => update('weeklyDiscount', event.target.value)} className={fieldClass('pr-8')} /><span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-sec">%</span></div>
                           </Field>
-                          <p className="pb-2 text-xs text-sec">{priceForPreview > 0 ? <>7-day price: <strong className="text-main">${weeklyPreview.subtotal.toFixed(2)}</strong><span className="block mt-1">Save ${weeklyPreview.discountAmount.toFixed(2)}</span></> : 'Enter a daily price to preview your weekly price.'}</p>
+                          <p className="pb-2 text-xs text-sec">{earningsQuotes?.[7] ? <>7-day price: <strong className="text-main">${earningsQuotes[7].rental_subtotal.toFixed(2)}</strong>{earningsQuotes[7].discount_amount > 0 && <span className="block mt-1">Discount savings ${earningsQuotes[7].discount_amount.toFixed(2)}</span>}</> : 'Enter rates to load a server quote.'}</p>
                         </div>}
                       </div>
                       <div>
@@ -1133,7 +1196,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                           <Field label="Monthly discount" htmlFor="listing-monthly-discount" error={invalid('monthly-discount')}>
                             <div className="relative"><input id="listing-monthly-discount" aria-invalid={Boolean(invalid('monthly-discount'))} aria-describedby={invalid('monthly-discount') ? 'listing-monthly-discount-error' : undefined} type="number" min={0} max={50} step="0.5" inputMode="decimal" value={form.monthlyDiscount} onChange={event => update('monthlyDiscount', event.target.value)} className={fieldClass('pr-8')} /><span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-sec">%</span></div>
                           </Field>
-                          <p className="pb-2 text-xs text-sec">{priceForPreview > 0 ? <>30-day price: <strong className="text-main">${monthlyPreview.subtotal.toFixed(2)}</strong><span className="block mt-1">Save ${monthlyPreview.discountAmount.toFixed(2)}</span></> : 'Enter a daily price to preview your monthly price.'}</p>
+                          <p className="pb-2 text-xs text-sec">{earningsQuotes?.[30] ? <>30-day price: <strong className="text-main">${earningsQuotes[30].rental_subtotal.toFixed(2)}</strong>{earningsQuotes[30].discount_amount > 0 && <span className="block mt-1">Discount savings ${earningsQuotes[30].discount_amount.toFixed(2)}</span>}</> : 'Enter rates to load a server quote.'}</p>
                         </div>}
                       </div>
                     </fieldset>

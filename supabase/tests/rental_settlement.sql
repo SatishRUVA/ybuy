@@ -17,12 +17,25 @@ insert into public.listings(id,owner_id,category_id,title,description,price_per_
   'Settlement test listing','A listing fixture for settlement tests.',10,'draft',200,'good',current_date+100,current_date+130);
 insert into public.listing_images(listing_id,url,sort_order) values
  ('84000000-0000-4000-8000-000000000001','https://example.test/settlement-item.png',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude) values
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method) values
+ ('84000000-0000-4000-8000-000000000001','https://example.test/settlement-item.png','approved','Fixture photo approved','system');
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,time_zone,latitude,longitude) values
  ('84000000-0000-4000-8000-000000000001','81000000-0000-4000-8000-000000000001',
-  'Private pickup','Dallas','TX','75201','US',32.8,-96.8);
+  'Private pickup','100 Main Street','Dallas','TX','75201','US','America/Chicago',32.8,-96.8);
 update public.listings set status='published' where id='84000000-0000-4000-8000-000000000001';
+update public.service_fee_configurations set total_fee_pct=0.10,renter_share_percent=70
+ where effective_from='-infinity'::timestamptz;
+alter table public.bookings disable trigger zzzzzz_bookings_deposit_authorization_model;
 insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status) values
  ('85000000-0000-4000-8000-000000000001','84000000-0000-4000-8000-000000000001','81000000-0000-4000-8000-000000000001','81000000-0000-4000-8000-000000000002',current_date+100,current_date+102,10,2,20,.1,2,50,72,'pending_payment');
+alter table public.bookings enable trigger zzzzzz_bookings_deposit_authorization_model;
+
+select is((select service_fee_total_pct from public.bookings where id='85000000-0000-4000-8000-000000000001'),0.10::numeric,'Booking snapshots the configured total fee');
+select is((select service_fee_renter_share_pct from public.bookings where id='85000000-0000-4000-8000-000000000001'),70::smallint,'Booking snapshots renter allocation');
+select is((select service_fee_pct from public.bookings where id='85000000-0000-4000-8000-000000000001'),0.07::numeric,'Renter fee rate follows allocation');
+select is((select owner_service_fee_pct from public.bookings where id='85000000-0000-4000-8000-000000000001'),0.03::numeric,'Owner fee rate is the complementary allocation');
+select is((select service_fee_amount from public.bookings where id='85000000-0000-4000-8000-000000000001'),1.40::numeric,'Only renter share is charged to renter');
+select is((select owner_service_fee_amount from public.bookings where id='85000000-0000-4000-8000-000000000001'),0.60::numeric,'Owner share is frozen separately');
 
 select ok(not has_function_privilege('authenticated','public.claim_rental_settlement(uuid,text)','EXECUTE'),'Clients cannot claim financial execution');
 select ok(not has_function_privilege('authenticated','public.record_rental_settlement(uuid,text,text,text)','EXECUTE'),'Clients cannot fabricate provider receipts');
@@ -54,7 +67,8 @@ select b.id,p.id,b.deposit,b.subtotal,'pending'
 from public.bookings b join public.payments p on p.booking_id=b.id
 where b.id='85000000-0000-4000-8000-000000000001';
 select is((select deposit_amount from public.rental_settlements where booking_id='85000000-0000-4000-8000-000000000001'),50::numeric,'Deposit uses frozen booking amount');
-select is((select owner_amount from public.rental_settlements where booking_id='85000000-0000-4000-8000-000000000001'),20::numeric,'Owner amount excludes fee and deposit');
+select is((select owner_service_fee_amount from public.rental_settlements where booking_id='85000000-0000-4000-8000-000000000001'),0.60::numeric,'Settlement fee is copied from the booking snapshot');
+select is((select owner_amount from public.rental_settlements where booking_id='85000000-0000-4000-8000-000000000001'),19.40::numeric,'Owner amount deducts only owner fee and excludes deposit');
 set local role authenticated;
 set local request.jwt.claims='{"sub":"81000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"82000000-0000-4000-8000-000000000003","exp":4102444800}';
 select is((select count(*)::int from public.rental_settlements),0,'Other users cannot see private settlement');
@@ -67,7 +81,9 @@ select throws_ok($$select public.claim_rental_settlement('85000000-0000-4000-800
 update public.operations_cases set status='decided' where id='86000000-0000-4000-8000-000000000001';
 select throws_ok($$select public.claim_rental_settlement('85000000-0000-4000-8000-000000000001','refund')$$,
  'P0001','Settlement blocked by an unresolved dispute','Decided but not closed claim still requires reconciliation');
+alter table public.operations_cases disable trigger booking_deposit_claim_approval;
 update public.operations_cases set status='closed' where id='86000000-0000-4000-8000-000000000001';
+alter table public.operations_cases enable trigger booking_deposit_claim_approval;
 select lives_ok($$select public.claim_rental_settlement('85000000-0000-4000-8000-000000000001','refund')$$,'Closed claim permits refund');
 select throws_ok($$select public.claim_rental_settlement('85000000-0000-4000-8000-000000000001','transfer')$$,
  'P0001','Deposit refund must succeed before owner transfer','Pending refund blocks transfer');

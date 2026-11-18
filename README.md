@@ -1,5 +1,11 @@
 # ybuy
 
+## CI/CD
+
+See [GitHub Actions staging releases](docs/implementation/CI_CD.md) for required
+environment secrets, branch protection, and the backend-first Vercel/Supabase
+deployment pipeline.
+
 ## YBuy Points MVP (test only)
 
 Apply `20261117000008_signup_points_mvp.sql` for the separate points wallet and

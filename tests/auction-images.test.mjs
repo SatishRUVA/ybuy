@@ -20,7 +20,8 @@ after(() => { supabase.rpc = originalRpc; supabase.storage.from = originalStorag
 const item = {
   listing_id: '30000000-0000-4000-8000-000000000001', title: 'Camera',
   category_id: '40000000-0000-4000-8000-000000000001', category_name: 'Cameras',
-  daily_rate: 20, has_bids: true, start_date: '2026-11-24', end_date: '2026-11-25',
+  daily_rate: 20, has_bids: true, bid_count: 1, participant_count: 1,
+  start_date: '2026-11-24', end_date: '2026-11-25',
   expires_at: '2026-11-23T12:00:00Z',
 };
 const sources = [
