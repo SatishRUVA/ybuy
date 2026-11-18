@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { rejects } from 'node:assert/strict';
 import ts from 'typescript';
@@ -9,7 +10,7 @@ import type { ServerBookingPrice, SandboxPricingPolicy } from '../supabase/funct
 import type { TaxAddress, TaxRequest } from '../supabase/functions/_shared/tax-provider';
 
 function load<T>(name: string): T {
-  const source = readFileSync(`supabase\\functions\\_shared\\${name}.ts`, 'utf8');
+  const source = readFileSync(join('supabase', 'functions', '_shared', `${name}.ts`), 'utf8');
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -59,7 +60,7 @@ function receipt(request: TaxRequest, taxCents = 825) {
 
 test('pricing foundation typechecks the actual server modules', () => {
   const program = ts.createProgram(['checkout-pricing', 'renter-protection', 'tax-provider'].map(name =>
-    `supabase\\functions\\_shared\\${name}.ts`), {
+    join('supabase', 'functions', '_shared', `${name}.ts`)), {
     noEmit: true, strict: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.Bundler, allowImportingTsExtensions: true, skipLibCheck: true,
   });
@@ -67,7 +68,7 @@ test('pricing foundation typechecks the actual server modules', () => {
 });
 
 test('booking requests use the standard RPC and ignore legacy promo arguments', async () => {
-  const source = readFileSync('src\\lib\\bookings.ts', 'utf8')
+  const source = readFileSync(join('src', 'lib', 'bookings.ts'), 'utf8')
     .split('async function callBookingRpc(')[1].split('export async function respondToBookingRequest(')[0];
   const output = ts.transpileModule(`async function callBookingRpc(${source}`, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -113,7 +114,7 @@ test('default tax rounds discounted rental plus service fees, excluding all othe
 });
 
 test('actual checkout edge refuses sandbox tax with live keys before creating a session', () => {
-  const source = readFileSync('supabase\\functions\\create-checkout-session\\index.ts', 'utf8');
+  const source = readFileSync(join('supabase', 'functions', 'create-checkout-session', 'index.ts'), 'utf8');
   const helper = source.slice(source.indexOf('export function checkoutAmountCents('), source.indexOf('Deno.serve('));
   const output = ts.transpileModule(helper, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -142,7 +143,7 @@ test('actual checkout edge refuses sandbox tax with live keys before creating a 
 });
 
 test('checkout handler charges normal tax with live or test keys but blocks historical sandbox tax on live keys', async () => {
-  const source = readFileSync('supabase\\functions\\create-checkout-session\\index.ts', 'utf8');
+  const source = readFileSync(join('supabase', 'functions', 'create-checkout-session', 'index.ts'), 'utf8');
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -194,7 +195,7 @@ test('checkout handler charges normal tax with live or test keys but blocks hist
 
 for (const name of ['create-deposit-setup-session', 'create-deposit-authorization-session']) {
   test(`${name} distinguishes a database failure from an absent booking`, async () => {
-    const output = ts.transpileModule(readFileSync(`supabase\\functions\\${name}\\index.ts`, 'utf8'), {
+    const output = ts.transpileModule(readFileSync(join('supabase', 'functions', name, 'index.ts'), 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText;
     for (const databaseFailure of [true, false]) {
