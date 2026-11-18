@@ -38,8 +38,8 @@ jobs:
         env:
           VITE_SITE_VARIANT: admin
         run: pnpm run build --outDir dist-admin --manifest
-      - run: node --test tests/*.test.mjs
       - run: pnpm exec playwright install --with-deps chromium
+      - run: node --test tests/*.test.mjs
       - name: Test bidding, pricing, insurance, and scheduling
         run: >-
           pnpm exec playwright test
