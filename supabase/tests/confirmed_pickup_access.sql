@@ -13,22 +13,26 @@ insert into public.categories(id,name) values('b3000000-0000-4000-8000-000000000
 insert into public.listings(id,owner_id,category_id,title,description,price_per_day,estimated_value,item_condition)
 values('b4000000-0000-4000-8000-000000000001','b1000000-0000-4000-8000-000000000001',
  'b3000000-0000-4000-8000-000000000001','Pickup fixture','A test camera with a carrying case.',10,200,'good');
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,latitude,longitude)
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,latitude,longitude,country,time_zone)
 values('b4000000-0000-4000-8000-000000000001','b1000000-0000-4000-8000-000000000001',
- '123 Private Lane, Dallas, TX 75247','Dallas','TX','75247',32.8,-96.9);
+ '123 Private Lane, Dallas, TX 75247','123 Private Lane','Dallas','TX','75247',32.8,-96.9,'US','America/Chicago');
 insert into public.listing_images(listing_id,url,sort_order)
 values('b4000000-0000-4000-8000-000000000001',
  'http://localhost:54321/storage/v1/object/public/listing-images/b4000000-0000-4000-8000-000000000001/photo.png',0);
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic pickup access fixture','system' from public.listing_images
+where listing_id='b4000000-0000-4000-8000-000000000001';
 set local request.jwt.claims='{"sub":"b1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"b2000000-0000-4000-8000-000000000001","exp":4102444800}';
 select lives_ok($$select public.owner_save_listing_flow('b4000000-0000-4000-8000-000000000001',
  (select revision from public.listings where id='b4000000-0000-4000-8000-000000000001'),
  jsonb_build_object('availability_start',current_date,'availability_end',current_date+30),null,true)$$,
  'Publish fixture through authoritative owner checks');
 set local request.jwt.claims='{}';
-insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status)
+-- Historical captured-deposit bookings retain confirmed-participant address access.
+insert into public.bookings(id,listing_id,owner_id,renter_id,start_date,end_date,daily_rate,days,subtotal,service_fee_pct,service_fee_amount,deposit,total,status,payment_first,deposit_collection_model)
 values('b5000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',
  'b1000000-0000-4000-8000-000000000001','b1000000-0000-4000-8000-000000000002',
- current_date+1,current_date+3,10,2,20,.1,2,60,82,'requested');
+ current_date+1,current_date+3,10,2,20,.1,2,60,82,'requested',false,'captured');
 
 select ok(not has_function_privilege('anon','public.get_booking_pickup(uuid)','execute'),'Anonymous callers cannot request exact addresses');
 set local role authenticated;
@@ -42,16 +46,17 @@ set local role authenticated;
 select throws_ok($$select public.get_booking_pickup('b5000000-0000-4000-8000-000000000001')$$,
  '42501','Pickup address is available only to participants of a confirmed booking','Owner approval without payment cannot reveal address');
 reset role;
-select lives_ok($$select public.confirm_booking_payment('b5000000-0000-4000-8000-000000000001','cs_pickup','pi_pickup',82)$$,'Trusted payment confirms booking');
+select lives_ok($$select public.confirm_booking_payment(id,'cs_pickup','pi_pickup',total)
+ from public.bookings where id='b5000000-0000-4000-8000-000000000001'$$,'Trusted payment confirms booking');
 set local role authenticated;
 select is(public.get_booking_pickup('b5000000-0000-4000-8000-000000000001')->>'address',
  '123 Private Lane, Dallas, TX 75247','Confirmed renter receives exact address');
 select is((select count(*)::integer from public.listing_pickup_locations),0,'Confirmed renter still cannot enumerate location table');
 select throws_ok($$select public.get_booking_pickup('b5000000-0000-4000-8000-000000000099')$$,
- '42501','Pickup address is available only to participants of a confirmed booking','Unknown booking cannot reveal an address');
+ '42501','Booking not found','Unknown booking cannot reveal an address');
 set local request.jwt.claims='{"sub":"b1000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"b2000000-0000-4000-8000-000000000003","exp":4102444800}';
 select throws_ok($$select public.get_booking_pickup('b5000000-0000-4000-8000-000000000001')$$,
- '42501','Pickup address is available only to participants of a confirmed booking','Unrelated user cannot read confirmed booking address');
+ '42501','Booking not found','Unrelated user cannot read confirmed booking address');
 set local request.jwt.claims='{"sub":"b1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"b2000000-0000-4000-8000-000000000001","exp":4102444800}';
 select is(public.get_booking_pickup('b5000000-0000-4000-8000-000000000001')->>'city','Dallas','Confirmed booking owner retains pickup access');
 reset role;

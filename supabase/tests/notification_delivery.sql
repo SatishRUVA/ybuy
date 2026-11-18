@@ -1,6 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
+\ir fixtures/published_listing.inc
 
 insert into auth.users (id,email,raw_user_meta_data) values
   ('11000000-0000-4000-8000-000000000001','notification-renter@test.example','{"full_name":"Notification Renter"}'),
@@ -12,7 +13,8 @@ insert into public.categories (id,name) values
   ('21000000-0000-4000-8000-000000000001','Notification test category');
 insert into public.listings (id,owner_id,category_id,title,price_per_day,status,estimated_value,item_condition) values
   ('31000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000002',
-   '21000000-0000-4000-8000-000000000001','Notification test rental',20,'published',200,'good');
+   '21000000-0000-4000-8000-000000000001','Notification test rental',20,'draft',200,'good');
+select pg_temp.publish_listing_fixture('31000000-0000-4000-8000-000000000001',current_date,current_date+30);
 insert into public.bookings (
   id,listing_id,renter_id,owner_id,start_date,end_date,daily_rate,days,subtotal,
   service_fee_pct,service_fee_amount,total
@@ -23,10 +25,8 @@ insert into public.bookings (
 );
 update public.bookings set status = 'pending_payment'
   where id = '41000000-0000-4000-8000-000000000001';
-update public.bookings set status = 'confirmed'
-  where id = '41000000-0000-4000-8000-000000000001';
-insert into public.payments (booking_id,amount,status)
-  values ('41000000-0000-4000-8000-000000000001',44,'succeeded');
+select public.confirm_booking_payment(id,'cs_notification','pi_notification',total)
+from public.bookings where id='41000000-0000-4000-8000-000000000001';
 insert into public.conversations (id,booking_id,participant_one,participant_two) values (
   '51000000-0000-4000-8000-000000000001','41000000-0000-4000-8000-000000000001',
   '11000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000002'
@@ -131,7 +131,9 @@ select ok(exists (
   select 1 from jsonb_array_elements(public.notification_email_details((
     select id from public.notification_email_jobs
     where event_key like 'payment:%' and user_id='11000000-0000-4000-8000-000000000001' limit 1))) detail
-  where detail->>'label'='Checkout total' and detail->>'value'='USD 44.00'
+  where detail->>'label'='Checkout total' and detail->>'value'=
+    (select 'USD '||to_char(total,'FM999999990.00') from public.bookings
+      where id='41000000-0000-4000-8000-000000000001')
 ), 'Payment email resolves to the booking and exact total');
 insert into auth.users (id,email,raw_user_meta_data) values
   ('11000000-0000-4000-8000-000000000003','notification-outsider@test.example','{"full_name":"Outsider"}');

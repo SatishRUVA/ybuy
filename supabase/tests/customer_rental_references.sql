@@ -21,8 +21,11 @@ insert into public.listings(id,owner_id,category_id,title,description,price_per_
  ('96000000-0000-4000-8000-000000000031','96000000-0000-4000-8000-000000000001','96000000-0000-4000-8000-000000000021','Reference test camera','Camera with a case and charger.',10,'draft',200,'good',true,15,current_date+1,current_date+20,true,2);
 insert into public.listing_images(listing_id,url,sort_order) values
  ('96000000-0000-4000-8000-000000000031','https://example.test/reference-camera.png',0);
-insert into public.listing_pickup_locations(listing_id,owner_id,address,city,state,postal_code,country,latitude,longitude) values
- ('96000000-0000-4000-8000-000000000031','96000000-0000-4000-8000-000000000001','Private pickup','Dallas','TX','75201','US',32.8,-96.8);
+insert into public.listing_photo_reviews(listing_id,photo_url,decision,reason,review_method)
+select listing_id,url,'approved','Synthetic reference fixture','system' from public.listing_images
+where listing_id='96000000-0000-4000-8000-000000000031';
+insert into public.listing_pickup_locations(listing_id,owner_id,address,street_address,city,state,postal_code,country,latitude,longitude,time_zone) values
+ ('96000000-0000-4000-8000-000000000031','96000000-0000-4000-8000-000000000001','Private pickup','123 Test Street','Dallas','TX','75201','US',32.8,-96.8,'America/Chicago');
 update public.listings set status='published' where id='96000000-0000-4000-8000-000000000031';
 
 set local role authenticated;
