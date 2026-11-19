@@ -5,10 +5,13 @@
 - Pull requests: typecheck, lint, Node tests, production build, critical Playwright
   flows at `http://localhost:5174/`, and migration replay plus all pgTAP tests
   against a disposable Supabase instance. No hosted credentials are available.
-- Push to `staging`: run those same checks, build the frontend using Vercel's
-  test-project settings, apply pending migrations, deploy Edge Functions, then
-  publish the prebuilt frontend to <https://ybuy-e2e-test.vercel.app>.
-- A manual **Deploy staging** run is also supported, but only on `staging`.
+- Manually run **Deploy staging backend** on `staging` to replay migrations and
+  run database tests, then apply pending migrations and deploy Edge Functions.
+- Manually run **Deploy staging frontend** on `staging` to run app checks,
+  verify the test database has no pending migrations, and publish the prebuilt
+  frontend to <https://ybuy-e2e-test.vercel.app>. This does not deploy functions.
+- When both layers change, deploy and verify the backend first. A current
+  migration history does not prove that the correct function versions are deployed.
 - No production release workflow is enabled.
 
 GitHub Actions is the sole deployment owner. Disable automatic Git deployments
@@ -41,8 +44,10 @@ URL. Existing Stripe, email, scheduler, and other runtime secrets remain in
 Supabase Edge Function secrets; no service-role key is needed in Actions.
 
 Commit the workflows and all intended release files first. Create `staging`
-from a reviewed commit, push it, and open the Actions tab. Uncommitted local
-changes are never deployed by Actions. This pipeline does not create test
+from a reviewed commit, push it, and select `staging` when dispatching a workflow.
+GitHub registers a new manually dispatched workflow only after its file exists
+on the default branch. Uncommitted local changes are never deployed by Actions.
+These pipelines do not create test
 accounts, apply development seed data remotely, change Auth settings, provision
 webhooks, delete retired functions, or synchronize runtime secrets.
 
@@ -54,9 +59,8 @@ credentials, so restrict merge permissions and review workflow changes.
 
 ## Safety and recovery
 
-- Deployment runs are serialized and never canceled mid-migration. GitHub may
-  replace a queued pending run with a newer push; the newest release contains
-  the intervening committed migrations.
+- Backend and frontend deployment runs share a concurrency group and are never
+  canceled mid-migration. Review pending runs before dispatching another run.
 - CLI versions come from the committed pnpm lockfile; installs are frozen.
 - Public dependencies resolve through public npm tarball URLs, retaining pinned
   versions and integrity hashes; no workstation registry credentials are needed.
@@ -67,9 +71,10 @@ credentials, so restrict merge permissions and review workflow changes.
   repairing migration history or using `--include-all`.
 - SQL changes must remain compatible with the currently running frontend and
   functions. Deployments across Supabase and Vercel are not atomic.
-- A failed backend deployment prevents publishing the frontend, but migrations
-  and individual functions already deployed remain applied. Review the failure,
-  fix forward, and rerun. Do not automatically reverse financial migrations.
+- A failed backend deployment may leave migrations and individual functions
+  applied. Do not publish a frontend that depends on a failed or incomplete
+  backend deployment. Review the failure, fix forward, and rerun; do not
+  automatically reverse financial migrations.
 - The final check verifies that the public alias serves the app shell. It is not
   an authenticated booking/payment test. If Vercel Deployment Protection is
   enabled, explicitly configure an approved automation bypass before replacing
