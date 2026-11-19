@@ -2,17 +2,22 @@
 
 ## Release flow
 
-- Pull requests: typecheck, lint, Node tests, production build, critical Playwright
-  flows at `http://localhost:5174/`, and migration replay plus all pgTAP tests
-  against a disposable Supabase instance. No hosted credentials are available.
-- Manually run **Deploy staging backend** on `staging` to replay migrations and
-  run database tests, then apply pending migrations and deploy Edge Functions.
+- Pull requests: typecheck, lint, customer and administrator production builds,
+  and migration replay against a disposable Supabase instance. No hosted
+  credentials are available.
+- Manually run **Deploy staging backend** on `staging` to replay migrations,
+  then apply pending migrations and deploy Edge Functions.
 - Manually run **Deploy staging frontend** on `staging` to run app checks,
   verify the test database has no pending migrations, and publish the prebuilt
   frontend to <https://ybuy-e2e-test.vercel.app>. This does not deploy functions.
 - When both layers change, deploy and verify the backend first. A current
   migration history does not prove that the correct function versions are deployed.
 - No production release workflow is enabled.
+
+Node, Playwright, and pgTAP tests are disabled in CI, including reusable checks
+called by deployment workflows. Typecheck, lint, build, and migration replay
+failures still block deployment. Passing CI does not verify tested application
+or database behavior.
 
 GitHub Actions is the sole deployment owner. Disable automatic Git deployments
 for the Vercel `ybuy-e2e-test` project before enabling this pipeline; otherwise

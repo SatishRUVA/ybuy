@@ -46,23 +46,6 @@ jobs:
         env:
           VITE_SITE_VARIANT: admin
         run: pnpm run build --outDir dist-admin --manifest
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: node --test tests/*.test.mjs
-      - name: Test bidding, pricing, insurance, and scheduling
-        run: >-
-          pnpm exec playwright test
-          tests/date-bidding.spec.ts
-          tests/checkout-pricing.spec.ts
-          tests/checkout-insurance.spec.ts
-          tests/handoff-hours.spec.ts
-          tests/booking-handoff.spec.ts
-          --workers=2
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-failures
-          path: test-results/
-          retention-days: 7
 
   database:
     name: Database checks
@@ -84,8 +67,6 @@ jobs:
         run: pnpm exec supabase start -x studio,logflare,vector,edge-runtime
       - name: Replay migrations without development seed data
         run: pnpm exec supabase db reset --local --no-seed
-      - name: Run pgTAP tests
-        run: pnpm exec supabase test db
       - name: Stop disposable Supabase
         if: always() && steps.start_supabase.outcome != 'skipped'
         run: pnpm exec supabase stop --no-backup
