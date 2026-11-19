@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm exec supabase db push --project-ref "$SUPABASE_PROJECT_REF" --dry-run --skip-vault \
+          pnpm exec supabase db push --project-ref "$SUPABASE_PROJECT_REF" --dry-run --skip-vault --output-format json \
             | jq -e '.upToDate == true' > /dev/null
       - name: Pull Vercel test project settings
         env:
