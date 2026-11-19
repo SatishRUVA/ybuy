@@ -78,6 +78,10 @@ jobs:
           set -euo pipefail
           pnpm exec supabase db push --project-ref "$SUPABASE_PROJECT_REF" --dry-run --skip-vault --output-format json \
             | jq -e '.upToDate == true' > /dev/null
+      - name: Link Vercel test project
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: pnpm exec vercel link --yes --team "$VERCEL_ORG_ID" --project "$VERCEL_PROJECT_ID" --token="$VERCEL_TOKEN"
       - name: Pull Vercel test project settings
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

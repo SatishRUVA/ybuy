@@ -43,6 +43,11 @@ live customer project. The workflow refuses a different project ID or backend
 URL. Existing Stripe, email, scheduler, and other runtime secrets remain in
 Supabase Edge Function secrets; no service-role key is needed in Actions.
 
+The frontend workflow explicitly links the configured Vercel team and project
+before pulling settings. Fresh Actions runners have no retained Vercel link.
+Linking does not grant access: the token must already authorize that team and
+project.
+
 Commit the workflows and all intended release files first. Create `staging`
 from a reviewed commit, push it, and select `staging` when dispatching a workflow.
 GitHub registers a new manually dispatched workflow only after its file exists
