@@ -258,6 +258,13 @@ export interface ServiceFeeConfiguration {
 }
 export const listServiceFeeConfigurations = () =>
   rpc<ServiceFeeConfiguration[]>('admin_list_service_fee_configurations');
+export const applyServiceFeeConfigurationNow = (
+  totalFeePercent: number, renterSharePercent: number, reason: string,
+) => rpc<ServiceFeeConfiguration>('admin_apply_service_fee_configuration_now', {
+  p_total_fee_percent: totalFeePercent,
+  p_renter_share_percent: renterSharePercent,
+  p_reason: reason,
+});
 export const scheduleServiceFeeConfiguration = (
   totalFeePercent: number, renterSharePercent: number, effectiveFrom: string, effectiveTo: string | null, reason: string,
 ) => rpc<ServiceFeeConfiguration>('admin_schedule_service_fee_configuration', {

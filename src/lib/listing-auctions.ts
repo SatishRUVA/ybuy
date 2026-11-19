@@ -152,6 +152,56 @@ export interface ListingAuction {
   total_bid_count?: number;
 }
 
+export interface RenterAuctionParticipation {
+  auction_id: string;
+  listing_id: string;
+  title: string;
+  image_url: string | null;
+  status: ListingAuction['status'];
+  date_flexible: boolean;
+  start_date: string;
+  end_date: string;
+  starts_at: string;
+  ends_at: string;
+  selection_deadline: string;
+  opening_daily_rate: number;
+  last_bid_at: string;
+  bids: MyAuctionBid[];
+}
+
+export async function getMyListingAuctionBids(offset = 0, limit = 20): Promise<{ items: RenterAuctionParticipation[]; total: number }> {
+  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
+    throw new Error('Choose a valid bid history page.');
+  }
+  const { data, error } = await supabase.rpc('get_my_listing_auction_bids', { p_offset: offset, p_limit: limit });
+  if (error) throw new Error('Your bid history is temporarily unavailable. Please try again.');
+  if (!data || typeof data !== 'object' || !Array.isArray(data.items) || !Number.isSafeInteger(data.total) || data.total < 0) {
+    throw new Error('Could not verify your bid history. Please retry.');
+  }
+  const items = data.items as RenterAuctionParticipation[];
+  for (const item of items) {
+    if (!item || !UUID_RE.test(item.auction_id) || !UUID_RE.test(item.listing_id) || typeof item.title !== 'string'
+      || !(item.image_url === null || typeof item.image_url === 'string')
+      || !['scheduled', 'open', 'owner_selection', 'awaiting_payment', 'completed', 'ended', 'cancelled'].includes(item.status)
+      || typeof item.date_flexible !== 'boolean' || !Array.isArray(item.bids) || item.bids.length < 1 || item.bids.length > 3
+      || !Number.isFinite(Date.parse(item.last_bid_at)) || !Number.isFinite(Date.parse(item.starts_at))
+      || !Number.isFinite(Date.parse(item.ends_at)) || !Number.isFinite(Date.parse(item.selection_deadline))
+      || !Number.isFinite(item.opening_daily_rate) || item.opening_daily_rate <= 0
+      || !/^\d{4}-\d{2}-\d{2}$/.test(item.start_date) || !/^\d{4}-\d{2}-\d{2}$/.test(item.end_date)
+      || item.end_date <= item.start_date) throw new Error('Could not verify your bid history. Please retry.');
+    for (const bid of item.bids) {
+      if (!bid || !UUID_RE.test(bid.id) || !Number.isFinite(bid.daily_rate) || bid.daily_rate <= 0
+        || !Number.isFinite(Date.parse(bid.submitted_at)) || typeof bid.passed !== 'boolean'
+        || typeof bid.is_current !== 'boolean' || typeof bid.selected !== 'boolean'
+        || !(bid.rank === null || (Number.isSafeInteger(bid.rank) && bid.rank > 0))
+        || !(bid.payment_status == null || ['pending', 'paid', 'expired'].includes(bid.payment_status))) {
+        throw new Error('Could not verify your bid history. Please retry.');
+      }
+    }
+  }
+  return { items, total: data.total };
+}
+
 function auctionResult(data: unknown): ListingAuction | null {
   if (data === null) return null;
   const value = data as ListingAuction;

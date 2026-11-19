@@ -29,6 +29,10 @@ select id,owner_id,'Private pickup','123 Test Street','Dallas','TX','75201','US'
 from public.listings where category_id='83000000-0000-4000-8000-000000000001';
 
 select ok(not has_table_privilege('authenticated','public.listing_auction_bids','SELECT'),'Bid ledger is not readable by clients');
+select ok(has_function_privilege('authenticated','public.get_my_listing_auction_bids(integer,integer)','EXECUTE'),
+  'Authenticated renters can read their own auction history through a scoped RPC');
+select ok(not has_function_privilege('anon','public.get_my_listing_auction_bids(integer,integer)','EXECUTE'),
+  'Anonymous visitors cannot read private bid history');
 select ok(not has_table_privilege('authenticated','public.listing_auctions','UPDATE'),'Clients cannot change auction deadlines');
 select ok(not has_function_privilege('authenticated','public.advance_listing_auction(uuid,uuid)','EXECUTE'),'Lifecycle worker is private');
 select ok(not has_function_privilege('authenticated','public.process_listing_auctions()','EXECUTE'),'Scheduler is private');
@@ -109,6 +113,15 @@ select throws_ok($$select public.place_listing_auction_bid('84000000-0000-4000-8
   '23514','Bid at least $21.0000000000000000 per day','Bids must meet the configured minimum increase');
 select lives_ok($$select public.place_listing_auction_bid('84000000-0000-4000-8000-000000000001',21,gen_random_uuid(),true,current_date+7,current_date+10)$$,'Second bid accepted');
 select lives_ok($$select public.place_listing_auction_bid('84000000-0000-4000-8000-000000000001',22,gen_random_uuid(),true,current_date+7,current_date+10)$$,'Auction is not constrained by private-offer ceiling');
+select is((public.get_my_listing_auction_bids()->>'total')::integer,1,'My bids groups bid history by auction');
+select is((public.get_my_listing_auction_bids()->'items'->0->>'listing_id'),'84000000-0000-4000-8000-000000000001',
+  'My bids returns the renter’s auction');
+select is(jsonb_array_length(public.get_my_listing_auction_bids()->'items'->0->'bids'),3,'My bids preserves all three personal submissions');
+select is((public.get_my_listing_auction_bids()->'items'->0->'bids'->0->>'daily_rate')::numeric,22::numeric,
+  'My bids places the latest submission first');
+select ok(not (public.get_my_listing_auction_bids()->'items'->0 ? 'owner_id')
+  and not (public.get_my_listing_auction_bids()->'items'->0->'bids'->0 ? 'renter_id'),
+  'My bids reveals neither owner nor other renter identities');
 select throws_ok($$select public.place_listing_auction_bid('84000000-0000-4000-8000-000000000001',23,gen_random_uuid(),true,current_date+7,current_date+10)$$,
   '23514','You have used all three bids for this auction','Fourth submission is rejected');
 select lives_ok($$select public.create_booking_request('84000000-0000-4000-8000-000000000001',current_date+7,current_date+10,1)$$,
@@ -118,6 +131,10 @@ select lives_ok($$select public.create_booking_request('84000000-0000-4000-8000-
 set local request.jwt.claims='{"sub":"81000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"82000000-0000-4000-8000-000000000003","exp":4102444800}';
 select lives_ok($$select public.place_listing_auction_bid('84000000-0000-4000-8000-000000000001',35,gen_random_uuid(),true,current_date+7,current_date+10)$$,'Second renter bids');
 select lives_ok($$select public.place_listing_auction_bid('84000000-0000-4000-8000-000000000002',20,gen_random_uuid(),true,current_date+7,current_date+10)$$,'Second auction receives a bid');
+select is((public.get_my_listing_auction_bids()->>'total')::integer,2,'My bids includes each auction the renter joined');
+select is(jsonb_array_length(public.get_my_listing_auction_bids(1,1)->'items'),1,'My bids supports bounded pagination');
+select is((public.get_my_listing_auction_bids(1,1)->'items'->0->>'listing_id'),'84000000-0000-4000-8000-000000000001',
+  'My bids pages use recent participation order');
 set local request.jwt.claims='{"sub":"81000000-0000-4000-8000-000000000004","role":"authenticated","session_id":"82000000-0000-4000-8000-000000000004","exp":4102444800}';
 select lives_ok($$select public.place_listing_auction_bid('84000000-0000-4000-8000-000000000001',40,gen_random_uuid(),true,current_date+7,current_date+10)$$,'Third renter bids');
 set local request.jwt.claims='{"sub":"81000000-0000-4000-8000-000000000005","role":"authenticated","session_id":"82000000-0000-4000-8000-000000000005","exp":4102444800}';

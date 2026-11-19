@@ -396,7 +396,7 @@ export function SearchPage({
   return (
     <div className="animate-fade-in min-h-screen pb-20 md:pb-8">
       {/* Sticky search + controls */}
-      <div className="workspace-search-toolbar sticky top-16 z-[140] glass-surface border-b border-app">
+      <div className="workspace-search-toolbar sticky top-16 z-[140] border-b border-app">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 space-y-2.5">
           <SearchBar
             onSearch={handleSearchBarSearch}

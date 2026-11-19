@@ -102,8 +102,8 @@ function AdminPortal() {
 
   const authorized = grant && user && grant.profiles.some(item => item.id === user.id);
   const picker = !authorized || switching;
-  return <div className="min-h-screen bg-app text-main">
-    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-app bg-card px-4 py-4 sm:px-6">
+  return <div className="admin-portal min-h-screen bg-app text-main">
+    <header className="admin-gate-header flex flex-wrap items-center justify-between gap-3 border-b border-app bg-card px-4 py-4 sm:px-6">
       <div className="flex items-center gap-3"><BrandLogo /><span className="text-sm font-semibold">Administration</span></div>
       {grant && <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-sec">{profile?.full_name ?? 'Admin'}</span>

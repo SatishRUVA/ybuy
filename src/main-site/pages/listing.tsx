@@ -247,6 +247,17 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
     }
     return false;
   })();
+  const nextAvailableRange = (() => {
+    if (!rangeUnavailable || !datesValid || availabilityLoading || availabilityError || !listing.availabilityEnd) return null;
+    const lastStart = addDaysIso(listing.availabilityEnd, -days);
+    for (let candidate = addDaysIso(startDate, 1); candidate <= lastStart; candidate = addDaysIso(candidate, 1)) {
+      if (candidate < minimumBookingDate) continue;
+      const unavailable = Array.from({ length: days }, (_, index) => addDaysIso(candidate, index))
+        .some((date) => bookedDates.has(date) || blockedDates.has(date));
+      if (!unavailable) return { start: candidate, end: addDaysIso(candidate, days) };
+    }
+    return null;
+  })();
   const isOwner = listing.owner.id === user?.id;
   const canBook = !isOwner && listing.available && quantity <= (listing.availableQuantity ?? 1) && datesValid && !rangeUnavailable && !availabilityLoading && !availabilityError
     && !sameDayBookings.loading && !sameDayBookings.error;
@@ -337,10 +348,16 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       {!isOwner && !datesValid && (
         <Alert tone="warning" className="mt-3">Choose future rental dates with a return after pickup, up to {MAX_BOOKING_RANGE_DAYS} days.</Alert>
       )}
-      {listing.availabilityStart && listing.availabilityEnd && <p className="text-xs text-sec mt-3">Available {listing.availabilityStart} through {addDaysIso(listing.availabilityEnd, -1)}. Return by {listing.availabilityEnd}. Your rental must fit within this window.</p>}
+      {listing.availabilityStart && listing.availabilityEnd && <p className="text-xs text-sec mt-3">Available {formatDateShort(listing.availabilityStart)} through {formatDateShort(addDaysIso(listing.availabilityEnd, -1))}. Return by {formatDateShort(listing.availabilityEnd)}. Your rental must fit within this window.</p>}
       {!listing.available && <Alert tone="warning" className="mt-3">{listing.availabilityExpired ? 'This listing has expired. The owner must update availability before it can be booked again.' : 'This listing is not currently available for booking.'}</Alert>}
       {!isOwner && datesValid && rangeUnavailable && (
-        <Alert tone="warning" className="mt-3">Those dates are already taken. Choose another available range.</Alert>
+        <Alert tone="warning" className="mt-3">
+          <p>Those dates are already taken. Choose another available range.</p>
+          {nextAvailableRange && <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs">Next available for {days} {days === 1 ? 'day' : 'days'}: {formatDateShort(nextAvailableRange.start)} – {formatDateShort(nextAvailableRange.end)}.</p>
+            <Button size="sm" variant="secondary" onClick={() => { setStartDate(nextAvailableRange.start); setEndDate(nextAvailableRange.end); }}>Use suggested dates</Button>
+          </div>}
+        </Alert>
       )}
 
       {listing.pickup && <div className="mt-5 flex gap-2.5 text-sm">

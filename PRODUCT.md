@@ -36,7 +36,7 @@ Renters discover by item, category, location, distance, dates, and filters; insp
 
 ## Brand Commitments
 
-The product is YBuy. Ocean Green is the brand anchor (#0E7C66), paired with premium neutral backgrounds, strong item photography, and restrained supporting accents. Airbnb, Stripe, Linear, and Apple are principle references for marketplace discovery, financial clarity, interface precision, and restraint; their visual identities are not to be copied.
+The product is YBuy. Keep the existing YBuy name and logo assets. The user has explicitly released the Ocean Green palette constraint and delegated a new visual identity to this redesign. Airbnb, Stripe, Linear, and Apple are principle references for marketplace discovery, financial clarity, interface precision, and restraint; their visual identities are not to be copied.
 
 ## Evidence on Hand
 

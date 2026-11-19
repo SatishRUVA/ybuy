@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MessageSquare, User, Menu, Home, Search, Plus, PackagePlus, Calendar, Heart, LogOut, ShieldCheck, Bell, Gavel } from 'lucide-react';
+import { MessageSquare, User, Menu, Home, Search, Plus, PackagePlus, Calendar, LogOut, ShieldCheck, Bell, Gavel } from 'lucide-react';
 import { useRouter, type Route } from '@/router';
 import { useAuth } from '@/auth-context';
 import { useAdminAccess } from '@/lib/admin-access';
@@ -71,25 +71,30 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
     openSignIn();
   }
 
-  const navItems: { label: string; route: Route; icon: typeof Home }[] = [
-    { label: 'Home', route: { name: 'home' }, icon: Home },
-    { label: 'Browse', route: { name: 'search' }, icon: Search },
-    { label: 'Requests', route: { name: 'requests' }, icon: PackagePlus },
-    { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
-    { label: 'Bookings', route: { name: 'dashboard' }, icon: Calendar },
-    { label: 'Messages', route: { name: 'messaging' }, icon: MessageSquare },
-  ];
+  const navItems: { label: string; route: Route; icon: typeof Home }[] = user
+    ? [
+      { label: 'Browse', route: { name: 'search' }, icon: Search },
+      { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
+      ...(!rentalWorkspace ? [{ label: 'My YBuy', route: { name: 'dashboard' } as Route, icon: Calendar }] : []),
+      { label: 'Messages', route: { name: 'messaging' }, icon: MessageSquare },
+    ]
+    : [
+      { label: 'Browse', route: { name: 'search' }, icon: Search },
+      { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
+    ];
 
   const isActive = (r: Route) => {
+    if (r.name === 'search') return route.name === 'search' || route.name === 'listing';
     if (r.name === 'requests') return route.name === 'requests';
     if (r.name === 'bidding') return route.name === 'bidding' || route.name === 'bidding-detail' || route.name === 'auction';
-    if (r.name === 'dashboard') return route.name === 'dashboard' || route.name === 'renter-dashboard' || route.name === 'owner-dashboard';
+    if (r.name === 'dashboard') return ['dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts'].includes(route.name);
+    if (r.name === 'messaging') return route.name === 'messaging' || route.name === 'conversation';
     return route.name === r.name;
   };
 
   if (focused) {
     return (
-      <header className="sticky top-0 z-40 glass-nav glass-nav-top border-b border-app">
+      <header className="ybuy-site-header sticky top-0 z-40 border-b border-app">
         <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-4 px-4 sm:px-6">
           <Wordmark onClick={() => navigate({ name: 'home' })} />
         </div>
@@ -100,7 +105,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
 
   return (
     <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
-      <header className="sticky top-0 z-40 glass-nav glass-nav-top border-b border-app">
+      <header className="ybuy-site-header sticky top-0 z-40 border-b border-app">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16 gap-4">
             <Wordmark onClick={() => navigate({ name: 'home' })} />
@@ -111,8 +116,8 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
                   key={item.label}
                   onClick={() => go(item.route)}
                   aria-current={isActive(item.route) ? 'page' : undefined}
-                  className={`${item.label === 'Bookings' || item.label === 'Messages' ? 'hidden xl:inline-flex' : 'inline-flex'} relative px-2 xl:px-3 h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${
-                    isActive(item.route) ? 'text-main bg-subtle' : 'text-sec hover:text-main hover:bg-subtle'
+                  className={`relative inline-flex px-2 xl:px-3 h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${
+                    isActive(item.route) ? 'text-accent bg-accent-soft' : 'text-sec hover:text-main hover:bg-subtle'
                   }`}
                 >
                   {item.label}
@@ -159,14 +164,6 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
                     </button>
                   )}
                   <button
-                    onClick={() => go({ name: 'favorites' })}
-                    aria-label="Saved items"
-                    aria-current={route.name === 'favorites' ? 'page' : undefined}
-                    className="grid place-items-center w-11 h-11 rounded-card border border-app bg-card text-sec hover:text-favorite hover:border-strong transition-colors duration-fast"
-                  >
-                    <Heart size={18} />
-                  </button>
-                  <button
                     onClick={() => go({ name: 'trust-profile' })}
                     aria-label="Account"
                     aria-current={route.name === 'trust-profile' ? 'page' : undefined}
@@ -185,7 +182,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
               <DialogTrigger asChild>
                 <button
                   aria-label="Open menu"
-                  className="xl:hidden grid shrink-0 place-items-center w-11 h-11 rounded-card hover:bg-subtle transition-colors duration-fast"
+                  className={`grid shrink-0 place-items-center w-11 h-11 rounded-card hover:bg-subtle transition-colors duration-fast ${workspace ? 'xl:hidden' : rentalWorkspace ? 'xl:grid' : 'xl:hidden'}`}
                 >
                   <Menu size={20} className="text-main" />
                 </button>

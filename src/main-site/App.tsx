@@ -131,7 +131,8 @@ function AppContent() {
       <div className={workspace ? 'workspace-body' : focused ? 'workspace-focused' : 'min-w-0 flex-1'}>
         {workspace && <WorkspaceSidebar />}
         <div className="workspace-content">
-          {!focused && ['home', 'search', 'bidding', 'bidding-detail', 'auction'].includes(route.name) && <BiddingTicker />}
+          {!focused && ['home', 'search', 'bidding', 'bidding-detail', 'auction'].includes(route.name)
+            && !(route.name === 'bidding' && route.view === 'my-bids') && <BiddingTicker />}
           <main id="main-content" tabIndex={-1} className="min-w-0 pb-[calc(4rem_+_env(safe-area-inset-bottom))] md:pb-0">
             <Suspense fallback={<PageLoading />}>
               <div key={`${user?.id ?? 'anonymous'}:${route.name}`} className="animate-page-fade">{page}</div>

@@ -1966,7 +1966,11 @@ test('renter booking calendar honors listing dates and discloses the actual depo
   await expect(page.getByText('$50.00 refundable deposit', { exact: true })).toBeVisible();
   const lastAvailable = new Date(`${end}T12:00:00Z`);
   lastAvailable.setUTCDate(lastAvailable.getUTCDate() - 1);
-  await expect(page.getByText(`Available ${start} through ${lastAvailable.toISOString().slice(0, 10)}. Return by ${end}. Your rental must fit within this window.`).first()).toBeVisible();
+  const formatDate = (iso: string) => {
+    const [year, month, day] = iso.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+  await expect(page.getByText(`Available ${formatDate(start)} through ${formatDate(lastAvailable.toISOString().slice(0, 10))}. Return by ${formatDate(end)}. Your rental must fit within this window.`).first()).toBeVisible();
   await page.getByText('Rental dates', { exact: true }).locator('..').getByRole('button').click();
   const calendar = page.getByRole('dialog', { name: 'Choose rental dates' });
   await expect(calendar.getByRole('button', { name: 'Today', exact: true })).toBeDisabled();

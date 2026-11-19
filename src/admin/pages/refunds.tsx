@@ -6,6 +6,7 @@ import { approveRefund, listRefundEvents, listRefundRequests, requestRefund } fr
 import { fmtDate, money, usePagedQuery } from '@/main-site/components/operations/query-utils';
 import { LongField, OperationDialog, TextField } from '@/main-site/components/operations/operation-form';
 import { PageHeader, PagedTable, ReasonDialog, StatusBadge } from '@/main-site/components/operations/shared';
+import { CancellationRefundsSection } from '@/admin/pages/cancellation-refunds';
 
 export function RefundsSection() {
   const { user } = useAuth();
@@ -18,8 +19,9 @@ export function RefundsSection() {
   const canIssue = access?.permissions.includes('refunds.issue');
   const canApprove = canIssue || access?.permissions.includes('refunds.approve') || access?.permissions.includes('refunds.senior');
   return <div className="space-y-4">
-    <PageHeader title="Manual refund requests & reconciliation" subtitle="Cancellation and claim refunds remain disabled pending policy. Automatic return-deposit refunds are shown under Payouts."
+    <PageHeader title="Refunds & cancellations" subtitle="Manage cancellation decisions separately from payment refunds and normal-return deposit releases."
       action={canIssue ? <Button size="sm" onClick={() => setRequestKey(crypto.randomUUID())}>Request refund</Button> : undefined} />
+    <CancellationRefundsSection />
     <Alert tone="warning">These manual requests do not move funds. Test approval defaults: up to $250 single authorization, over $250 second approval, over $1,000 senior approval. Approval never means provider completion.</Alert>
     {notice && <Alert tone="success">{notice}</Alert>}
     <PagedTable query={query} rowKey={(row) => row.id} emptyTitle="No refund requests" columns={[

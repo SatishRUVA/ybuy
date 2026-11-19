@@ -37,6 +37,7 @@ export function BiddingTicker() {
   const contentId = useId();
   const offers = rows?.filter((row) => Date.parse(row.expires_at) > now).slice(0, 3) ?? [];
   const bidCount = offers.reduce((total, row) => total + row.bid_count, 0);
+  const hasClosingAuction = offers.some((row) => Date.parse(row.expires_at) - now <= 60 * 60 * 1000);
 
   useEffect(() => {
     if (!enabled) return;
@@ -95,8 +96,8 @@ export function BiddingTicker() {
                   {motionStopped ? <Play size={12} aria-hidden="true" /> : <Pause size={12} aria-hidden="true" />}
                 </button>
               </div>
-              <h2>Closing soon</h2>
-              <p className="bid-banner-subtitle">{offers.length} live offer{offers.length === 1 ? '' : 's'} taking bids</p>
+              <h2>{hasClosingAuction ? 'Ending soon' : 'Live auctions'}</h2>
+              <p className="bid-banner-subtitle">{offers.length} auction{offers.length === 1 ? '' : 's'} accepting bids</p>
             </header>
             <div className="bid-banner-viewport" tabIndex={0} role="group" aria-label="Live rental offers">
               <div className="bid-banner-track">
@@ -131,7 +132,7 @@ export function BiddingTicker() {
               </div>
             </div>
             <p className="sr-only" role="status" aria-atomic="true">
-              {offers.length} live offer{offers.length === 1 ? '' : 's'} taking bids, with {bidCount} bids across the featured offers.
+              {offers.length} auction{offers.length === 1 ? '' : 's'} accepting bids, with {bidCount} bids across the featured auctions.
             </p>
           </>
         )}

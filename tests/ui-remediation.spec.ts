@@ -647,6 +647,33 @@ test('listing excludes private offers and protects unavailable dates regardless 
   await expect(page.getByText('Those dates are already taken.', { exact: false })).toBeVisible();
 });
 
+test('listing offers a next available range without changing the renter selection until chosen', async ({ page }) => {
+  test.slow();
+  const dateAfter = (days: number) => {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() + days);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+  const pickup = dateAfter(2);
+  const scenario: Scenario = {
+    listingOverrides: { availability_start: pickup, availability_end: dateAfter(10) },
+    unavailableDates: { booked: [pickup], blocked: [] },
+  };
+  await setup(page, scenario, renterId);
+  await page.goto(`${appUrl}/listing/${listingId}`, { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByText('Those dates are already taken.', { exact: false })).toBeVisible();
+  const request = page.getByRole('button', { name: 'Request to book', exact: true });
+  await expect(request).toBeDisabled();
+  const useSuggestedDates = page.getByRole('button', { name: 'Use suggested dates', exact: true });
+  await expect(useSuggestedDates).toBeVisible();
+  await useSuggestedDates.click();
+
+  await expect(page.getByText('Those dates are already taken.', { exact: false })).toHaveCount(0);
+  await expect(request).toBeEnabled();
+});
+
 test('owners see a read-only listing preview without renter controls', async ({ page }) => {
   await setup(page, { bidding: true, listingOverrides: { negotiation_enabled: true } }, ownerId);
   await page.goto(`${appUrl}/listing/${listingId}`, { waitUntil: 'domcontentloaded' });

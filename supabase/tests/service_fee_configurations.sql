@@ -57,6 +57,25 @@ select is((select count(*)::integer from public.admin_audit_log
   3,'A scheduled finite period and its continuation are audited');
 
 set local role authenticated;
+set local request.jwt.claims='{"sub":"a9100000-0000-4000-8000-000000000001","role":"authenticated","session_id":"a9200000-0000-4000-8000-000000000001","exp":4102444800}';
+select lives_ok($$select public.admin_apply_service_fee_configuration_now(
+  20,40,'Immediate fee update')$$,'Super Admin applies a fee allocation immediately');
+select is((public.get_effective_service_fee_configuration(clock_timestamp())->>'total_fee_pct')::numeric,
+  0.2::numeric,'Immediate update applies to new quotes now');
+select is((public.get_effective_service_fee_configuration(clock_timestamp())->>'renter_service_fee_pct')::numeric,
+  0.08::numeric,'Immediate update uses the selected renter share');
+select is((public.get_effective_service_fee_configuration(clock_timestamp())->>'owner_service_fee_pct')::numeric,
+  0.12::numeric,'Owner allocation receives the remaining fee');
+select is((public.get_effective_service_fee_configuration(
+  (select starts_at+interval '1 hour' from service_fee_test_window))->>'total_fee_pct')::numeric,
+  0.125::numeric,'Immediate update preserves the already scheduled future configuration');
+reset role;
+select is((select count(*)::integer from public.admin_audit_log
+  where actor_id='a9100000-0000-4000-8000-000000000001'
+    and action='service_fee.apply_now'),
+  1,'Immediate fee changes have a distinct audit event');
+
+set local role authenticated;
 set local request.jwt.claims='{"sub":"a9100000-0000-4000-8000-000000000002","role":"authenticated","session_id":"a9200000-0000-4000-8000-000000000002","exp":4102444800}';
 select ok(public.has_admin_permission('config.manage'),
  'Regular admin has an active session and the configuration permission');
@@ -64,6 +83,10 @@ select throws_ok($$select public.admin_schedule_service_fee_configuration(
   10,100,(select ends_at+interval '1 day' from service_fee_test_window),null,'Non-super admin attempt')$$,
  '42501','Only a Super Admin can change service fee configurations',
  'Regular config.manage admin cannot schedule fee configurations');
+select throws_ok($$select public.admin_apply_service_fee_configuration_now(
+  10,100,'Non-super admin attempt')$$,
+ '42501','Only a Super Admin can change service fee configurations',
+ 'Regular config.manage admin cannot apply fee changes immediately');
 reset role;
 select is((select count(*)::integer from public.admin_audit_log
   where actor_id='a9100000-0000-4000-8000-000000000002'

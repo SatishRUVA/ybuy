@@ -727,7 +727,7 @@ for (const width of [390, 824, 1440]) {
       ['Messages', '/messages', 'Messages'],
       ['Notifications', '/notifications', 'Notifications'],
       ['Saved items', '/favorites', 'Saved items'],
-      ['Profile & settings', '/profile', 'Your profile'],
+      ['Profile & settings', '/profile', 'Profile & settings'],
     ]) {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
       await expect(page).toHaveURL(url);
@@ -797,8 +797,18 @@ for (const width of [390, 768, 1440]) {
     await page.screenshot({ path: testInfo.outputPath(`renting-${width}.png`), animations: 'disabled' });
     await navigation.getByRole('button', { name: 'My listings', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Inventory', exact: true })).toBeVisible();
+    await page.route('**/rest/v1/rental_settlements?*', route => route.fulfill({ json: [
+      { booking_id: '70000000-0000-4000-8000-000000000001', owner_amount: 7, transfer_status: 'pending', transfer_confirmed_at: null },
+      { booking_id: '70000000-0000-4000-8000-000000000002', owner_amount: 12, transfer_status: 'reversed', transfer_confirmed_at: null },
+    ] }));
     await navigation.getByRole('button', { name: 'Earnings & payouts', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Earnings', exact: true })).toBeVisible();
+    await expect(page.getByText('Estimated owner net', { exact: true })).toBeVisible();
+    await expect(page.getByText('Awaiting Stripe transfer', { exact: true })).toBeVisible();
+    await expect(page.getByText('$7.00', { exact: true })).toBeVisible();
+    await expect(page.getByText('Reversed Stripe transfers: $12.00.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Contact support', exact: true })).toBeVisible();
+    await expect(page.getByText('A transfer to Stripe does not confirm a bank payout.', { exact: false })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
@@ -841,6 +851,39 @@ test('rental workspace preserves populated booking actions and disclosed invento
   await expect(page.getByRole('checkbox', { name: `Select ${listing.title}`, exact: true })).toBeVisible();
   await page.getByRole('checkbox', { name: `Select ${listing.title}`, exact: true }).check();
   await expect(page.getByRole('button', { name: 'Remove selected (1)', exact: true })).toBeEnabled();
+});
+
+test('past rentals show persisted cancellation and payment refund status', async ({ page }) => {
+  await prepare(page, true);
+  const bookingId = '80000000-0000-4000-8000-000000000099';
+  await page.route('**/rest/v1/bookings?*', route => {
+    const url = new URL(route.request().url());
+    return route.fulfill({ json: url.searchParams.has('renter_id') ? [{
+      id: bookingId, booking_reference: 'YB-REFUND-TEST', listing_id: listingId,
+      owner_id: listing.owner_id, renter_id: userId, start_date: futureDate(2), end_date: futureDate(3),
+      quantity: 1, status: 'cancelled', daily_rate: 25, days: 2, subtotal: 50,
+      service_fee_amount: 5, insurance_amount: 0, deposit: 0, total: 55, created_at: new Date().toISOString(),
+      listing: { id: listingId, title: listing.title, listing_images: [] },
+      renter: { id: userId, full_name: 'Main Site Renter', avatar_url: null },
+      owner: { id: listing.owner_id, full_name: 'Camera Owner', avatar_url: null },
+    }] : [] });
+  });
+  await page.route('**/rest/v1/booking_cancellations?*', route => route.fulfill({ json: [{
+    booking_id: bookingId, reason: 'Plans changed before pickup.', created_at: new Date().toISOString(),
+  }] }));
+  await page.route('**/rest/v1/cancellation_refund_cases?*', route => route.fulfill({ json: [{
+    booking_id: bookingId, status: 'processing', currency: 'usd', original_payment_amount: 55,
+    eligible_amount: 40, refund_amount: 40, provider_refund_id: 're_test_123', decision_reason: null,
+  }] }));
+  await page.goto('/dashboard?tab=renting', { waitUntil: 'domcontentloaded' });
+  const activity = page.locator('.rental-history');
+  await activity.getByRole('button', { name: /^Past/ }).click();
+  const refundSummary = page.getByRole('heading', { name: 'Booking payment refund' }).locator('xpath=../..');
+  await expect(refundSummary).toContainText('Processing');
+  await expect(refundSummary).toContainText('$40.00 approved; payment-provider confirmation is pending.');
+  await expect(refundSummary).toContainText('Original payment: $55.00');
+  await expect(refundSummary).toContainText('re_test_123');
+  await expect(refundSummary).toContainText('Plans changed before pickup.');
 });
 
 test('workspace keeps creation and checkout flows free of competing navigation', async ({ page }) => {
@@ -1255,7 +1298,7 @@ for (const width of [390, 768, 1440]) {
       ['/messages', 'Messages'],
       ['/requests', 'Item requests'],
       ['/need-something', 'Request an item'],
-      ['/profile', 'Your profile'],
+      ['/profile', 'Profile & settings'],
       ['/guidelines', 'Community guidelines'],
     ]) {
       await page.goto(url, { waitUntil: 'domcontentloaded' });

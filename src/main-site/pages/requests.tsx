@@ -23,7 +23,7 @@ import { RequestFulfillment } from '../components/request-fulfillment';
 import { PageBackButton } from '@/main-site/components/page-back-button';
 import {
   ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, DollarSign,
-  HeartHandshake, MapPin, PackagePlus, Plus, Search,
+  HeartHandshake, MapPin, PackagePlus, Plus, Search, SlidersHorizontal, ChevronDown,
 } from 'lucide-react';
 
 type Category = { id: string; name: string };
@@ -176,7 +176,7 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
         </Alert>}
 
         {tab === 'browse' && enabled && <>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 rounded-card-xl border border-app bg-card p-4 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1.2fr]">
             <label className="text-xs font-semibold text-sec">Search item
               <span className="relative block mt-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                 <input value={search} maxLength={100} onChange={(e) => { setPage(0); setSearch(e.target.value); }} placeholder="Projector, drill…" className={fieldClass('pl-9 !h-10')} />
@@ -204,21 +204,30 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
                 {[5, 10, 25, 50].map(miles => <option value={miles} key={miles}>Within {miles} miles</option>)}<option value="all">All distances</option>
               </select>
             </label>
-            <label className="text-xs font-semibold text-sec">Maximum daily budget
-              <input type="number" min="0.01" step="0.01" value={maxBudget} onChange={(e) => { setPage(0); setMaxBudget(e.target.value); }} placeholder="Any budget" className={fieldClass('mt-1 !h-10')} />
-            </label>
-            <label className="text-xs font-semibold text-sec">Requests starting by
-              <DatePicker label="Requests starting by" value={endDate} min={todayIso()} onChange={(date) => { setPage(0); setEndDate(date); }} className="mt-1" />
-            </label>
-            <label className="text-xs font-semibold text-sec">Requests ending after
-              <DatePicker label="Requests ending after" value={startDate} min={todayIso()} onChange={(date) => { setPage(0); setStartDate(date); }} className="mt-1" />
-            </label>
-            <label className="text-xs font-semibold text-sec">Sort by
-              <select value={sort} onChange={(e) => { setPage(0); setSort(e.target.value as typeof sort); }} className={fieldClass('mt-1 !h-10')}>
-                <option value="newest">Newest</option><option value="earliest">Earliest dates</option><option value="budget">Budget (low to high)</option>
-              </select>
-            </label>
           </div>
+          <details className="group rounded-card-lg border border-app bg-card">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-4 py-2 text-sm font-semibold text-main [&::-webkit-details-marker]:hidden">
+              <SlidersHorizontal size={16} className="text-accent" aria-hidden="true" />
+              More filters
+              <ChevronDown size={16} className="ml-auto text-muted transition-transform group-open:rotate-180" aria-hidden="true" />
+            </summary>
+            <div className="grid gap-3 border-t border-app p-4 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="text-xs font-semibold text-sec">Maximum daily budget
+                <input type="number" min="0.01" step="0.01" value={maxBudget} onChange={(e) => { setPage(0); setMaxBudget(e.target.value); }} placeholder="Any budget" className={fieldClass('mt-1 !h-10')} />
+              </label>
+              <label className="text-xs font-semibold text-sec">Needed by
+                <DatePicker label="Requests starting by" value={endDate} min={todayIso()} onChange={(date) => { setPage(0); setEndDate(date); }} className="mt-1" />
+              </label>
+              <label className="text-xs font-semibold text-sec">Available after
+                <DatePicker label="Requests ending after" value={startDate} min={todayIso()} onChange={(date) => { setPage(0); setStartDate(date); }} className="mt-1" />
+              </label>
+              <label className="text-xs font-semibold text-sec">Sort by
+                <select value={sort} onChange={(e) => { setPage(0); setSort(e.target.value as typeof sort); }} className={fieldClass('mt-1 !h-10')}>
+                  <option value="newest">Newest</option><option value="earliest">Earliest dates</option><option value="budget">Budget (low to high)</option>
+                </select>
+              </label>
+            </div>
+          </details>
           {areaChoices.length > 0 && <div role="group" aria-label="Choose nearby request area" className="flex flex-wrap gap-2">
             {areaChoices.map((choice, index) => <Button key={index} size="sm" variant="secondary" onClick={() => { setArea(choice); setLocationFilter(locationLabel(choice)); setAreaChoices([]); setPage(0); }}>{locationLabel(choice)}</Button>)}
           </div>}

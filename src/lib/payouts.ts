@@ -5,7 +5,7 @@ export interface DbPayoutRow {
   booking_id: string;
   owner_id: string;
   amount: number;
-  status: 'pending' | 'paid';
+  status: 'pending' | 'processing' | 'paid' | 'reversed';
   paid_at: string | null;
   notes: string | null;
 }
@@ -17,12 +17,17 @@ export async function fetchPayoutsByOwner(ownerId: string): Promise<Map<string, 
     .eq('bookings.owner_id', ownerId);
   if (error) throw error;
   const map = new Map<string, DbPayoutRow>();
-  for (const row of data ?? []) map.set(row.booking_id, {
-    id: row.booking_id, booking_id: row.booking_id, owner_id: ownerId, amount: Number(row.owner_amount),
-    status: row.transfer_status === 'succeeded' ? 'paid' : 'pending',
-    paid_at: row.transfer_status === 'succeeded' ? row.transfer_confirmed_at : null,
-    notes: 'Stripe Connect transfer, not a bank payout',
-  });
+  for (const row of data ?? []) {
+    const status: DbPayoutRow['status'] = row.transfer_status === 'succeeded' ? 'paid'
+      : row.transfer_status === 'reversed' ? 'reversed'
+        : row.transfer_status === 'processing' ? 'processing' : 'pending';
+    map.set(row.booking_id, {
+      id: row.booking_id, booking_id: row.booking_id, owner_id: ownerId, amount: Number(row.owner_amount),
+      status,
+      paid_at: status === 'paid' ? row.transfer_confirmed_at : null,
+      notes: 'Stripe Connect transfer, not a bank payout',
+    });
+  }
   return map;
 }
 

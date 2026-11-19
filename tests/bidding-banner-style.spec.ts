@@ -35,6 +35,8 @@ window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type; window
 
     const ribbon = page.getByRole('region', { name: 'Live bidding' });
     const offer = ribbon.getByRole('link', { name: /Pressure washer/ });
+    await expect(ribbon.getByRole('heading', { name: 'Live auctions', exact: true })).toBeVisible();
+    await expect(ribbon.getByText('1 auction accepting bids', { exact: true })).toBeVisible();
     await expect(offer).toBeVisible();
     await expect(offer).toHaveAttribute('href', '/bidding/30000000-0000-4000-8000-000000000001');
     await expect(ribbon).toHaveCSS('background-color', 'rgb(245, 245, 245)');

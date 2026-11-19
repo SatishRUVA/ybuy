@@ -10,7 +10,7 @@ export function RewardsPanel({ compact = false }: { compact?: boolean }) {
   const { user } = useAuth();
   const { navigate } = useRouter();
   const { data, loading, error, reload } = useLoad(getMyRewards, [user?.id]);
-  return <Surface className="p-5 space-y-3">
+  return <Surface className={`${compact ? 'rewards-compact' : 'p-5'} space-y-3`}>
     <h2 className="font-semibold font-display text-main">YBuy Points <span className="text-xs font-normal text-sec">Test only</span></h2>
     {loading && <Skeleton className="h-16 w-full" />}
     {error && <Alert tone="error">{error}<Button variant="secondary" onClick={reload}>Retry rewards</Button></Alert>}

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import {
-  ArrowLeft, BarChart3, Banknote, CalendarCheck, CreditCard, Gift, LayoutDashboard,
+  ArrowLeft, BarChart3, Banknote, CalendarCheck, ChevronDown, CreditCard, Gift, LayoutDashboard,
   Gavel, LifeBuoy, Lock, Menu, Package, Search, Shield, ShieldCheck, Star, Tags, Users, SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react';
 import { useRouter } from '@/router';
-import { Badge, EmptyState, IconButton } from '@/main-site/components/ui';
+import { Badge, Button, EmptyState } from '@/main-site/components/ui';
 import { Skeleton } from '@/main-site/components/skeleton';
 import { useAdminAccess, type AdminAccess, type AdminPermission } from '@/admin/api';
 import { Dialog, DialogDescription, DialogTitle, SheetContent } from '@/main-site/components/shadcn/dialog';
@@ -174,31 +174,30 @@ export function AdminPage({ section, recordId }: { section?: string; recordId?: 
   };
 
   return (
-    <div className="min-h-screen bg-app">
-      <header className="sticky top-0 z-40 h-14 flex items-center gap-3 px-4 bg-card border-b border-app">
-        <IconButton label="Open admin menu" variant="ghost" size="sm" className="lg:hidden" onClick={() => setMenuOpen(true)}><Menu size={18} /></IconButton>
-        <a href="https://ybuy-e2e-test.vercel.app/" className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-sec hover:text-main transition-colors duration-fast">
+    <div className="admin-portal min-h-screen bg-app">
+      <header className="admin-topbar sticky top-0 z-40 h-14 flex items-center gap-3 px-4 bg-card border-b border-app">
+        <Button aria-label="Open admin menu" variant="secondary" size="sm" className="shrink-0" icon={<Menu size={16} />} trailingIcon={<ChevronDown size={14} />} onClick={() => setMenuOpen(true)}>
+          <span className="hidden sm:inline">{active.label}</span>
+        </Button>
+        <a href="/" className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-sec hover:text-main transition-colors duration-fast">
           <ArrowLeft size={15} /> Back to YBuy
         </a>
         <h1 className="font-display font-bold text-main ml-2 hidden sm:block">Admin console</h1>
         <AdminGlobalSearch access={access} onSelect={select} />
         <Badge tone="accent">{access.role.replace('_', ' ')}</Badge>
       </header>
-      <div className="lg:grid lg:grid-cols-[16rem_1fr]">
-        <aside className="hidden lg:block sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto bg-card border-r border-app">
+      <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
+        <SheetContent className="w-80 max-w-[90vw]">
+          <div className="border-b border-app px-5 pb-4 pt-6 pr-14">
+            <DialogTitle>Admin sections</DialogTitle>
+            <DialogDescription className="mt-1">Choose a workspace. Your access controls which sections appear.</DialogDescription>
+          </div>
           <Nav access={access} active={active.id} onSelect={select} />
-        </aside>
-        <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
-          <SheetContent>
-            <DialogTitle className="sr-only">Admin navigation</DialogTitle>
-            <DialogDescription className="sr-only">Choose an admin section</DialogDescription>
-            <div className="pt-10"><Nav access={access} active={active.id} onSelect={select} /></div>
-          </SheetContent>
-        </Dialog>
-        <main className="min-w-0 px-4 sm:px-6 py-6 max-w-[1200px] w-full">
-          <Section key={`${active.id}:${recordId ?? ''}`} id={active.id} recordId={recordId} access={access} onSelect={select} />
-        </main>
-      </div>
+        </SheetContent>
+      </Dialog>
+      <main className="admin-content mx-auto min-w-0 px-4 sm:px-6 py-6 w-full max-w-[1440px]">
+        <Section key={`${active.id}:${recordId ?? ''}`} id={active.id} recordId={recordId} access={access} onSelect={select} />
+      </main>
     </div>
   );
 }

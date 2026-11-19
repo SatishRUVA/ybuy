@@ -1163,7 +1163,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                     {[1, 7, 30].map(days => {
                       const quote = earningsQuotes[days];
                       return quote && <div key={days} className="flex justify-between gap-3">
-                        <span className="text-sec">{days === 1 ? '1 day' : `${days}-day rental`} · owner fee ${quote.owner_service_fee_amount?.toFixed(2)}</span>
+                        <span className="text-sec">{days === 1 ? '1 day' : days === 7 ? '1 week' : '1 month'} · owner fee ${quote.owner_service_fee_amount?.toFixed(2)}</span>
                         <strong className="text-main tnum">${quote.estimated_owner_net?.toFixed(2)}</strong>
                       </div>;
                     })}

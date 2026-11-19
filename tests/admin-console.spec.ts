@@ -124,6 +124,8 @@ test('admin queues follow task groups and stay permission-gated on desktop and p
   const navigation = page.getByRole('navigation', { name: 'Admin', exact: true });
   await expect(page.getByRole('banner')).toHaveCount(2);
   await expect(page.getByRole('heading', { name: 'Listings', exact: true })).toBeVisible();
+  await expect(navigation).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open admin menu' }).click();
   await expect(navigation.getByText('Daily Operations', { exact: true })).toBeVisible();
   await expect(navigation.getByText('Customer Care', { exact: true })).toBeVisible();
   await expect(navigation.getByText('Disputes & claims', { exact: true })).toBeVisible();
