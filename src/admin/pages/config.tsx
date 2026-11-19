@@ -7,7 +7,7 @@ import {
   listCategories, listSettings, listCountryOptions, setFeatureFlag, updateSetting, upsertCategory,
   saveDepositRule,
   getAgreementTerms,publishAgreementTerms,publishTestDummyAgreementTerms,
-  listServiceFeeConfigurations, scheduleServiceFeeConfiguration,
+  listServiceFeeConfigurations, applyServiceFeeConfigurationNow, scheduleServiceFeeConfiguration,
   type AdminCategory, type AdminSetting, type FeatureFlag,
 } from '@/admin/api';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/main-site/components/shadcn/dialog';
@@ -158,7 +158,8 @@ function ServiceFeeConfigurationSection({ isSuperAdmin }: { isSuperAdmin: boolea
   const [dialogOpen, setDialogOpen] = useState(false);
   const [totalFee, setTotalFee] = useState('10');
   const [renterShare, setRenterShare] = useState(100);
-  const [effectiveFrom, setEffectiveFrom] = useState(localDateTimeValue(new Date(Date.now() + 120_000)));
+  const [mode, setMode] = useState<'now' | 'scheduled'>('now');
+  const [effectiveFrom, setEffectiveFrom] = useState('');
   const [effectiveTo, setEffectiveTo] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const current = data?.find(row => (row.effective_from === '-infinity' ? -Infinity : new Date(row.effective_from).getTime()) <= Date.now()
@@ -167,9 +168,10 @@ function ServiceFeeConfigurationSection({ isSuperAdmin }: { isSuperAdmin: boolea
   const renterRate = Number.isFinite(total) ? total * renterShare / 100 : 0;
   const ownerRate = Number.isFinite(total) ? total - renterRate : 0;
 
-  function openSchedule() {
+  function openFeeEditor(nextMode: 'now' | 'scheduled') {
     setTotalFee(current ? String(Number(current.total_fee_pct) * 100) : '10');
     setRenterShare(current?.renter_share_percent ?? 100);
+    setMode(nextMode);
     setEffectiveFrom(localDateTimeValue(new Date(Date.now() + 120_000)));
     setEffectiveTo('');
     setDialogOpen(true);
@@ -180,9 +182,12 @@ function ServiceFeeConfigurationSection({ isSuperAdmin }: { isSuperAdmin: boolea
       <CardHeader className="flex-row items-start justify-between gap-3">
         <div>
           <CardTitle>Service-fee allocation</CardTitle>
-          <CardDescription className="mt-1">Schedules the total fee and its renter/owner allocation for future bookings only. Existing booking and settlement snapshots remain unchanged.</CardDescription>
+          <CardDescription className="mt-1">Changes apply immediately to new quotes and bookings. Existing booking and settlement snapshots remain unchanged.</CardDescription>
         </div>
-        {isSuperAdmin && <Button size="sm" icon={<Plus size={14} />} onClick={openSchedule}>Schedule fee change</Button>}
+        {isSuperAdmin && <div className="flex flex-wrap gap-2">
+          <Button size="sm" icon={<Plus size={14} />} onClick={() => openFeeEditor('now')}>Adjust fees now</Button>
+          <Button size="sm" variant="secondary" onClick={() => openFeeEditor('scheduled')}>Schedule fee change</Button>
+        </div>}
       </CardHeader>
       <CardContent>
         {notice && <Alert tone="success" className="mb-3">{notice}</Alert>}
@@ -199,26 +204,37 @@ function ServiceFeeConfigurationSection({ isSuperAdmin }: { isSuperAdmin: boolea
             {row.updated_by && <p className="text-xs text-sec">Last period update: {row.updated_reason} · actor {row.updated_by}</p>}
           </li>)}
         </ul>}
-        {!isSuperAdmin && <p className="mt-3 text-xs text-sec">Only a Super Admin can schedule changes. The server independently enforces this permission.</p>}
+        {!isSuperAdmin && <p className="mt-3 text-xs text-sec">Only a Super Admin can change fees. The server independently enforces this permission.</p>}
       </CardContent>
     </Card>
     <ReasonDialog
       open={dialogOpen} onOpenChange={open => setDialogOpen(open)}
-      title="Schedule service-fee allocation"
-      description="Only future bookings use this configuration. The total fee must remain within 0–30%; the owner allocation is always the remainder."
-      confirmLabel="Schedule fee change"
+      title={mode === 'now' ? 'Update service-fee allocation' : 'Schedule service-fee allocation'}
+      description={mode === 'now'
+        ? 'The total fee must remain within 0–30%. The selected renter share applies now to new quotes; the owner receives the remainder. Existing bookings keep their saved fees.'
+        : 'The total fee must remain within 0–30%; the owner receives the remainder. Existing booking and settlement snapshots remain unchanged.'}
+      confirmLabel={mode === 'now' ? 'Apply fee change now' : 'Schedule fee change'}
       onConfirm={async reason => {
         const totalPercent = Number(totalFee);
-        const from = new Date(effectiveFrom);
-        const to = effectiveTo ? new Date(effectiveTo) : null;
         if (!Number.isFinite(totalPercent) || totalPercent < 0 || totalPercent > 30
-          || !Number.isInteger(renterShare) || renterShare < 0 || renterShare > 100
-          || !Number.isFinite(from.getTime()) || (to && !Number.isFinite(to.getTime()))
-          || (to && to <= from)) {
-          throw new Error('Enter a total fee from 0 to 30%, an integer renter allocation from 0 to 100%, and a valid effective period.');
+          || !Number.isInteger(renterShare) || renterShare < 0 || renterShare > 100) {
+          throw new Error('Enter a total fee from 0 to 30% and an integer renter allocation from 0 to 100%.');
         }
-        await scheduleServiceFeeConfiguration(totalPercent, renterShare, from.toISOString(), to?.toISOString() ?? null, reason);
-        setNotice('Service-fee configuration scheduled. Existing booking terms are unchanged.');
+        if (mode === 'now') {
+          await applyServiceFeeConfigurationNow(totalPercent, renterShare, reason);
+          setNotice('Service-fee configuration applied to new quotes and bookings. Existing booking terms are unchanged.');
+        } else {
+          const from = new Date(effectiveFrom);
+          const to = effectiveTo ? new Date(effectiveTo) : null;
+          if (!Number.isFinite(from.getTime())
+            || (to && (!Number.isFinite(to.getTime()) || to <= from))) {
+            throw new Error('Enter a valid effective period.');
+          }
+          await scheduleServiceFeeConfiguration(
+            totalPercent, renterShare, from.toISOString(), to?.toISOString() ?? null, reason,
+          );
+          setNotice('Service-fee configuration scheduled. Existing booking terms are unchanged.');
+        }
         setDialogOpen(false);
         reload();
       }}
@@ -228,18 +244,22 @@ function ServiceFeeConfigurationSection({ isSuperAdmin }: { isSuperAdmin: boolea
       </label>
       <label className="block text-sm font-semibold">Renter share · owner receives the remainder ({renterShare}% / {100 - renterShare}%)
         <input className="mt-2 block w-full accent-[var(--accent)]" type="range" min="0" max="100" step="1" value={renterShare}
-          onChange={event => setRenterShare(Number(event.target.value))} aria-label="Renter share of the total service fee" />
+          onChange={event => setRenterShare(Number(event.target.value))}
+          aria-label="Renter share of the total service fee"
+          aria-valuetext={`${renterShare}% renter, ${100 - renterShare}% owner`} />
       </label>
       <div className="rounded-card bg-subtle p-3 text-sm">
         <p>Total: <strong>{Number.isFinite(total) ? total.toFixed(2) : '0.00'}%</strong></p>
         <p>Renter: <strong>{renterRate.toFixed(2)}%</strong> · Owner: <strong>{ownerRate.toFixed(2)}%</strong></p>
       </div>
-      <label className="block text-sm font-semibold">Effective from
-        <input className={fieldClass('mt-1')} type="datetime-local" value={effectiveFrom} onChange={event => setEffectiveFrom(event.target.value)} required />
-      </label>
-      <label className="block text-sm font-semibold">Effective until (optional)
-        <input className={fieldClass('mt-1')} type="datetime-local" value={effectiveTo} onChange={event => setEffectiveTo(event.target.value)} />
-      </label>
+      {mode === 'scheduled' && <>
+        <label className="block text-sm font-semibold">Effective from
+          <input className={fieldClass('mt-1')} type="datetime-local" value={effectiveFrom} onChange={event => setEffectiveFrom(event.target.value)} required />
+        </label>
+        <label className="block text-sm font-semibold">Effective until (optional)
+          <input className={fieldClass('mt-1')} type="datetime-local" value={effectiveTo} onChange={event => setEffectiveTo(event.target.value)} />
+        </label>
+      </>}
     </ReasonDialog>
   </>;
 }

@@ -193,6 +193,122 @@ export interface RefundEvent {
 export const listRefundEvents = (limit: number, offset: number) =>
   operationRpc<Paged<RefundEvent>>('admin_list_refund_events', { p_limit: limit, p_offset: offset });
 
+export interface BookingCancellationCase {
+  cancellation_id: string;
+  booking_id: string;
+  refund_case_id: string | null;
+  initiator_role: string;
+  cancellation_type: string;
+  reason: string;
+  cancellation_created_at: string;
+  refund_status: string | null;
+  currency: string | null;
+  original_payment_amount: number | null;
+  eligible_amount: number | null;
+  refund_amount: number | null;
+  payment_id: string | null;
+  payment_intent_id: string | null;
+  stripe_checkout_session_id: string | null;
+  payment_status: string | null;
+  provider_refund_id: string | null;
+  provider_status: string | null;
+  policy_version: number | null;
+  decision_reason: string | null;
+  attempt: number | null;
+  booking_reference: string;
+  booking_status: string;
+  listing_title: string;
+}
+
+export interface BookingCancellationPolicy {
+  id: string;
+  version: number;
+  effective_from: string;
+  effective_to: string | null;
+  renter_cutoff_hours: number;
+  renter_rental_refund_percent: number;
+  owner_cutoff_hours: number;
+  owner_rental_refund_percent: number;
+  automatic_processing: boolean;
+}
+
+export interface BookingCancellationEvent {
+  id: number;
+  actor_id: string | null;
+  actor_role: string;
+  event_type: string;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export function listBookingCancellations(filters: {
+  refundStatus: string;
+  initiatorRole: string;
+  bookingStatus: string;
+  reason: string;
+  from: string;
+  to: string;
+}, limit: number, offset: number) {
+  return operationRpc<Paged<BookingCancellationCase>>('admin_list_booking_cancellations', {
+    p_refund_status: filters.refundStatus === 'all' ? null : filters.refundStatus,
+    p_initiator_role: filters.initiatorRole === 'all' ? null : filters.initiatorRole,
+    p_booking_status: filters.bookingStatus === 'all' ? null : filters.bookingStatus,
+    p_reason: filters.reason || null,
+    p_from: filters.from ? new Date(`${filters.from}T00:00:00`).toISOString() : null,
+    p_to: filters.to ? new Date(new Date(`${filters.to}T00:00:00`).getTime() + 86400000).toISOString() : null,
+    p_limit: limit,
+    p_offset: offset,
+  });
+}
+
+export const listBookingCancellationPolicies = () =>
+  operationRpc<BookingCancellationPolicy[]>('admin_list_booking_cancellation_policies');
+
+export function saveBookingCancellationPolicy(form: FormData) {
+  const effectiveFrom = new Date(formText(form, 'effective_from'));
+  const effectiveToValue = formText(form, 'effective_to');
+  const effectiveTo = effectiveToValue ? new Date(effectiveToValue) : null;
+  if (!Number.isFinite(effectiveFrom.getTime()) || effectiveTo && !Number.isFinite(effectiveTo.getTime())) {
+    throw new Error('Enter valid policy dates.');
+  }
+  const number = (name: string) => {
+    const value = formText(form, name);
+    const parsed = Number(value);
+    if (!value || !Number.isFinite(parsed)) throw new Error('Enter all policy cutoffs and refund percentages.');
+    return parsed;
+  };
+  const checked = (name: string) => form.get(name) === 'on';
+  return operationRpc('admin_save_booking_cancellation_policy', {
+    p_effective_from: effectiveFrom.toISOString(),
+    p_effective_to: effectiveTo?.toISOString() ?? null,
+    p_renter_cutoff_hours: number('renter_cutoff_hours'),
+    p_renter_rental_refund_percent: number('renter_rental_refund_percent'),
+    p_renter_refund_service_fee: checked('renter_refund_service_fee'),
+    p_renter_refund_delivery_fee: checked('renter_refund_delivery_fee'),
+    p_renter_refund_tax: checked('renter_refund_tax'),
+    p_renter_refund_insurance: checked('renter_refund_insurance'),
+    p_renter_refund_deposit: checked('renter_refund_deposit'),
+    p_owner_cutoff_hours: number('owner_cutoff_hours'),
+    p_owner_rental_refund_percent: number('owner_rental_refund_percent'),
+    p_owner_refund_service_fee: checked('owner_refund_service_fee'),
+    p_owner_refund_delivery_fee: checked('owner_refund_delivery_fee'),
+    p_owner_refund_tax: checked('owner_refund_tax'),
+    p_owner_refund_insurance: checked('owner_refund_insurance'),
+    p_owner_refund_deposit: checked('owner_refund_deposit'),
+    p_automatic_processing: checked('automatic_processing'),
+    p_reason: formText(form, 'reason'),
+  });
+}
+
+export const decideBookingCancellationRefund = (
+  id: string, action: 'approve' | 'reject', amount: number | null, reason: string, override = false,
+) => operationRpc('admin_decide_cancellation_refund', {
+  p_refund_case_id: id, p_action: action, p_amount: amount, p_reason: reason, p_override: override,
+});
+
+export const getBookingCancellationAudit = (bookingId: string) =>
+  operationRpc<BookingCancellationEvent[]>('get_booking_cancellation_audit', { p_booking_id: bookingId });
+
 export interface PromotionRedemption {
   id: string; booking_id: string; user_id: string; discount_amount: number; created_at: string;
 }

@@ -4,7 +4,7 @@ import { useAuth } from '@/auth-context';
 import { useUtcDay } from '@/lib/use-utc-day';
 import { claims, type Listing } from '@/data';
 import {
-  fetchBookingsAsRenter, fetchBookingsAsOwner, respondToBookingRequest, cancelBooking,
+  fetchBookingsAsRenter, fetchBookingsAsOwner, respondToBookingRequest,
   startBookingReturn, type UiBooking,
 } from '@/lib/bookings';
 import { startBookingPickup } from '@/lib/booking-handoff';
@@ -22,6 +22,7 @@ import { OwnerPromotionControl } from '@/main-site/components/owner-promotion-co
 import { ListingNegotiationSettings } from '@/main-site/components/listing-negotiation-settings';
 import { BookingListSkeleton, BookingRowSkeleton, Skeleton } from '@/main-site/components/skeleton';
 import { DepositAuthorizationStatus } from '@/main-site/components/deposit-authorization-status';
+import { BookingCancellationAction } from '@/main-site/components/booking-cancellation-action';
 import { RewardsPanel } from '@/main-site/components/rewards';
 import { Button, Badge, Alert, EmptyState, Surface, SectionHeader, Overlay } from '@/main-site/components/ui';
 import { textareaClass } from '@/main-site/components/form-classes';
@@ -158,9 +159,9 @@ export function BookingsPage({ initialTab = 'renting', ownerView }: {
       </div>
       <nav className="rental-workspace-tabs" aria-label="Rental workspace">
         <button type="button" aria-current={active === 'renting' ? 'page' : undefined} onClick={() => navigate({ name: 'dashboard', tab: 'renting' })}>My rentals</button>
-        <button type="button" aria-current={active === 'lending' ? 'page' : undefined} onClick={() => navigate({ name: 'dashboard', tab: 'lending' })}>Lending activity</button>
-        <button type="button" aria-current={active === 'listings' ? 'page' : undefined} onClick={() => navigate({ name: 'owner-listings' })}>My listings</button>
-        <button type="button" aria-current={active === 'earnings' ? 'page' : undefined} onClick={() => navigate({ name: 'owner-payouts' })}>Earnings & payouts</button>
+        <button type="button" aria-current={active === 'lending' ? 'page' : undefined} onClick={() => navigate({ name: 'dashboard', tab: 'lending' })}>Lending</button>
+        <button type="button" aria-current={active === 'listings' ? 'page' : undefined} onClick={() => navigate({ name: 'owner-listings' })}>Listings</button>
+        <button type="button" aria-current={active === 'earnings' ? 'page' : undefined} onClick={() => navigate({ name: 'owner-payouts' })}>Earnings</button>
       </nav>
       {ownerView ? <OwnerDashboard key={ownerView} view={ownerView} />
         : tab === 'renting' ? <RenterDashboard /> : <OwnerDashboard />}
@@ -219,7 +220,6 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
     finally { setBusyId(null); }
   }
 
-  const handleCancel = (id: string) => run(id, async () => { await cancelBooking(id); reload(); }, 'Could not cancel this booking.');
   const handleStartCheckIn = (id: string) =>
     run(id, async () => {
       if (!bookings?.find(booking => booking.id === id)?.paymentFirst) await startBookingPickup(id);
@@ -260,7 +260,6 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
           <StatCard label="Returned" value={bookings === null ? '-' : past.filter((b) => b.status === 'completed').length} />
           <StatCard label="Your rating" value={trustScore === null ? '-' : trustScore.count > 0 ? trustScore.rating.toFixed(1) : 'New'} />
         </div>
-        <div className="mb-5"><RewardsPanel compact /></div>
         <div className={`rental-activity-grid ${needsAttention.length > 0 || bookings === null ? '' : 'rental-activity-single'}`}>
         <div className="rental-attention">
         {bookings === null ? (
@@ -399,9 +398,10 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
                   <Button size="sm" onClick={() => navigate({ name: 'check-out', id: booking.id })}>Continue return</Button>
                 )}
                 {REQUESTED_STATUSES.includes(booking.status) && (
-                  <Button size="sm" variant="danger" loading={busyId === booking.id} onClick={() => void handleCancel(booking.id)}>
-                    Cancel
-                  </Button>
+                  <BookingCancellationAction booking={booking} onCancelled={(message) => {
+                    setSuccessNotice({ message, eventKey: `booking-cancel:${booking.id}` });
+                    reload();
+                  }} />
                 )}
                 {booking.status === 'completed' && !reviewedBookingIds.has(booking.id) && (
                   <Button size="sm" variant="secondary" icon={<Star size={15} />} onClick={() => setReviewTarget(booking)}>
@@ -416,6 +416,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
         </section>
         </div>
       </div>
+      <div className="mt-5"><RewardsPanel compact /></div>
 
       {reviewTarget && (
         <ReviewModal title={reviewTarget.listingTitle} onSubmit={handleSubmitReview} onClose={() => setReviewTarget(null)} />
@@ -450,6 +451,8 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
   const [availabilityNotice, setAvailabilityNotice] = useState(false);
   const [bookings, setBookings] = useState<UiBooking[] | null>(null);
   const [myListings, setMyListings] = useState<Listing[] | null>(null);
+  const [inventoryQuery, setInventoryQuery] = useState('');
+  const [inventoryStatus, setInventoryStatus] = useState<'all' | 'published' | 'draft'>('all');
   const [payouts, setPayouts] = useState<Map<string, DbPayoutRow>>(new Map());
   const [bankPayouts, setBankPayouts] = useState<BankPayoutStatus[] | null>(null);
   const [bankPayoutConnected, setBankPayoutConnected] = useState(false);
@@ -516,6 +519,15 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
   const upcomingRentals = all.filter((b) => b.status === 'pending_payment' || b.status === 'confirmed');
   const activeRentals = all.filter((b) => b.status === 'active' || b.status === 'return_pending');
   const pastRentals = all.filter((b) => PAST_STATUSES.includes(b.status));
+  const visibleListings = useMemo(() => {
+    const query = inventoryQuery.trim().toLocaleLowerCase();
+    return (myListings ?? []).filter((listing) =>
+      (!query || listing.title.toLocaleLowerCase().includes(query))
+      && (inventoryStatus === 'all' || listing.listingStatus === inventoryStatus),
+    );
+  }, [myListings, inventoryQuery, inventoryStatus]);
+  const publishedListingCount = myListings?.filter((listing) => listing.listingStatus === 'published').length ?? 0;
+  const draftListingCount = myListings?.filter((listing) => listing.listingStatus === 'draft').length ?? 0;
 
   useEffect(() => { onRequestCount?.(pending.length); }, [onRequestCount, pending.length]);
 
@@ -712,6 +724,10 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
                     <Button size="sm" variant="secondary" loading={busyId === booking.id} onClick={() => void handleRespond(booking.id, false)}>
                       Decline
                     </Button>
+                    <BookingCancellationAction booking={booking} onCancelled={(message) => {
+                      setSuccessNotice({ message, eventKey: `booking-cancel:${booking.id}` });
+                      reload();
+                    }} />
                     <Button size="sm" variant="ghost" icon={<MessageSquare size={15} />} onClick={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
                       Message
                     </Button>
@@ -738,6 +754,10 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
             <div className="space-y-2.5">
               {upcomingRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
+                  <BookingCancellationAction booking={booking} onCancelled={(message) => {
+                    setSuccessNotice({ message, eventKey: `booking-cancel:${booking.id}` });
+                    reload();
+                  }} />
                   {booking.status === 'confirmed' && <Button size="sm" onClick={() => navigate({ name: 'check-in', id: booking.id })}>Open pickup handoff</Button>}
                   <PayoutControl booking={booking} />
                 </BookingRow>
@@ -794,17 +814,14 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
               </Button>
               {selectingListings && (
                 <>
-                  <Button size="sm" variant="ghost" onClick={() => setSelectedListingIds(new Set(myListings.map((item) => item.id)))}>
-                    Select all
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedListingIds(new Set(visibleListings.map((item) => item.id)))}>
+                    Select visible
                   </Button>
                   <Button size="sm" variant="danger" icon={<Trash2 size={14} />} disabled={selectedListingIds.size === 0} onClick={() => setRemovalTarget(myListings.filter((item) => selectedListingIds.has(item.id)))}>
                     Remove selected ({selectedListingIds.size})
                   </Button>
                 </>
               )}
-              <Button size="sm" variant="ghost" onClick={() => navigate({ name: 'create-listing' })} className="sm:ml-auto">
-                Add another item
-              </Button>
             </div>
           )}
           {myListings === null ? (
@@ -821,8 +838,35 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
               onAction={() => navigate({ name: 'create-listing' })}
             />
           ) : (
+            <>
+            <div className="rental-inventory-controls">
+              <label className="rental-inventory-search">
+                <Search size={16} aria-hidden="true" />
+                <span className="sr-only">Search listings</span>
+                <input value={inventoryQuery} onChange={(event) => setInventoryQuery(event.target.value)} placeholder="Find a listing" type="search" />
+              </label>
+              <div className="rental-inventory-filters" role="group" aria-label="Filter listings by status">
+                {([
+                  ['all', 'All', myListings.length],
+                  ['published', 'Published', publishedListingCount],
+                  ['draft', 'Drafts', draftListingCount],
+                ] as const).map(([value, label, count]) => (
+                  <button key={value} type="button" aria-pressed={inventoryStatus === value}
+                    onClick={() => setInventoryStatus(value)}>
+                    {label}<span>{count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-sec mb-3">Showing {visibleListings.length} of {myListings.length} listings</p>
+            {visibleListings.length === 0 ? (
+              <div className="rental-inventory-empty">
+                <p>No listings match these filters.</p>
+                <Button size="sm" variant="secondary" onClick={() => { setInventoryQuery(''); setInventoryStatus('all'); }}>Clear filters</Button>
+              </div>
+            ) : (
             <div className="rental-inventory">
-              {myListings.map((listing) => (
+              {visibleListings.map((listing) => (
                 <Surface key={listing.id} className="rental-inventory-row p-4 flex gap-4">
                   {selectingListings ? (
                     <label className="relative w-20 h-20 rounded-card overflow-hidden shrink-0 bg-subtle cursor-pointer">
@@ -870,6 +914,8 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
                 </Surface>
               ))}
             </div>
+            )}
+            </>
           )}
         </section>}
 

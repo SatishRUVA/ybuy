@@ -71,19 +71,24 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
     openSignIn();
   }
 
-  const navItems: { label: string; route: Route; icon: typeof Home }[] = [
-    { label: 'Home', route: { name: 'home' }, icon: Home },
-    { label: 'Browse', route: { name: 'search' }, icon: Search },
-    { label: 'Requests', route: { name: 'requests' }, icon: PackagePlus },
-    { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
-    { label: 'Bookings', route: { name: 'dashboard' }, icon: Calendar },
-    { label: 'Messages', route: { name: 'messaging' }, icon: MessageSquare },
-  ];
+  const navItems: { label: string; route: Route; icon: typeof Home }[] = user
+    ? [
+      { label: 'Browse', route: { name: 'search' }, icon: Search },
+      { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
+      ...(!rentalWorkspace ? [{ label: 'My YBuy', route: { name: 'dashboard' } as Route, icon: Calendar }] : []),
+      { label: 'Messages', route: { name: 'messaging' }, icon: MessageSquare },
+    ]
+    : [
+      { label: 'Browse', route: { name: 'search' }, icon: Search },
+      { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
+    ];
 
   const isActive = (r: Route) => {
+    if (r.name === 'search') return route.name === 'search' || route.name === 'listing';
     if (r.name === 'requests') return route.name === 'requests';
     if (r.name === 'bidding') return route.name === 'bidding' || route.name === 'bidding-detail' || route.name === 'auction';
-    if (r.name === 'dashboard') return route.name === 'dashboard' || route.name === 'renter-dashboard' || route.name === 'owner-dashboard';
+    if (r.name === 'dashboard') return ['dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts'].includes(route.name);
+    if (r.name === 'messaging') return route.name === 'messaging' || route.name === 'conversation';
     return route.name === r.name;
   };
 
@@ -111,7 +116,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
                   key={item.label}
                   onClick={() => go(item.route)}
                   aria-current={isActive(item.route) ? 'page' : undefined}
-                  className={`${item.label === 'Bookings' || item.label === 'Messages' ? 'hidden xl:inline-flex' : 'inline-flex'} relative px-2 xl:px-3 h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${
+                  className={`relative inline-flex px-2 xl:px-3 h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${
                     isActive(item.route) ? 'text-main bg-subtle' : 'text-sec hover:text-main hover:bg-subtle'
                   }`}
                 >
@@ -185,7 +190,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
               <DialogTrigger asChild>
                 <button
                   aria-label="Open menu"
-                  className="xl:hidden grid shrink-0 place-items-center w-11 h-11 rounded-card hover:bg-subtle transition-colors duration-fast"
+                  className={`grid shrink-0 place-items-center w-11 h-11 rounded-card hover:bg-subtle transition-colors duration-fast ${workspace ? 'xl:hidden' : rentalWorkspace ? 'xl:grid' : 'xl:hidden'}`}
                 >
                   <Menu size={20} className="text-main" />
                 </button>
@@ -202,7 +207,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
           <DialogTitle>Navigation</DialogTitle>
           <DialogDescription>Browse rentals and manage your account.</DialogDescription>
         </div>
-        {user && <WorkspaceNavigation label="Menu" onNavigate={() => setMenuOpen(false)} />}
+        {user && <WorkspaceNavigation label="Menu" showPrimary={!rentalWorkspace} onNavigate={() => setMenuOpen(false)} />}
         <div className="px-4 py-3 space-y-1">
           {!user && <nav aria-label="Menu">{navItems.map((item) => {
             const Icon = item.icon;

@@ -26,6 +26,61 @@ Deno.serve(async (req) => {
     return new Response('Invalid signature', { status: 400 });
   }
 
+  if (['refund.created', 'refund.updated', 'refund.failed'].includes(event.type)) {
+    const incoming = event.data.object as Stripe.Refund;
+    if (incoming.metadata?.purpose === 'booking_cancellation') {
+      try {
+        const refund = await stripe.refunds.retrieve(incoming.id);
+        const caseId = refund.metadata?.refund_case_id;
+        const bookingId = refund.metadata?.booking_id;
+        const refundAttempt = Number(refund.metadata?.refund_attempt);
+        const paymentIntentId = typeof refund.payment_intent === 'string'
+          ? refund.payment_intent : refund.payment_intent?.id;
+        if (!caseId || !bookingId || !Number.isSafeInteger(refundAttempt) || refundAttempt < 1
+          || !paymentIntentId || refund.livemode !== event.livemode
+          || refund.currency !== 'usd' || refund.amount <= 0) {
+          throw new Error('Cancellation refund provider receipt is incomplete');
+        }
+        const { data: refundCase, error: caseError } = await supabaseAdmin.from('cancellation_refund_cases')
+          .select('booking_id,refund_amount,currency,payment_intent_id,attempt')
+          .eq('id', caseId).single();
+        if (caseError) throw new Error(caseError.message);
+        if (refundCase.attempt !== refundAttempt) return new Response('ok', { status: 200 });
+        if (refundCase.booking_id !== bookingId
+          || Number(refundCase.refund_amount) !== refund.amount / 100
+          || refundCase.currency !== refund.currency
+          || refundCase.payment_intent_id !== paymentIntentId) {
+          throw new Error('Cancellation refund provider receipt does not match the case');
+        }
+        const providerStatus = refund.status === 'succeeded' ? 'succeeded'
+          : refund.status === 'failed' ? 'failed'
+            : refund.status === 'canceled' ? 'canceled' : 'pending';
+        const { error } = await supabaseAdmin.rpc('record_cancellation_refund_provider_result', {
+          p_refund_case_id: caseId,
+          p_provider_refund_id: refund.id,
+          p_provider_status: providerStatus,
+          p_amount: refund.amount / 100,
+          p_currency: refund.currency,
+          p_payment_intent_id: paymentIntentId,
+          p_attempt: refundAttempt,
+          p_provider_response: {
+            id: refund.id,
+            status: refund.status,
+            amount: refund.amount,
+            currency: refund.currency,
+            livemode: refund.livemode,
+          },
+        });
+        if (error) throw new Error(error.message);
+      } catch (error) {
+        console.error('Cancellation refund receipt reconciliation failed', event.id,
+          error instanceof Error ? error.message : error);
+        return new Response('Cancellation refund not reconciled', { status: 500 });
+      }
+      return new Response('ok', { status: 200 });
+    }
+  }
+
   if (['refund.created', 'refund.updated', 'refund.failed'].includes(event.type) && !event.livemode) {
     if (!/^(sk|rk)_test_/.test(stripeKey)) {
       console.error('Test refund receipt rejected: test Stripe credentials required', event.id);

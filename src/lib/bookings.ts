@@ -242,8 +242,61 @@ export async function respondToBookingRequest(bookingId: string, approve: boolea
   return callBookingRpc('respond_to_booking_request', { p_booking_id: bookingId, p_approve: approve });
 }
 
-export async function cancelBooking(bookingId: string): Promise<DbBookingRow> {
-  return callBookingRpc('cancel_booking', { p_booking_id: bookingId });
+export interface BookingCancellationQuote {
+  allowed: boolean;
+  ineligible_reason: string | null;
+  pickup_at: string;
+  refund_status: 'not_applicable' | 'pending_policy_review' | 'pending_review' | 'approved';
+  refund_amount: number;
+  currency: string;
+  automatic_processing: boolean;
+}
+
+export async function getBookingCancellationQuote(bookingId: string): Promise<BookingCancellationQuote> {
+  const { data, error } = await supabase.rpc('get_booking_cancellation_quote', { p_booking_id: bookingId });
+  if (error) throw new Error(error.message);
+  if (!data || typeof data.allowed !== 'boolean' || typeof data.refund_status !== 'string') {
+    throw new Error('Could not verify cancellation eligibility.');
+  }
+  return {
+    allowed: data.allowed,
+    ineligible_reason: typeof data.ineligible_reason === 'string' ? data.ineligible_reason : null,
+    pickup_at: typeof data.pickup_at === 'string' ? data.pickup_at : '',
+    refund_status: data.refund_status,
+    refund_amount: Number(data.refund_amount ?? 0),
+    currency: typeof data.currency === 'string' ? data.currency : 'usd',
+    automatic_processing: data.automatic_processing === true,
+  };
+}
+
+export async function cancelBooking(bookingId: string, reason: string): Promise<{
+  booking: DbBookingRow;
+  refundCaseId: string;
+  refundStatus: BookingCancellationQuote['refund_status'];
+  refundAmount: number;
+}> {
+  const { data, error } = await supabase.rpc('cancel_booking', {
+    p_booking_id: bookingId,
+    p_reason: reason.trim(),
+  });
+  if (error) throw new Error(error.message);
+  if (!data || !data.booking || typeof data.refund_case_id !== 'string') {
+    throw new Error('The booking cancellation could not be confirmed.');
+  }
+  return {
+    booking: data.booking as DbBookingRow,
+    refundCaseId: data.refund_case_id,
+    refundStatus: data.refund_status,
+    refundAmount: Number(data.refund_amount ?? 0),
+  };
+}
+
+export async function processCancellationRefund(refundCaseId: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('process-cancellation-refund', {
+    body: { refundCaseId },
+  });
+  if (error) throw new Error(error.message);
+  if (!data?.refundCase) throw new Error('Refund processing could not be confirmed.');
 }
 
 export async function startBookingReturn(bookingId: string): Promise<DbBookingRow> {

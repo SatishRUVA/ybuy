@@ -2,6 +2,13 @@
 .workspace-content { min-width: 0; flex: 1; }
 .workspace-sidebar { display: none; }
 .workspace-navigation { padding: .75rem; }
+.workspace-navigation-primary { display: grid; gap: .125rem; }
+.workspace-navigation-more { margin-top: .75rem; padding-top: .5rem; border-top: 1px solid var(--border); }
+.workspace-navigation-more > summary {
+  min-height: 44px; padding: .75rem; border-radius: var(--radius); color: var(--text-secondary);
+  font-size: .8125rem; font-weight: 600; cursor: pointer;
+}
+.workspace-navigation-more > summary:hover { background: var(--bg-subtle); color: var(--text); }
 .workspace-navigation-group + .workspace-navigation-group { margin-top: 1rem; }
 .workspace-navigation-group > p {
   padding: .25rem .75rem;
@@ -43,6 +50,33 @@
 .workspace-focused #main-content { padding-bottom: max(1.5rem, env(safe-area-inset-bottom)); }
 .workspace-results { container-type: inline-size; container-name: results; }
 
+/* The marketplace has one clear path: search, browse what's available, then explore. */
+.home-page { background: var(--bg-card); }
+.home-page > .home-discovery-section { padding-top: 52px; }
+.home-page > .home-recent-section,
+.home-page > .home-category-section { padding-top: 72px; }
+.home-page > .home-community-section { padding-top: 64px; }
+.home-page .workspace-category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.home-page .workspace-category-grid > button { border-color: transparent; box-shadow: none; background: var(--bg-subtle); }
+.home-page .workspace-category-grid > button:hover { border-color: var(--border-strong); box-shadow: var(--shadow-xs); }
+.home-page .workspace-category-grid > button > span:first-child { aspect-ratio: 1.55; }
+.home-page .workspace-category-grid > button > span:last-child { min-height: 52px; justify-content: flex-start; padding-inline: 14px; }
+.home-page .workspace-category-grid > button img { transition: transform 300ms cubic-bezier(.2,.7,.2,1); }
+.home-page .workspace-category-grid > button:hover img { transform: scale(1.04); }
+.home-page .home-community-section > section { border: 0; border-radius: 0; border-top: 1px solid var(--border); background: transparent; padding: 30px 0 0; }
+.home-page .home-community-section > section > div:first-child > span:first-child { background: var(--bg-subtle); color: var(--text); box-shadow: none; }
+.home-page .home-community-section button { box-shadow: none; }
+
+@media (min-width: 900px) {
+  .home-page > .home-discovery-section { padding-top: 68px; }
+  .home-page > .home-recent-section,
+  .home-page > .home-category-section { padding-top: 88px; }
+  .home-page .workspace-category-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+}
+@media (max-width: 640px) {
+  .home-page .workspace-category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .rental-workspace { max-width: 1200px; margin-inline: auto; padding: 32px 24px 48px; }
 .rental-page-header { margin-bottom: 24px; }
 .rental-page-header h1 { font-size: 28px; }
@@ -78,6 +112,23 @@
 .rental-attention-row > div:first-of-type { min-width: 120px; }
 .rental-attention-row > div:last-child { margin-left: auto; }
 .rental-inventory { display: grid; gap: 12px; }
+.rental-inventory-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.rental-inventory-search {
+  display: flex; align-items: center; gap: 10px; min-height: 44px; width: min(100%, 360px);
+  padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text-secondary);
+}
+.rental-inventory-search:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rental-inventory-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 14px; }
+.rental-inventory-search input::placeholder { color: var(--text-muted); }
+.rental-inventory-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.rental-inventory-filters button {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 12px;
+  border: 1px solid transparent; border-radius: var(--radius); color: var(--text-secondary); font-size: 13px; font-weight: 600;
+}
+.rental-inventory-filters button:hover { background: var(--bg-subtle); color: var(--text); }
+.rental-inventory-filters button[aria-pressed="true"] { border-color: var(--border); background: var(--bg-card); color: var(--text); box-shadow: var(--shadow-xs); }
+.rental-inventory-filters button span { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.rental-inventory-empty { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px; border-radius: var(--radius); background: var(--bg-subtle); color: var(--text-secondary); font-size: 14px; }
 .rental-inventory-row { box-shadow: none; }
 .rental-inventory-row > button, .rental-inventory-row > label { width: 100px; height: 100px; }
 .rental-listing-tools { min-width: 0; }
@@ -149,4 +200,41 @@
 @container results (max-width: 850px) {
   .workspace-results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-map-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Workspace visual hierarchy: compact navigation, clear state, calm operational panels. */
+.rental-workspace { max-width: 1240px; padding-top: 44px; }
+.rental-page-header { margin-bottom: 30px; }
+.rental-page-header h1 { font-size: clamp(30px, 3vw, 38px); letter-spacing: -.035em; line-height: 1.1; }
+.rental-page-header p { margin-top: 9px; max-width: 62ch; font-size: 15px; line-height: 1.55; color: var(--text-secondary); }
+.rental-page-header .ui-button { min-height: 46px; padding-inline: 20px; }
+.rental-workspace-tabs { gap: 34px; }
+.rental-workspace-tabs button { min-height: 54px; font-size: 14px; }
+.rental-dashboard { padding-top: 28px; }
+.rental-stats { overflow: hidden; gap: 1px; margin-bottom: 30px; background: var(--border); border: 1px solid var(--border); border-radius: 14px; }
+.rental-stat { min-height: 100px; padding: 22px 26px; background: var(--bg-card); }
+.rental-stat > p:first-child { font-size: 13px; font-weight: 500; }
+.rental-stat > p:last-child { margin-top: 8px; font-size: 30px; letter-spacing: -.03em; line-height: 1; }
+.rental-stat + .rental-stat { border-left: 0; }
+.rental-activity-grid { gap: 28px; }
+.rental-panel { padding: 24px; border-color: var(--border); border-radius: 14px; background: var(--bg-card); }
+.rental-panel > h2 { margin-bottom: 18px; font-size: 18px; letter-spacing: -.015em; }
+.rental-filters { gap: 6px; margin-bottom: 22px; padding: 4px; border-radius: 10px; background: var(--bg-subtle); }
+.rental-filters button { min-height: 40px; padding-inline: 15px; border-radius: 7px; }
+.rental-filters button[aria-pressed="true"] { background: var(--bg-card); box-shadow: 0 1px 3px #00000012; }
+.rental-attention-row { min-height: 84px; border-color: var(--border); border-radius: 12px; padding: 18px; }
+.rental-inventory-controls { margin-bottom: 16px; }
+.rental-inventory-row { padding: 18px !important; border-color: var(--border); border-radius: 12px !important; }
+.rental-inventory-row > button, .rental-inventory-row > label { width: 112px; height: 96px; border-radius: 9px; }
+.rental-inventory-row h4 { font-size: 16px; }
+.rental-inventory-row .ui-button { min-height: 38px; }
+.rental-listing-tools summary { color: var(--text-secondary); }
+.rental-inventory-empty { min-height: 72px; border: 1px dashed var(--border-strong); background: transparent; }
+
+@media (max-width: 640px) {
+  .rental-workspace { padding-top: 28px; }
+  .rental-stat { min-height: 0; padding: 14px 12px; }
+  .rental-stat > p:last-child { font-size: 20px; }
+  .rental-inventory-row > button, .rental-inventory-row > label { width: 72px; height: 72px; }
+  .rental-panel { padding: 16px; }
 }

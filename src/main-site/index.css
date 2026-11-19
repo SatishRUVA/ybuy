@@ -971,6 +971,21 @@ html:has(.listing-detail) { scroll-padding-bottom: calc(11rem + env(safe-area-in
   );
 }
 
+.home-hero { min-height: 590px; display: flex; align-items: center; background: var(--ybuy-gray-950); }
+.home-hero > div.relative { width: 100%; padding-top: 92px; padding-bottom: 88px; }
+.home-hero h1 { max-width: 11ch; font-size: clamp(52px, 6.2vw, 76px); line-height: .99; letter-spacing: -.045em; }
+.home-hero > div.relative > div.max-w-2xl > p { max-width: 42ch; margin-top: 20px; font-size: 18px; line-height: 1.6; color: #f4f4f4; }
+.home-hero .relative.mt-7 { margin-top: 34px; max-width: 980px; }
+.home-hero .max-w-4xl > .rounded-card-xl { box-shadow: 0 22px 70px -30px #000c; }
+.home-hero-note { font-size: 13px; color: #eee; }
+
+@media (max-width: 640px) {
+  .home-hero { min-height: 500px; }
+  .home-hero > div.relative { padding-top: 68px; padding-bottom: 58px; }
+  .home-hero h1 { font-size: 48px; }
+  .home-hero > div.relative > div.max-w-2xl > p { font-size: 16px; }
+}
+
 .bid-banner {
   --bid-ink: var(--text);
   --bid-green: var(--accent);
