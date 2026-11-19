@@ -1,0 +1,87 @@
+name: Deploy staging backend
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  validate-ref:
+    name: Validate release branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require staging branch
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/staging" ]; then
+            echo "::error::Select the staging branch for deployment."
+            exit 1
+          fi
+
+  checks:
+    name: Validate backend
+    needs: validate-ref
+    uses: ./.github/workflows/ci.yml
+    with:
+      skip_app: true
+
+  deploy:
+    name: Deploy Supabase backend
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: staging
+      url: https://ybuy-e2e-test.vercel.app
+    env:
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate staging configuration
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing staging configuration: $name"
+              exit 1
+            fi
+          done
+          if [ "$SUPABASE_PROJECT_REF" != "jzyjmsixfuwzfnntewqn" ]; then
+            echo "::error::Refusing to deploy to a different Supabase project."
+            exit 1
+          fi
+      - name: Link staging database
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: pnpm exec supabase link --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Check pending migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: pnpm exec supabase db push --linked --dry-run
+      - name: Apply pending migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: pnpm exec supabase db push --linked --yes
+      - name: Deploy Edge Functions with project JWT settings
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: pnpm exec supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF" --use-api

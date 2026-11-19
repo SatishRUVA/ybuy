@@ -7,6 +7,22 @@ import type { ListingFlowResult } from '@/lib/listing-flow';
 
 export interface Paged<T> { total: number; rows: T[] }
 
+export interface RewardCampaign {
+  id: string; name: string; event_type: 'signup'; multiplier: number;
+  starts_at: string; ends_at: string; active: boolean; awards: number; bonus_points: number;
+}
+export const listRewardCampaigns = (limit: number, offset: number) =>
+  rpc<Paged<RewardCampaign>>('admin_list_reward_campaigns', { p_limit: limit, p_offset: offset });
+export const saveRewardCampaign = (id: string | null, form: FormData) =>
+  rpc<RewardCampaign>('admin_save_reward_campaign', {
+    p_id: id, p_name: String(form.get('name') ?? '').trim(),
+    p_multiplier: Number(form.get('multiplier')),
+    p_starts_at: new Date(String(form.get('starts_at'))).toISOString(),
+    p_ends_at: new Date(String(form.get('ends_at'))).toISOString(),
+    p_active: id !== null && form.get('active') === 'true',
+    p_reason: String(form.get('reason') ?? '').trim(),
+  });
+
 export interface AuctionDecisionRow {
   id: string; listing_id: string; listing_title: string; owner_id: string; owner_name: string; customer_id: string;
   deadline_at: string; detected_at: string; eligible_bid_count: number; owner_missed_decision_count: number;
@@ -115,6 +131,77 @@ export interface AdminBookingRow {
 export const listBookings = (a: PageArgs) =>
   rpc<Paged<AdminBookingRow>>('admin_list_bookings', { p_search: a.search ?? null, p_status: a.status ?? null, p_limit: a.limit, p_offset: a.offset });
 
+export interface AdminBooking360 {
+  booking: {
+    id: string; status: string; start_date: string; end_date: string; quantity: number; daily_rate: number;
+    days: number; subtotal: number; service_fee_amount: number; deposit: number; total: number;
+    deposit_collection_model: string | null; created_at: string; updated_at: string;
+    listing: { id: string; title: string; status: string };
+    renter: { id: string; customer_id: string; full_name: string; email: string };
+    owner: { id: string; customer_id: string; full_name: string; email: string };
+    handoff: {
+      status: string; pickup_arrived_at: string | null; actual_pickup_at: string | null;
+      return_initiated_at: string | null; actual_return_at: string | null;
+      support_exception_pickup_at: string | null; support_exception_return_at: string | null;
+    } | null;
+    inspections: {
+      kind: string; appearance_condition: string; existing_damage: string; included_accessories: string[];
+      functional_condition: string; serial_number: string; submitted_by: string; submitted_at: string;
+      owner_acknowledged_at: string | null; renter_acknowledged_at: string | null;
+    }[];
+  };
+  payments: Paged<{
+    id: string; amount: number; currency: string; status: string; stripe_payment_intent_id: string | null; created_at: string;
+  }> | null;
+  refund_requests: Paged<{
+    id: string; payment_id: string; amount: number; currency: string; status: string; reason: string;
+    requested_by: string; approved_by: string | null; approval_reason: string | null;
+    execution_enabled: boolean; created_at: string; approved_at: string | null;
+  }> | null;
+  deposit_authorizations: {
+    id: string; attempt: number; authorized_amount: number; captured_amount: number; status: string;
+    authorization_at: string | null; capture_before: string | null; released_at: string | null;
+    captured_at: string | null; failure_reason: string | null; is_claim_authorization: boolean;
+    created_at: string; updated_at: string; events: { event_type: string; status: string; amount: number; created_at: string }[];
+  }[] | null;
+  settlement: {
+    deposit_amount: number; owner_amount: number; refund_status: string; transfer_status: string;
+    created_at: string; updated_at: string;
+  } | null;
+  legacy_payouts: { id: string; amount: number; status: string; paid_at: string | null; notes: string | null; created_at: string }[] | null;
+  cases: { id: string; kind: 'dispute' | 'support'; subject: string; category: string; status: string; priority: string; created_at: string; updated_at: string }[] | null;
+  reviews: { id: string; rating: number; body: string | null; reviewer_id: string; reviewee_id: string; created_at: string }[] | null;
+  promotion_redemption: { promotion_id: string; code: string; discount_amount: number; created_at: string } | null;
+  credit_reservation: { amount: number; status: string; created_at: string; released_at: string | null } | null;
+  timeline: { type: string; actor_id?: string; status?: string; created_at: string }[];
+}
+export const getBooking360 = (id: string, limit = 25, offset = 0) =>
+  rpc<AdminBooking360>('admin_get_booking_360', { p_booking_id: id, p_limit: limit, p_offset: offset });
+
+export interface AdminCustomer360 {
+  customer: {
+    id: string; customer_id: string; full_name: string; email: string; phone: string | null; created_at: string;
+    restriction: { reason: string; restricted_at: string } | null;
+  };
+  bookings: Paged<{
+    id: string; status: string; start_date: string; end_date: string; total: number; created_at: string;
+    role: 'renter' | 'owner'; listing_id: string; listing_title: string;
+  }> | null;
+  cases: Paged<{
+    id: string; kind: 'dispute' | 'support'; subject: string; status: string; priority: string;
+    booking_id: string | null; assigned_to: string | null; created_at: string; updated_at: string;
+  }> | null;
+  reviews: Paged<{
+    id: string; booking_id: string; reviewer_id: string; reviewee_id: string; rating: number; body: string | null; created_at: string;
+  }> | null;
+  credits: { total: number; rows: { id: string; amount: number; kind: string; created_at: string; expires_at: string }[]; balance: number; reserved: number; available: number } | null;
+  promotion_redemptions: Paged<{
+    booking_id: string; promotion_code: string; discount_amount: number; created_at: string;
+  }> | null;
+}
+export const getCustomer360 = (id: string, limit = 25, offset = 0) =>
+  rpc<AdminCustomer360>('admin_get_customer_360', { p_user_id: id, p_limit: limit, p_offset: offset });
+
 export interface AdminPaymentRow {
   id: string; booking_id: string; amount: number; currency: string; status: string;
   stripe_payment_intent_id: string | null; created_at: string; renter_email: string; listing_title: string;
@@ -157,6 +244,29 @@ export interface AdminSetting {
   min_value: number | null; max_value: number | null; description: string; is_public: boolean; updated_at: string;
 }
 export const listSettings = () => rpc<AdminSetting[]>('admin_list_settings');
+export interface ServiceFeeConfiguration {
+  id: string;
+  total_fee_pct: number;
+  renter_share_percent: number;
+  effective_from: string;
+  effective_to: string | null;
+  created_by: string | null;
+  reason: string;
+  updated_by: string | null;
+  updated_reason: string | null;
+  created_at: string;
+}
+export const listServiceFeeConfigurations = () =>
+  rpc<ServiceFeeConfiguration[]>('admin_list_service_fee_configurations');
+export const scheduleServiceFeeConfiguration = (
+  totalFeePercent: number, renterSharePercent: number, effectiveFrom: string, effectiveTo: string | null, reason: string,
+) => rpc<ServiceFeeConfiguration>('admin_schedule_service_fee_configuration', {
+  p_total_fee_percent: totalFeePercent,
+  p_renter_share_percent: renterSharePercent,
+  p_effective_from: effectiveFrom,
+  p_effective_to: effectiveTo,
+  p_reason: reason,
+});
 export async function listCountryOptions(): Promise<{ code: string; name: string }[]> {
   const { data, error } = await supabase.from('reference_countries').select('code,name').order('name');
   if (error) throw new Error(error.message);

@@ -215,6 +215,20 @@ Date: 2026-10-18.
 - No production credit restoration or refund is activated by a case decision.
   No separate deposit hold, automated payout, identity verification, or retention
   policy is introduced. Financial history and case records are preserved.
+- Points multiplier campaigns are separate from discount/credit campaigns and remain
+  inside the existing local-test signup points gate. Only verified signup earns points;
+  no booking, referral, listing or payment earning events are introduced. The configured
+  base (500 points by default) is unchanged without an eligible active campaign.
+  Admins with `promotions.manage` and Super Admins manage drafts and activation in
+  Promotions & rewards, with mandatory reasons and old/new audit snapshots. New
+  campaigns must first be saved inactive. Supported multipliers are 1x, 1.5x, 2x,
+  2.5x and 3x; positive fractional awards round to the nearest whole point, halves up.
+  Both verification and award must fall within the enabled campaign's UTC
+  `[starts_at, ends_at)` window. No retroactive catch-up after expiry or stacking;
+  database exclusion prevents overlapping active windows, including concurrent edits.
+  Signup ledger records permanently snapshot base, multiplier, final points, campaign,
+  event reference/time and per-user idempotency key. Edits/deactivation never recalculate
+  awards. Existing 500-point redemption and reversal contracts remain unchanged.
 - Email is not reported delivered without a configured delivery provider and
   authoritative response. Persistent in-app notification records are the baseline.
 - The additive operations migration is
@@ -260,6 +274,13 @@ Date: 2026-10-18.
   booking requests. The booking row stores the rate/amount snapshot. Booking
   price on the server remains authoritative; listing and checkout displays are
   estimates only. Existing bookings are not repriced.
+- Effective-dated fee configuration writes require an active `super_admin` row
+  and active Auth session, independently of `config.manage`. Migration
+  `20261118000004_service_fee_super_admin_authorization.sql` reapplies that RPC
+  guard to existing installations without changing fee periods or booking terms.
+  The focused `service_fee_configurations.sql` test transaction simulates a
+  regular admin with `config.manage` to verify the independent role check; its
+  temporary permission-constraint removal and fixtures are rolled back.
 - Overview period metrics use `[from, to)` on record creation timestamps.
   GMV excludes deposits. Period rental/fee totals count confirmed and later
   booking states; refunds count payments marked `refunded`. Deposit exposure,

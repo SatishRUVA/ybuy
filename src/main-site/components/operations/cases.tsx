@@ -14,7 +14,7 @@ import { fmtDate, useLoad, usePagedQuery } from '@/main-site/components/operatio
 import { ChoiceField, LongField, OperationDialog, TextField } from '@/main-site/components/operations/operation-form';
 import { PageHeader, PagedTable, SearchBox, StatusBadge, StatusFilter } from '@/main-site/components/operations/shared';
 
-export function CasesSection({ kind, initialId }: { kind: CaseKind; initialId?: string }) {
+export function CasesSection({ kind, initialId, onBackToQueue }: { kind: CaseKind; initialId?: string; onBackToQueue?: () => void }) {
   const [selected, setSelected] = useState<string | null>(initialId ?? null);
   const { navigate } = useRouter();
   const selectCase = (id: string) => {
@@ -29,7 +29,7 @@ export function CasesSection({ kind, initialId }: { kind: CaseKind; initialId?: 
   const title = kind === 'dispute' ? 'Disputes & claims' : 'Support tickets';
   if (selected) return <CasePanel key={selected} id={selected} kind={kind} onBack={() => {
     if (!staff) navigate(kind === 'dispute' ? { name: 'claims' } : { name: 'support' });
-    else { setSelected(null); query.reload(); }
+    else { setSelected(null); query.reload(); onBackToQueue?.(); }
   }} />;
   return (
     <>
@@ -39,7 +39,7 @@ export function CasesSection({ kind, initialId }: { kind: CaseKind; initialId?: 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <SearchBox onChange={setSearch} placeholder="Search subject or case reference" />
         <StatusFilter label="Case status" value={status} onChange={setStatus} options={[...CASE_STATUSES[kind]]} />
-        <StatusFilter label="Case priority" value={priority} onChange={setPriority} options={['low', 'normal', 'high', 'urgent']} />
+        <StatusFilter label="Case priority" value={priority} onChange={setPriority} options={['low', 'normal', 'high', 'urgent']} allLabel="All priorities" />
       </div>
       <PagedTable query={query} rowKey={(row) => row.id} emptyTitle={`No ${kind === 'dispute' ? 'claims' : 'tickets'} found`}
         columns={[

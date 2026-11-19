@@ -1,8 +1,6 @@
-name: Deploy staging
+name: Deploy staging frontend
 
 on:
-  push:
-    branches: [staging]
   workflow_dispatch:
 
 permissions:
@@ -13,13 +11,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-ref:
+    name: Validate release branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require staging branch
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/staging" ]; then
+            echo "::error::Select the staging branch for deployment."
+            exit 1
+          fi
+
   checks:
-    name: Validate release
+    name: Validate frontend
+    needs: validate-ref
     uses: ./.github/workflows/ci.yml
+    with:
+      skip_database: true
 
   deploy:
-    name: Deploy backend then frontend
-    if: github.ref == 'refs/heads/staging'
+    name: Deploy Vercel frontend
     needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -55,9 +66,22 @@ jobs:
             fi
           done
           if [ "$SUPABASE_PROJECT_REF" != "jzyjmsixfuwzfnntewqn" ]; then
-            echo "::error::Refusing to deploy to a different Supabase project."
+            echo "::error::Refusing to deploy against a different Supabase project."
             exit 1
           fi
+      - name: Check backend migrations are current
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec supabase db push --project-ref "$SUPABASE_PROJECT_REF" --dry-run --skip-vault --output-format json \
+            | jq -e '.upToDate == true' > /dev/null
+      - name: Link Vercel test project
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: pnpm exec vercel link --yes --team "$VERCEL_ORG_ID" --project "$VERCEL_PROJECT_ID" --token="$VERCEL_TOKEN"
       - name: Pull Vercel test project settings
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -77,29 +101,10 @@ jobs:
             throw new Error('Vercel VITE_SUPABASE_URL must point to the staging Supabase project.');
           }
           JS
-      - name: Build frontend before changing the backend
+      - name: Build frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: pnpm exec vercel build --prod --token="$VERCEL_TOKEN"
-      - name: Link staging database
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: pnpm exec supabase link --project-ref "$SUPABASE_PROJECT_REF"
-      - name: Check pending migrations
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: pnpm exec supabase db push --linked --dry-run
-      - name: Apply pending migrations
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: pnpm exec supabase db push --linked --yes
-      - name: Deploy Edge Functions with project JWT settings
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: pnpm exec supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF" --use-api
       - name: Publish frontend to the Vercel test project
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

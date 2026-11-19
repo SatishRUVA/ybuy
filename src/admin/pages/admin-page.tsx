@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   ArrowLeft, BarChart3, Banknote, CalendarCheck, CreditCard, Gift, LayoutDashboard,
-  Gavel, LifeBuoy, Lock, Menu, Package, Search, Shield, ShieldCheck, Star, Tags, Users,
+  Gavel, LifeBuoy, Lock, Menu, Package, Search, Shield, ShieldCheck, Star, Tags, Users, SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react';
 import { useRouter } from '@/router';
@@ -12,39 +12,50 @@ import { Dialog, DialogDescription, DialogTitle, SheetContent } from '@/main-sit
 import { cn } from '@/lib/utils';
 import { OverviewSection } from '@/admin/pages/overview';
 import { BookingsSection, ListingsSection, PaymentsSection, PayoutsSection, ReviewsSection, UsersSection } from '@/admin/pages/resources';
-import { CategoriesSection } from '@/admin/pages/config';
+import { CategoriesSection, SettingsSection } from '@/admin/pages/config';
 import { PageHeader } from '@/main-site/components/operations/shared';
 import { CasesSection } from '@/main-site/components/operations/cases';
 import { PromotionsSection } from '@/admin/pages/promotions';
 import { RefundsSection } from '@/admin/pages/refunds';
 import { ItemRequestsSection } from '@/admin/pages/marketplace';
 import { CustomerInvestigationsSection } from '@/admin/pages/investigations';
+import { AdminGlobalSearch } from '@/admin/pages/admin-search';
+import { ActionCenter } from '@/admin/pages/action-center';
+import { Booking360, Customer360 } from '@/admin/pages/record-details';
 
 type Icon = LucideIcon;
 interface NavItem { id: string; label: string; icon: Icon; permission?: AdminPermission; anyPermission?: AdminPermission[]; pending?: string }
 
 const GROUPS: { title: string; items: NavItem[] }[] = [
-  { title: 'Operations', items: [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard, permission: 'analytics.view' },
-    { id: 'users', label: 'Users', icon: Users, permission: 'users.manage' },
-    { id: 'investigations', label: 'Customer investigations', icon: ShieldCheck, permission: 'fraud.investigate' },
+  { title: 'Daily Operations', items: [
+    { id: 'overview', label: 'Action Center', icon: LayoutDashboard, anyPermission: [
+      'analytics.view', 'users.manage', 'listings.moderate', 'bookings.view', 'payments.view', 'payouts.view',
+      'disputes.manage', 'support.manage', 'refunds.issue', 'refunds.approve', 'refunds.senior',
+      'fraud.investigate', 'reviews.moderate', 'categories.manage', 'promotions.manage', 'credits.manage',
+      'audit.view', 'integrations.view', 'config.manage', 'flags.manage', 'admins.manage',
+    ] },
     { id: 'listings', label: 'Listings', icon: Package, permission: 'listings.moderate' },
     { id: 'requests', label: 'Item requests', icon: Search, permission: 'listings.moderate' },
     { id: 'bookings', label: 'Bookings', icon: CalendarCheck, permission: 'bookings.view' },
+  ] },
+  { title: 'Customer Care', items: [
+    { id: 'users', label: 'Users', icon: Users, permission: 'users.manage' },
+    { id: 'investigations', label: 'Customer investigations', icon: ShieldCheck, permission: 'fraud.investigate' },
     { id: 'disputes', label: 'Disputes & claims', icon: Gavel, permission: 'disputes.manage' },
     { id: 'support', label: 'Support tickets', icon: LifeBuoy, permission: 'support.manage' },
-    { id: 'promotions', label: 'Promotions & rewards', icon: Gift, anyPermission: ['promotions.manage', 'credits.manage'] },
     { id: 'reviews', label: 'Reviews', icon: Star, permission: 'reviews.moderate' },
-    { id: 'categories', label: 'Categories', icon: Tags, permission: 'categories.manage' },
   ] },
-  { title: 'Finance', items: [
+  { title: 'Financial Operations', items: [
     { id: 'payments', label: 'Payments', icon: CreditCard, permission: 'payments.view' },
     { id: 'payouts', label: 'Payouts', icon: Banknote, permission: 'payouts.view' },
     { id: 'refunds', label: 'Refund requests', icon: CreditCard, anyPermission: ['refunds.issue', 'refunds.approve', 'refunds.senior'] },
   ] },
-  { title: 'Coming with their modules', items: [
+  { title: 'Growth & management', items: [
+    { id: 'promotions', label: 'Promotions & rewards', icon: Gift, anyPermission: ['promotions.manage', 'credits.manage'] },
+    { id: 'categories', label: 'Categories', icon: Tags, permission: 'categories.manage' },
+    { id: 'settings', label: 'Settings', icon: SlidersHorizontal, permission: 'config.manage' },
     { id: 'insurance', label: 'Insurance & protection', icon: Shield, pending: 'Insurance and protection options' },
-    { id: 'analytics', label: 'Analytics & exports', icon: BarChart3, pending: 'Reports and CSV exports beyond the overview' },
+    { id: 'analytics', label: 'Analytics & exports', icon: BarChart3, permission: 'analytics.view' },
   ] },
 ];
 
@@ -86,20 +97,24 @@ function Nav({ access, active, onSelect }: { access: AdminAccess; active: string
   );
 }
 
-function Section({ id }: { id: string }) {
+function Section({ id, recordId, access, onSelect }: {
+  id: string; recordId?: string; access: AdminAccess; onSelect: (section: string, recordId?: string) => void;
+}) {
   switch (id) {
-    case 'overview': return <OverviewSection />;
-    case 'users': return <UsersSection />;
+    case 'overview': return <ActionCenter access={access} onSelect={onSelect} />;
+    case 'analytics': return <OverviewSection />;
+    case 'users': return recordId ? <Customer360 id={recordId} onSelect={onSelect} /> : <UsersSection />;
     case 'investigations': return <CustomerInvestigationsSection />;
     case 'listings': return <ListingsSection />;
     case 'requests': return <ItemRequestsSection />;
-    case 'bookings': return <BookingsSection />;
-    case 'disputes': return <CasesSection kind="dispute" />;
-    case 'support': return <CasesSection kind="support" />;
+    case 'bookings': return recordId ? <Booking360 id={recordId} access={access} onSelect={onSelect} /> : <BookingsSection />;
+    case 'disputes': return <CasesSection kind="dispute" initialId={recordId} onBackToQueue={() => onSelect('disputes')} />;
+    case 'support': return <CasesSection kind="support" initialId={recordId} onBackToQueue={() => onSelect('support')} />;
     case 'promotions': return <PromotionsSection />;
     case 'refunds': return <RefundsSection />;
     case 'reviews': return <ReviewsSection />;
     case 'categories': return <CategoriesSection />;
+    case 'settings': return <SettingsSection isSuperAdmin={access.role === 'super_admin'} />;
     case 'payments': return <PaymentsSection />;
     case 'payouts': return <PayoutsSection />;
     default: {
@@ -114,7 +129,7 @@ function Section({ id }: { id: string }) {
   }
 }
 
-export function AdminPage({ section }: { section?: string }) {
+export function AdminPage({ section, recordId }: { section?: string; recordId?: string }) {
   const { navigate } = useRouter();
   const { access, loading, error, retry } = useAdminAccess();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -136,10 +151,10 @@ export function AdminPage({ section }: { section?: string }) {
       </div>
     );
   }
-  if (access.role !== 'admin') {
+  if (access.role !== 'admin' && access.role !== 'super_admin') {
     return (
       <div className="max-w-lg mx-auto px-4 py-16">
-        <EmptyState icon={<Lock size={20} />} title="Administrator access required" description="This portal is for Admin accounts only." actionLabel="Back to YBuy" onAction={() => navigate({ name: 'home' })} />
+        <EmptyState icon={<Lock size={20} />} title="Administrator access required" description="This portal is for Admin and Super Admin accounts only." actionLabel="Back to YBuy" onAction={() => navigate({ name: 'home' })} />
       </div>
     );
   }
@@ -153,7 +168,10 @@ export function AdminPage({ section }: { section?: string }) {
       </div>
     );
   }
-  const select = (id: string) => { setMenuOpen(false); navigate({ name: 'admin', section: id }); };
+  const select = (id: string, selectedRecordId?: string) => {
+    setMenuOpen(false);
+    navigate({ name: 'admin', section: id, recordId: selectedRecordId });
+  };
 
   return (
     <div className="min-h-screen bg-app">
@@ -163,7 +181,8 @@ export function AdminPage({ section }: { section?: string }) {
           <ArrowLeft size={15} /> Back to YBuy
         </a>
         <h1 className="font-display font-bold text-main ml-2 hidden sm:block">Admin console</h1>
-        <Badge tone="accent" className="ml-auto">{access.role.replace('_', ' ')}</Badge>
+        <AdminGlobalSearch access={access} onSelect={select} />
+        <Badge tone="accent">{access.role.replace('_', ' ')}</Badge>
       </header>
       <div className="lg:grid lg:grid-cols-[16rem_1fr]">
         <aside className="hidden lg:block sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto bg-card border-r border-app">
@@ -177,7 +196,7 @@ export function AdminPage({ section }: { section?: string }) {
           </SheetContent>
         </Dialog>
         <main className="min-w-0 px-4 sm:px-6 py-6 max-w-[1200px] w-full">
-          <Section key={active.id} id={active.id} />
+          <Section key={`${active.id}:${recordId ?? ''}`} id={active.id} recordId={recordId} access={access} onSelect={select} />
         </main>
       </div>
     </div>

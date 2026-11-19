@@ -7,6 +7,7 @@ import {
   listCategories, listSettings, listCountryOptions, setFeatureFlag, updateSetting, upsertCategory,
   saveDepositRule,
   getAgreementTerms,publishAgreementTerms,publishTestDummyAgreementTerms,
+  listServiceFeeConfigurations, scheduleServiceFeeConfiguration,
   type AdminCategory, type AdminSetting, type FeatureFlag,
 } from '@/admin/api';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/main-site/components/shadcn/dialog';
@@ -148,7 +149,102 @@ export function CategoriesSection() {
 
 const asPercent = (s: AdminSetting) => (s.key.endsWith('_pct') && typeof s.value === 'number' ? ` (${(s.value * 100).toFixed(1)}%)` : '');
 
-export function SettingsSection() {
+function localDateTimeValue(value: Date) {
+  return new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function ServiceFeeConfigurationSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const { data, loading, error, reload } = useLoad(listServiceFeeConfigurations);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [totalFee, setTotalFee] = useState('10');
+  const [renterShare, setRenterShare] = useState(100);
+  const [effectiveFrom, setEffectiveFrom] = useState(localDateTimeValue(new Date(Date.now() + 120_000)));
+  const [effectiveTo, setEffectiveTo] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
+  const current = data?.find(row => (row.effective_from === '-infinity' ? -Infinity : new Date(row.effective_from).getTime()) <= Date.now()
+    && (row.effective_to === null || new Date(row.effective_to).getTime() > Date.now()));
+  const total = Number(totalFee);
+  const renterRate = Number.isFinite(total) ? total * renterShare / 100 : 0;
+  const ownerRate = Number.isFinite(total) ? total - renterRate : 0;
+
+  function openSchedule() {
+    setTotalFee(current ? String(Number(current.total_fee_pct) * 100) : '10');
+    setRenterShare(current?.renter_share_percent ?? 100);
+    setEffectiveFrom(localDateTimeValue(new Date(Date.now() + 120_000)));
+    setEffectiveTo('');
+    setDialogOpen(true);
+  }
+
+  return <>
+    <Card className="mb-5">
+      <CardHeader className="flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle>Service-fee allocation</CardTitle>
+          <CardDescription className="mt-1">Schedules the total fee and its renter/owner allocation for future bookings only. Existing booking and settlement snapshots remain unchanged.</CardDescription>
+        </div>
+        {isSuperAdmin && <Button size="sm" icon={<Plus size={14} />} onClick={openSchedule}>Schedule fee change</Button>}
+      </CardHeader>
+      <CardContent>
+        {notice && <Alert tone="success" className="mb-3">{notice}</Alert>}
+        <LoadState loading={loading} error={error} reload={reload} rows={2} />
+        {!loading && !error && !current && <Alert tone="error" title="No current fee configuration">A service-fee configuration is not effective now. New booking requests will fail closed until one is restored.</Alert>}
+        {current && <p className="mb-3 text-sm text-sec">Current: <strong className="text-main">{(Number(current.total_fee_pct) * 100).toFixed(2)}% total</strong>, renter allocation {current.renter_share_percent}%, owner allocation {100 - current.renter_share_percent}%.</p>}
+        {data && <ul className="divide-y divide-[var(--border)] rounded-card border border-app">
+          {data.map(row => <li key={row.id} className="space-y-1 px-4 py-3 text-sm">
+            <p className="font-semibold text-main">
+              {(Number(row.total_fee_pct) * 100).toFixed(2)}% total · {row.renter_share_percent}% renter / {100 - row.renter_share_percent}% owner
+            </p>
+            <p className="text-xs text-sec">Effective {row.effective_from === '-infinity' ? 'from the beginning' : new Date(row.effective_from).toLocaleString()} – {row.effective_to ? new Date(row.effective_to).toLocaleString() : 'open-ended'}</p>
+            <p className="text-xs text-sec">Reason: {row.reason} · actor {row.created_by ?? 'system'}</p>
+            {row.updated_by && <p className="text-xs text-sec">Last period update: {row.updated_reason} · actor {row.updated_by}</p>}
+          </li>)}
+        </ul>}
+        {!isSuperAdmin && <p className="mt-3 text-xs text-sec">Only a Super Admin can schedule changes. The server independently enforces this permission.</p>}
+      </CardContent>
+    </Card>
+    <ReasonDialog
+      open={dialogOpen} onOpenChange={open => setDialogOpen(open)}
+      title="Schedule service-fee allocation"
+      description="Only future bookings use this configuration. The total fee must remain within 0–30%; the owner allocation is always the remainder."
+      confirmLabel="Schedule fee change"
+      onConfirm={async reason => {
+        const totalPercent = Number(totalFee);
+        const from = new Date(effectiveFrom);
+        const to = effectiveTo ? new Date(effectiveTo) : null;
+        if (!Number.isFinite(totalPercent) || totalPercent < 0 || totalPercent > 30
+          || !Number.isInteger(renterShare) || renterShare < 0 || renterShare > 100
+          || !Number.isFinite(from.getTime()) || (to && !Number.isFinite(to.getTime()))
+          || (to && to <= from)) {
+          throw new Error('Enter a total fee from 0 to 30%, an integer renter allocation from 0 to 100%, and a valid effective period.');
+        }
+        await scheduleServiceFeeConfiguration(totalPercent, renterShare, from.toISOString(), to?.toISOString() ?? null, reason);
+        setNotice('Service-fee configuration scheduled. Existing booking terms are unchanged.');
+        setDialogOpen(false);
+        reload();
+      }}
+    >
+      <label className="block text-sm font-semibold">Total service fee (0–30%)
+        <input className={fieldClass('mt-1')} type="number" min="0" max="30" step="0.01" value={totalFee} onChange={event => setTotalFee(event.target.value)} />
+      </label>
+      <label className="block text-sm font-semibold">Renter share · owner receives the remainder ({renterShare}% / {100 - renterShare}%)
+        <input className="mt-2 block w-full accent-[var(--accent)]" type="range" min="0" max="100" step="1" value={renterShare}
+          onChange={event => setRenterShare(Number(event.target.value))} aria-label="Renter share of the total service fee" />
+      </label>
+      <div className="rounded-card bg-subtle p-3 text-sm">
+        <p>Total: <strong>{Number.isFinite(total) ? total.toFixed(2) : '0.00'}%</strong></p>
+        <p>Renter: <strong>{renterRate.toFixed(2)}%</strong> · Owner: <strong>{ownerRate.toFixed(2)}%</strong></p>
+      </div>
+      <label className="block text-sm font-semibold">Effective from
+        <input className={fieldClass('mt-1')} type="datetime-local" value={effectiveFrom} onChange={event => setEffectiveFrom(event.target.value)} required />
+      </label>
+      <label className="block text-sm font-semibold">Effective until (optional)
+        <input className={fieldClass('mt-1')} type="datetime-local" value={effectiveTo} onChange={event => setEffectiveTo(event.target.value)} />
+      </label>
+    </ReasonDialog>
+  </>;
+}
+
+export function SettingsSection({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const { data, loading, error, reload } = useLoad(listSettings);
   const countries = useLoad(listCountryOptions);
   const [target, setTarget] = useState<AdminSetting | null>(null);
@@ -159,12 +255,13 @@ export function SettingsSection() {
   return (
     <>
       <PageHeader title="Global settings" subtitle="Business rules stored in the database. Deployments never overwrite these values; secrets are never shown here." />
+      <ServiceFeeConfigurationSection isSuperAdmin={isSuperAdmin} />
       <AgreementTermsSettings />
       <Alert tone="info" className="mb-4">Listing policy settings below are authoritative. Set both offer percentage fractions before enabling listing_offers_configured; bidding must also be enabled. A zero high-value threshold means all publications await review in Listings. Delivery fees are stored terms, not an additional checkout charge. Photo dimensions are browser-validated; byte limits are enforced by storage.</Alert>
       {notice && <Alert tone="success" className="mb-4">{notice}</Alert>}
       <LoadState loading={loading} error={error} reload={reload} rows={2} />
       <div className="grid gap-4">
-        {data?.map((s) => (
+        {data?.filter(s => s.key !== 'platform_fee_pct').map((s) => (
           <Card key={s.key}>
             <CardHeader className="flex-row items-start justify-between gap-3">
               <div className="min-w-0">

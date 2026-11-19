@@ -1,10 +1,10 @@
 import { WalletPanel } from '@/main-site/components/operations/wallet';
 import { useState } from 'react';
 import { Pencil, Plus } from 'lucide-react';
-import { Alert, Badge, Button } from '@/main-site/components/ui';
+import { Alert, Badge, Button, SectionHeader } from '@/main-site/components/ui';
 import { Card, CardContent, CardHeader, CardTitle } from '@/main-site/components/shadcn/card';
 import { grantCredits, listPromotions, listPromotionRedemptions, savePromotion, formText, type Promotion } from '@/lib/operations';
-import { useAdminAccess } from '@/admin/api';
+import { listRewardCampaigns, saveRewardCampaign, useAdminAccess, type RewardCampaign } from '@/admin/api';
 import { fmtDate, money, usePagedQuery } from '@/main-site/components/operations/query-utils';
 import { ChoiceField, LongField, OperationDialog, TextField } from '@/main-site/components/operations/operation-form';
 import { PageHeader, PagedTable } from '@/main-site/components/operations/shared';
@@ -32,6 +32,7 @@ export function PromotionsSection() {
         action={canPromote ? <Button size="sm" icon={<Plus size={15} />} onClick={() => setEditing(null)}>New campaign</Button> : undefined} />
       <Alert tone="warning">Test financial foundations only. These campaigns do not alter the existing live checkout. Fees and deposits are excluded. Cash refunds and credit restoration are disabled pending allocation policy.</Alert>
       {notice && <Alert tone="success">{notice}</Alert>}
+      {canPromote && <RewardCampaigns />}
       {canPromote && <>
         <PagedTable query={promos} rowKey={(row) => row.id} emptyTitle="No campaigns yet" columns={[
           { header: 'Campaign', cell: (promo) => <div><p className="font-semibold">{promo.name}</p><p className="font-mono text-xs">{promo.code}</p></div> },
@@ -82,6 +83,41 @@ export function PromotionsSection() {
       </OperationDialog>
     </div>
   );
+}
+
+function RewardCampaigns() {
+  const [editing, setEditing] = useState<RewardCampaign | null | undefined>();
+  const [notice, setNotice] = useState<string | null>(null);
+  const campaigns = usePagedQuery(listRewardCampaigns, []);
+  return <section aria-label="Points multiplier campaigns" className="space-y-4">
+    <SectionHeader title="Points multiplier campaigns" subtitle="Verified signup only. Multipliers never stack or change redemption values."
+      action={<Button size="sm" icon={<Plus size={15} />} onClick={() => setEditing(null)}>New points campaign</Button>} />
+    <p className="text-sm text-sec">New campaigns are inactive. Save, then edit to activate. Both verification and the award must occur within the active window; overlapping active windows are blocked. Times use your browser timezone. Fractional points round to the nearest whole point, with halves rounded up.</p>
+    {notice && <Alert tone="success">{notice}</Alert>}
+    <PagedTable query={campaigns} rowKey={row => row.id} emptyTitle="No points campaigns yet" columns={[
+      { header: 'Campaign', cell: row => <div><p className="font-semibold">{row.name}</p><p className="text-xs">Verified signup</p></div> },
+      { header: 'Multiplier', cell: row => `${row.multiplier}x` },
+      { header: 'Window (end exclusive)', cell: row => `${fmtDate(row.starts_at)} - ${fmtDate(row.ends_at)}` },
+      { header: 'Activation', cell: row => <Badge tone={row.active ? 'success' : 'neutral'}>{row.active ? 'enabled (window applies)' : 'inactive'}</Badge> },
+      { header: 'Awards', cell: row => `${row.awards} awards; ${row.bonus_points} bonus points` },
+      { header: 'Actions', cell: row => <Button size="sm" variant="secondary" icon={<Pencil size={14} />} onClick={() => setEditing(row)}>Edit points campaign</Button> },
+    ]} />
+    <OperationDialog key={editing?.id ?? (editing === null ? 'new-points' : 'closed-points')}
+      open={editing !== undefined} onClose={() => setEditing(undefined)}
+      title={editing ? 'Edit points campaign' : 'New points campaign'}
+      description="Test-only verified signup rewards. Changes never recalculate previous awards. Deactivate rather than delete to preserve campaign history."
+      onSave={async form => {
+        await saveRewardCampaign(editing?.id ?? null, form);
+        setNotice('Points campaign saved.'); campaigns.reload();
+      }}>
+      <TextField name="name" label="Points campaign name" value={editing?.name} maxLength={100} />
+      <ChoiceField name="multiplier" label="Points multiplier" options={['1', '1.5', '2', '2.5', '3']} value={String(editing?.multiplier ?? 1)} />
+      <TextField name="starts_at" label="Points campaign starts (local time)" value={localTime(editing?.starts_at)} type="datetime-local" />
+      <TextField name="ends_at" label="Points campaign ends (local time)" value={localTime(editing?.ends_at)} type="datetime-local" />
+      {editing && <ChoiceField name="active" label="Points campaign activation" options={['false', 'true']} value={String(editing.active)} />}
+      <LongField name="reason" label="Points campaign change reason" maxLength={500} />
+    </OperationDialog>
+  </section>;
 }
 
 function PromotionHistory({ id }: { id: string }) {

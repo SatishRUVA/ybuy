@@ -41,6 +41,11 @@ export interface DbBookingRow {
   delivery_fee_amount?: number;
   renter_note?: string | null;
   service_fee_amount: number;
+  service_fee_pct?: number | null;
+  service_fee_total_pct?: number | null;
+  service_fee_renter_share_pct?: number | null;
+  owner_service_fee_pct?: number | null;
+  owner_service_fee_amount?: number | null;
   insurance_amount: number;
   insurance_selected?: boolean;
   tax_amount?: number;
@@ -107,6 +112,11 @@ export interface UiBooking {
   deliveryFeeAmount: number;
   renterNote: string | null;
   serviceFeeAmount: number;
+  serviceFeePct: number | null;
+  serviceFeeTotalPct: number | null;
+  serviceFeeRenterSharePct: number | null;
+  ownerServiceFeePct: number;
+  ownerServiceFeeAmount: number;
   insuranceAmount: number;
   taxAmount: number;
   taxRate: number;
@@ -145,6 +155,11 @@ export function toUiBooking(row: DbBookingRow, currentUserId: string): UiBooking
     deliveryFeeAmount: Number(row.delivery_fee_amount ?? 0),
     renterNote: row.renter_note ?? null,
     serviceFeeAmount: row.service_fee_amount,
+    serviceFeePct: row.service_fee_pct == null ? null : Number(row.service_fee_pct),
+    serviceFeeTotalPct: row.service_fee_total_pct == null ? null : Number(row.service_fee_total_pct),
+    serviceFeeRenterSharePct: row.service_fee_renter_share_pct == null ? null : Number(row.service_fee_renter_share_pct),
+    ownerServiceFeePct: Number(row.owner_service_fee_pct ?? 0),
+    ownerServiceFeeAmount: Number(row.owner_service_fee_amount ?? 0),
     insuranceAmount: Number(row.insurance_amount ?? 0),
     taxAmount: Number(row.tax_amount ?? 0),
     taxRate: Number(row.tax_rate ?? 0),
