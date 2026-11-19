@@ -55,7 +55,7 @@ export const themes: Theme[] = [
   makeTheme(
     'main',
     'YBuy',
-    'Black, white, and gray',
+    'Porcelain, ink, and cobalt',
     false,
     {
       '--bg': 'var(--ybuy-bg)',
@@ -82,16 +82,16 @@ export const themes: Theme[] = [
       '--error-soft': 'var(--ybuy-error-soft)',
       '--star': 'var(--ybuy-star)',
       '--favorite': 'var(--ybuy-favorite)',
-      '--radius-lg': '0.875rem',
-      '--radius-xl': '1.25rem',
+      '--radius-lg': '0.75rem',
+      '--radius-xl': '1rem',
       '--shadow-xs': '0 1px 2px rgb(0 0 0 / 5%)',
       '--shadow-card': '0 1px 2px rgb(0 0 0 / 4%), 0 2px 6px -2px rgb(0 0 0 / 6%)',
       '--shadow-hover': '0 2px 4px -2px rgb(0 0 0 / 6%), 0 12px 28px -8px rgb(0 0 0 / 14%)',
       '--shadow-pop': '0 4px 8px -4px rgb(0 0 0 / 8%), 0 24px 56px -16px rgb(0 0 0 / 24%)',
     },
     {
-      '--font-sans': "'Inter', system-ui, -apple-system, sans-serif",
-      '--font-display': "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif",
+      '--font-sans': "'DM Sans', system-ui, -apple-system, sans-serif",
+      '--font-display': "'Manrope', 'DM Sans', system-ui, sans-serif",
     },
   ),
   makeTheme(

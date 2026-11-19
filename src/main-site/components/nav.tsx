@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MessageSquare, User, Menu, Home, Search, Plus, PackagePlus, Calendar, Heart, LogOut, ShieldCheck, Bell, Gavel } from 'lucide-react';
+import { MessageSquare, User, Menu, Home, Search, Plus, PackagePlus, Calendar, LogOut, ShieldCheck, Bell, Gavel } from 'lucide-react';
 import { useRouter, type Route } from '@/router';
 import { useAuth } from '@/auth-context';
 import { useAdminAccess } from '@/lib/admin-access';
@@ -94,7 +94,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
 
   if (focused) {
     return (
-      <header className="sticky top-0 z-40 glass-nav glass-nav-top border-b border-app">
+      <header className="ybuy-site-header sticky top-0 z-40 border-b border-app">
         <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-4 px-4 sm:px-6">
           <Wordmark onClick={() => navigate({ name: 'home' })} />
         </div>
@@ -105,7 +105,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
 
   return (
     <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
-      <header className="sticky top-0 z-40 glass-nav glass-nav-top border-b border-app">
+      <header className="ybuy-site-header sticky top-0 z-40 border-b border-app">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16 gap-4">
             <Wordmark onClick={() => navigate({ name: 'home' })} />
@@ -117,7 +117,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
                   onClick={() => go(item.route)}
                   aria-current={isActive(item.route) ? 'page' : undefined}
                   className={`relative inline-flex px-2 xl:px-3 h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${
-                    isActive(item.route) ? 'text-main bg-subtle' : 'text-sec hover:text-main hover:bg-subtle'
+                    isActive(item.route) ? 'text-accent bg-accent-soft' : 'text-sec hover:text-main hover:bg-subtle'
                   }`}
                 >
                   {item.label}
@@ -164,14 +164,6 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
                     </button>
                   )}
                   <button
-                    onClick={() => go({ name: 'favorites' })}
-                    aria-label="Saved items"
-                    aria-current={route.name === 'favorites' ? 'page' : undefined}
-                    className="grid place-items-center w-11 h-11 rounded-card border border-app bg-card text-sec hover:text-favorite hover:border-strong transition-colors duration-fast"
-                  >
-                    <Heart size={18} />
-                  </button>
-                  <button
                     onClick={() => go({ name: 'trust-profile' })}
                     aria-label="Account"
                     aria-current={route.name === 'trust-profile' ? 'page' : undefined}
@@ -207,7 +199,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
           <DialogTitle>Navigation</DialogTitle>
           <DialogDescription>Browse rentals and manage your account.</DialogDescription>
         </div>
-        {user && <WorkspaceNavigation label="Menu" showPrimary={!rentalWorkspace} onNavigate={() => setMenuOpen(false)} />}
+        {user && <WorkspaceNavigation label="Menu" onNavigate={() => setMenuOpen(false)} />}
         <div className="px-4 py-3 space-y-1">
           {!user && <nav aria-label="Menu">{navItems.map((item) => {
             const Icon = item.icon;

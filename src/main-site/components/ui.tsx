@@ -109,7 +109,7 @@ export function Badge({
 }: { tone?: BadgeTone; icon?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <span
-      className={`inline-flex max-w-full items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold leading-5 whitespace-nowrap ${BADGE_TONE[tone]} ${className}`}
+      className={`inline-flex max-w-full items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-semibold leading-5 whitespace-nowrap ${BADGE_TONE[tone]} ${className}`}
     >
       {icon}
       {children}
@@ -129,7 +129,7 @@ export function Alert({
   }[tone];
   const { Icon } = map;
   return (
-    <div role="status" className={`flex items-start gap-2.5 p-3 rounded-card-lg ${map.cls} ${className}`}>
+    <div role={tone === 'error' ? 'alert' : 'status'} className={`flex items-start gap-2.5 p-3 rounded-card-lg ${map.cls} ${className}`}>
       <Icon size={16} className="shrink-0 mt-0.5" />
       <div className="text-sm leading-relaxed min-w-0 [overflow-wrap:anywhere]">
         {title && <p className="font-semibold">{title}</p>}
@@ -184,9 +184,9 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <div className={`flex flex-col items-center text-center py-14 px-6 rounded-card-xl border border-dashed border-strong bg-card ${className}`}>
+    <div className={`empty-state flex flex-col items-center text-center py-10 px-6 rounded-card-xl border border-app bg-card ${className}`}>
       {icon && (
-        <div className="w-12 h-12 rounded-full bg-subtle flex items-center justify-center text-sec mb-3">{icon}</div>
+        <div className="w-11 h-11 rounded-lg bg-accent-soft flex items-center justify-center text-accent mb-3">{icon}</div>
       )}
       <h3 className="font-semibold text-main">{title}</h3>
       {description && <p className="text-sm text-sec mt-1.5 max-w-sm leading-relaxed">{description}</p>}

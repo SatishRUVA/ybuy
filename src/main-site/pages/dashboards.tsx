@@ -3,13 +3,14 @@ import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import { useUtcDay } from '@/lib/use-utc-day';
 import { claims, type Listing } from '@/data';
+import { fetchCancellationRefundDetails, type CancellationRefundDetails } from '@/lib/cancellation-refunds';
 import {
   fetchBookingsAsRenter, fetchBookingsAsOwner, respondToBookingRequest,
   startBookingReturn, type UiBooking,
 } from '@/lib/bookings';
 import { startBookingPickup } from '@/lib/booking-handoff';
 import { getOrCreateConversation } from '@/lib/messages';
-import { createReview, fetchReviewedBookingIds, fetchReviewsForUser, REVIEW_MAX_LENGTH } from '@/lib/reviews';
+import { createReview, fetchReviewedBookingIds, REVIEW_MAX_LENGTH } from '@/lib/reviews';
 import { deleteOwnerListing, fetchListingsByOwner, fetchListingTimeZone, toUiListing } from '@/lib/listings';
 import { pickupToday } from '@/lib/pickup-timezone';
 import { fetchBankPayoutStatus, fetchPayoutsByOwner, startConnectOnboarding, type BankPayoutStatus, type DbPayoutRow } from '@/lib/payouts';
@@ -60,12 +61,125 @@ const STATUS_TONE: Record<UiBooking['status'], 'neutral' | 'accent' | 'success' 
   rejected: 'error',
 };
 
+const REFUND_STATUS_LABEL: Record<CancellationRefundDetails['status'], string> = {
+  not_applicable: 'No refund applies',
+  pending_policy_review: 'Policy review',
+  pending_review: 'Pending review',
+  approved: 'Approved · awaiting provider',
+  processing: 'Processing',
+  partially_refunded: 'Partially refunded',
+  refunded: 'Refunded',
+  failed: 'Failed · needs review',
+  rejected: 'Not approved',
+};
+
+function RefundStatusSummary({ details, loading, onSupport }: {
+  details: CancellationRefundDetails | null; loading: boolean; onSupport?: () => void;
+}) {
+  if (loading) return <p role="status" className="mt-3 text-xs text-sec">Loading saved refund status…</p>;
+  if (!details) return <p className="mt-3 text-xs text-sec">Refund details are unavailable right now. The booking remains cancelled; contact support if you need an update.</p>;
+  const tone = ['refunded', 'partially_refunded'].includes(details.status) ? 'success'
+    : ['failed', 'rejected'].includes(details.status) ? 'error'
+      : ['pending_policy_review', 'pending_review', 'approved', 'processing'].includes(details.status) ? 'warning' : 'neutral';
+  const amount = new Intl.NumberFormat(undefined, { style: 'currency', currency: details.currency.toUpperCase() });
+  const amountLine = details.status === 'pending_review'
+    ? details.eligibleAmount > 0 ? `Potential eligible amount: ${amount.format(details.eligibleAmount)}; not confirmed.` : 'Refund eligibility is being reviewed; no amount is confirmed.'
+    : ['approved', 'processing'].includes(details.status)
+      ? `${amount.format(details.refundAmount)} approved; payment-provider confirmation is pending.`
+      : ['partially_refunded', 'refunded'].includes(details.status)
+        ? `Payment provider confirmed ${amount.format(details.refundAmount)}.`
+        : details.status === 'failed' && details.refundAmount > 0
+          ? `${amount.format(details.refundAmount)} could not be confirmed by the payment provider.`
+          : details.status === 'pending_policy_review' ? 'Eligibility is under policy review; no amount is confirmed.'
+            : details.status === 'rejected' ? 'No refund was approved.' : 'No payment refund applies.';
+  return (
+    <div className="mt-3 rounded-card bg-subtle p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold text-main">Booking payment refund</h4>
+        <Badge tone={tone}>{REFUND_STATUS_LABEL[details.status]}</Badge>
+      </div>
+      <p className="mt-1.5 text-xs text-sec">{amountLine}</p>
+      {details.originalPaymentAmount > 0 && <p className="mt-1 text-xs text-sec">Original payment: {amount.format(details.originalPaymentAmount)}</p>}
+      {details.providerRefundId && <p className="mt-1 text-xs text-sec">Payment reference: <span className="font-medium text-main">{details.providerRefundId}</span></p>}
+      <p className="mt-1 text-xs text-sec">Cancellation reason: {details.reason}</p>
+      {details.decisionReason && <p className="mt-1 text-xs text-sec">Update: {details.decisionReason}</p>}
+      {['failed', 'rejected'].includes(details.status) && onSupport && <Button size="sm" variant="ghost" className="mt-1" onClick={onSupport}>Contact support</Button>}
+    </div>
+  );
+}
+
+function useCancellationRefunds(bookings: UiBooking[] | null) {
+  const cancelledIds = useMemo(
+    () => (bookings ?? []).filter((booking) => booking.status === 'cancelled').map((booking) => booking.id).sort(),
+    [bookings],
+  );
+  const idsKey = cancelledIds.join(',');
+  const [details, setDetails] = useState<Map<string, CancellationRefundDetails>>(new Map());
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let current = true;
+    const ids = idsKey ? idsKey.split(',') : [];
+    if (ids.length === 0) {
+      setDetails(new Map());
+      setLoading(false);
+      return () => { current = false; };
+    }
+    setLoading(true);
+    void fetchCancellationRefundDetails(ids).then((result) => {
+      if (current) setDetails(result);
+    }).catch(() => {
+      if (current) setDetails(new Map());
+    }).finally(() => {
+      if (current) setLoading(false);
+    });
+    return () => { current = false; };
+  }, [idsKey]);
+  return { details, loading };
+}
+
 function formatRange(start: string, end: string): string {
   const fmt = (iso: string) => {
     const [y, m, d] = iso.split('-').map(Number);
     return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
   return `${fmt(start)} – ${fmt(end)}`;
+}
+
+function ownerNetEstimate(booking: UiBooking): number {
+  return booking.subtotal + booking.deliveryFeeAmount - booking.ownerServiceFeeAmount;
+}
+
+function formatUSD(amount: number): string {
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(amount);
+}
+
+type EarningsGrouping = 'day' | 'week' | 'month';
+
+function earningsGroupKey(date: string, grouping: EarningsGrouping): string {
+  if (grouping === 'day') return date;
+  const [year, month, day] = date.split('-').map(Number);
+  if (grouping === 'month') return `${year}-${String(month).padStart(2, '0')}`;
+  const monday = new Date(Date.UTC(year, month - 1, day));
+  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+  return monday.toISOString().slice(0, 10);
+}
+
+function earningsGroupLabel(key: string, grouping: EarningsGrouping): string {
+  const formatDay = (date: Date) => new Intl.DateTimeFormat(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+  }).format(date);
+  if (grouping === 'month') return new Intl.DateTimeFormat(undefined, {
+    month: 'long', year: 'numeric', timeZone: 'UTC',
+  }).format(new Date(`${key}-01T00:00:00Z`));
+  const start = new Date(`${key}T00:00:00Z`);
+  if (grouping === 'day') return formatDay(start);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  if (start.getUTCMonth() === end.getUTCMonth()) {
+    const month = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' }).format(start);
+    return `${month} ${start.getUTCDate()}–${end.getUTCDate()}, ${end.getUTCFullYear()}`;
+  }
+  return `${formatDay(start)} – ${formatDay(end)}`;
 }
 
 function StatCard({ label, value }: {
@@ -81,11 +195,14 @@ function StatCard({ label, value }: {
 
 /** The one row layout every booking uses, on both dashboards. */
 function BookingRow({
-  booking, onOpen, onMessage, children,
+  booking, onOpen, onMessage, onSupport, refundDetails, refundLoading = false, children,
 }: {
   booking: UiBooking;
   onOpen?: () => void;
   onMessage?: () => void;
+  onSupport?: () => void;
+  refundDetails?: CancellationRefundDetails | null;
+  refundLoading?: boolean;
   children?: React.ReactNode;
 }) {
   return (
@@ -122,6 +239,7 @@ function BookingRow({
       {['confirmed', 'active', 'return_pending'].includes(booking.status) && <div className="mt-3.5"><BookingPickup bookingId={booking.id} status={booking.status} paymentFirst={booking.paymentFirst} /></div>}
       {booking.deposit > 0 && <div className="mt-3.5"><DepositAuthorizationStatus bookingId={booking.id} deposit={booking.deposit}
         collectionModel={booking.depositCollectionModel} isOwner={booking.isOwner} paymentFirst={booking.paymentFirst} /></div>}
+      {booking.status === 'cancelled' && <RefundStatusSummary details={refundDetails ?? null} loading={refundLoading} onSupport={onSupport} />}
       {(children || onMessage) && (
         <div className="flex flex-wrap items-center gap-2 mt-3.5 pt-3.5 border-t border-app">
           {children}
@@ -179,7 +297,6 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reviewedBookingIds, setReviewedBookingIds] = useState<Set<string>>(new Set());
   const [reviewTarget, setReviewTarget] = useState<UiBooking | null>(null);
-  const [trustScore, setTrustScore] = useState<{ rating: number; count: number } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   function reload() {
@@ -190,12 +307,12 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
       const completedIds = rows.filter((b) => b.status === 'completed').map((b) => b.id);
       fetchReviewedBookingIds(user.id, completedIds).then(setReviewedBookingIds).catch(() => {});
     }).catch((err: unknown) => { setBookings([]); setLoadError(err instanceof Error ? err.message : 'Could not load your bookings.'); });
-    fetchReviewsForUser(user.id).then((r) => setTrustScore({ rating: r.rating, count: r.reviewCount })).catch(() => {});
   }
 
   useEffect(reload, [user]);
 
   const all = useMemo(() => bookings ?? [], [bookings]);
+  const cancellationRefunds = useCancellationRefunds(bookings);
   const requests = all.filter((b) => b.status === 'requested' || b.status === 'pending_payment');
   const upcoming = all.filter((b) => b.status === 'confirmed');
   const active = all.filter((b) => b.status === 'active' || b.status === 'return_pending');
@@ -254,11 +371,10 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
         {successNotice && <SuccessNotice key={successNotice.eventKey} eventKey={successNotice.eventKey} onDismiss={() => setSuccessNotice(null)}>{successNotice.message}</SuccessNotice>}
         {loadError && <Alert tone="warning" className="mb-4">{loadError}</Alert>}
 
-        <div className="rental-stats rental-stats-four">
+        <div className="rental-stats">
           <StatCard label="Upcoming" value={bookings === null ? '-' : upcoming.length} />
           <StatCard label="Active now" value={bookings === null ? '-' : active.length} />
-          <StatCard label="Returned" value={bookings === null ? '-' : past.filter((b) => b.status === 'completed').length} />
-          <StatCard label="Your rating" value={trustScore === null ? '-' : trustScore.count > 0 ? trustScore.rating.toFixed(1) : 'New'} />
+          <StatCard label="Needs attention" value={bookings === null ? '-' : needsAttention.length} />
         </div>
         <div className={`rental-activity-grid ${needsAttention.length > 0 || bookings === null ? '' : 'rental-activity-single'}`}>
         <div className="rental-attention">
@@ -308,6 +424,7 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
           </section>
         )}
 
+        <div className="mb-2"><RewardsPanel compact /></div>
         </div>
         <section className="rental-panel rental-history">
         <h2 className="text-base font-semibold text-main mb-4">Rental activity</h2>
@@ -373,8 +490,11 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
               <BookingRow
                 key={booking.id}
                 booking={booking}
+                refundDetails={cancellationRefunds.details.get(booking.id) ?? null}
+                refundLoading={cancellationRefunds.loading}
                 onOpen={() => navigate({ name: 'listing', id: booking.listingId })}
                 onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}
+                onSupport={() => navigate({ name: 'support' })}
               >
                 <Button size="sm" variant="ghost" onClick={() => navigate({ name: 'confirmation', id: booking.id })}>
                   View rental
@@ -416,8 +536,6 @@ export function RenterDashboard({ onAttentionCount }: { onAttentionCount?: (coun
         </section>
         </div>
       </div>
-      <div className="mt-5"><RewardsPanel compact /></div>
-
       {reviewTarget && (
         <ReviewModal title={reviewTarget.listingTitle} onSubmit={handleSubmitReview} onClose={() => setReviewTarget(null)} />
       )}
@@ -454,6 +572,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
   const [inventoryQuery, setInventoryQuery] = useState('');
   const [inventoryStatus, setInventoryStatus] = useState<'all' | 'published' | 'draft'>('all');
   const [payouts, setPayouts] = useState<Map<string, DbPayoutRow>>(new Map());
+  const [payoutsLoading, setPayoutsLoading] = useState(view === 'earnings');
   const [bankPayouts, setBankPayouts] = useState<BankPayoutStatus[] | null>(null);
   const [bankPayoutConnected, setBankPayoutConnected] = useState(false);
   const [bankPayoutError, setBankPayoutError] = useState<string | null>(null);
@@ -475,6 +594,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
   const [removingListings, setRemovingListings] = useState(false);
   const [removalError, setRemovalError] = useState<string | null>(null);
   const [activityTab, setActivityTab] = useState<'upcoming' | 'active' | 'past'>('upcoming');
+  const [earningsGrouping, setEarningsGrouping] = useState<EarningsGrouping>('month');
 
   function reload() {
     if (!user) return;
@@ -499,9 +619,10 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
       });
     }
     if (view === 'earnings') {
+      setPayoutsLoading(true);
       fetchPayoutsByOwner(user.id).then(setPayouts).catch((err: unknown) => {
         setActionError(err instanceof Error ? err.message : 'Could not verify your Stripe transfers.');
-      });
+      }).finally(() => setPayoutsLoading(false));
       fetchBankPayoutStatus().then((result) => {
         setBankPayoutConnected(result.connected);
         setBankPayouts(result.payouts);
@@ -515,6 +636,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
   useEffect(reload, [user, utcDay, view]);
 
   const all = useMemo(() => bookings ?? [], [bookings]);
+  const cancellationRefunds = useCancellationRefunds(bookings);
   const pending = all.filter((b) => b.status === 'requested');
   const upcomingRentals = all.filter((b) => b.status === 'pending_payment' || b.status === 'confirmed');
   const activeRentals = all.filter((b) => b.status === 'active' || b.status === 'return_pending');
@@ -531,15 +653,38 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
 
   useEffect(() => { onRequestCount?.(pending.length); }, [onRequestCount, pending.length]);
 
-  // Earnings are the owner's share (subtotal), never the renter-facing total.
-  const earned = useMemo(
-    () => all.filter((b) => PAID_OUT_ELIGIBLE_STATUSES.includes(b.status)).reduce((sum, b) => sum + b.subtotal, 0),
+  // These estimates use the booking's saved amounts; fee rules remain authoritative in the backend.
+  const bookedOwnerEarnings = useMemo(
+    () => all.filter((b) => PAID_OUT_ELIGIBLE_STATUSES.includes(b.status)).reduce((sum, booking) => sum + ownerNetEstimate(booking), 0),
     [all],
+  );
+  const pendingTransferAmount = useMemo(
+    () => [...payouts.values()].filter((payout) => payout.status === 'pending' || payout.status === 'processing').reduce((sum, payout) => sum + payout.amount, 0),
+    [payouts],
+  );
+  const reversedTransferAmount = useMemo(
+    () => [...payouts.values()].filter((payout) => payout.status === 'reversed').reduce((sum, payout) => sum + payout.amount, 0),
+    [payouts],
   );
   const paidOut = useMemo(
     () => [...payouts.values()].filter((p) => p.status === 'paid').reduce((sum, p) => sum + Number(p.amount), 0),
     [payouts],
   );
+  const completedEarningsGroups = useMemo(() => {
+    const groups = new Map<string, { rentalCount: number; netAmount: number }>();
+    for (const booking of all.filter((item) => item.status === 'completed')) {
+      const key = earningsGroupKey(booking.endDate, earningsGrouping);
+      const group = groups.get(key) ?? { rentalCount: 0, netAmount: 0 };
+      group.rentalCount += 1;
+      group.netAmount += ownerNetEstimate(booking);
+      groups.set(key, group);
+    }
+    const limit = earningsGrouping === 'day' ? 30 : 12;
+    return [...groups.entries()]
+      .sort(([left], [right]) => right.localeCompare(left))
+      .slice(0, limit)
+      .map(([key, value]) => ({ key, label: earningsGroupLabel(key, earningsGrouping), ...value }));
+  }, [all, earningsGrouping]);
 
   async function run(id: string, fn: () => Promise<void>, fallback: string) {
     setActionError(null);
@@ -677,6 +822,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
           <StatCard label="Upcoming" value={bookings === null ? '-' : upcomingRentals.length} />
           <StatCard label="Out on rental" value={bookings === null ? '-' : activeRentals.length} />
         </div>
+        <div className="mb-6"><RewardsPanel compact /></div>
         <div className="rental-activity-grid">
         <section className="rental-panel">
           <h2 className="flex items-center gap-2 text-sm font-bold text-main mb-2.5">
@@ -712,7 +858,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
                         Expected owner net: ${booking.subtotal.toFixed(2)} rental
                         {booking.deliveryFeeAmount > 0 && ` + $${booking.deliveryFeeAmount.toFixed(2)} delivery`}
                         {booking.ownerServiceFeeAmount > 0 && ` − $${booking.ownerServiceFeeAmount.toFixed(2)} owner service fee`}
-                        {' = '}<strong className="text-main tnum">${(booking.subtotal + booking.deliveryFeeAmount - booking.ownerServiceFeeAmount).toFixed(2)}</strong>
+                        {' = '}<strong className="text-main tnum">{formatUSD(ownerNetEstimate(booking))}</strong>
                       </p>
                     </div>
                     <p className="font-bold text-main shrink-0 tnum">${booking.total}</p>
@@ -785,7 +931,12 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
           {bookings === null ? <BookingListSkeleton count={2} /> : pastRentals.length === 0 ? <div className="rental-quiet-state"><p className="text-sm text-sec">Completed, cancelled, and declined rentals are kept here for your records.</p></div> : (
             <div className="space-y-2.5">
               {pastRentals.map((booking) => (
-                <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
+                <BookingRow key={booking.id} booking={booking}
+                  refundDetails={cancellationRefunds.details.get(booking.id) ?? null}
+                  refundLoading={cancellationRefunds.loading}
+                  onOpen={() => navigate({ name: 'listing', id: booking.listingId })}
+                  onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}
+                  onSupport={() => navigate({ name: 'support' })}>
                   <PayoutControl booking={booking} />
                   {booking.status === 'completed' && !reviewedBookingIds.has(booking.id) && (
                     <Button size="sm" variant="secondary" icon={<Star size={15} />} onClick={() => setReviewTarget(booking)}>Review {booking.counterpartName.split(' ')[0]}</Button>
@@ -941,16 +1092,58 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
           {bookings === null ? <div role="status" aria-busy="true" className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <span className="sr-only">Loading rental earnings</span>
             <Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" />
-          </div> : loadError ? <Alert tone="warning">Earnings totals are unavailable until rental history can be loaded.</Alert> : <div className="rental-stats">
-            <StatCard label="Earned to date" value={`$${earned.toLocaleString()}`} />
-            <StatCard label="Transferred to Stripe" value={`$${paidOut.toLocaleString()}`} />
+          </div> : loadError ? <Alert tone="warning">Earnings totals are unavailable until rental history can be loaded.</Alert> : <>
+            <div className="rental-stats owner-earnings-stats">
+            <StatCard label="Estimated owner net" value={formatUSD(bookedOwnerEarnings)} />
+            <StatCard label="Awaiting Stripe transfer" value={payoutsLoading ? '—' : formatUSD(pendingTransferAmount)} />
+            <StatCard label="Transferred to Stripe" value={payoutsLoading ? '—' : formatUSD(paidOut)} />
             <StatCard label="Upcoming & active" value={upcomingRentals.length + activeRentals.length} />
-          </div>}
+            </div>
+            <p className="mb-3 text-xs text-sec">Estimate uses saved rental and delivery amounts after the owner service fee, across confirmed, active, and completed rentals. A transfer to Stripe does not confirm a bank payout.</p>
+          </>}
+          {reversedTransferAmount > 0 && <Alert tone="error" className="mt-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p><strong>Reversed Stripe transfers: {formatUSD(reversedTransferAmount)}.</strong> This amount is excluded from pending and completed transfer totals and needs manual reconciliation.</p>
+              <Button size="sm" variant="secondary" onClick={() => navigate({ name: 'support' })}>Contact support</Button>
+            </div>
+          </Alert>}
           {paidOut > 0 && (
             <Alert tone="success" className="mt-3">
-              <span className="tnum">${paidOut.toLocaleString()}</span> of <span className="tnum">${earned.toLocaleString()}</span> transferred to Stripe. This does not confirm a bank payout.
+              <span className="tnum">{formatUSD(paidOut)}</span> transferred to Stripe Connect. This does not confirm a bank payout.
             </Alert>
           )}
+          <section className="mt-6" aria-labelledby="owner-completed-earnings-title">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 id="owner-completed-earnings-title" className="text-sm font-semibold text-main">Completed rental earnings</h4>
+                <p className="mt-1 text-xs text-sec">Net amounts grouped by rental return date.</p>
+              </div>
+              <div className="rental-filters flex" role="group" aria-label="Group earnings by">
+                {(['day', 'week', 'month'] as const).map((grouping) => (
+                  <button key={grouping} type="button" aria-pressed={earningsGrouping === grouping}
+                    onClick={() => setEarningsGrouping(grouping)}>{grouping[0].toUpperCase() + grouping.slice(1)}</button>
+                ))}
+              </div>
+            </div>
+            {bookings === null ? <p role="status" className="py-6 text-center text-sm text-sec">Loading completed rentals…</p>
+              : loadError ? null
+                : completedEarningsGroups.length === 0 ? <p className="rounded-card-lg border border-dashed border-strong px-4 py-6 text-center text-sm text-sec">Completed rental earnings will appear here after an item is returned.</p>
+                  : <div className="overflow-x-auto rounded-card-lg border border-app bg-card">
+                    <table className="w-full min-w-[440px] text-left text-sm">
+                      <caption className="sr-only">Completed owner rental earnings, grouped by return date</caption>
+                      <thead className="bg-subtle text-xs text-sec">
+                        <tr><th scope="col" className="px-4 py-3 font-semibold">Return period</th><th scope="col" className="px-4 py-3 text-right font-semibold">Rentals</th><th scope="col" className="px-4 py-3 text-right font-semibold">Owner net</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--border)]">
+                        {completedEarningsGroups.map((group) => <tr key={group.key}>
+                          <th scope="row" className="px-4 py-3 font-medium text-main">{group.label}</th>
+                          <td className="px-4 py-3 text-right text-sec tnum">{group.rentalCount}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-main tnum">{formatUSD(group.netAmount)}</td>
+                        </tr>)}
+                      </tbody>
+                    </table>
+                  </div>}
+          </section>
           <Button className="mt-3" size="sm" variant="secondary" loading={busyId === 'connect'}
             onClick={() => void run('connect', async () => {
               window.location.href = await startConnectOnboarding();
@@ -1029,7 +1222,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
 function PayoutControl({ booking }: { booking: UiBooking }) {
   if (booking.status !== 'completed') return null;
   return <RentalSettlement bookingId={booking.id} isOwner autoProcess
-    expectedOwnerNet={booking.subtotal + booking.deliveryFeeAmount - booking.ownerServiceFeeAmount}
+    expectedOwnerNet={ownerNetEstimate(booking)}
     ownerServiceFeeAmount={booking.ownerServiceFeeAmount} />;
 }
 

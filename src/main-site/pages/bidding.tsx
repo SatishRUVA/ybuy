@@ -8,10 +8,10 @@ import { Alert, Badge, Button, EmptyState, Surface } from '@/main-site/component
 import { fieldClass } from '@/main-site/components/form-classes';
 import { ArrowUpRight, CalendarDays, Clock3, Gavel, Package, RefreshCw } from 'lucide-react';
 import { BIDDING_SAMPLES } from '@/lib/bidding-samples';
-import { getListingAuction, getListingAuctionFeed, selectListingAuctionWinner, type AuctionFeed, type ListingAuction } from '@/lib/listing-auctions';
+import { getListingAuction, getListingAuctionFeed, getMyListingAuctionBids, selectListingAuctionWinner, type AuctionFeed, type ListingAuction, type RenterAuctionParticipation } from '@/lib/listing-auctions';
 import { CategoryIcon } from '@/main-site/components/category-icon';
 import { ListingGridSkeleton } from '@/main-site/components/skeleton';
-import { enrichListingsWithRatings, fetchListingById, fetchListingsByOwner, toUiListing } from '@/lib/listings';
+import { enrichListingsWithRatings, fetchListingById, fetchListingsByOwner, signListingImageUrl, toUiListing } from '@/lib/listings';
 import { ListingAuctionPanel } from '@/main-site/components/listing-auction-panel';
 import { UUID_RE } from '@/lib/text-safety';
 import { auctionCountdown } from '@/lib/auction-countdown';
@@ -485,10 +485,144 @@ function MockBiddingGate({ children }: { children: ReactNode }) {
 }
 
 export function BiddingPage() {
+  const { route } = useRouter();
+  if (route.name === 'bidding' && route.view === 'my-bids') return <MyBidsPage />;
+  return <LiveBiddingGate />;
+}
+
+function LiveBiddingGate() {
   const { enabled, loading, error, reload } = useFeatureFlag('bidding');
   if (loading) return <div className="max-w-6xl mx-auto p-6"><ListingGridSkeleton /></div>;
   if (error) return <div className="max-w-6xl mx-auto p-6"><Alert tone="error" title="Could not check bidding availability">{error}<Button onClick={() => void reload()}>Retry bidding</Button></Alert></div>;
   return enabled ? <LiveBidding /> : <MockBiddingPage />;
+}
+
+function myBidState(item: RenterAuctionParticipation) {
+  const selected = item.bids.find(bid => bid.selected);
+  if (selected?.payment_status === 'paid') return { label: 'Won · Paid', tone: 'success' as const, selected };
+  if (selected?.payment_status === 'pending') return { label: 'Payment due', tone: 'warning' as const, selected };
+  if (selected?.payment_status === 'expired') return { label: 'Payment window expired', tone: 'neutral' as const, selected };
+  if (selected) return { label: 'Selected', tone: 'success' as const, selected };
+  if (item.status === 'scheduled') return { label: 'Scheduled', tone: 'accent' as const, selected: null };
+  if (item.status === 'owner_selection') return { label: 'Awaiting owner decision', tone: 'warning' as const, selected: null };
+  if (item.status === 'open' && Date.parse(item.ends_at) > Date.now()) {
+    const current = item.bids.find(bid => bid.is_current);
+    if (current?.rank === 1) return { label: 'Leading', tone: 'success' as const, selected: null };
+    if (current?.rank) return { label: 'Outbid', tone: 'warning' as const, selected: null };
+    if (item.bids.every(bid => bid.passed)) return { label: 'No longer eligible', tone: 'neutral' as const, selected: null };
+    return { label: 'In progress', tone: 'accent' as const, selected: null };
+  }
+  if (item.status === 'open') return { label: 'Bidding closed', tone: 'warning' as const, selected: null };
+  if (item.status === 'completed') return { label: 'Auction completed', tone: 'neutral' as const, selected: null };
+  if (item.status === 'cancelled') return { label: 'Cancelled', tone: 'error' as const, selected: null };
+  return { label: 'Auction ended', tone: 'neutral' as const, selected: null };
+}
+
+function MyBidsPage() {
+  const { user, loading: authLoading, openSignIn } = useAuth();
+  const userId = user?.id;
+  const { navigate } = useRouter();
+  const [items, setItems] = useState<RenterAuctionParticipation[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setItems([]);
+    setError(null);
+    if (authLoading) return () => { active = false; };
+    if (!userId) { setLoading(false); return () => { active = false; }; }
+    void getMyListingAuctionBids(0, 20).then(async result => {
+      const signed = await Promise.all(result.items.map(async item => ({
+        ...item,
+        image_url: item.image_url ? await signListingImageUrl(item.image_url) : null,
+      })));
+      if (active) { setItems(signed); setTotal(result.total); }
+    }).catch(failure => {
+      if (active) setError(failure instanceof Error ? failure.message : 'Could not load your bids. Please retry.');
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [authLoading, userId, retry]);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const result = await getMyListingAuctionBids(items.length, 20);
+      const signed = await Promise.all(result.items.map(async item => ({
+        ...item,
+        image_url: item.image_url ? await signListingImageUrl(item.image_url) : null,
+      })));
+      setItems(current => [...current, ...signed]);
+      setTotal(result.total);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not load more bids. Please retry.');
+    } finally { setLoadingMore(false); }
+  }
+
+  return <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+    <nav aria-label="Bidding sections" className="flex gap-5 border-b border-app mb-6">
+      <button type="button" onClick={() => navigate({ name: 'bidding' })} className="min-h-11 border-b-2 border-transparent px-1 text-sm font-semibold text-sec hover:text-main">Explore auctions</button>
+      <button type="button" aria-current="page" className="min-h-11 border-b-2 border-accent px-1 text-sm font-semibold text-accent">My bids</button>
+    </nav>
+    <header className="flex flex-wrap items-start justify-between gap-4 mb-6">
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-bold font-display text-main flex items-center gap-3"><Gavel className="text-accent" aria-hidden="true" />My bids</h1>
+        <p className="mt-2 text-sm text-sec max-w-prose">Track your position and any payment deadlines. Placing a bid does not charge you or create a booking.</p>
+      </div>
+      {user && <Button variant="secondary" onClick={() => setRetry(value => value + 1)} disabled={loading}>Refresh bids</Button>}
+    </header>
+    {authLoading ? <ListingGridSkeleton />
+      : !user ? <EmptyState icon={<Gavel size={24} />} title="Sign in to see your bids" description="Your auction activity will be available here after you sign in." actionLabel="Sign in" onAction={openSignIn} />
+      : error && items.length === 0 ? <Alert tone="error" title="Your bids could not be loaded"><p>{error}</p><Button variant="secondary" className="mt-2" onClick={() => setRetry(value => value + 1)}>Retry</Button></Alert>
+        : loading && items.length === 0 ? <ListingGridSkeleton />
+          : items.length === 0 ? <EmptyState icon={<Gavel size={24} />} title="No bids yet" description="When you place a bid on a rental auction, it will appear here with its current status." actionLabel="Explore auctions" onAction={() => navigate({ name: 'bidding' })} />
+            : <div className="space-y-4" aria-busy={loading || loadingMore}>
+              {error && <Alert tone="error" title="Could not load more bids"><p>{error}</p><Button variant="secondary" className="mt-2" onClick={() => void loadMore()}>Retry</Button></Alert>}
+              {items.map(item => {
+                const state = myBidState(item);
+                const bestBid = item.bids.find(bid => bid.is_current) ?? item.bids.reduce((best, bid) => bid.daily_rate > best.daily_rate ? bid : best, item.bids[0]);
+                const dates = item.date_flexible && bestBid.start_date && bestBid.end_date
+                  ? `${rentalDate(bestBid.start_date)} – ${rentalDate(bestBid.end_date)}`
+                  : `${rentalDate(item.start_date)} – ${rentalDate(item.end_date)}`;
+                return <Surface key={item.auction_id} className="p-4 sm:p-5">
+                  <div className="grid gap-4 sm:grid-cols-[140px_minmax(0,1fr)]">
+                    <AuctionImage url={item.image_url} />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div><Badge tone={state.tone}>{state.label}</Badge><h2 className="mt-2 font-semibold text-main break-words">{item.title}</h2></div>
+                        <p className="text-lg font-bold text-main tnum">{dollars(bestBid.daily_rate)}<span className="text-sm font-normal text-sec"> / day</span></p>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-sec">
+                        <span className="inline-flex items-center gap-1.5"><CalendarDays size={15} aria-hidden="true" />{dates}</span>
+                        <span>{item.bids.length} of 3 bids used</span>
+                        <span>Last bid {new Date(item.last_bid_at).toLocaleString()}</span>
+                      </div>
+                      {state.selected?.payment_status === 'pending' && state.selected.booking_id && state.selected.payment_deadline && <p className="mt-3 text-sm font-semibold text-warning">Complete payment by {new Date(state.selected.payment_deadline).toLocaleString()} to secure the rental.</p>}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {state.selected?.payment_status === 'pending' && state.selected.booking_id && <Button size="sm" onClick={() => navigate({ name: 'confirmation', id: state.selected!.booking_id! })}>Complete payment</Button>}
+                        <Button size="sm" variant="secondary" onClick={() => navigate({ name: 'bidding-detail', id: item.listing_id })}>View auction</Button>
+                      </div>
+                      <details className="mt-4 border-t border-app pt-2">
+                        <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-sec">Bid history ({item.bids.length})</summary>
+                        <ul className="space-y-2 pb-2 text-sm">
+                          {item.bids.map((bid, index) => <li key={bid.id} className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-sec">
+                            <span>Bid {item.bids.length - index}{bid.is_current && bid.rank ? ` · Rank ${bid.rank}` : ''}{bid.selected ? ' · Selected' : bid.passed ? ' · Passed' : ''}</span>
+                            <span className="tnum">{dollars(bid.daily_rate)} / day · {new Date(bid.submitted_at).toLocaleString()}</span>
+                          </li>)}
+                        </ul>
+                      </details>
+                    </div>
+                  </div>
+                </Surface>;
+              })}
+              {items.length < total && <div className="text-center"><Button variant="secondary" disabled={loadingMore} loading={loadingMore} loadingLabel="Loading bids..." onClick={() => void loadMore()}>Load more bids</Button></div>}
+            </div>}
+  </div>;
 }
 
 export function BiddingDetailPage({ id }: { id: string }) {

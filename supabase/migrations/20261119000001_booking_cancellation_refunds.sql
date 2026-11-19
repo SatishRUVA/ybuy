@@ -682,8 +682,8 @@ begin
   return to_jsonb(v_policy);
 end;
 $$;
-revoke all on function public.admin_save_booking_cancellation_policy(timestamptz,timestamptz,numeric,numeric,boolean,boolean,boolean,boolean,boolean,numeric,numeric,boolean,boolean,boolean,boolean,boolean,text) from public,anon;
-grant execute on function public.admin_save_booking_cancellation_policy(timestamptz,timestamptz,numeric,numeric,boolean,boolean,boolean,boolean,boolean,numeric,numeric,boolean,boolean,boolean,boolean,boolean,text) to authenticated;
+revoke all on function public.admin_save_booking_cancellation_policy(timestamptz,timestamptz,numeric,numeric,boolean,boolean,boolean,boolean,boolean,numeric,numeric,boolean,boolean,boolean,boolean,boolean,boolean,text) from public,anon;
+grant execute on function public.admin_save_booking_cancellation_policy(timestamptz,timestamptz,numeric,numeric,boolean,boolean,boolean,boolean,boolean,numeric,numeric,boolean,boolean,boolean,boolean,boolean,boolean,text) to authenticated;
 
 create function public.admin_list_booking_cancellations(
   p_refund_status text default null,p_initiator_role text default null,

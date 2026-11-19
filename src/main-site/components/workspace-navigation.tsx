@@ -1,4 +1,4 @@
-import { Calendar, Gavel, Heart, LifeBuoy, List, MessageSquare, PackagePlus, Search, ShieldCheck, User, Wallet, Bell } from 'lucide-react';
+import { Calendar, Gavel, Gift, Heart, LifeBuoy, List, MessageSquare, PackagePlus, Search, ShieldCheck, User, Wallet, Bell } from 'lucide-react';
 import { useRouter, type Route } from '@/router';
 
 type Entry = { label: string; route: Route; icon: typeof Search; active?: (route: Route) => boolean };
@@ -16,9 +16,11 @@ const primaryEntries: Entry[] = [
 const extraGroups: { title: string; entries: Entry[] }[] = [
   { title: 'Explore', entries: [
     { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel,
-      active: route => ['bidding', 'bidding-detail', 'auction'].includes(route.name) },
+      active: route => ['bidding', 'bidding-detail', 'auction'].includes(route.name) && !(route.name === 'bidding' && route.view === 'my-bids') },
   ] },
   { title: 'Renting', entries: [
+    { label: 'My bids', route: { name: 'bidding', view: 'my-bids' }, icon: Gavel,
+      active: route => route.name === 'bidding' && route.view === 'my-bids' },
     { label: 'Saved items', route: { name: 'favorites' }, icon: Heart },
     { label: 'My item requests', route: { name: 'requests', tab: 'mine' }, icon: PackagePlus,
       active: route => route.name === 'requests' && Boolean(route.matches || route.tab === 'mine' || route.tab === 'offers') },
@@ -33,7 +35,7 @@ const extraGroups: { title: string; entries: Entry[] }[] = [
   { title: 'Account & help', entries: [
     { label: 'Notifications', route: { name: 'notifications' }, icon: Bell },
     { label: 'Profile & settings', route: { name: 'trust-profile' }, icon: User },
-    { label: 'Wallet', route: { name: 'wallet' }, icon: Wallet },
+    { label: 'Points & rewards', route: { name: 'wallet' }, icon: Gift },
     { label: 'Support', route: { name: 'support' }, icon: LifeBuoy },
     { label: 'Rental disputes', route: { name: 'claims' }, icon: ShieldCheck,
       active: route => route.name === 'claims' || route.name === 'claim-detail' },
@@ -50,6 +52,7 @@ export function WorkspaceNavigation({ onNavigate, label = 'Workspace navigation'
   showPrimary?: boolean;
 }) {
   const { route, navigate } = useRouter();
+  const activeExtra = extraGroups.flatMap(group => group.entries).find(entry => isCurrent(entry, route));
   return (
     <nav aria-label={label} className="workspace-navigation">
       {showPrimary && <div className="workspace-navigation-primary">
@@ -61,20 +64,25 @@ export function WorkspaceNavigation({ onNavigate, label = 'Workspace navigation'
           </button>
         ))}
       </div>}
-      <details className="workspace-navigation-more" open={extraGroups.some(group => group.entries.some(entry => isCurrent(entry, route))) || undefined}>
-        <summary>More tools</summary>
-        {extraGroups.map(group => (
-          <div key={group.title} className="workspace-navigation-group">
-            <p>{group.title}</p>
-            {group.entries.map(entry => (
-              <button type="button" key={entry.label} aria-current={isCurrent(entry, route) ? 'page' : undefined}
-                onClick={() => { onNavigate?.(); navigate(entry.route); }}>
-                <entry.icon size={17} aria-hidden="true" />
-                <span>{entry.label}</span>
-              </button>
-            ))}
-          </div>
-        ))}
+      <details className="workspace-navigation-more">
+        <summary aria-label={activeExtra ? `More tools, current page: ${activeExtra.label}` : undefined}>
+          <span>More tools</span>
+          {activeExtra && <span className="workspace-navigation-current">{activeExtra.label}</span>}
+        </summary>
+        <div className="workspace-navigation-panel">
+          {extraGroups.map(group => (
+            <div key={group.title} className="workspace-navigation-group">
+              <p>{group.title}</p>
+              {group.entries.map(entry => (
+                <button type="button" key={entry.label} aria-current={isCurrent(entry, route) ? 'page' : undefined}
+                  onClick={() => { onNavigate?.(); navigate(entry.route); }}>
+                  <entry.icon size={17} aria-hidden="true" />
+                  <span>{entry.label}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
       </details>
     </nav>
   );

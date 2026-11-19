@@ -30,7 +30,7 @@ export type Route =
   | { name: 'need-something' }
   | { name: 'protection' }
   | { name: 'notifications' }
-  | { name: 'bidding' }
+  | { name: 'bidding'; view?: 'my-bids' }
   | { name: 'bidding-detail'; id: string }
   | { name: 'auction'; id: string }
   | { name: 'guidelines' }
@@ -100,7 +100,7 @@ function routeToPath(route: Route): string {
     case 'need-something': return '/need-something';
     case 'protection': return '/protection';
     case 'notifications': return '/notifications';
-    case 'bidding': return '/bidding';
+    case 'bidding': return route.view === 'my-bids' ? '/bidding?view=my-bids' : '/bidding';
     case 'bidding-detail': return `/bidding/${route.id}`;
     case 'auction': return `/auction/${route.id}`;
     case 'guidelines': return '/guidelines';
@@ -169,7 +169,10 @@ function pathToRoute(pathname: string, search: string): Route {
     case 'need-something': return { name: 'need-something' };
     case 'protection': return { name: 'protection' };
     case 'notifications': return { name: 'notifications' };
-    case 'bidding': return second ? { name: 'bidding-detail', id: second } : { name: 'bidding' };
+    case 'bidding': {
+      if (second) return { name: 'bidding-detail', id: second };
+      return new URLSearchParams(search).get('view') === 'my-bids' ? { name: 'bidding', view: 'my-bids' } : { name: 'bidding' };
+    }
     case 'auction': return second ? { name: 'auction', id: second } : { name: 'home' };
     case 'guidelines': return { name: 'guidelines' };
     case 'admin': return { name: 'admin', section: second, recordId: parts[2] };
