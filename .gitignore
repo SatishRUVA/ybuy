@@ -39,6 +39,7 @@ docs
 /scripts/*
 !/scripts/seed-local-test-users.mjs
 !/scripts/backfill-pickup-timezones.mjs
+!/scripts/check-netlify-env.mjs
 playwright-*-report/
 test-results*/
 .tmp-auction/
