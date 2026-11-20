@@ -11,7 +11,7 @@ const caseRow = {
   created_by: userId, assigned_to: null, created_at: now, updated_at: now,
 };
 
-async function setup(page: Page, permissions: string[]) {
+async function setup(page: Page, permissions: string[], role: 'admin' | 'super_admin' = 'admin') {
   const expires = Math.floor(Date.now() / 1000) + 3600;
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
   const session = {
@@ -28,7 +28,11 @@ async function setup(page: Page, permissions: string[]) {
     let body: unknown = [];
     if (url.pathname.endsWith('/has_active_session')) body = true;
     if (url.pathname.endsWith('/get_my_profile')) body = { id: userId, full_name: 'Test Operator', email: 'operations@example.test', created_at: now };
-    if (url.pathname.endsWith('/get_my_admin_access')) body = permissions.length ? { role: 'admin', permissions } : null;
+    if (url.pathname.endsWith('/get_my_admin_access')) body = permissions.length ? { role, permissions } : null;
+    if (url.pathname.endsWith('/rest/v1/bookings')) body = [{
+      id: 'b1000000-0000-4000-8000-000000000001', booking_reference: 'YB-1234',
+      start_date: '2026-10-20', end_date: '2026-10-22', status: 'completed',
+    }];
     if (url.pathname.endsWith('/admin_list_cases') || url.pathname.endsWith('/list_my_cases')) body = { total: 1, rows: [caseRow] };
     if (url.pathname.endsWith('/get_case_detail')) body = {
       case: caseRow, replies: [{ id: 'reply', author_id: userId, body: 'Reply from staff', is_private: false, created_at: now }],
@@ -38,6 +42,7 @@ async function setup(page: Page, permissions: string[]) {
     if (url.pathname.endsWith('/create_case') || url.pathname.endsWith('/admin_create_case')) body = { ...caseRow, ...route.request().postDataJSON(), id: caseId };
     if (url.pathname.endsWith('/admin_update_case') || url.pathname.endsWith('/reply_to_case')) body = { ok: true };
     if (url.pathname.endsWith('/admin_list_promotions')) body = { total: 0, rows: [] };
+    if (url.pathname.endsWith('/admin_list_admins')) body = [];
     if (url.pathname.endsWith('/admin_save_promotion')) body = { id: caseId };
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   });
@@ -62,6 +67,7 @@ test('support operator sees supported modules, but not financial grants', async 
   await expect(page.getByRole('heading', { name: 'Support tickets', exact: true })).toBeVisible();
   const nav = page.getByRole('navigation', { name: 'Admin', exact: true });
   await expect(nav.getByRole('button', { name: 'Support tickets' })).toBeVisible();
+  await expect(nav.getByRole('button', { name: 'Administrators', exact: true })).toHaveCount(0);
   await expect(nav.getByRole('button', { name: 'Promotions & rewards' })).toHaveCount(0);
   await expect(nav.getByRole('button', { name: 'Refund requests' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Pickup question', exact: true }).click();
@@ -76,6 +82,15 @@ test('support operator sees supported modules, but not financial grants', async 
   await expect(page.getByText('Case saved.', { exact: true })).toBeVisible();
 });
 
+test('super admin can open the administrator management screen', async ({ page }) => {
+  await setup(page, ['admins.manage'], 'super_admin');
+  await page.goto(`${appUrl}/admin/overview`);
+  await page.getByRole('button', { name: 'Open admin menu' }).click();
+  const nav = page.getByRole('navigation', { name: 'Admin', exact: true });
+  await nav.getByRole('button', { name: 'Administrators', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Administrators', exact: true })).toBeVisible();
+});
+
 test('participant support has no staff-only controls', async ({ page }) => {
   await setup(page, []);
   await page.goto(`${appUrl}/support/${caseId}`);
@@ -87,6 +102,22 @@ test('participant support has no staff-only controls', async ({ page }) => {
   const reply = page.waitForRequest((request) => request.url().endsWith('/reply_to_case'));
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   expect((await reply).postDataJSON()).toMatchObject({ p_case_id: caseId, p_private: false });
+});
+
+test('customer dispute selects an existing booking and submits it to the case service', async ({ page }) => {
+  const bookingId = 'b1000000-0000-4000-8000-000000000001';
+  await setup(page, []);
+  await page.goto(`${appUrl}/claims`);
+  await page.getByRole('button', { name: 'New claim', exact: true }).click();
+  await expect(page.getByRole('option', { name: /YB-1234/ })).toBeVisible();
+  await page.getByLabel('Subject', { exact: true }).fill('Damaged item');
+  await page.getByLabel('Booking', { exact: true }).selectOption(bookingId);
+  await page.getByLabel('Describe the issue', { exact: true }).fill('The item was damaged during the rental.');
+  const created = page.waitForRequest((request) => request.url().endsWith('/create_case'));
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  expect((await created).postDataJSON()).toMatchObject({
+    p_kind: 'dispute', p_booking_id: bookingId, p_subject: 'Damaged item',
+  });
 });
 
 test('ordinary user is denied the admin console', async ({ page }) => {

@@ -65,6 +65,7 @@ select ok(not has_function_privilege('authenticated','public.operations_create_c
 select ok(not has_function_privilege('authenticated','public.operations_credit_balance(uuid)','execute'),'Other users balances cannot be read through helper');
 select ok(not has_function_privilege('authenticated','public.reconcile_test_refund_event(text,text,text,numeric,text,text,boolean)','execute'),'Clients cannot reconcile provider events');
 select ok(has_function_privilege('service_role','public.reconcile_test_refund_event(text,text,text,numeric,text,text,boolean)','execute'),'Service role can reconcile verified sandbox events');
+select ok(has_table_privilege('authenticated','public.operations_cases','select'),'Realtime reads are subject to case staff RLS');
 select is((select public from storage.buckets where id='admin-case-evidence'),false,'Evidence bucket is private');
 
 set local role authenticated;
@@ -122,10 +123,12 @@ select throws_ok($$select public.create_case('support','b4000000-0000-4000-8000-
 select ok(not public.can_access_case_evidence((select id::text from test_ids where k='dispute')||
  '/b0000000-0000-4000-8000-000000000004/evidence.pdf'),'Nonparticipant cannot read evidence');
 select is((public.list_my_cases()->>'total')::int,0,'Unrelated user sees empty personal queue');
-select throws_ok($$select * from public.operations_cases$$,'42501',null,'Case tables cannot be bypassed directly');
+select is((select count(*) from public.operations_cases),0,'Nonstaff cannot read cases through Realtime table access');
 
 select pg_temp.login(2);
 select is((public.admin_list_cases()->>'total')::int,1,'Support permission only returns support queue');
+select is((select count(*) from public.operations_cases where kind='support'),1,'Support staff can receive support case updates');
+select is((select count(*) from public.operations_cases where kind='dispute'),0,'Support staff cannot receive dispute updates');
 select throws_ok($$select public.get_case_detail((select id from test_ids where k='dispute'))$$,
  '42501','Case not found or not authorized','Support staff cannot read dispute details');
 select throws_ok($$select public.admin_create_case('dispute','b4000000-0000-4000-8000-000000000001',
@@ -134,6 +137,7 @@ select throws_ok($$select public.admin_create_case('dispute','b4000000-0000-4000
 
 select pg_temp.login(1);
 select is((public.admin_list_cases()->>'total')::int,2,'Super admin sees both queues');
+select is((select count(*) from public.operations_cases),2,'Dispute staff can receive updates for both case kinds');
 select is((public.admin_list_cases('dispute','open',25,0,'never','normal')->>'total')::int,1,'Admin filters apply before pagination');
 select is((public.admin_list_cases(null,null,25,0,'does not match',null)->>'total')::int,0,'Admin search excludes nonmatches');
 select is((public.admin_list_cases(null,null,25,0,null,'urgent')->>'total')::int,0,'Admin priority filter works');

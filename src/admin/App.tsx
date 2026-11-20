@@ -7,14 +7,19 @@ import { Alert, Button } from '@/main-site/components/ui';
 import { BrandLogo } from '@/main-site/components/brand-logo';
 import { fieldClass } from '@/main-site/components/form-classes';
 import { loadLocalProfiles, type LocalLoginProfile } from '@/lib/local-profile-login';
+import { ADMIN_PORTAL_ROLE } from '@/lib/admin-portal';
 import '@/main-site/index.css';
 import '@/main-site/theme.css';
 
 const AdminPage = lazy(() => import('./pages/admin-page').then(module => ({ default: module.AdminPage })));
-type Grant = { role: 'admin'; profiles: LocalLoginProfile[] };
+type Grant = { role: 'admin' | 'super_admin'; profiles: LocalLoginProfile[] };
+const roleLabel = ADMIN_PORTAL_ROLE === 'super_admin' ? 'Super Admin' : 'Admin';
+const signInTitle = ADMIN_PORTAL_ROLE === 'super_admin' ? 'Super Admin' : 'Administrator';
+const profileRole = roleLabel;
+const accessEndpoint = ADMIN_PORTAL_ROLE === 'super_admin' ? '/api/super-admin/access' : '/api/admin/access';
 
-async function accessRequest(method: 'GET' | 'POST' | 'DELETE', body?: { role: 'admin'; code: string }) {
-  const response = await fetch('/api/admin/access', {
+async function accessRequest(method: 'GET' | 'POST' | 'DELETE', body?: { role: 'admin' | 'super_admin'; code: string }) {
+  const response = await fetch(accessEndpoint, {
     method, cache: 'no-store',
     ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}),
   });
@@ -23,10 +28,10 @@ async function accessRequest(method: 'GET' | 'POST' | 'DELETE', body?: { role: '
   if (!response.ok) throw new Error(data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
     ? data.error : 'Could not verify administrator access. Please retry.');
   if (method === 'DELETE') return null;
-  if (!data || typeof data !== 'object' || !('role' in data) || data.role !== 'admin') {
+  if (!data || typeof data !== 'object' || !('role' in data) || data.role !== ADMIN_PORTAL_ROLE) {
     throw new Error('Administrator verification returned an invalid role.');
   }
-  return data.role;
+  return ADMIN_PORTAL_ROLE;
 }
 
 function AdminPortal() {
@@ -51,7 +56,7 @@ function AdminPortal() {
       if (!verifiedRole) { setGrant(null); return; }
       const profiles = await loadLocalProfiles();
       if (currentRevision !== revision.current) return;
-      if (profiles.some(item => item.role !== 'Admin')) throw new Error('Administrator profiles do not match your verified role.');
+      if (profiles.some(item => item.role !== profileRole)) throw new Error('Administrator profiles do not match your verified role.');
       setGrant({ role: verifiedRole, profiles });
       setError(null);
     } catch (reason) {
@@ -75,11 +80,11 @@ function AdminPortal() {
     revision.current++;
     setBusy(true); setError(null); setGrant(null);
     try {
-      const verifiedRole = await accessRequest('POST', { role: 'admin', code });
+      const verifiedRole = await accessRequest('POST', { role: ADMIN_PORTAL_ROLE, code });
       setCode('');
       if (!verifiedRole) throw new Error('Administrator verification did not return a role.');
       const profiles = await loadLocalProfiles();
-      if (profiles.some(item => item.role !== 'Admin')) throw new Error('Administrator profiles do not match your verified role.');
+      if (profiles.some(item => item.role !== profileRole)) throw new Error('Administrator profiles do not match your verified role.');
       setGrant({ role: verifiedRole, profiles });
       setSwitching(true);
     } catch (reason) {
@@ -106,7 +111,7 @@ function AdminPortal() {
     <header className="admin-gate-header flex flex-wrap items-center justify-between gap-3 border-b border-app bg-card px-4 py-4 sm:px-6">
       <div className="flex items-center gap-3"><BrandLogo /><span className="text-sm font-semibold">Administration</span></div>
       {grant && <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-sec">{profile?.full_name ?? 'Admin'}</span>
+        <span className="text-sm text-sec">{profile?.full_name ?? roleLabel}</span>
         {authorized && !switching && <Button variant="secondary" size="sm" onClick={() => setSwitching(true)}>Switch profile</Button>}
         <Button variant="ghost" size="sm" disabled={busy || authBusy !== null} onClick={() => void lock()}>Lock & sign out</Button>
       </div>}
@@ -115,21 +120,24 @@ function AdminPortal() {
     {busy || authLoading || authBusy !== null ? <p role="status" className="p-8 text-center text-sec">Checking administrator access...</p>
       : !grant ? <main className="mx-auto max-w-lg px-5 py-12 sm:py-20">
         <ShieldCheck className="mb-5 text-main" size={32} aria-hidden="true" />
-        <h1 className="font-display text-3xl font-bold">Administrator sign-in</h1>
+        <h1 className="font-display text-3xl font-bold">{signInTitle} sign-in</h1>
         <p className="mt-3 text-sm leading-relaxed text-sec">Isolated test environment. Administrator access uses an authenticator code for up to two hours.</p>
-        <form onSubmit={event => void verify(event)} className="mt-7 space-y-5">
-          <label className="block text-sm font-semibold">Admin authenticator code
-            <input className={fieldClass('mt-2')} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-              autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required />
-          </label>
+        <form method="post" action={accessEndpoint} onSubmit={event => void verify(event)} className="mt-7 space-y-5">
+          <label htmlFor="admin-auth-code" className="block text-sm font-semibold">{roleLabel} authenticator code</label>
+          <p id="admin-auth-code-hint" className="text-sm text-sec">Enter the six-digit code from your authenticator app.</p>
+          <input id="admin-auth-code" name="code" type="text" className={fieldClass('mt-2')} value={code}
+            onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+            autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
+            aria-describedby="admin-auth-code-hint" required />
+          <input type="hidden" name="role" value={ADMIN_PORTAL_ROLE} />
           <Button type="submit" fullWidth disabled={code.length !== 6}>Verify & choose profile</Button>
         </form>
         <Button variant="ghost" className="mt-4" onClick={() => { setBusy(true); void refresh(); }}>Retry access check</Button>
       </main>
       : picker ? <main className="mx-auto max-w-lg px-5 py-12">
-        <h1 className="font-display text-3xl font-bold">Choose an Admin profile</h1>
+        <h1 className="font-display text-3xl font-bold">Choose a {roleLabel} profile</h1>
         <p className="mt-3 text-sm text-sec">Your authenticator code is verified. You can switch between administrator profiles without entering it again until access expires.</p>
-        <label className="mt-6 block text-sm font-semibold">Administrator profile
+        <label className="mt-6 block text-sm font-semibold">{roleLabel} profile
           <select className={fieldClass('mt-2')} value={authorized ? user.id : ''} disabled={authBusy !== null}
             onChange={event => { setSwitching(false); void selectLocalProfile(event.target.value); }}>
             <option value="" disabled>Select a profile</option>
@@ -140,9 +148,9 @@ function AdminPortal() {
         {authorized && <Button variant="secondary" className="mt-4" onClick={() => setSwitching(false)}>Back to dashboard</Button>}
       </main>
       : <Suspense fallback={<p role="status" className="p-8">Loading admin console...</p>}>
-        <AdminPage key={user.id} section={route.name === 'admin' && route.section !== 'login' ? route.section : undefined}
-          recordId={route.name === 'admin' ? route.recordId : undefined} />
-        {route.name !== 'admin' && <Button className="sr-only focus:not-sr-only" onClick={() => navigate({ name: 'admin' })}>Open admin dashboard</Button>}
+        <AdminPage key={user.id} section={(route.name === 'admin' || route.name === 'super-admin') && route.section !== 'login' ? route.section : undefined}
+          recordId={route.name === 'admin' || route.name === 'super-admin' ? route.recordId : undefined} />
+        {route.name !== 'admin' && route.name !== 'super-admin' && <Button className="sr-only focus:not-sr-only" onClick={() => navigate({ name: ADMIN_PORTAL_ROLE === 'super_admin' ? 'super-admin' : 'admin' })}>Open admin dashboard</Button>}
       </Suspense>}
   </div>;
 }

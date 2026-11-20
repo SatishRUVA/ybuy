@@ -1,0 +1,51 @@
+[build]
+command = "node scripts/check-netlify-env.mjs && pnpm run build"
+publish = "dist"
+
+[functions]
+directory = "netlify/functions"
+node_bundler = "esbuild"
+
+[dev]
+framework = "vite"
+targetPort = 5174
+
+[[redirects]]
+from = "/api/access/verify"
+to = "/.netlify/functions/access-verify"
+status = 200
+
+[[redirects]]
+from = "/api/access/vpn-check"
+to = "/.netlify/functions/access-vpn-check"
+status = 200
+
+[[redirects]]
+from = "/api/admin/access"
+to = "/.netlify/functions/admin-access"
+status = 200
+
+[[redirects]]
+from = "/api/admin/profiles"
+to = "/.netlify/functions/admin-profiles"
+status = 200
+
+[[redirects]]
+from = "/api/super-admin/access"
+to = "/.netlify/functions/super-admin-access"
+status = 200
+
+[[redirects]]
+from = "/api/super-admin/profiles"
+to = "/.netlify/functions/super-admin-profiles"
+status = 200
+
+[[redirects]]
+from = "/api/test-profiles"
+to = "/.netlify/functions/test-profiles"
+status = 200
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200

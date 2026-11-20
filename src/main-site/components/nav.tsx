@@ -26,6 +26,7 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
   const [unreadCount, setUnreadCount] = useState<number | null>(null);
   const adminAccess = useAdminAccess();
   const rentalWorkspace = ['dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts'].includes(route.name);
+  const adminRoute: Route = adminAccess.access?.role === 'super_admin' ? { name: 'super-admin' } : { name: 'admin' };
 
   // A route change while the sheet is open would otherwise leave it covering the new page.
   useEffect(() => { setMenuOpen(false); }, [route, user?.id]);
@@ -154,9 +155,9 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
                       {unreadCount === null ? 'Unread notification count unavailable' : `${unreadCount} unread notifications`}
                     </span>
                   </button>
-                  {adminAccess.access?.role === 'admin' && (
+                  {(adminAccess.access?.role === 'admin' || adminAccess.access?.role === 'super_admin') && (
                     <button
-                      onClick={() => go({ name: 'admin' })}
+                      onClick={() => go(adminRoute)}
                       aria-label="Admin console"
                       className="hidden sm:grid place-items-center w-11 h-11 rounded-card border border-app bg-card text-sec hover:text-accent hover:border-strong transition-colors duration-fast"
                     >
@@ -222,8 +223,8 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
           </Button>
           {user ? (
             <>
-              {adminAccess.access?.role === 'admin' && (
-                <Button fullWidth size="sm" variant="ghost" icon={<ShieldCheck size={16} />} onClick={() => go({ name: 'admin' })} className="mt-1">
+              {(adminAccess.access?.role === 'admin' || adminAccess.access?.role === 'super_admin') && (
+                <Button fullWidth size="sm" variant="ghost" icon={<ShieldCheck size={16} />} onClick={() => go(adminRoute)} className="mt-1">
                   Admin console
                 </Button>
               )}

@@ -19,6 +19,7 @@ import { PromotionsSection } from '@/admin/pages/promotions';
 import { RefundsSection } from '@/admin/pages/refunds';
 import { ItemRequestsSection } from '@/admin/pages/marketplace';
 import { CustomerInvestigationsSection } from '@/admin/pages/investigations';
+import { AdminsSection } from '@/admin/pages/governance';
 import { AdminGlobalSearch } from '@/admin/pages/admin-search';
 import { ActionCenter } from '@/admin/pages/action-center';
 import { Booking360, Customer360 } from '@/admin/pages/record-details';
@@ -54,6 +55,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
     { id: 'promotions', label: 'Promotions & rewards', icon: Gift, anyPermission: ['promotions.manage', 'credits.manage'] },
     { id: 'categories', label: 'Categories', icon: Tags, permission: 'categories.manage' },
     { id: 'settings', label: 'Settings', icon: SlidersHorizontal, permission: 'config.manage' },
+    { id: 'admins', label: 'Administrators', icon: Users, permission: 'admins.manage' },
     { id: 'insurance', label: 'Insurance & protection', icon: Shield, pending: 'Insurance and protection options' },
     { id: 'analytics', label: 'Analytics & exports', icon: BarChart3, permission: 'analytics.view' },
   ] },
@@ -115,6 +117,7 @@ function Section({ id, recordId, access, onSelect }: {
     case 'reviews': return <ReviewsSection />;
     case 'categories': return <CategoriesSection />;
     case 'settings': return <SettingsSection isSuperAdmin={access.role === 'super_admin'} />;
+    case 'admins': return <AdminsSection />;
     case 'payments': return <PaymentsSection />;
     case 'payouts': return <PayoutsSection />;
     default: {
@@ -170,7 +173,7 @@ export function AdminPage({ section, recordId }: { section?: string; recordId?: 
   }
   const select = (id: string, selectedRecordId?: string) => {
     setMenuOpen(false);
-    navigate({ name: 'admin', section: id, recordId: selectedRecordId });
+    navigate({ name: access.role === 'super_admin' ? 'super-admin' : 'admin', section: id, recordId: selectedRecordId });
   };
 
   return (

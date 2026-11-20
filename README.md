@@ -2,9 +2,9 @@
 
 ## CI/CD
 
-See [GitHub Actions staging releases](docs/implementation/CI_CD.md) for required
-environment secrets, branch protection, and the backend-first Vercel/Supabase
-deployment pipeline.
+See [GitHub Actions staging and production releases](docs/implementation/CI_CD.md)
+for required environment secrets, branch protection, and the automatic
+backend-first Supabase/Netlify deployment on `dev`.
 
 ## YBuy Points MVP (test only)
 
@@ -696,8 +696,10 @@ The homepage retains the supplied camping, mixer and drill imagery. Production
 only shows a rental price and listing link when the matching published inventory
 exists; otherwise those are editorial category links.
 
-Hosted passwordless test-profile selection is restricted to
-`ybuy-redesign-v1.vercel.app` and `jzyjmsixfuwzfnntewqn`. Enable
+Hosted passwordless test-profile selection defaults to
+`ybuy-redesign-v1.vercel.app` and `ybuy-e2e-test.vercel.app`; add any additional
+exact host to both `VITE_TEST_PROFILE_HOSTS` and
+`YBUY_TEST_PROFILE_ALLOWED_HOSTS`. Enable
 `VITE_TEST_PROFILE_LOGIN=true` and `YBUY_TEST_PROFILE_LOGIN=true`, and configure
 server-only `YBUY_TOTP_SECRET`, `YBUY_ACCESS_SESSION_SECRET` and
 `SUPABASE_SERVICE_ROLE_KEY`. The existing authenticator verifier grants a signed,
@@ -710,6 +712,55 @@ The top-right avatar opens a compact anchored dropdown with Sign out and, in
 enabled test environments, Switch profile. It does not open a modal; workspace
 links remain in the existing navigation.
 
+### Netlify CI/CD
+
+Connect `SatishRUVA/ybuy` to Netlify through the Netlify Git integration. The
+repository's `netlify.toml` configures the Vite build, SPA fallback, seven
+same-origin API routes, and access-gate Edge Function. The `dev` branch
+production workflow uses GitHub Actions to deploy only changed layers: Supabase
+first when both backend and frontend change, then Netlify. Disable Netlify's
+automatic Git deployments to avoid duplicate or out-of-order production
+deploys. Existing GitHub Actions run typecheck, lint, all three app builds, and
+database checks.
+
+Set environment variables in the Netlify site's UI, not in `netlify.toml` or
+Git. The build intentionally fails if `VITE_SUPABASE_URL` or
+`VITE_SUPABASE_ANON_KEY` is missing; both are required at build time to avoid
+publishing a bundle that fails at startup. These `VITE_` values are public
+client configuration embedded in the bundle, so configure them as non-secret
+variables. Keep the service-role key and authenticator/session secrets secret.
+For local server-side values, use the ignored `.env.local`; `.env.example` lists
+the variable names with empty placeholders.
+
+For the combined customer E2E, Admin, and Super Admin site, use the Netlify
+hostname `ybuys.netlify.app` and configure these build variables:
+
+- Public: `VITE_SITE_VARIANT=combined`, `VITE_TEST_ENVIRONMENT=true`,
+  `VITE_TEST_PROFILE_LOGIN=true`, and `VITE_TEST_PROFILE_HOSTS=ybuys.netlify.app`.
+- Public Supabase client settings: `VITE_SUPABASE_URL` and
+  `VITE_SUPABASE_ANON_KEY` for the isolated test backend.
+
+Configure these Functions and Edge variables:
+
+- `YBUY_TEMP_ACCESS_ENABLED=true`, `YBUY_TEST_PROFILE_LOGIN=true`,
+  `YBUY_TEST_PROFILE_ALLOWED_HOSTS=ybuys.netlify.app`, and
+  `YBUY_ADMIN_HOST=ybuys.netlify.app`.
+- Three different server-side TOTP seeds: `YBUY_TOTP_SECRET` for the site gate,
+  `YBUY_ADMIN_TOTP_SECRET` for `/admin`, and
+  `YBUY_SUPER_ADMIN_TOTP_SECRET` for `/super-admin`. The API refuses role
+  access unless both role seeds are valid and all three are distinct.
+- `YBUY_ACCESS_SESSION_SECRET` and `YBUY_ADMIN_ACCESS_SESSION_SECRET` (each at
+  least 32 characters and different), plus server-only
+  `SUPABASE_SERVICE_ROLE_KEY`. Make the Supabase public URL available to
+  Functions as well.
+
+The site gate runs first across the hostname; Admin and Super Admin then use
+their separate role-specific authenticator seeds. The customer app is at `/`,
+the Admin portal is at `/admin`, and Super Admin is at `/super-admin`. The
+portals list only already-provisioned synthetic profiles whose fixture marker
+and active database role match that portal; this setup does not create accounts
+or promote users. Keep every seed and service-role key secret in Netlify.
+
 ### Dedicated administrator test portal
 
 `https://ybuy-admin.vercel.app/` is a separate Vercel deployment from the same
@@ -718,7 +769,7 @@ Build it with `VITE_SITE_VARIANT=admin`; administrator pages and RPCs live under
 `src/admin`. Customer builds no longer import administrator dashboards. Shared
 claims, support, wallet and read-only role lookup stay available to customers;
 staff case controls are compiled only into the admin build. Customer `/admin`
-routes link to the dedicated portal.
+routes link to the dedicated portal unless the site uses the combined variant.
 
 Configure these production environment variables **only on the admin project**:
 
@@ -726,19 +777,24 @@ Configure these production environment variables **only on the admin project**:
 - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for the isolated test backend,
   plus server-only `SUPABASE_SERVICE_ROLE_KEY`.
 - Server-only `YBUY_ADMIN_TOTP_SECRET` (a Base32 seed of at least 32 characters)
-  and a separate `YBUY_ADMIN_ACCESS_SESSION_SECRET` (at least 32 characters).
+  and `YBUY_SUPER_ADMIN_TOTP_SECRET` (a different Base32 seed of at least 32
+  characters), plus a separate `YBUY_ADMIN_ACCESS_SESSION_SECRET` (at least 32
+  characters). The `/super-admin` route requires an existing active
+  `super_admin` test fixture; it does not change database roles.
 - `YBUY_TEMP_ACCESS_ENABLED=false`, `YBUY_TEST_PROFILE_LOGIN=false` and
   `VITE_TEST_PROFILE_LOGIN=false`; the customer authenticator is not used here.
 
-Enter the Admin authenticator code, then choose an Admin profile. The portal
-admits only `admin@example.test` profiles carrying the
+Enter the role-specific authenticator code at `/admin` or `/super-admin`, then
+choose a matching profile. The Admin portal admits only `admin@example.test`
+profiles, while Super Admin admits only `super-admin@example.test` profiles;
+each must carry the
 `ybuy-local-lifecycle-v1` fixture marker and matching active database role.
 Switching profiles does not ask for another code. Tokens are signed with a
 host-and-role-specific key and kept in a host-only HttpOnly, Secure,
 SameSite=Strict cookie for up to two hours. Supabase sessions on the portal are
-memory-only; profile selection is required again after a reload. Super Admin
-access and management features are not available in this portal; backend role
-records are retained.
+memory-only; profile selection is required again after a reload. The
+site-level gate is not enabled on this separate Vercel host; use the combined
+Netlify setup when all three authenticator checks are required.
 
 Apply `20261103000003_admin_portal_login_limit.sql` to the **test backend only**.
 It limits verification to five attempts per hashed IP in five minutes across
@@ -753,13 +809,18 @@ rotate the admin signing secret to invalidate existing portal cookies.
 Validation:
 
 ```powershell
-node --test tests\admin-portal-access.test.mjs tests\hosted-profile-gate.test.mjs tests\hosted-profile-list.test.mjs
+node --test tests\admin-portal-access.test.mjs tests\hosted-profile-gate.test.mjs tests\hosted-profile-list.test.mjs tests\netlify-access-gate.test.mjs
 $env:VITE_SITE_VARIANT='admin'
 npx vite build --outDir dist-admin --manifest
 npx playwright test --config playwright.admin.config.ts --reporter=list
 $env:VITE_SITE_VARIANT='main'
 npx vite build --outDir dist-customer --manifest
 node --test tests\admin-bundle-separation.test.mjs
+$env:VITE_SITE_VARIANT='combined'
+$env:VITE_SUPABASE_URL='https://example.supabase.co'
+$env:VITE_SUPABASE_ANON_KEY='test-only-build-value'
+npx vite build --outDir dist-combined
+npx playwright test --config playwright.combined.config.ts --reporter=list
 ```
 
 The admin portal was deployed on November 3, 2026 as

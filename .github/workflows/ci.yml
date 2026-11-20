@@ -46,6 +46,10 @@ jobs:
         env:
           VITE_SITE_VARIANT: admin
         run: pnpm run build --outDir dist-admin --manifest
+      - name: Build combined Netlify bundle
+        env:
+          VITE_SITE_VARIANT: combined
+        run: pnpm run build --outDir dist-combined
 
   database:
     name: Database checks

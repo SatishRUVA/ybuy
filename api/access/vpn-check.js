@@ -9,7 +9,7 @@ function json(status, body) {
   });
 }
 
-export default async function handler(request) {
+export default async function handler(request, clientIp) {
   if (request.method !== 'GET') return json(405, { error: 'Method not allowed' });
 
   try {
@@ -19,7 +19,8 @@ export default async function handler(request) {
     );
     if (!enabled) return json(200, { enabled: false, isVpn: false });
 
-    const ip = request.headers.get('x-vercel-forwarded-for')?.trim()
+    const ip = clientIp
+      || request.headers.get('x-vercel-forwarded-for')?.trim()
       || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
     if (!ip) return json(503, { error: 'VPN check unavailable' });
 

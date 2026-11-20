@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { signAccessSession, verifyAccessSession } from './access-session.js';
 
-export const ADMIN_HOST = 'ybuy-admin.vercel.app';
+export const ADMIN_HOST = (process.env.YBUY_ADMIN_HOST || 'ybuy-admin.vercel.app').trim().toLowerCase();
 export const TEST_BACKEND = 'https://jzyjmsixfuwzfnntewqn.supabase.co';
 export const ADMIN_COOKIE = '__Host-ybuy_admin_access';
 export const ADMIN_ROLES = ['admin', 'super_admin'];
@@ -21,13 +21,27 @@ export function adminEnabled(request) {
   return process.env.YBUY_ADMIN_PORTAL === 'true' && new URL(request.url).hostname === ADMIN_HOST;
 }
 
-export function adminConfigured() {
-  const { YBUY_ADMIN_TOTP_SECRET: admin, YBUY_ADMIN_ACCESS_SESSION_SECRET: session } = process.env;
-  return /^[A-Z2-7]{32,}$/i.test(admin ?? '')
+export function adminConfigured(role) {
+  const admin = process.env.YBUY_ADMIN_TOTP_SECRET;
+  const superAdmin = process.env.YBUY_SUPER_ADMIN_TOTP_SECRET;
+  const session = process.env.YBUY_ADMIN_ACCESS_SESSION_SECRET;
+  return ADMIN_ROLES.includes(role)
+    && /^[A-Z2-7]{32,}$/i.test(admin ?? '')
+    && /^[A-Z2-7]{32,}$/i.test(superAdmin ?? '')
     && admin !== process.env.YBUY_TOTP_SECRET
+    && superAdmin !== process.env.YBUY_TOTP_SECRET
+    && admin !== superAdmin
     && typeof session === 'string' && session.length >= 32
+    && session !== process.env.YBUY_TOTP_SECRET
+    && session !== admin && session !== superAdmin
     && session !== process.env.YBUY_ACCESS_SESSION_SECRET
     && Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) && process.env.VITE_SUPABASE_URL === TEST_BACKEND;
+}
+
+export function adminTotpSecret(role) {
+  return role === 'super_admin'
+    ? process.env.YBUY_SUPER_ADMIN_TOTP_SECRET
+    : role === 'admin' ? process.env.YBUY_ADMIN_TOTP_SECRET : undefined;
 }
 
 export function adminDb() {

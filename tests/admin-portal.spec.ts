@@ -8,6 +8,49 @@ test('customer administrator routes link to the isolated portal instead of loadi
   await expect(page.getByRole('heading', { name: 'Administration has moved' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open YBuy administration' })).toHaveAttribute('href', 'https://ybuy-admin.vercel.app');
   expect(adminScripts).toEqual([]);
+  await page.goto('/super-admin');
+  await expect(page.getByRole('heading', { name: 'Administration has moved' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open YBuy administration' })).toHaveAttribute('href', 'https://ybuy-admin.vercel.app');
+  expect(adminScripts).toEqual([]);
+});
+
+test('Super Admin route uses its own authenticator and profile endpoint', async ({ page }) => {
+  let verified = false;
+  const unexpectedAdminRequests: string[] = [];
+  await page.route(/https:\/\/(?:fonts\.googleapis\.com|fonts\.gstatic\.com)\//, route => route.fulfill({ contentType: 'text/css', body: '' }));
+  await page.on('request', request => {
+    if (/\/api\/admin\/(?:access|profiles)$/.test(new URL(request.url()).pathname)) unexpectedAdminRequests.push(request.url());
+  });
+  await page.route('**/api/super-admin/access', async route => {
+    const request = route.request();
+    if (request.method() === 'GET') return route.fulfill({
+      status: verified ? 200 : 401, json: verified ? { role: 'super_admin' } : { error: 'Verify access.' },
+    });
+    if (request.method() === 'DELETE') {
+      verified = false;
+      return route.fulfill({ json: { ok: true } });
+    }
+    const { role, code } = request.postDataJSON();
+    if (role !== 'super_admin' || code !== '654321') {
+      return route.fulfill({ status: 401, json: { error: 'Invalid Super Admin authenticator code.' } });
+    }
+    verified = true;
+    return route.fulfill({ json: { role: 'super_admin', expiresAt: Date.now() + 7200000 } });
+  });
+  await page.route('**/api/super-admin/profiles', route => route.fulfill({
+    json: [{ id: 'super-id', name: 'Test Super Admin', role: 'Super Admin' }],
+  }));
+  await page.goto('/super-admin');
+  await expect(page.getByRole('heading', { name: 'Super Admin sign-in' })).toBeVisible();
+  await page.getByLabel('Super Admin authenticator code', { exact: true }).fill('123456');
+  await page.getByRole('button', { name: 'Verify & choose profile' }).click();
+  await expect(page.getByRole('alert')).toContainText('Invalid Super Admin authenticator code');
+  await page.getByLabel('Super Admin authenticator code', { exact: true }).fill('654321');
+  await page.getByRole('button', { name: 'Verify & choose profile' }).click();
+  await expect(page.getByRole('heading', { name: 'Choose a Super Admin profile' })).toBeVisible();
+  await expect(page.getByLabel('Super Admin profile').locator('option:not([disabled])'))
+    .toHaveText(['Test Super Admin - Super Admin']);
+  expect(unexpectedAdminRequests).toEqual([]);
 });
 
 test('admin authenticator unlocks admin profiles and handles expiry on desktop and phone', async ({ page }) => {
