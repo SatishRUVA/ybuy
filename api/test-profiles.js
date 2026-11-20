@@ -1,8 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { ACCESS_COOKIE_NAME, verifyAccessSession } from './_lib/access-session.js';
+import { isAllowedHostname } from './_lib/host-allowlist.js';
 
 export const config = { runtime: 'edge' };
 const backend = 'https://jzyjmsixfuwzfnntewqn.supabase.co';
+const defaultAllowedHosts = ['ybuy-redesign-v1.vercel.app', 'ybuy-e2e-test.vercel.app'];
 const emails = new Set(['owner', 'renter'].flatMap(role =>
   Array.from({ length: 5 }, (_, index) => `${role}${index + 1}@example.test`)));
 
@@ -15,7 +17,7 @@ function json(status, body) {
 export default async function handler(request) {
   const url = new URL(request.url);
   if (process.env.YBUY_TEST_PROFILE_LOGIN !== 'true'
-    || !['ybuy-redesign-v1.vercel.app', 'ybuy-e2e-test.vercel.app'].includes(url.hostname)) {
+    || !isAllowedHostname(url.hostname, process.env.YBUY_TEST_PROFILE_ALLOWED_HOSTS, defaultAllowedHosts)) {
     return json(404, { error: 'Test profile selection is not enabled here.' });
   }
   if (!['GET', 'POST'].includes(request.method)) return json(405, { error: 'Method not allowed.' });

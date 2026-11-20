@@ -57,8 +57,8 @@ function AppContent() {
 
   if (route.name === 'access') return <AccessPage />;
 
-  if (route.name === 'admin') {
-    return <AdminDestination />;
+  if (route.name === 'admin' || route.name === 'super-admin') {
+    return <AdminDestination role={route.name === 'super-admin' ? 'super_admin' : 'admin'} />;
   }
 
   if (OUT_OF_SCOPE_ROUTES.has(route.name) && !SHOW_OUT_OF_SCOPE_PAGES) {

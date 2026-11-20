@@ -4,15 +4,15 @@ import {
 
 export const config = { runtime: 'edge' };
 
-export default async function handler(request) {
+export async function handleAdminProfiles(request, expectedRole) {
   if (!adminEnabled(request)) return adminJson(404, { error: 'Not found.' });
   if (!['GET', 'POST'].includes(request.method)) return adminJson(405, { error: 'Method not allowed.' });
   if (request.method === 'POST' && request.headers.get('origin') !== new URL(request.url).origin) {
     return adminJson(403, { error: 'Same-origin profile selection required.' });
   }
-  if (!adminConfigured()) return adminJson(503, { error: 'Administrator access is not configured.' });
+  if (!adminConfigured(expectedRole)) return adminJson(503, { error: 'Administrator access is not configured.' });
   const role = await readAdminRole(request);
-  if (role !== 'admin') return adminJson(401, { error: 'Administrator verification expired. Enter your authenticator code again.' });
+  if (role !== expectedRole) return adminJson(401, { error: 'Administrator verification expired. Enter your authenticator code again.' });
   try {
     const db = adminDb();
     const users = [];
@@ -30,7 +30,7 @@ export default async function handler(request) {
     if (!allowed.length) return adminJson(503, { error: 'No active test profiles have the required administrator role.' });
     if (request.method === 'GET') return adminJson(200, allowed.map(user => ({
       id: user.id, name: user.user_metadata.full_name || user.email,
-      role: 'Admin',
+      role: role === 'super_admin' ? 'Super Admin' : 'Admin',
     })));
     let body;
     try { body = await request.json(); } catch { return adminJson(400, { error: 'Choose a valid administrator profile.' }); }
@@ -45,4 +45,8 @@ export default async function handler(request) {
     console.error('Administrator profile selection failed:', error instanceof Error ? error.message : 'Backend profile error');
     return adminJson(502, { error: 'Could not load or select administrator profiles. Please retry.' });
   }
+}
+
+export default function handler(request) {
+  return handleAdminProfiles(request, 'admin');
 }

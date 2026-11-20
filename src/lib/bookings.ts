@@ -210,6 +210,22 @@ export async function fetchBookingsAsOwner(currentUserId: string): Promise<UiBoo
   }));
 }
 
+export async function fetchCaseBookings(currentUserId: string) {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('id, booking_reference, start_date, end_date, status')
+    .or(`renter_id.eq.${currentUserId},owner_id.eq.${currentUserId}`)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((booking) => ({
+    id: booking.id,
+    reference: booking.booking_reference ?? booking.id.slice(0, 8),
+    startDate: booking.start_date,
+    endDate: booking.end_date,
+    status: booking.status,
+  }));
+}
+
 async function callBookingRpc(fn: string, args: Record<string, unknown>): Promise<DbBookingRow> {
   const { data, error } = await supabase.rpc(fn, args);
   if (error) throw new Error(error.message);

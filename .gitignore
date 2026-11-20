@@ -10,6 +10,7 @@ node_modules
 dist
 dist-admin
 dist-customer
+dist-combined
 dist-ssr
 *.local
 test-accounts.json
@@ -23,7 +24,11 @@ test-accounts.json
 *.njsproj
 *.sln
 *.sw?
+# Local-only secrets and platform state; .env.example contains blank placeholders.
 .env*
+.dev.vars
+.dev.vars.*
+.netlify/
 .playwright-mcp/
 .vercel
 !.env.example
@@ -57,6 +62,7 @@ YBuy-feature-coverage-audit-*.html
 !.github/workflows/ci.yml
 !.github/workflows/deploy-staging.yml
 !.github/workflows/deploy-backend-staging.yml
+!.github/workflows/deploy-production.yml
 
 !docs/
 docs/*

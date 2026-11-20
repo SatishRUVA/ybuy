@@ -35,6 +35,7 @@ export type Route =
   | { name: 'auction'; id: string }
   | { name: 'guidelines' }
   | { name: 'admin'; section?: string; recordId?: string }
+  | { name: 'super-admin'; section?: string; recordId?: string }
   | { name: 'access' };
 
 interface RouterContextValue {
@@ -104,9 +105,13 @@ function routeToPath(route: Route): string {
     case 'bidding-detail': return `/bidding/${route.id}`;
     case 'auction': return `/auction/${route.id}`;
     case 'guidelines': return '/guidelines';
-    case 'admin': return route.section
-      ? `/admin/${route.section}${route.recordId ? `/${encodeURIComponent(route.recordId)}` : ''}`
-      : '/admin';
+    case 'admin':
+    case 'super-admin': {
+      const base = route.name === 'super-admin' ? '/super-admin' : '/admin';
+      return route.section
+        ? `${base}/${route.section}${route.recordId ? `/${encodeURIComponent(route.recordId)}` : ''}`
+        : base;
+    }
     case 'access': return '/access';
   }
 }
@@ -176,6 +181,7 @@ function pathToRoute(pathname: string, search: string): Route {
     case 'auction': return second ? { name: 'auction', id: second } : { name: 'home' };
     case 'guidelines': return { name: 'guidelines' };
     case 'admin': return { name: 'admin', section: second, recordId: parts[2] };
+    case 'super-admin': return { name: 'super-admin', section: second, recordId: parts[2] };
     case 'access': return { name: 'access' };
     default: return { name: 'home' };
   }

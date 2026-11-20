@@ -1,27 +1,31 @@
-# GitHub Actions: staging releases
+# GitHub Actions: staging and production releases
 
 ## Release flow
 
-- Pull requests: typecheck, lint, customer and administrator production builds,
-  and migration replay against a disposable Supabase instance. No hosted
-  credentials are available.
+- Pull requests: typecheck, lint, customer, administrator, and combined
+  production builds, plus migration replay against a disposable Supabase
+  instance. No hosted credentials are available.
 - Manually run **Deploy staging backend** on `staging` to replay migrations,
   then apply pending migrations and deploy Edge Functions.
 - Manually run **Deploy staging frontend** on `staging` to run app checks,
   verify the test database has no pending migrations, and publish the prebuilt
   frontend to <https://ybuy-e2e-test.vercel.app>. This does not deploy functions.
+- Pushes to `dev` run **Deploy dev to production** after layer-specific CI
+  checks. Supabase changes deploy migrations and Edge Functions; frontend
+  changes deploy the combined app to <https://ybuys.netlify.app>. If both layers
+  change, Supabase deploys first; an unchanged layer is skipped.
 - When both layers change, deploy and verify the backend first. A current
   migration history does not prove that the correct function versions are deployed.
-- No production release workflow is enabled.
 
 Node, Playwright, and pgTAP tests are disabled in CI, including reusable checks
 called by deployment workflows. Typecheck, lint, build, and migration replay
 failures still block deployment. Passing CI does not verify tested application
 or database behavior.
 
-GitHub Actions is the sole deployment owner. Disable automatic Git deployments
-for the Vercel `ybuy-e2e-test` project before enabling this pipeline; otherwise
-Vercel can publish before backend deployment succeeds.
+GitHub Actions is the deployment owner for production. Disable automatic Git
+production deployments for the Netlify `ybuys` site and Vercel
+`ybuy-e2e-test`; otherwise a provider can publish before backend deployment
+succeeds or create duplicate deploys.
 
 ## One-time setup
 
@@ -89,13 +93,54 @@ credentials, so restrict merge permissions and review workflow changes.
   an authenticated booking/payment test. If Vercel Deployment Protection is
   enabled, explicitly configure an approved automation bypass before replacing
   this check; never silently accept an authentication page.
-- For frontend rollback, promote a previous Vercel deployment only after
-  checking its compatibility with the current database/functions.
+- For staging frontend rollback, promote a previous Vercel deployment only
+  after checking its compatibility with the current database/functions. For
+  production, restore a previous Netlify deploy only after the same check.
 
-## Adding production later
+## Automatic `dev` production deploy
 
-Use a separate GitHub `production` environment, distinct Supabase/Vercel
-projects and credentials, required reviewers (where supported by your GitHub
-plan), and a manually selected reviewed release commit. Keep a database backup
-and recovery procedure before allowing production migrations. Do not repurpose
-the staging project or point this workflow at production.
+The production workflow is intentionally path-aware. Frontend changes include
+the app, APIs, Netlify functions/configuration, and build inputs; backend changes
+include `supabase/**`. It runs only the corresponding reusable CI checks, skips
+an unchanged deploy layer, and deploys Supabase before Netlify when both change.
+Deploys are serialized and never canceled mid-migration. Production migrations
+are applied automatically after CI succeeds, as requested.
+
+Create a GitHub **production** environment with `dev` allowed as a deployment
+branch and no required reviewer if every successful push must deploy
+automatically. Configure these environment secrets:
+
+| Environment secrets | Source |
+| --- | --- |
+| `SUPABASE_ACCESS_TOKEN` | Supabase account access token for the selected project |
+| `SUPABASE_DB_PASSWORD` | Database password for project `jzyjmsixfuwzfnntewqn` |
+| `NETLIFY_AUTH_TOKEN` | Netlify personal access token authorized for the `ybuys` site |
+
+Configure these production environment variables:
+
+| Environment variables | Value |
+| --- | --- |
+| `SUPABASE_PROJECT_REF` | `jzyjmsixfuwzfnntewqn` |
+| `NETLIFY_SITE_ID` | Site ID from Netlify site configuration for `ybuys` |
+
+The selected Supabase project `jzyjmsixfuwzfnntewqn` is the isolated test
+backend currently used by this repository, not a separate live-customer
+database. The workflow pins its target to this exact ref and refuses any other
+project. Netlify's production `VITE_SUPABASE_URL` must match this project; the
+workflow checks it before building. Keep `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` as public build variables in Netlify, not secrets.
+
+The frontend deploy uses Netlify CLI to build with the site's production
+environment. Keep `VITE_SITE_VARIANT=combined`,
+`VITE_TEST_ENVIRONMENT=true`, `VITE_TEST_PROFILE_LOGIN=true`, and
+`VITE_TEST_PROFILE_HOSTS=ybuys.netlify.app` configured for the build. Keep
+TOTP seeds, session keys, and `SUPABASE_SERVICE_ROLE_KEY` in Netlify's server
+environment; they are not synchronized from GitHub Actions. Existing Auth,
+payment, email, scheduler, and other Supabase runtime secrets are likewise not
+changed by this workflow.
+
+Before enabling deploys, verify these variables and secrets are configured.
+Changes to `supabase/**` deploy the backend; changes to app/API/Netlify/build
+paths deploy the frontend. The workflow does not provision users, change
+database roles, or automatically roll back migrations. Keep schema changes
+backward-compatible with the currently published frontend and functions.

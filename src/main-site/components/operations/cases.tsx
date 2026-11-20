@@ -1,31 +1,61 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ADMIN_PORTAL as staff } from '@/lib/admin-portal';
 import { ArrowLeft, Paperclip, Plus } from 'lucide-react';
 import { Alert, Badge, Button } from '@/main-site/components/ui';
 import { Card, CardContent, CardHeader, CardTitle } from '@/main-site/components/shadcn/card';
 import { Skeleton } from '@/main-site/components/skeleton';
 import { useRouter } from '@/router';
+import { useAuth } from '@/auth-context';
+import { supabase } from '@/lib/supabase';
 import {
   addCaseReply, CASE_CATEGORIES, CASE_STATUSES, createCase, formText, getCase, listCases, operationRpc,
   updateCase, uploadCaseEvidence, viewCaseEvidence,
   type CaseKind,
 } from '@/lib/operations';
-import { fmtDate, useLoad, usePagedQuery } from '@/main-site/components/operations/query-utils';
+import { fetchCaseBookings } from '@/lib/bookings';
+import { fmtDate, fmtDay, useLoad, usePagedQuery } from '@/main-site/components/operations/query-utils';
 import { ChoiceField, LongField, OperationDialog, TextField } from '@/main-site/components/operations/operation-form';
 import { PageHeader, PagedTable, SearchBox, StatusBadge, StatusFilter } from '@/main-site/components/operations/shared';
 
 export function CasesSection({ kind, initialId, onBackToQueue }: { kind: CaseKind; initialId?: string; onBackToQueue?: () => void }) {
   const [selected, setSelected] = useState<string | null>(initialId ?? null);
   const { navigate } = useRouter();
+  const { user } = useAuth();
   const selectCase = (id: string) => {
     if (staff) setSelected(id);
     else navigate(kind === 'dispute' ? { name: 'claim-detail', id } : { name: 'support', id });
   };
   const [creating, setCreating] = useState(false);
+  const disputeBookings = useLoad(
+    () => creating && !staff && kind === 'dispute' && user
+      ? fetchCaseBookings(user.id)
+      : Promise.resolve([]),
+    [creating, kind, staff, user?.id],
+  );
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [priority, setPriority] = useState('all');
   const query = usePagedQuery((limit, offset) => listCases(kind, search, status, priority, staff, limit, offset), [kind, search, status, priority, staff]);
+  const reloadQueue = useRef(query.reload);
+  reloadQueue.current = query.reload;
+  const [realtimeUnavailable, setRealtimeUnavailable] = useState(false);
+  useEffect(() => {
+    if (!staff || kind !== 'dispute') return;
+    let active = true;
+    const channel = supabase.channel(`admin-disputes:${crypto.randomUUID()}`, {
+      config: { postgres_changes_options: { wait: true } },
+    })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'operations_cases', filter: 'kind=eq.dispute',
+      }, () => reloadQueue.current())
+      .subscribe((channelStatus) => {
+        if (active) setRealtimeUnavailable(channelStatus !== 'SUBSCRIBED');
+      });
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [kind]);
   const title = kind === 'dispute' ? 'Disputes & claims' : 'Support tickets';
   if (selected) return <CasePanel key={selected} id={selected} kind={kind} onBack={() => {
     if (!staff) navigate(kind === 'dispute' ? { name: 'claims' } : { name: 'support' });
@@ -35,6 +65,12 @@ export function CasesSection({ kind, initialId, onBackToQueue }: { kind: CaseKin
     <>
       <PageHeader title={title} subtitle={staff ? 'Persistent cases, private evidence and recorded activity. Financial decisions do not move money.' : 'Get help with your bookings and keep track of replies.'}
         action={<Button size="sm" icon={<Plus size={15} />} onClick={() => setCreating(true)}>New {kind === 'dispute' ? 'claim' : 'ticket'}</Button>} />
+      {staff && kind === 'dispute' && realtimeUnavailable && (
+        <Alert className="mb-4" tone="warning">
+          Live dispute updates are unavailable. Refresh the queue to check for new cases.
+          <Button size="sm" variant="secondary" onClick={query.reload}>Refresh queue</Button>
+        </Alert>
+      )}
       {kind === 'dispute' && <Alert className="mb-4" tone="warning">Filing deadline policy is unresolved. No automatic filing deadline is enforced. Payment questions belong in Support tickets.</Alert>}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <SearchBox onChange={setSearch} placeholder="Search subject or case reference" />
@@ -54,7 +90,23 @@ export function CasesSection({ kind, initialId, onBackToQueue }: { kind: CaseKin
         onSave={async (data) => { const created = await createCase(kind, data, staff); query.reload(); selectCase(created.id); }}>
         <TextField name="subject" label="Subject" maxLength={160} />
         <ChoiceField name="category" label="Category" options={CASE_CATEGORIES[kind]} />
-        <TextField name="booking_id" label={`Booking ID${kind === 'support' ? ' (optional)' : ''}`} required={kind === 'dispute'} maxLength={36} />
+        {kind === 'dispute' && !staff ? <>
+          <label className="block text-sm font-semibold text-main">Booking
+            <select name="booking_id" required defaultValue="" className="mt-1 font-normal h-11 w-full rounded-card border border-app bg-card px-3 text-sm text-main">
+              <option value="" disabled>Select a booking</option>
+              {(disputeBookings.data ?? []).map((booking) => (
+                <option key={booking.id} value={booking.id}>
+                  {booking.reference} · {fmtDay(booking.startDate)} – {fmtDay(booking.endDate)} · {booking.status.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+          </label>
+          {disputeBookings.loading && <p className="text-sm text-sec" role="status">Loading your bookings…</p>}
+          {disputeBookings.error && <Alert tone="error">Your bookings could not be loaded: {disputeBookings.error}</Alert>}
+          {!disputeBookings.loading && !disputeBookings.error && disputeBookings.data?.length === 0 && (
+            <Alert tone="warning">No existing bookings are available to dispute.</Alert>
+          )}
+        </> : <TextField name="booking_id" label={`Booking ID${kind === 'support' ? ' (optional)' : ''}`} required={kind === 'dispute'} maxLength={36} />}
         <LongField name="description" label="Describe the issue" />
         {staff && <>
           <TextField name="participant_id" label="Affected user ID" maxLength={36} />
