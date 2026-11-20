@@ -14,7 +14,7 @@ Estimated completion: **45%**. This is a conservative scope estimate, not a line
 
 ## Safety Boundary
 
-- Browser app and local E2E base URLs use `http://localhost:5174`; local Supabase API uses `http://localhost:54321`.
+- Browser app and local E2E base URLs use `http://localhost:5300`; local Supabase API uses `http://localhost:54321`.
 - The supplied `test-accounts.json` is preferred for hosted-backend tests and is ignored by Git. Credentials are not printed in test logs.
 - Do not invoke `send-notification-emails`, `send-test-auth-email`, Resend, signup flows that send confirmation email, or hosted tests that can queue email while the Resend quota is constrained.
 - The email worker uses Resend even when test messages are redirected to the designated test inbox. A redirect is not a no-send guarantee.

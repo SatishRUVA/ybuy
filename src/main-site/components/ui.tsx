@@ -21,7 +21,7 @@ export function Overlay({ children, className = '' }: { children: ReactNode; cla
   );
 }
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'inverse' | 'onDark';
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'inverse';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 const BUTTON_BASE =
@@ -37,8 +37,6 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   success: 'bg-success text-[var(--success-ink,white)] shadow-xs hover:opacity-90',
   // For placement on an accent-filled panel.
   inverse: 'bg-card text-accent shadow-xs hover:bg-subtle',
-  // For placement over photography.
-  onDark: 'bg-white/10 text-white border border-white/35 backdrop-blur-sm hover:bg-white/20',
 };
 
 const BUTTON_SIZE: Record<ButtonSize, string> = {
@@ -186,7 +184,7 @@ export function EmptyState({
   return (
     <div className={`empty-state flex flex-col items-center text-center py-10 px-6 rounded-card-xl border border-app bg-card ${className}`}>
       {icon && (
-        <div className="w-11 h-11 rounded-lg bg-accent-soft flex items-center justify-center text-accent mb-3">{icon}</div>
+        <div className="mb-3 text-sec">{icon}</div>
       )}
       <h3 className="font-semibold text-main">{title}</h3>
       {description && <p className="text-sm text-sec mt-1.5 max-w-sm leading-relaxed">{description}</p>}

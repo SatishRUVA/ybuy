@@ -3,7 +3,7 @@
 Reviewed against: User-provided YBuy product brief; no `DESIGN_BRIEF.md` was present  
 Philosophy: Neighborhood-first rental marketplace with an evergreen, soft-sage, and citrus identity  
 Date: 2026-11-06  
-Scope: `http://localhost:5174/` only
+Scope: `http://localhost:5300/` only
 
 ## Screenshots Captured
 

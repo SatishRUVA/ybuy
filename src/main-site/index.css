@@ -239,8 +239,7 @@
   .bg-app-blur { background-color: color-mix(in srgb, var(--bg) 88%, transparent); }
   .glass-surface,
   .glass-nav { background-color: var(--bg-card); }
-  .glass-nav-top,
-  .glass-nav-bottom { box-shadow: var(--shadow-xs); }
+  .glass-nav-top { box-shadow: var(--shadow-xs); }
   .rounded-card { border-radius: var(--radius); }
   .rounded-card-lg { border-radius: var(--radius-lg); }
   .rounded-card-xl { border-radius: var(--radius-xl); }
@@ -353,10 +352,6 @@
   .listing-receipt-main-actions .listing-receipt-list-another { grid-column: 1 / -1; }
   .listing-receipt-utilities { justify-content: space-between; }
 }
-.owner-listing-bidding {
-  animation: ownerBiddingAttention 800ms ease-out 2800ms 1;
-  transform-origin: center top;
-}
 .owner-auction-ticket { display: grid; grid-template-columns: minmax(0, 1fr) 180px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-card); overflow: hidden; }
 .owner-auction-ticket:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .owner-auction-ticket-main { padding: 24px; }
@@ -368,116 +363,6 @@
   .owner-auction-ticket { grid-template-columns: minmax(0, 1fr); }
   .owner-auction-ticket-clock { border-left: 0; border-top: 1px dashed var(--border-strong); padding: 16px; }
 }
-.bidding-celebration { position: fixed; inset: 0; z-index: 250; overflow: hidden; pointer-events: none; display: grid; place-items: center; animation: biddingCelebrationCurtain 4200ms both; background: rgb(0 0 0 / .3); }
-.bidding-celebration-stage { position: relative; width: min(340px, 90vw); height: 320px; }
-.bidding-celebration-particle { position: absolute; left: calc(50% - 12px); top: calc(40% - 12px); width: 24px; height: 24px; color: var(--accent-text); animation: biddingSparkBurst 3600ms ease-out both; }
-.bidding-celebration-hero { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 28px 20px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--accent); color: var(--accent-text); box-shadow: 0 24px 80px rgb(0 0 0 / .3); animation: biddingSpotlightEntrance 4200ms both; }
-.bidding-celebration-emblem { position: relative; display: grid; place-items: center; width: 120px; height: 120px; margin-bottom: 24px; }
-.bidding-celebration-ring { position: absolute; inset: 0; border: 1px solid currentColor; border-radius: 50%; animation: biddingSpotlightRing 1200ms ease-out 2; }
-.bidding-celebration-ring-delayed { animation-delay: 400ms; }
-.bidding-celebration-gavel { width: 68px; height: 68px; animation: biddingGavelStrike 900ms ease-in-out 3; }
-.bidding-celebration-hero p { font-size: 26px; font-weight: 700; line-height: 1.15; text-align: center; }
-.bidding-celebration-hero span { margin-top: 12px; font-size: 13px; line-height: 1.5; text-align: center; }
-@keyframes biddingSparkBurst {
-  0% { opacity: 0; transform: scale(.3); }
-  15% { opacity: 1; }
-  75% { opacity: .8; }
-  100% { opacity: 0; transform: translate(var(--spark-x), var(--spark-y)) rotate(var(--spark-turn)) scale(1.8); }
-}
-@keyframes biddingSpotlightEntrance {
-  0% { opacity: 0; transform: scale(.65) rotate(-8deg); }
-  18% { opacity: 1; transform: scale(1.06) rotate(2deg); }
-  28%, 78% { opacity: 1; transform: scale(1) rotate(0); }
-  100% { opacity: 0; transform: scale(1.12); }
-}
-@keyframes biddingGavelStrike { 0%, 100% { transform: rotate(-20deg); } 40% { transform: rotate(30deg) translateY(-8px); } 60% { transform: rotate(-25deg) translateY(4px); } }
-@keyframes biddingSpotlightRing { 0% { opacity: .8; transform: scale(.6); } 100% { opacity: 0; transform: scale(1.7); } }
-@keyframes biddingCelebrationCurtain { 0%, 100% { opacity: 0; } 15%, 78% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-  .bidding-celebration { display: none; animation: none; }
-  .bidding-celebration * { animation: none; }
-}
-@keyframes ownerBiddingAttention {
-  0%, 100% { transform: translateY(0) scale(1); }
-  35% { transform: translateY(-5px) scale(1.015); }
-  65% { transform: translateY(0) scale(1); }
-}
-@keyframes ownerBiddingGavel {
-  0%, 100% { transform: rotate(-18deg); }
-  30% { transform: rotate(-35deg); }
-  65% { transform: rotate(-8deg); }
-}
-.owner-listing-bidding .owner-bidding-invitation {
-  position: relative;
-  overflow: hidden;
-  padding: 32px;
-  background: var(--accent);
-  color: var(--accent-text);
-  border-radius: var(--radius-lg);
-  align-items: flex-start;
-}
-.owner-listing-bidding .owner-bidding-invitation:hover { background: var(--accent); }
-.owner-bidding-invitation::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(110deg, transparent 30%, rgb(255 255 255 / .38) 50%, transparent 70%);
-  transform: translateX(-150%);
-  pointer-events: none;
-  animation: ownerBiddingShine 2000ms ease-in-out 2800ms 3;
-}
-@keyframes ownerBiddingShine {
-  0% { transform: translateX(-150%); }
-  65%, 100% { transform: translateX(150%); }
-}
-.owner-listing-bidding details[open] > .owner-bidding-invitation::after { animation: none; }
-.owner-bidding-invitation .owner-bidding-cta { animation: ownerBiddingCtaPulse 2000ms ease-out 2800ms 3; }
-@keyframes ownerBiddingCtaPulse {
-  0%, 65%, 100% { transform: scale(1); }
-  30% { transform: scale(1.06); }
-}
-.owner-bidding-pitch { display: block; position: relative; z-index: 1; min-width: 0; flex: 1; }
-.owner-bidding-product { position: relative; z-index: 1; display: block; width: 38%; flex-shrink: 0; align-self: center; transform: rotate(4deg); padding: 8px; background: var(--bg-card); color: var(--text); border-radius: var(--radius-sm); }
-.owner-bidding-product img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-sm); }
-.owner-bidding-product-caption { display: block; padding: 10px 4px 4px; font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
-.owner-listing-bidding .owner-bidding-headline { font-size: clamp(36px, 4vw, 48px); }
-.owner-listing-bidding details[open] .owner-bidding-product { display: none; }
-.owner-listing-bidding:has(.owner-bidding-product) .owner-bidding-mark { display: none; }
-@media (max-width: 639px) {
-  .owner-bidding-product { position: absolute; top: 60px; right: 20px; width: 100px; }
-  .owner-bidding-product-caption { display: none; }
-  .owner-bidding-invitation .owner-bidding-headline { max-width: calc(100% - 90px); font-size: 36px; }
-  .owner-bidding-invitation .owner-bidding-description { margin-top: 24px; }
-  .owner-listing-bidding details[open] .owner-bidding-headline { max-width: none; }
-}
-.owner-bidding-eyebrow { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
-.owner-bidding-headline { display: block; margin-top: 20px; font-size: clamp(28px, 4vw, 42px); line-height: 1.08; font-weight: 700; letter-spacing: -.035em; }
-.owner-bidding-description { display: block; max-width: 440px; margin-top: 16px; font-size: 15px; line-height: 1.6; opacity: .8; }
-.owner-bidding-benefits { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-top: 24px; font-size: 13px; }
-.owner-bidding-benefits > span { display: inline-flex; align-items: center; gap: 6px; }
-.owner-bidding-action { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 16px; margin-top: 28px; }
-.owner-bidding-rules-link { display: inline-flex; align-items: center; min-height: 44px; color: inherit; font-size: 13px; text-align: left; text-decoration: underline; text-underline-offset: 4px; }
-.owner-bidding-rules-link:hover { text-decoration-thickness: 2px; }
-.owner-bidding-rules-link:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; border-radius: var(--radius-sm); }
-.owner-bidding-cta { display: inline-flex; align-items: center; justify-content: center; gap: 16px; min-height: 48px; padding: 12px 20px; border-radius: var(--radius-sm); background: var(--accent-text); color: var(--accent); font-size: 15px; font-weight: 700; }
-.owner-bidding-cta svg { transition: transform 160ms ease-out; }
-.owner-bidding-invitation:hover .owner-bidding-cta svg { transform: translateX(4px); }
-.owner-bidding-optional { font-size: 12px; line-height: 1.5; opacity: .7; }
-.owner-bidding-open-label { display: none; font-size: 14px; font-weight: 600; }
-.owner-listing-bidding details[open] .owner-bidding-cta { display: none; }
-.owner-listing-bidding details[open] .owner-bidding-open-label { display: block; }
-.owner-listing-bidding details[open] .owner-bidding-invitation { padding: 20px 24px; }
-.owner-listing-bidding details[open] :is(.owner-bidding-description, .owner-bidding-benefits, .owner-bidding-mark, .owner-bidding-optional) { display: none; }
-.owner-listing-bidding details[open] .owner-bidding-headline { font-size: 22px; margin-top: 8px; }
-.owner-listing-bidding details[open] .owner-bidding-headline br { display: none; }
-.owner-listing-bidding details[open] .owner-bidding-action { margin-top: 8px; }
-.owner-bidding-mark { position: absolute; top: 62px; right: 24px; width: 120px; height: 120px; opacity: .24; transform: rotate(-18deg); pointer-events: none; animation: ownerBiddingGavel 2000ms ease-out 2800ms 3; }
-.owner-bidding-mark > svg:first-child { width: 100%; height: 100%; }
-.owner-bidding-mark .owner-bidding-spark { position: absolute; top: -20px; right: 0; width: 36px; height: 36px; }
-.owner-bidding-chevron { position: relative; z-index: 1; }
-.owner-bidding-steps { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text-secondary); }
-.owner-bidding-steps li { display: flex; align-items: center; gap: 8px; }
-.owner-bidding-steps li > span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--text); font-weight: 600; }
 .owner-listing-bidding #listing-auction { border: 0; padding: 0; }
 .owner-auction-setup { display: grid; gap: 24px; align-items: start; }
 .owner-auction-setup > div { min-width: 0; }
@@ -492,13 +377,6 @@
 .owner-auction-calendar button { min-height: 44px; }
 @media (min-width: 640px) {
   .owner-auction-setup { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .owner-bidding-invitation::after { animation: none; }
-  .owner-bidding-invitation .owner-bidding-cta { animation: none; }
-  .owner-listing-bidding, .owner-bidding-mark { animation: none; }
-  .owner-bidding-cta svg { transition: none; }
-  .owner-bidding-invitation:hover .owner-bidding-cta svg { transform: none; }
 }
 @media (min-width: 640px) {
   .owner-rental-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
@@ -1068,4 +946,217 @@ a.bid-card:hover { background: var(--bg-card); border-color: var(--border-strong
   .bid-banner .bid-banner-copy { display: none; }
   .bid-banner .bid-banner-viewport { overflow-x: auto; }
   .bid-banner .bid-banner-live, .bid-banner .bid-banner-live > span { animation: none; }
+}
+
+.messages-page {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+}
+.messages-page-container {
+  width: min(100%, 1280px);
+  margin-inline: auto;
+  padding: 28px 24px;
+}
+.messages-page-heading { margin-bottom: 20px; }
+.messages-page-heading h1 { font-size: clamp(28px, 3vw, 36px); letter-spacing: -.035em; }
+.messages-page-heading p { max-width: 56ch; margin-top: 8px; color: var(--text-secondary); font-size: 14px; }
+.messages-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.messages-back:hover { color: var(--text); }
+.messages-workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 22rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-xs);
+}
+.messages-workspace-ready { height: min(46rem, calc(100dvh - 13rem)); }
+.messages-inbox,
+.messages-thread { min-width: 0; min-height: 0; }
+.messages-inbox {
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.messages-inbox-header {
+  flex: none;
+  padding: 18px 18px 12px;
+}
+.messages-inbox-header h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--text);
+}
+.messages-inbox-scroll { min-height: 0; flex: 1; overflow-y: auto; }
+.messages-inbox-scroll > [role="alert"] { margin: 0 16px 12px; }
+.messages-conversation-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+.messages-conversation-list li { border-bottom: 1px solid var(--border); }
+.messages-conversation {
+  display: flex;
+  width: 100%;
+  min-height: 84px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-left: 3px solid transparent;
+  text-align: left;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.messages-conversation:hover { background: var(--bg-subtle); }
+.messages-conversation[aria-current="true"] {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.messages-conversation-copy { display: block; min-width: 0; flex: 1; }
+.messages-conversation-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.messages-conversation-name { min-width: 0; overflow: hidden; color: var(--text); font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.messages-conversation-time { flex: none; color: var(--text-muted); font-size: 11px; }
+.messages-conversation-listing,
+.messages-conversation-preview {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.messages-conversation-listing { color: var(--text-secondary); font-size: 12px; }
+.messages-conversation-preview { color: var(--text-muted); font-size: 12px; }
+.messages-thread {
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.messages-thread-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.messages-thread-header img,
+.messages-thread-header > span { width: 44px; height: 44px; }
+.messages-thread-identity { min-width: 0; }
+.messages-thread-identity h2 {
+  overflow-wrap: break-word;
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.messages-thread-identity p {
+  overflow: hidden;
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.messages-listing-context {
+  display: flex;
+  flex: none;
+  min-width: 0;
+  min-height: 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  text-align: left;
+}
+.messages-listing-context:hover { background: var(--border); }
+.messages-listing-context img { width: 40px; height: 40px; flex: none; border-radius: 9px; object-fit: cover; }
+.messages-listing-context > span { min-width: 0; flex: 1; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.messages-listing-context > svg { flex: none; color: var(--text-muted); }
+.messages-thread-body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 20px;
+  background: var(--bg);
+  list-style: none;
+  scroll-behavior: smooth;
+  scroll-padding-block: 16px;
+}
+.messages-thread-message { display: flex; min-width: 0; justify-content: flex-start; }
+.messages-thread-message.is-mine { justify-content: flex-end; }
+.messages-thread-message > div {
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgb(34 25 21 / 4%);
+}
+.messages-thread-message.is-mine > div { border-color: transparent; }
+.messages-thread-message time { display: block; }
+.messages-thread-empty-note {
+  margin: auto;
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-align: center;
+}
+.messages-thread-notice { display: flex; justify-content: center; padding-top: 8px; }
+.messages-thread-empty { display: grid; flex: 1; place-items: center; padding: 32px; text-align: center; }
+.messages-thread-empty-content { max-width: 32rem; }
+.messages-composer {
+  flex: none;
+  padding: 12px 16px max(12px, env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.messages-composer-row { display: flex; align-items: center; gap: 10px; }
+.messages-composer-row input { min-width: 0; min-height: 44px; border-radius: 12px; background: var(--bg-subtle); }
+.messages-composer-row button { min-width: 44px; min-height: 44px; }
+
+@container (max-width: 42rem) {
+  .messages-conversation { padding-inline: 12px; }
+  .messages-thread-header { padding-inline: 14px; }
+  .messages-listing-context { padding-inline: 14px; }
+  .messages-thread-body { padding: 16px 12px; }
+  .messages-composer { padding-inline: 12px; }
+}
+
+@media (max-width: 767px) {
+  .messages-page-container { padding: 16px 16px 24px; }
+  .messages-page-heading { margin-bottom: 16px; }
+  .messages-workspace-selected { height: calc(100dvh - 12.5rem - env(safe-area-inset-bottom, 0px)); min-height: 20rem; }
+  .messages-workspace-selected .messages-thread { flex: 1; }
+  .messages-workspace:not(.messages-workspace-selected) { height: auto; min-height: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  .messages-workspace:not(.messages-workspace-selected) .messages-inbox { border: 0; }
+  .messages-workspace:not(.messages-workspace-selected) .messages-inbox-header { padding: 0 0 12px; }
+  .messages-workspace:not(.messages-workspace-selected) .messages-conversation-list { overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); }
+}
+@media (min-width: 768px) {
+  .messages-workspace { container-type: inline-size; container-name: messages; }
+}
+@media (max-width: 639px) {
+  .messages-composer-row input { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .messages-conversation { transition: none; }
+  .messages-thread-body { scroll-behavior: auto; }
 }

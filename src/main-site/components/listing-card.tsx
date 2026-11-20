@@ -97,7 +97,7 @@ export function ListingCard({ listing, onClick, href, favorited, onToggleFavorit
   const toggleLiked = onToggleFavorite ?? (() => setLikedLocal(!likedLocal));
   return (
     <article
-      className="group relative flex h-full flex-col bg-card rounded-card-lg overflow-hidden border border-app shadow-xs card-hover"
+      className="marketplace-listing-card group relative flex h-full flex-col"
     >
       <a
         href={href ?? `/listing/${encodeURIComponent(listing.id)}`}
@@ -105,25 +105,26 @@ export function ListingCard({ listing, onClick, href, favorited, onToggleFavorit
         onClick={(e) => handleListingLinkClick(e, onClick)}
         className="flex h-full flex-col rounded-[inherit] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-accent"
       >
-        <div className="relative aspect-[4/3] overflow-hidden bg-subtle">
+        <div className="marketplace-listing-image relative aspect-[4/3] overflow-hidden bg-subtle">
           <ListingPhoto
             images={listing.images}
             className="w-full h-full object-cover zoom-media"
           />
-          <div className="absolute top-2.5 left-2.5 flex gap-1.5">
+          <div className="absolute bottom-2.5 left-2.5 flex gap-1.5">
             {listing.instantBooking && <Badge tone="inverse" icon={<Zap size={11} />}>Instant</Badge>}
             {!listing.available && <Badge tone="neutral" className="bg-card">Booked</Badge>}
           </div>
         </div>
 
-        <div className="flex flex-1 flex-col gap-1.5 p-3.5 min-h-[152px]">
-          <MetaLine listing={listing} />
-          <h3 className="min-h-10 font-semibold text-main leading-5 line-clamp-2 text-[15px] font-display">{listing.title}</h3>
-          <RatingLine listing={listing} />
-          <div className="flex items-center justify-between gap-2 mt-auto pt-2">
+        <div className="flex flex-1 flex-col gap-1.5 pt-3">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="font-semibold text-main leading-5 line-clamp-2 text-[15px] font-display">{listing.title}</h3>
             <PriceBlock value={listing.pricePerDay} />
-            {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
           </div>
+          <MetaLine listing={listing} />
+          <RatingLine listing={listing} />
+          {listing.description && <p className="line-clamp-2 text-xs text-sec leading-relaxed mt-1">{listing.description}</p>}
+          {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
         </div>
       </a>
       <FavoriteButton liked={liked} onToggle={toggleLiked} className="absolute top-2 right-2 z-10" />

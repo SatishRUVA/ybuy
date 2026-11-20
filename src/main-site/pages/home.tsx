@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowRight, Calendar, Compass, CreditCard,
-  PackageCheck, Sparkles, Clock, LayoutGrid, PackageSearch,
+  ArrowRight, Sparkles, Clock,
 } from 'lucide-react';
 import { SearchBar } from '@/main-site/components/search';
 import { ListingCard } from '@/main-site/components/listing-card';
-import { HeroCarousel } from '@/main-site/components/hero-carousel';
 import { SignupRewardOffer } from '@/main-site/components/signup-reward-offer';
 import { Badge, Button, SectionHeader, EmptyState, Alert } from '@/main-site/components/ui';
 import { ListingGridSkeleton } from '@/main-site/components/skeleton';
@@ -195,8 +193,30 @@ export function HomePage() {
         </div>
       )}
 
+      {(loading || categories.length > 0 || !error) && <Shell className="home-category-section">
+        <div className="home-category-layout" aria-labelledby="browse-categories-heading">
+          <div className="home-category-heading">
+            <p className="marketplace-eyebrow">A little of everything</p>
+            <h2 id="browse-categories-heading">What could make<br />your day easier?</h2>
+            <button type="button" className="home-category-all" onClick={() => navigate({ name: 'search' })}>See all categories <ArrowRight size={14} /></button>
+          </div>
+          <div className="workspace-category-grid" aria-busy={loading && categories.length === 0}>
+            {loading && categories.length === 0
+              ? Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-16 rounded-lg" aria-hidden="true" />)
+              : categories.slice(0, 4).map((cat) => (
+                <CategoryTile key={cat.id} category={cat} onClick={() => navigate({ name: 'search', category: cat.id })} />
+              ))}
+          </div>
+          {loading && categories.length === 0 && <p role="status" className="sr-only">Loading categories</p>}
+          {!loading && categories.length === 0 && (
+            <p role="status" className="text-sm text-sec">{error ? 'Categories could not be loaded. Please try again above.' : 'No categories are available yet. You can still explore all rentals.'}</p>
+          )}
+        </div>
+      </Shell>}
+
       {/* One primary rental rail avoids repeating the same items in separate featured and nearby rows. */}
-      <Shell className="home-discovery-section pt-12 sm:pt-16">
+      {!(error && discoveryListings.length === 0 && !loading) && <Shell className="home-discovery-section pt-12 sm:pt-16">
+        <p className="marketplace-eyebrow">A good place to start</p>
         <SectionHeader
           title={discoveryTitle}
           subtitle={nearby.length > 0 ? 'Available items from nearby owners.' : 'Well-reviewed items from owners with a track record.'}
@@ -221,60 +241,60 @@ export function HomePage() {
             ))}
           </Rail>
         )}
-      </Shell>
+      </Shell>}
 
-      {/* Keep renter and owner request paths together as one community task group. */}
-      <Shell className="home-community-section pt-8 sm:pt-10">
-        <section className="rounded-card-xl border border-app bg-subtle p-5 sm:p-7">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-            <div className="flex items-start gap-4 min-w-0">
-              <span className="grid place-items-center w-11 h-11 shrink-0 rounded-card bg-card text-accent shadow-xs"><PackageSearch size={21} aria-hidden="true" /></span>
-              <div>
-                <h2 className="text-lg font-semibold text-main font-display">Community requests</h2>
-                <p className="mt-1 text-sm text-sec">Choose the path that fits: ask for an item or find a renter’s request.</p>
+      {itemRequests.enabled && (
+        <Shell className="home-community-section pt-8 sm:pt-10">
+          <section className="home-community-panel">
+            <div className="home-community-intro">
+              <div className="home-community-copy">
+                <p className="marketplace-eyebrow">The neighborhood works better together</p>
+                <h2>Need something<br />a little different?</h2>
+                <p>Put the word out to nearby owners. You might be surprised what’s already close by.</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => navigate({ name: 'need-something' })} trailingIcon={<ArrowRight size={16} />}>Ask your neighbors</Button>
+                  <Button variant="secondary" onClick={() => navigate({ name: 'requests', tab: 'browse' })}>Browse renter requests</Button>
+                </div>
               </div>
+              <img src="https://images.pexels.com/photos/4505166/pexels-photo-4505166.jpeg?auto=compress&cs=tinysrgb&w=1100&h=850&fit=crop" alt="Garden tools gathered for a shared project" loading="lazy" />
             </div>
-            <div className="flex flex-wrap gap-2 lg:shrink-0">
-              <Button onClick={() => navigate({ name: 'need-something' })}>Request an item</Button>
-              <Button variant="secondary" onClick={() => navigate({ name: 'requests', tab: 'browse' })}>Browse renter requests</Button>
-            </div>
-          </div>
-          {user && itemRequests.enabled && requestsError && (
-            <Alert tone="error" title="Could not load nearby requests" className="mt-5">
-              {requestsError}
-              <Button size="sm" variant="secondary" className="mt-3" onClick={() => setRequestRetryToken((token) => token + 1)}>Try again</Button>
-            </Alert>
-          )}
-          {user && itemRequests.enabled && nearbyRequests.length > 0 && (
-            <div className="mt-5 border-t border-app pt-5">
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <h3 className="text-sm font-semibold text-main">Recently requested nearby</h3>
-                <span className="text-xs text-sec">Within {searchRadius === null ? 'any distance' : `${searchRadius} miles`} of {locationLabel(location)}</span>
+            {user && requestsError && (
+              <Alert tone="error" title="Could not load nearby requests" className="mt-5">
+                {requestsError}
+                <Button size="sm" variant="secondary" className="mt-3" onClick={() => setRequestRetryToken((token) => token + 1)}>Try again</Button>
+              </Alert>
+            )}
+            {user && nearbyRequests.length > 0 && (
+              <div className="mt-5 border-t border-app pt-5">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h3 className="text-sm font-semibold text-main">Recently requested nearby</h3>
+                  <span className="text-xs text-sec">Within {searchRadius === null ? 'any distance' : `${searchRadius} miles`} of {locationLabel(location)}</span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {nearbyRequests.map((request) => (
+                    <button
+                      key={request.id}
+                      type="button"
+                      aria-label={`Browse item request: ${request.title}`}
+                      onClick={() => navigate({ name: 'requests', tab: 'browse' })}
+                      className="min-w-0 rounded-card-lg border border-app bg-card p-4 text-left transition-colors duration-fast hover:border-strong hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      <Badge>{request.categories?.name ?? 'Item request'}</Badge>
+                      <h3 className="mt-3 line-clamp-2 font-semibold text-main">{request.title}</h3>
+                      <p className="mt-2 line-clamp-2 text-sm text-sec">{request.description}</p>
+                      <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-xs text-sec">
+                        <span>{formatRequestDates(request.preferred_start_date, request.preferred_end_date)}</span>
+                        {request.distance_miles != null && <span>{request.distance_miles.toFixed(1)} mi away</span>}
+                        {request.max_daily_budget != null && <span>${Number(request.max_daily_budget).toFixed(0)}/day max</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {nearbyRequests.map((request) => (
-                  <button
-                    key={request.id}
-                    type="button"
-                    aria-label={`Browse item request: ${request.title}`}
-                    onClick={() => navigate({ name: 'requests', tab: 'browse' })}
-                    className="min-w-0 rounded-card-lg border border-app bg-card p-4 text-left transition-colors duration-fast hover:border-strong hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    <Badge>{request.categories?.name ?? 'Item request'}</Badge>
-                    <h3 className="mt-3 line-clamp-2 font-semibold text-main">{request.title}</h3>
-                    <p className="mt-2 line-clamp-2 text-sm text-sec">{request.description}</p>
-                    <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-xs text-sec">
-                      <span>{formatRequestDates(request.preferred_start_date, request.preferred_end_date)}</span>
-                      {request.distance_miles != null && <span>{request.distance_miles.toFixed(1)} mi away</span>}
-                      {request.max_daily_budget != null && <span>${Number(request.max_daily_budget).toFixed(0)}/day max</span>}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </section>
-      </Shell>
+            )}
+          </section>
+        </Shell>
+      )}
 
       {/* Recently added */}
       {(loading || justAdded.length > 0) && (
@@ -297,37 +317,6 @@ export function HomePage() {
           )}
         </Shell>
       )}
-
-      <Shell className="home-category-section pt-12 sm:pt-16">
-        <section aria-labelledby="browse-categories-heading">
-          <SectionHeader
-            title="Browse by category"
-            subtitle="For the project, the weekend, and everything in between."
-            actionLabel="Explore all categories"
-            onAction={() => navigate({ name: 'search' })}
-            className="mb-6"
-          />
-          <div className="workspace-category-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9 gap-3 sm:gap-4" aria-busy={loading && categories.length === 0}>
-            {loading && categories.length === 0
-              ? Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} aria-hidden="true" className="rounded-card-lg border border-app bg-card overflow-hidden">
-                    <div className="skeleton aspect-[6/5] sm:aspect-[5/6]" />
-                    <div className="h-16 flex items-center justify-center"><div className="skeleton h-4 w-3/4 rounded" /></div>
-                  </div>
-                ))
-              : <>
-                  {categories.slice(0, 5).map((cat) => (
-                    <CategoryTile key={cat.id} category={cat} onClick={() => navigate({ name: 'search', category: cat.id })} />
-                  ))}
-                  <CategoryMoreTile onClick={() => navigate({ name: 'search' })} />
-                </>}
-          </div>
-          {loading && categories.length === 0 && <p role="status" className="sr-only">Loading categories</p>}
-          {!loading && categories.length === 0 && (
-            <p role="status" className="mt-4 text-sm text-sec">{error ? 'Categories could not be loaded. Please try again above.' : 'No categories are available yet. You can still explore all rentals.'}</p>
-          )}
-        </section>
-      </Shell>
 
       {mockBiddingEnabled && (
         <Shell className="home-bidding-section pt-12 sm:pt-16">
@@ -406,47 +395,49 @@ function Hero({
   return (
     // No `isolate` here: it would cap the search bar's popover z-index, letting the
     // category rail (a later DOM sibling) paint over the date/location dropdowns.
-    <section className="home-hero relative">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none"><HeroCarousel /></div>
-      <div className="home-hero-scrim absolute inset-0" aria-hidden="true" />
-
-      <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 pt-14 pb-12 sm:pt-20 sm:pb-16">
-        <div className="max-w-2xl">
-          <h1 className="text-[36px] leading-[1.04] sm:text-[56px] font-extrabold text-white font-display tracking-tight">
-            Good gear, close by.
-          </h1>
-          <p className="text-white/90 text-sm sm:text-lg mt-4 max-w-xl leading-relaxed">
-            Rent tools, cameras, outdoor gear, and everyday extras from people in your neighborhood.
-          </p>
+    <section className="marketplace-hero">
+      <div className="marketplace-hero-inner">
+        <div className="marketplace-hero-copy">
+          <p className="marketplace-eyebrow">A neighborhood marketplace</p>
+          <h1>Good things,<br /><em>close to home.</em></h1>
+          <p>Find the useful things you need from people just around the corner.</p>
+          <button type="button" className="marketplace-hero-link" onClick={() => onSearch({ name: 'search' })}>Explore what’s nearby <ArrowRight size={17} /></button>
+          <p className="marketplace-hero-note">Made for sharing, right where you live.</p>
         </div>
 
-        {/* No z-index here: it would cap the search bar's popovers below the shared dim Overlay (z-200). */}
-        <div className="relative mt-7 sm:mt-9 max-w-4xl">
-          <div className="rounded-card-xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)]">
-            <SearchBar
-              variant="hero"
-              defaultValue={searchDraft.q}
-              initialStartDate={searchDraft.start}
-              initialEndDate={searchDraft.end}
-              initialRadius={searchDraft.radius}
-              radius={radius}
-              onRadiusChange={onRadiusChange}
-              onSearch={(p) => onSearch({
-                ...savedSearchState(),
-                name: 'search',
-                q: p.keyword.trim() || undefined,
-                lat: p.location.latitude,
-                lng: p.location.longitude,
-                locationLabel: p.location.source !== 'NONE' ? locationLabel(p.location) : undefined,
-                radius: p.radius,
-                start: p.startDate,
-                end: p.endDate,
-              })}
-            />
+        <figure className="marketplace-hero-media" role="group" aria-label="Marketplace inspiration">
+          <div className="marketplace-hero-image">
+            <img src="https://images.pexels.com/photos/31726722/pexels-photo-31726722.jpeg?auto=compress&cs=tinysrgb&w=1100&h=850&fit=crop" alt="A portable projector" />
           </div>
-
-          <p className="home-hero-note mt-5 text-sm text-white/85">Owner approval before payment</p>
+          <figcaption>Make a night of it.</figcaption>
+        </figure>
+        <div className="marketplace-hero-aside" aria-hidden="true">
+          <img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&cs=tinysrgb&w=500&h=700&fit=crop" alt="" />
+          <span><Sparkles size={16} /> Good finds, shared locally</span>
         </div>
+
+        <div className="marketplace-hero-search">
+          <SearchBar
+            variant="hero"
+            defaultValue={searchDraft.q}
+            initialStartDate={searchDraft.start}
+            initialEndDate={searchDraft.end}
+            initialRadius={searchDraft.radius}
+            radius={radius}
+            onRadiusChange={onRadiusChange}
+            onSearch={(p) => onSearch({
+              ...savedSearchState(),
+              name: 'search',
+              q: p.keyword.trim() || undefined,
+              lat: p.location.latitude,
+              lng: p.location.longitude,
+              locationLabel: p.location.source !== 'NONE' ? locationLabel(p.location) : undefined,
+              radius: p.radius,
+              start: p.startDate,
+              end: p.endDate,
+            })}
+          />
+          </div>
       </div>
     </section>
   );
@@ -457,15 +448,13 @@ function formatRequestDates(start: string, end: string) {
   return `${format(start)} – ${format(end)}`;
 }
 
-const CATEGORY_CARD_CLASS = 'group min-w-0 flex flex-col rounded-card-lg border border-app bg-card shadow-xs hover:shadow-hover hover:border-strong motion-safe:hover:-translate-y-0.5 transition-[transform,box-shadow,border-color] duration-standard';
-
 function CategoryTile({ category, onClick }: { category: Category; onClick: () => void }) {
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const hasImage = category.image && failedImage !== category.image;
 
   return (
-    <button type="button" onClick={onClick} className={CATEGORY_CARD_CLASS}>
-      <span className="relative block w-full aspect-[6/5] sm:aspect-[5/6] rounded-t-[inherit] overflow-hidden bg-subtle">
+    <button type="button" onClick={onClick} className="home-category-tile">
+      <span className="home-category-image">
         {hasImage ? (
           <>
             <img
@@ -478,7 +467,7 @@ function CategoryTile({ category, onClick }: { category: Category; onClick: () =
               onError={() => setFailedImage(category.image)}
               className="absolute inset-0 w-full h-full object-cover zoom-media"
             />
-            <span className="absolute bottom-2 left-2 grid place-items-center w-9 h-9 rounded-card bg-card text-accent shadow-xs">
+            <span className="absolute inset-0 grid place-items-center text-white">
               <CategoryIcon category={category} size={20} />
             </span>
           </>
@@ -489,31 +478,19 @@ function CategoryTile({ category, onClick }: { category: Category; onClick: () =
           </span>
         )}
       </span>
-      <span className="flex items-center justify-center flex-1 w-full min-h-16 px-2 py-3 text-sm font-semibold text-main leading-snug [overflow-wrap:anywhere]">
+      <span className="home-category-name">
         {category.name}
       </span>
-    </button>
-  );
-}
-
-function CategoryMoreTile({ onClick }: { onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} aria-label="More categories" className={CATEGORY_CARD_CLASS}>
-      <span className="grid place-items-center w-full aspect-[6/5] sm:aspect-[5/6] rounded-t-[inherit] bg-accent-soft text-accent">
-        <LayoutGrid size={36} strokeWidth={1.5} aria-hidden="true" />
-      </span>
-      <span className="flex items-center justify-center gap-2 flex-1 w-full min-h-16 px-2 py-3 text-sm font-semibold text-accent">
-        More <ArrowRight size={16} aria-hidden="true" />
-      </span>
+        <ArrowRight size={15} aria-hidden="true" />
     </button>
   );
 }
 
 const STEPS = [
-  { icon: Compass, title: 'Discover', desc: 'Search by item, place and the dates you need it.' },
-  { icon: Calendar, title: 'Request', desc: 'Pick your dates and send a request to the owner.' },
-  { icon: CreditCard, title: 'Rent', desc: 'Pay securely once the owner approves, then pick it up.' },
-  { icon: PackageCheck, title: 'Return', desc: 'Hand it back, mark it returned, leave a review.' },
+  { title: 'Discover', desc: 'Search by item, place and the dates you need it.' },
+  { title: 'Request', desc: 'Pick your dates and send a request to the owner.' },
+  { title: 'Rent', desc: 'Pay securely once the owner approves, then pick it up.' },
+  { title: 'Return', desc: 'Hand it back, mark it returned, leave a review.' },
 ];
 
 function HowItWorks() {
@@ -521,14 +498,10 @@ function HowItWorks() {
     <Shell className="home-explainer-section pt-14 sm:pt-20">
       <div className="rounded-card-xl border border-app bg-card p-6 sm:p-10">
         <SectionHeader title="How YBuy works" subtitle="Four steps, start to finish." className="mb-8" />
-        <ol className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-4">
+        <ol className="home-steps grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-4">
           {STEPS.map((step) => {
-            const Icon = step.icon;
             return (
-              <li key={step.title} className="flex gap-4 lg:block">
-                <span className="grid place-items-center w-11 h-11 rounded-full bg-accent-soft text-accent shrink-0 lg:mb-4">
-                  <Icon size={20} />
-                </span>
+              <li key={step.title}>
                 <div>
                   <h3 className="font-semibold text-main font-display">{step.title}</h3>
                   <p className="text-sm text-sec mt-1 leading-relaxed">{step.desc}</p>

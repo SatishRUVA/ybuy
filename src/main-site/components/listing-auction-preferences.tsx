@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Gavel } from 'lucide-react';
-import { Switch } from '@/main-site/components/shadcn/switch';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/main-site/components/shadcn/select';
 import { MonthGrid } from '@/main-site/components/date-range-picker';
-import { fieldClass } from '@/main-site/components/form-classes';
+import { listingInputClass as fieldClass } from '@/main-site/components/listing-ui-classes';
 import { MAX_AUCTION_DAILY_BID } from '@/lib/listing-auctions';
 import { addDaysIso, todayIso } from '@/lib/geo';
 import { BIDDING_RULES_TEXT, defaultBiddingOpeningTime, enableBiddingPreferences, twoHoursBeforePickup, type ListingAuctionPreferences as Preferences } from '@/lib/listing-auctions';
@@ -43,18 +41,18 @@ function BiddingDateTime({ label: name, value, min, max, onChange }: {
       <label className="owner-bidding-date-control">
         <span className="sr-only">{name} date</span>
         <CalendarDays size={16} aria-hidden="true" />
-        <input type="date" required value={date} min={min?.slice(0, 10)} max={max?.slice(0, 10)}
+        <input type="date" className={fieldClass()} required value={date} min={min?.slice(0, 10)} max={max?.slice(0, 10)}
           onChange={event => update(event.target.value, time)} />
       </label>
-      <Select value={time} onValueChange={next => update(date, next)}>
-        <SelectTrigger aria-label={`${name} time`} className="owner-bidding-time-trigger">
-          <Clock3 size={16} aria-hidden="true" /><SelectValue placeholder="Choose time" />
-        </SelectTrigger>
-        <SelectContent>
-          {time && !TIME_OPTIONS.includes(time) && <SelectItem value={time}>{timeLabel(time)}</SelectItem>}
-          {TIME_OPTIONS.map(option => <SelectItem key={option} value={option} className="min-h-11">{timeLabel(option)}</SelectItem>)}
-        </SelectContent>
-      </Select>
+      <label className="owner-bidding-time-control">
+        <Clock3 size={16} aria-hidden="true" />
+        <select aria-label={`${name} time`} className={fieldClass()} value={time}
+          onChange={event => update(date, event.target.value)}>
+          <option value="" disabled>Choose time</option>
+          {time && !TIME_OPTIONS.includes(time) && <option value={time}>{timeLabel(time)}</option>}
+          {TIME_OPTIONS.map(option => <option key={option} value={option}>{timeLabel(option)}</option>)}
+        </select>
+      </label>
     </div>
   </fieldset>;
 }
@@ -102,10 +100,13 @@ export function ListingAuctionPreferences({ value, start, end, askingPrice, disa
       <Gavel size={20} aria-hidden="true" className="mt-2 shrink-0 text-sec" />
       <div className="flex-1 pt-0.5"><h3 id="listing-auction-title" className="text-base font-semibold text-main">Live bidding</h3>
         <p id="auction-preferences-help" className="mt-1 text-sm leading-relaxed text-sec">{hideEnableSwitch ? 'Choose dates and a starting bid, then save.' : 'Turn on, choose dates and a starting bid, then save.'}</p></div>
-      {!hideEnableSwitch && <div className="flex min-h-11 items-center"><Switch aria-label="Enable live bidding" aria-describedby="auction-preferences-help" checked={value.enabled}
-        disabled={disabled} onCheckedChange={enabled => onChange(enabled
-          ? enableBiddingPreferences(value, start)
-          : { ...value, enabled: false, starts_immediately: false })} /></div>}
+      {!hideEnableSwitch && <label className="flex min-h-11 items-center gap-2 text-sm text-main">
+        <input type="checkbox" role="switch" aria-describedby="auction-preferences-help" checked={value.enabled}
+          disabled={disabled} onChange={event => onChange(event.target.checked
+            ? enableBiddingPreferences(value, start)
+            : { ...value, enabled: false, starts_immediately: false })} />
+        <span>Enable live bidding</span>
+      </label>}
     </div>
     {value.enabled && <fieldset disabled={disabled} className="space-y-4 border-t border-app pt-4">
       <p className="text-sm text-sec">{value.date_flexible === false && disabled ? 'This historical auction has fixed rental dates.' : 'Renters choose their pickup and return dates within your bidding availability window.'}</p>
@@ -117,10 +118,10 @@ export function ListingAuctionPreferences({ value, start, end, askingPrice, disa
       <div className="owner-auction-setup">
       <div className="owner-auction-dates space-y-3">
       <div className="grid grid-cols-2 gap-3" aria-label="Auction rental dates">
-        <button type="button" aria-pressed={!choosingReturn} onClick={() => setChoosingReturn(false)} className={`rounded-card border p-3 text-left transition ${!choosingReturn ? 'border-accent bg-accent-soft' : 'border-app bg-card hover:border-accent/50'}`}>
+        <button type="button" aria-pressed={!choosingReturn} onClick={() => setChoosingReturn(false)} className={`listing-date-option ${!choosingReturn ? 'is-selected' : ''}`}>
           <span className="block text-xs font-medium text-sec">{value.date_flexible ? 'Earliest pickup' : 'Pickup'}</span><span className="mt-1 block text-sm font-semibold text-main">{label(pickup)}</span>
         </button>
-        <button type="button" aria-pressed={choosingReturn} onClick={() => setChoosingReturn(true)} className={`rounded-card border p-3 text-left transition ${choosingReturn ? 'border-accent bg-accent-soft' : 'border-app bg-card hover:border-accent/50'}`}>
+        <button type="button" aria-pressed={choosingReturn} onClick={() => setChoosingReturn(true)} className={`listing-date-option ${choosingReturn ? 'is-selected' : ''}`}>
           <span className="block text-xs font-medium text-sec">{value.date_flexible ? 'Latest return' : 'Return'}</span><span className="mt-1 block text-sm font-semibold text-main">{label(returnDate)}</span>
         </button>
       </div>

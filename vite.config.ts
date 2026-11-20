@@ -62,7 +62,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
     },
     server: {
       host: 'localhost',
-      port: Number(process.env.YBUY_TEST_PORT ?? 5174),
+      port: Number(process.env.YBUY_TEST_PORT ?? 5300),
       strictPort: true,
       watch: {
         ignored: ['**/node_modules/**', '**/test-results*/**', '**/playwright-report*/**'],

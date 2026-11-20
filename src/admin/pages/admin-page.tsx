@@ -66,9 +66,11 @@ const can = (access: AdminAccess, item: NavItem) => item.anyPermission
   ? item.anyPermission.some((permission) => access.permissions.includes(permission))
   : !item.permission || access.permissions.includes(item.permission);
 
-function Nav({ access, active, onSelect }: { access: AdminAccess; active: string; onSelect: (id: string) => void }) {
+function Nav({ access, active, onSelect, label = 'Admin' }: {
+  access: AdminAccess; active: string; onSelect: (id: string) => void; label?: string;
+}) {
   return (
-    <nav aria-label="Admin" className="p-3 space-y-5">
+    <nav aria-label={label} className="p-3 space-y-5">
       {GROUPS.map((g) => {
         const items = g.items.filter((i) => can(access, i));
         if (items.length === 0) return null;
@@ -177,7 +179,16 @@ export function AdminPage({ section, recordId }: { section?: string; recordId?: 
   };
 
   return (
-    <div className="admin-portal min-h-screen bg-app">
+    <div className="admin-workspace">
+      <aside className="admin-sidebar" aria-hidden={menuOpen || undefined}>
+        <div className="admin-sidebar-heading">
+          <span>YBuy operations</span>
+          <strong>{access.role === 'super_admin' ? 'Super Admin' : 'Admin'} workspace</strong>
+          <p>Tools and queues available to your role.</p>
+        </div>
+        <Nav access={access} active={active.id} onSelect={select} label="Admin workspace" />
+      </aside>
+      <div className="admin-workspace-main">
       <header className="admin-topbar sticky top-0 z-40 h-14 flex items-center gap-3 px-4 bg-card border-b border-app">
         <Button aria-label="Open admin menu" variant="secondary" size="sm" className="shrink-0" icon={<Menu size={16} />} trailingIcon={<ChevronDown size={14} />} onClick={() => setMenuOpen(true)}>
           <span className="hidden sm:inline">{active.label}</span>
@@ -201,6 +212,7 @@ export function AdminPage({ section, recordId }: { section?: string; recordId?: 
       <main className="admin-content mx-auto min-w-0 px-4 sm:px-6 py-6 w-full max-w-[1440px]">
         <Section key={`${active.id}:${recordId ?? ''}`} id={active.id} recordId={recordId} access={access} onSelect={select} />
       </main>
+      </div>
     </div>
   );
 }

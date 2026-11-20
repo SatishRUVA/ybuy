@@ -209,147 +209,155 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
 
   return (
     <div className="animate-fade-in pb-24 md:pb-10">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
         <PageBackButton fallback={{ name: 'listing', id }}>Back to the listing</PageBackButton>
 
-        <h1 className="text-[26px] sm:text-[32px] font-extrabold text-main font-display leading-tight">{listing.instantBooking ? 'Review and book' : 'Review and request'}</h1>
-        <p className="mt-2 text-sm text-sec">Rental quantity: {quantity} {quantity === 1 ? 'unit' : 'units'}</p>
-        <p className="text-sec text-sm mt-1.5 mb-6">{listing.instantBooking
-          ? 'This item books instantly. Your dates are reserved while you complete payment.'
-          : `One last look before ${listing.owner.name.split(' ')[0]} gets your request.`}</p>
+        <header className="mb-6 sm:mb-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">Checkout · Review your booking</p>
+          <h1 className="mt-2 text-[26px] sm:text-[32px] font-extrabold text-main font-display leading-tight">{listing.instantBooking ? 'Review and book' : 'Review and request'}</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-sec">{listing.instantBooking
+            ? 'This item books instantly. Your dates are reserved while you complete payment.'
+            : `One last look before ${listing.owner.name.split(' ')[0]} gets your request.`}</p>
+        </header>
 
-        {/* Item */}
-        <Surface className="p-4 flex gap-4 mb-4">
-          <ListingPhoto images={listing.images} className="w-24 h-24 rounded-card object-cover shrink-0 bg-subtle" />
-          <div className="flex-1 min-w-0">
-            {listing.category && <p className="text-xs font-medium text-accent">{listing.category}</p>}
-            <h2 className="font-semibold text-main font-display leading-snug mt-0.5">{listing.title}</h2>
-            <div className="flex items-center gap-3 mt-1.5">
-              <Rating value={listing.rating} count={listing.reviewCount} size="sm" />
-              {listing.verifiedOwner && <VerifiedBadge size="xs" />}
-            </div>
-            {listing.pickup && (
-              <p className="flex items-center gap-1 text-xs text-sec mt-1.5"><MapPin size={12} /> {listing.pickup}</p>
-            )}
-          </div>
-        </Surface>
-
-        {listing.deliveryAvailable && !createdBooking && <Surface className="p-4 mb-4">
-          <h2 className="font-semibold text-main">Handoff</h2>
-          <fieldset className="mt-2 grid gap-2 sm:grid-cols-2">
-            <legend className="sr-only">Choose pickup or delivery</legend>
-            <label className={`flex min-h-11 items-center gap-2 rounded-card border p-3 text-sm ${deliveryMode === 'pickup' ? 'border-accent bg-accent-soft' : 'border-app'}`}>
-              <input type="radio" name="booking-delivery-mode" checked={deliveryMode === 'pickup'} onChange={() => setDeliveryMode('pickup')} />
-              <span>Local pickup · included</span>
-            </label>
-            <label className={`flex min-h-11 items-center gap-2 rounded-card border p-3 text-sm ${deliveryMode === 'delivery' ? 'border-accent bg-accent-soft' : 'border-app'}`}>
-              <input type="radio" name="booking-delivery-mode" checked={deliveryMode === 'delivery'} onChange={() => setDeliveryMode('delivery')} />
-              <span>Delivery · ${Number(listing.deliveryFee ?? 0).toFixed(2)}</span>
-            </label>
-          </fieldset>
-        </Surface>}
-
-        {/* Dates */}
-        <Surface className="p-4 mb-4">
-          <div className="flex items-center gap-4">
-            <span className="grid place-items-center w-10 h-10 rounded-card bg-accent-soft text-accent shrink-0">
-              <Calendar size={18} />
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-main">{formatDay(startDate)} → {formatDay(endDate)}</p>
-              <p className="text-xs text-sec mt-0.5 tnum">{days} {days === 1 ? 'day' : 'days'}</p>
-              <p className="text-xs text-sec mt-1">Selected option: <strong className="text-main">{selectedRentalOption}</strong></p>
-            </div>
-            <Button size="sm" variant="ghost" disabled={submitting || Boolean(paymentBookingId)} onClick={() => navigate({ name: 'listing', id })}>Change</Button>
-          </div>
-        </Surface>
-
-        {/* Price */}
-        <Surface className="p-5 mb-5">
-          <h2 className="font-semibold text-main font-display mb-4">Price breakdown</h2>
-          {quoteLoading && <p role="status" className="text-sm text-sec">Verifying the current price…</p>}
-          {quoteError && <Alert tone="error" title="Could not verify the checkout price">
-            {quoteError}<Button size="sm" variant="secondary" className="mt-2" onClick={() => setQuoteRetry(value => value + 1)}>Retry price</Button>
-          </Alert>}
-          <div className="space-y-3 text-sm">
-            <Row label={createdBooking ? `Rental · ${quantity} ${quantity === 1 ? 'unit' : 'units'}`
-              : priceQuote?.package_kind
-                ? `${priceQuote.package_kind === 'monthly' ? 'Monthly' : 'Weekly'} package · ${priceQuote.package_days} days · ${quantity} ${quantity === 1 ? 'unit' : 'units'}`
-                : `$${formatMoney(priceQuote?.daily_rate ?? listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'} × ${quantity} ${quantity === 1 ? 'unit' : 'units'}`}
-              value={createdBooking ? rental : priceQuote?.package_amount ?? rental} />
-            {!createdBooking && (priceQuote?.discount_amount ?? 0) > 0
-              && <Row label="Package savings" value={-(priceQuote?.discount_amount ?? 0)} />}
-            {!createdBooking && (priceQuote?.extra_days ?? 0) > 0
-              && <Row label={`${priceQuote?.extra_days} extra days at the daily rate`} value={priceQuote?.extra_days_amount ?? 0} />}
-            <Row label={`Renter service fee${renterServiceFeePct == null ? '' : ` · ${(renterServiceFeePct * 100).toFixed(2)}%`}`} value={serviceFee} />
-            {deliveryFeeAmount > 0 && <Row label="Delivery fee" value={deliveryFeeAmount} />}
-            {createdBooking ? <Row label="Insurance" value={insuranceAmount} />
-              : <InsuranceAmount days={days} replacementValue={listing.declaredValue} quantity={quantity}
-                selected={insuranceSelected} onSelectionChange={setInsuranceSelected}
-                disabled={submitting || Boolean(paymentBookingId)} />}
-            <Row label={isTaxDemo ? 'Tax (7% test)' : createdBooking?.tax_rate === 0 ? 'Tax' : 'Tax (7%)'} value={tax} />
-            <div className="pt-3 border-t border-app flex justify-between font-bold text-base text-main">
-              <span>Renter charges</span>
-              <span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount + deliveryFeeAmount)}</span>
-            </div>
-          </div>
-          <div className="flex justify-between text-sm font-semibold text-main mt-3 pt-3 border-t border-app">
-            <span>{createdBooking ? 'Backend-confirmed total' : 'Estimated total'}</span><span className="tnum">${formatMoney(total)}</span>
-          </div>
-          <p className="text-xs text-sec mt-2">{createdBooking ? 'Stored fee, tax and total snapshots confirmed by the backend.' : 'Server quote uses the effective service-fee allocation and authoritative package rates. Tax applies to rental and renter service fee only.'}</p>
-          {ownerServiceFeeAmount > 0 && <p className="text-xs text-sec mt-2">The owner service fee (${formatMoney(ownerServiceFeeAmount)}) is deducted from the owner’s earnings; it is not an extra renter charge.</p>}
-          <p className="text-xs text-sec mt-2 leading-relaxed">Rental payment only, including applicable fees, selected optional insurance and tax. The security hold is a separate check-in transaction.</p>
-          {localRewards && <CheckoutPointsPicker
-            selected={pointsSelected} applied={pointsApplied} onSelectionChange={setPointsSelected}
-            rentalSubtotal={rental} total={total} disabled={submitting} />}
-        </Surface>
-
-          {deposit > 0 && (
-            <Surface className="p-5 mb-5">
-              <div className="flex justify-between items-center text-sm">
-                <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Temporary security-deposit authorization</span>
-                <span className="font-semibold text-main tnum">${formatMoney(deposit)}</span>
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)] lg:gap-8">
+          <section aria-label="Rental details" className="space-y-4">
+            <Surface className="p-4 flex gap-4">
+              <ListingPhoto images={listing.images} className="w-24 h-24 rounded-card object-cover shrink-0 bg-subtle" />
+              <div className="flex-1 min-w-0">
+                {listing.category && <p className="text-xs font-medium text-accent">{listing.category}</p>}
+                <h2 className="font-semibold text-main font-display leading-snug mt-0.5">{listing.title}</h2>
+                <div className="flex items-center gap-3 mt-1.5">
+                  <Rating value={listing.rating} count={listing.reviewCount} size="sm" />
+                  {listing.verifiedOwner && <VerifiedBadge size="xs" />}
+                </div>
+                {listing.pickup && (
+                  <p className="flex items-center gap-1 text-xs text-sec mt-1.5"><MapPin size={12} /> {listing.pickup}</p>
+                )}
+                <p className="text-xs text-sec mt-2">Rental quantity: <strong className="text-main">{quantity} {quantity === 1 ? 'unit' : 'units'}</strong></p>
               </div>
-              <p className="text-xs text-muted mt-1.5 leading-relaxed">Not included in rental payment. After paying, propose a pickup or delivery slot for owner approval. Authorize this temporary hold within 24 hours before that slot. Only separately approved deductions may be captured; otherwise the hold is released.</p>
-              {createdBooking && !createdBooking.payment_first && <label className="mt-3 flex min-h-11 items-start gap-2 text-xs text-sec">
-                <input type="checkbox" checked={depositConsent} onChange={event => setDepositConsent(event.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
-                <span>I agree to save this card for the temporary security-deposit authorization and any separately approved claim.</span>
-              </label>}
             </Surface>
-          )}
 
-        {error && <Alert tone="error" title={createdBooking ? 'Booking saved - action required' : 'Booking not created'} className="mb-4">
-          {error}
-          {createdBooking && <p className="mt-2">Your booking was created. Retry below, or open it from Bookings. Do not submit a new booking.</p>}
-        </Alert>}
-        {availabilityStatus !== 'available' && !paymentBookingId && <Alert
-          tone={availabilityStatus === 'unavailable' ? 'warning' : 'info'}
-          title={availabilityStatus === 'checking' ? 'Checking availability' : availabilityStatus === 'unavailable' ? 'Dates unavailable' : 'Could not verify availability'}
-          className="mb-4"
-        >
-          {availabilityStatus === 'checking'
-            ? 'Checking these dates and the selected quantity with the owner’s current availability.'
-            : availabilityStatus === 'unavailable'
-              ? <>These dates are no longer available for the selected quantity. <Button variant="secondary" className="mt-2" onClick={() => navigate({ name: 'listing', id })}>Choose other dates</Button></>
-              : <>Booking is disabled until availability can be verified. <Button variant="secondary" className="mt-2" onClick={() => setAvailabilityRetry((value) => value + 1)}>Retry availability check</Button></>}
-        </Alert>}
+            {listing.deliveryAvailable && !createdBooking && <Surface className="p-4">
+              <h2 className="font-semibold text-main">Handoff</h2>
+              <fieldset className="mt-2 grid gap-2 sm:grid-cols-2">
+                <legend className="sr-only">Choose pickup or delivery</legend>
+                <label className={`flex min-h-11 items-center gap-2 rounded-card border p-3 text-sm ${deliveryMode === 'pickup' ? 'border-accent bg-accent-soft' : 'border-app'}`}>
+                  <input type="radio" name="booking-delivery-mode" checked={deliveryMode === 'pickup'} onChange={() => setDeliveryMode('pickup')} />
+                  <span>Local pickup · included</span>
+                </label>
+                <label className={`flex min-h-11 items-center gap-2 rounded-card border p-3 text-sm ${deliveryMode === 'delivery' ? 'border-accent bg-accent-soft' : 'border-app'}`}>
+                  <input type="radio" name="booking-delivery-mode" checked={deliveryMode === 'delivery'} onChange={() => setDeliveryMode('delivery')} />
+                  <span>Delivery · ${Number(listing.deliveryFee ?? 0).toFixed(2)}</span>
+                </label>
+              </fieldset>
+            </Surface>}
 
-        <div className="hidden md:block">
-          <Button fullWidth size="lg" loading={submitting} disabled={(availabilityStatus !== 'available' && !paymentBookingId) || (quoteLoading || (!priceQuote && !createdBooking && !paymentBookingId))} loadingLabel={paymentBookingId ? 'Opening secure payment…' : listing.instantBooking ? 'Booking…' : 'Sending request…'} onClick={handleConfirm}>
-            {paymentBookingId ? `Confirm $${formatMoney(total)} and pay` : listing.instantBooking ? 'Continue to payment' : 'Send booking request'}
-          </Button>
-          <p className="flex items-center justify-center gap-1.5 text-xs text-sec mt-3">
-            <ShieldCheck size={14} /> {listing.instantBooking ? 'No charge now - pay securely to confirm.' : 'No charge now - you pay only if the owner approves.'}
-          </p>
+            <Surface className="p-4">
+              <div className="flex items-center gap-4">
+                <span className="grid place-items-center w-10 h-10 rounded-card bg-accent-soft text-accent shrink-0">
+                  <Calendar size={18} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-sm font-semibold text-main">{formatDay(startDate)} → {formatDay(endDate)}</h2>
+                  <p className="text-xs text-sec mt-0.5 tnum">{days} {days === 1 ? 'day' : 'days'}</p>
+                  <p className="text-xs text-sec mt-1">Selected option: <strong className="text-main">{selectedRentalOption}</strong></p>
+                </div>
+                <Button size="sm" variant="ghost" disabled={submitting || Boolean(paymentBookingId)} onClick={() => navigate({ name: 'listing', id })}>Change</Button>
+              </div>
+            </Surface>
+
+            {availabilityStatus !== 'available' && !paymentBookingId && <Alert
+              tone={availabilityStatus === 'unavailable' ? 'warning' : 'info'}
+              title={availabilityStatus === 'checking' ? 'Checking availability' : availabilityStatus === 'unavailable' ? 'Dates unavailable' : 'Could not verify availability'}
+            >
+              {availabilityStatus === 'checking'
+                ? 'Checking these dates and the selected quantity with the owner’s current availability.'
+                : availabilityStatus === 'unavailable'
+                  ? <>These dates are no longer available for the selected quantity. <Button variant="secondary" className="mt-2" onClick={() => navigate({ name: 'listing', id })}>Choose other dates</Button></>
+                  : <>Booking is disabled until availability can be verified. <Button variant="secondary" className="mt-2" onClick={() => setAvailabilityRetry((value) => value + 1)}>Retry availability check</Button></>}
+            </Alert>}
+          </section>
+
+          <aside aria-label="Booking summary" className="space-y-4 lg:sticky lg:top-6">
+            <Surface className="p-5 sm:p-6">
+              <h2 id="checkout-summary-heading" className="font-semibold text-main font-display mb-4">Your price breakdown</h2>
+              {quoteLoading && <p role="status" className="text-sm text-sec">Verifying the current price…</p>}
+              {quoteError && <Alert tone="error" title="Could not verify the checkout price">
+                {quoteError}<Button size="sm" variant="secondary" className="mt-2" onClick={() => setQuoteRetry(value => value + 1)}>Retry price</Button>
+              </Alert>}
+              {(createdBooking || priceQuote) && <>
+                <div className="space-y-3 text-sm">
+                  <Row label={createdBooking ? `Rental · ${quantity} ${quantity === 1 ? 'unit' : 'units'}`
+                    : priceQuote?.package_kind
+                      ? `${priceQuote.package_kind === 'monthly' ? 'Monthly' : 'Weekly'} package · ${priceQuote.package_days} days · ${quantity} ${quantity === 1 ? 'unit' : 'units'}`
+                      : `$${formatMoney(priceQuote?.daily_rate ?? listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'} × ${quantity} ${quantity === 1 ? 'unit' : 'units'}`}
+                    value={createdBooking ? rental : priceQuote?.package_amount ?? rental} />
+                  {!createdBooking && (priceQuote?.discount_amount ?? 0) > 0
+                    && <Row label="Package savings" value={-(priceQuote?.discount_amount ?? 0)} />}
+                  {!createdBooking && (priceQuote?.extra_days ?? 0) > 0
+                    && <Row label={`${priceQuote?.extra_days} extra days at the daily rate`} value={priceQuote?.extra_days_amount ?? 0} />}
+                  <Row label={`Renter service fee${renterServiceFeePct == null ? '' : ` · ${(renterServiceFeePct * 100).toFixed(2)}%`}`} value={serviceFee} />
+                  {deliveryFeeAmount > 0 && <Row label="Delivery fee" value={deliveryFeeAmount} />}
+                  {createdBooking ? <Row label="Insurance" value={insuranceAmount} />
+                    : <InsuranceAmount days={days} replacementValue={listing.declaredValue} quantity={quantity}
+                      selected={insuranceSelected} onSelectionChange={setInsuranceSelected}
+                      disabled={submitting || Boolean(paymentBookingId)} />}
+                  <Row label={isTaxDemo ? 'Tax (7% test)' : createdBooking?.tax_rate === 0 ? 'Tax' : 'Tax (7%)'} value={tax} />
+                  <div className="pt-3 border-t border-app flex justify-between font-bold text-base text-main">
+                    <span>Renter charges</span>
+                    <span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount + deliveryFeeAmount)}</span>
+                  </div>
+                </div>
+                <div className="flex justify-between text-sm font-semibold text-main mt-3 pt-3 border-t border-app">
+                  <span>{createdBooking ? 'Backend-confirmed total' : 'Estimated total'}</span><span className="tnum">${formatMoney(total)}</span>
+                </div>
+                <p className="text-xs text-sec mt-2">{createdBooking ? 'Stored fee, tax and total snapshots confirmed by the backend.' : 'Server quote uses the effective service-fee allocation and authoritative package rates. Tax applies to rental and renter service fee only.'}</p>
+                {ownerServiceFeeAmount > 0 && <p className="text-xs text-sec mt-2">The owner service fee (${formatMoney(ownerServiceFeeAmount)}) is deducted from the owner’s earnings; it is not an extra renter charge.</p>}
+                <p className="text-xs text-sec mt-2 leading-relaxed">Rental payment only, including applicable fees, selected optional insurance and tax. The security hold is a separate check-in transaction.</p>
+                {localRewards && <CheckoutPointsPicker
+                  selected={pointsSelected} applied={pointsApplied} onSelectionChange={setPointsSelected}
+                  rentalSubtotal={rental} total={total} disabled={submitting} />}
+              </>}
+            </Surface>
+
+            {deposit > 0 && (
+              <Surface className="p-5">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Temporary security-deposit authorization</span>
+                  <span className="font-semibold text-main tnum">${formatMoney(deposit)}</span>
+                </div>
+                <p className="text-xs text-muted mt-1.5 leading-relaxed">Not included in rental payment. After paying, propose a pickup or delivery slot for owner approval. Authorize this temporary hold within 24 hours before that slot. Only separately approved deductions may be captured; otherwise the hold is released.</p>
+                {createdBooking && !createdBooking.payment_first && <label className="mt-3 flex min-h-11 items-start gap-2 text-xs text-sec">
+                  <input type="checkbox" checked={depositConsent} onChange={event => setDepositConsent(event.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
+                  <span>I agree to save this card for the temporary security-deposit authorization and any separately approved claim.</span>
+                </label>}
+              </Surface>
+            )}
+
+            {error && <Alert tone="error" title={createdBooking ? 'Booking saved - action required' : 'Booking not created'}>
+              {error}
+              {createdBooking && <p className="mt-2">Your booking was created. Retry below, or open it from Bookings. Do not submit a new booking.</p>}
+            </Alert>}
+
+            <div className="hidden md:block">
+              <Button fullWidth size="lg" loading={submitting} disabled={(availabilityStatus !== 'available' && !paymentBookingId) || (quoteLoading || (!priceQuote && !createdBooking && !paymentBookingId))} loadingLabel={paymentBookingId ? 'Opening secure payment…' : listing.instantBooking ? 'Booking…' : 'Sending request…'} onClick={handleConfirm}>
+                {paymentBookingId ? `Confirm $${formatMoney(total)} and pay` : listing.instantBooking ? 'Continue to payment' : 'Send booking request'}
+              </Button>
+              <p className="flex items-center justify-center gap-1.5 text-xs text-sec mt-3">
+                <ShieldCheck size={14} /> {listing.instantBooking ? 'No charge now - pay securely to confirm.' : 'No charge now - you pay only if the owner approves.'}
+              </p>
+            </div>
+          </aside>
         </div>
       </div>
 
       {/* Mobile: the decision stays in reach */}
-      <div className="md:hidden fixed bottom-[calc(4rem_+_env(safe-area-inset-bottom))] left-0 right-0 z-30 glass-surface border-t border-app px-4 py-3">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 glass-surface border-t border-app px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="flex items-center gap-3">
           <div className="min-w-0">
-            <p className="text-lg font-bold text-main tnum">${formatMoney(total)}</p>
-            <p className="text-xs text-sec">{createdBooking ? 'Final total · no charge yet' : 'Est. total · no charge yet'}</p>
+            <p className="text-lg font-bold text-main tnum">{createdBooking || priceQuote ? `$${formatMoney(total)}` : '—'}</p>
+            <p className="text-xs text-sec">{createdBooking ? 'Final total · no charge yet' : priceQuote ? 'Est. total · no charge yet' : quoteLoading ? 'Verifying total' : 'Price unavailable'}</p>
           </div>
           <Button className="flex-1" loading={submitting} disabled={(availabilityStatus !== 'available' && !paymentBookingId) || (quoteLoading || (!priceQuote && !createdBooking && !paymentBookingId))} loadingLabel={paymentBookingId ? 'Opening secure payment…' : listing.instantBooking ? 'Booking…' : 'Sending…'} onClick={handleConfirm}>
             {paymentBookingId ? `Confirm $${formatMoney(total)} and pay` : listing.instantBooking ? 'Continue to payment' : 'Send request'}

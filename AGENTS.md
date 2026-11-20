@@ -1,1 +1,0 @@
-Always use http://localhost:5174/ for local

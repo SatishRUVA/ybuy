@@ -394,10 +394,21 @@ export function SearchPage({
   };
 
   return (
-    <div className="animate-fade-in min-h-screen pb-20 md:pb-8">
-      {/* Sticky search + controls */}
-      <div className="workspace-search-toolbar sticky top-16 z-[140] border-b border-app">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 space-y-2.5">
+    <div className="marketplace-browse animate-fade-in min-h-screen pb-20 md:pb-8">
+      <div className="marketplace-browse-intro">
+        <p className="marketplace-eyebrow">Close to you</p>
+        <h1>Find your next good thing.</h1>
+        <p>Useful finds, shared by people in {preciseLocation ? formatLocation(location) : 'your area'} and nearby.</p>
+      </div>
+      <div className="workspace-search-toolbar">
+        <div className="marketplace-browse-controls">
+          <nav className="marketplace-browse-categories" aria-label="Browse categories">
+            <button type="button" aria-pressed={activeCategory === null} onClick={() => setActiveCategory(null)}>All things</button>
+            {categories.slice(0, 4).map(category => (
+              <button type="button" key={category.id} aria-pressed={activeCategory === category.id}
+                onClick={() => setActiveCategory(category.id)}>{category.name}</button>
+            ))}
+          </nav>
           <SearchBar
             onSearch={handleSearchBarSearch}
             onLocationChange={() => { setLocationError(null); setRouteLocationReady(true); }}
@@ -479,7 +490,7 @@ export function SearchPage({
         </div>
       </div>
 
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-5">
+      <div className="marketplace-browse-results">
         <div className="flex gap-8">
           {/* Filters sidebar */}
           {showFilters && !isMobileFilters && (
@@ -493,7 +504,7 @@ export function SearchPage({
           {/* Results */}
           <div className="workspace-results flex-1 min-w-0">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3 mb-4">
-              <h1 className="text-lg font-bold text-main font-display" aria-live="polite" aria-atomic="true">
+              <h2 className="text-lg font-bold text-main font-display" aria-live="polite" aria-atomic="true">
                 {error ? 'Could not load results' : loading ? 'Searching…' : (
                   <>
                     <span>
@@ -502,7 +513,7 @@ export function SearchPage({
                     {keyword && <span className="text-sec font-normal"> for “{keyword}”</span>}
                   </>
                 )}
-              </h1>
+              </h2>
               <p className="text-xs text-sec sm:shrink-0">{preciseLocation ? `${maxDistance === null ? 'Any distance from' : `Within ${maxDistance} miles of`} ${formatLocation(location)} (approximate distances)` : 'Choose a city or allow location access to filter by distance.'}</p>
             </div>
             {itemRequestsFlag.enabled && !error && !loading && filtered.length > 0 && <div className="mb-3 flex justify-end">

@@ -1,0 +1,98 @@
+.admin-portal {
+  --accent: #3157e1;
+  --accent-hover: #2446c5;
+  --accent-deep: #25304a;
+  --accent-soft: #ebf0ff;
+  --accent-ink: #3157e1;
+  --accent-text: #fff;
+  --highlight: #d2d7e0;
+  --secondary-accent: #7d8797;
+  min-height: 100dvh;
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.admin-portal .admin-gate-header {
+  min-height: 64px;
+  padding-inline: clamp(16px, 3vw, 40px);
+  background: var(--bg-card);
+  border-color: var(--border);
+}
+
+.admin-workspace {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  min-height: calc(100dvh - 64px);
+}
+.admin-workspace-main { min-width: 0; }
+.admin-sidebar {
+  position: sticky;
+  top: 64px;
+  align-self: start;
+  height: calc(100dvh - 64px);
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.admin-sidebar-heading { padding: 24px 24px 12px; }
+.admin-sidebar-heading span { display: block; color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.admin-sidebar-heading strong { display: block; margin-top: 8px; color: var(--text); font-size: 17px; }
+.admin-sidebar-heading p { margin-top: 5px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.admin-sidebar nav button { min-height: 40px; }
+
+.admin-portal .admin-topbar {
+  min-height: 64px;
+  padding-inline: clamp(16px, 2.4vw, 36px);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-portal .admin-topbar h1 {
+  font-size: 16px;
+  letter-spacing: -.01em;
+}
+
+.admin-portal .admin-content {
+  width: auto;
+  max-width: none;
+  min-height: calc(100dvh - 72px);
+  margin: 0;
+  padding: 32px clamp(20px, 3vw, 40px);
+  background: var(--bg-subtle);
+}
+
+.admin-portal table {
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.admin-portal thead { background: transparent; }
+.admin-portal th {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.admin-portal td, .admin-portal th { border-bottom: 1px solid var(--border); }
+.admin-portal tbody tr:last-child td { border-bottom: 0; }
+.admin-portal tbody tr:hover { background: var(--bg-subtle); }
+
+@media (max-width: 640px) {
+  .admin-portal .admin-content {
+    min-height: calc(100dvh - 56px);
+    margin: 0;
+    padding: 22px 16px;
+    border-block: 0;
+    border-radius: 0;
+  }
+}
+
+@media (max-width: 1023px) {
+  .admin-workspace { display: block; }
+  .admin-sidebar { display: none; }
+}

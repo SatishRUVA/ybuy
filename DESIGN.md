@@ -2,16 +2,16 @@
 name: YBuy
 description: A considered neighborhood marketplace for renting useful things from people nearby.
 colors:
-  primary: "#3157E1"
-  primary-hover: "#2446C5"
-  primary-soft: "#EBF0FF"
-  neutral-bg: "#FBFCFE"
+  primary: "#B64A36"
+  primary-hover: "#9D3E2D"
+  primary-soft: "#FBEFEA"
+  neutral-bg: "#FCFBFA"
   neutral-surface: "#FFFFFF"
-  neutral-subtle: "#F3F5F8"
-  neutral-text: "#172033"
-  neutral-secondary: "#4B5568"
-  neutral-muted: "#626C7D"
-  neutral-border: "#E4E8EF"
+  neutral-subtle: "#F7F3EF"
+  neutral-text: "#292524"
+  neutral-secondary: "#514A46"
+  neutral-muted: "#655E5A"
+  neutral-border: "#E9E4E1"
   success: "#17794F"
   success-soft: "#E8F5EC"
   warning: "#A15C00"
@@ -32,8 +32,8 @@ typography:
     lineHeight: 1.5
 rounded:
   sm: "0.5rem"
-  md: "0.625rem"
-  lg: "0.75rem"
+  md: "0.75rem"
+  lg: "0.875rem"
   xl: "1rem"
 components:
   button-primary:
@@ -51,11 +51,11 @@ components:
 
 ## Overview
 
-YBuy is a peer-to-peer rental marketplace. Its interface should make discovery feel local and personal, while keeping booking, handoff, and money movement precise. The visual language pairs porcelain surfaces and deep ink with a restrained cobalt action color. Product photography carries most of the visual character.
+YBuy is a peer-to-peer rental marketplace. Its interface should make discovery feel local and personal, while keeping booking, handoff, and money movement precise. The customer-facing site uses warm porcelain surfaces, deep ink, and a restrained coral action color. Product photography carries most of the visual character.
 
 ## Colors
 
-Use cobalt for the main action, selection, and links. Keep most page area porcelain or white, with cool gray for quiet grouping and dividers. Reserve green, amber, and red for success, attention, and errors. Do not use semantic colors as decoration or infer financial status from color alone.
+Use coral for the main action, selection, and links. Keep most page area warm porcelain or white, with warm gray for quiet grouping and dividers. Reserve green, amber, and red for success, attention, and errors. Do not use semantic colors as decoration or infer financial status from color alone. This customer-site palette does not change the separately managed admin portal.
 
 ## Typography
 
@@ -71,11 +71,11 @@ Prefer surface contrast, alignment, and whitespace over floating stacks of cards
 
 ## Shapes
 
-Use compact rounded rectangles for buttons, inputs, and status labels. Listing imagery may use a slightly larger corner. Avoid pill-shaped cards and heavy outlines; reserve full circles for avatars and icon controls.
+Use compact rounded rectangles for buttons, inputs, and status labels. Listing imagery may use a slightly larger corner. Use restrained borders and shadows; reserve full circles for avatars and icon controls.
 
 ## Components
 
-- Primary buttons use cobalt; secondary actions use a white surface and a clear border; lower-priority actions use a quiet text button.
+- Primary buttons use coral; secondary actions use a white surface and a clear border; lower-priority actions use a quiet text button.
 - Badges identify concise states and retain a text label. Alerts provide an icon, readable message, and an assertive role for errors.
 - Surfaces have a white background, a fine cool-gray border, and little or no shadow. Use interactive treatment only when the whole surface is clickable.
 - Filters remain visible as removable selections once applied. Keep advanced filters grouped in one panel.

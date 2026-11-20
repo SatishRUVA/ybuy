@@ -8,7 +8,7 @@ node_bundler = "esbuild"
 
 [dev]
 framework = "vite"
-targetPort = 5174
+targetPort = 5300
 
 [[redirects]]
 from = "/api/access/verify"

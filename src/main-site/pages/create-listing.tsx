@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
 import { ArrowLeft, ArrowRight, BellRing, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Gavel, ImagePlus, MapPin, Minus, Plus, ShieldCheck, Sparkles, Truck, X, Zap } from 'lucide-react';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
@@ -12,17 +11,21 @@ import { LISTING_RULES, LISTING_FIELD_IDS, ITEM_STEP_FIELDS, parseMoney, validat
 import { todayIso, addDaysIso } from '@/lib/geo';
 import { pickupTimeZone, pickupToday } from '@/lib/pickup-timezone';
 import { HANDOFF_WINDOW_LABELS } from '@/lib/handoff-hours';
-import { Button, Alert, Surface, Field, IconButton } from '@/main-site/components/ui';
-import { fieldClass, textareaClass } from '@/main-site/components/form-classes';
+import {
+  ListingAction as Button,
+  ListingAiSkeleton,
+  ListingField as Field,
+  ListingIconAction as IconButton,
+  ListingNotice as Alert,
+  ListingSkeleton as Skeleton,
+} from '@/main-site/components/listing-ui';
+import { listingInputClass as fieldClass, listingTextareaClass as textareaClass } from '@/main-site/components/listing-ui-classes';
 import { PickupLocation, type PickupLocationValue } from '@/main-site/components/pickup-location';
 import { ListingPhotoEditor } from '@/main-site/components/listing-photo-editor';
 import { ListingNegotiationSettings } from '@/main-site/components/listing-negotiation-settings';
 import { auctionPublicationMessage, BIDDING_RULES_TEXT, type ListingAuction } from '@/lib/listing-auctions';
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/main-site/components/shadcn/dialog';
 import { ListingAvailabilityPicker } from '@/main-site/components/listing-availability-picker';
 import { LISTING_DEFAULT_AVAILABLE_DAYS, listingAvailabilityError } from '@/lib/listing-availability';
-import { SuccessFeedback } from '@/main-site/components/success-feedback';
-import { ListingAiSkeleton, Skeleton } from '@/main-site/components/skeleton';
 import {
   EMPTY_ITEM_DETAILS,
   HANDOFF_WINDOWS,
@@ -73,7 +76,6 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   const { profile } = useAuth();
   const durationDiscountFlag = useFeatureFlag('duration_discounts');
   const biddingFlag = useFeatureFlag('bidding');
-  const reducedMotion = useReducedMotion();
   const [form, setForm] = useState<Form>(EMPTY_FORM);
   const priceForPreview = parseMoney(form.price) ?? 0;
   const [earningsQuotes, setEarningsQuotes] = useState<Record<number, ListingPriceQuote> | null>(null);
@@ -141,6 +143,12 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   const fileInput = useRef<HTMLInputElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const summary = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!completed) return;
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    heading.current?.focus({ preventScroll: true });
+  }, [completed]);
 
   function changed() {
     versionRef.current += 1;
@@ -878,19 +886,27 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
     originalWindow.current = null;
   }
 
-  if (loadError) return <div className="max-w-3xl mx-auto p-6"><Alert tone="error" title="Listing form unavailable">{loadError}</Alert><Button className="mt-4" onClick={() => window.location.reload()}>Retry</Button></div>;
-  if (!ready || !policy) return <div className="max-w-5xl mx-auto p-6" aria-busy="true"><Skeleton className="h-20 mb-6" /><Skeleton className="h-96" /></div>;
-  if (completed) return <div className="owner-listing min-h-screen px-4 sm:px-6 py-8 sm:py-12"><div className="max-w-3xl mx-auto space-y-6">
+  if (loadError) return <div className="owner-listing"><div className="owner-listing-shell"><Alert tone="error" title="Listing form unavailable">{loadError}</Alert><Button className="mt-4" onClick={() => window.location.reload()}>Retry</Button></div></div>;
+  if (!ready || !policy) return <div className="owner-listing min-h-screen" aria-busy="true"><div className="owner-listing-shell"><Skeleton className="listing-skeleton--title mb-6" /><Skeleton className="listing-skeleton--field" /><Skeleton className="listing-skeleton--field mt-4" /></div></div>;
+  if (completed) return <div className="owner-listing min-h-screen"><div className="owner-listing-shell space-y-6">
     {notice && <p role="status" className="text-sm text-accent">{notice}</p>}
-    {status === 'published' ? <SuccessFeedback kind="listing" id={listingId!} title={form.title} image={photos[0]}
-      compact={biddingFlag.enabled || Boolean(editId)}
-      onListAnother={editId ? undefined : startFresh}
-      primary={{ label: 'View item', onClick: () => navigate({ name: 'listing', id: listingId! }) }}
-      secondary={{ label: 'Edit listing', onClick: () => navigate({ name: 'edit-listing', id: listingId! }) }}
-      tertiary={{ label: shareCopied ? 'Copied!' : 'Copy link', onClick: () => void shareListing() }} />
-      : <Surface className="p-6 sm:p-10"><ShieldCheck aria-hidden="true" size={32} className="text-accent mb-4" />
+    {status === 'published' ? <section role="region" aria-labelledby="listing-success-title" className="listing-success">
+      <div>
+        <h1 ref={heading} tabIndex={-1} id="listing-success-title">Your listing is live!</h1>
+        <p role="status" className="mt-2 text-sm text-sec">People nearby can find your item and request a rental.</p>
+        <p className="mt-3 font-semibold text-main">{form.title}</p>
+        <div role="group" aria-label="Published listing actions" className="listing-success-actions">
+          {!editId && <Button onClick={startFresh}>List another</Button>}
+          <Button variant="secondary" onClick={() => navigate({ name: 'listing', id: listingId! })}>View item</Button>
+          <Button variant="secondary" onClick={() => navigate({ name: 'edit-listing', id: listingId! })}>Edit listing</Button>
+          <Button variant="ghost" onClick={() => void shareListing()}>{shareCopied ? 'Copied!' : 'Copy link'}</Button>
+        </div>
+      </div>
+      {photos[0] && <img src={photos[0]} alt={form.title} />}
+    </section>
+      : <section className="p-6 sm:p-10"><ShieldCheck aria-hidden="true" size={32} className="text-accent mb-4" />
         <h1 className="text-2xl font-bold text-main">Submitted for review</h1><p role="status" className="text-sec mt-2">Your listing is not live yet. Review its status from My listings.</p>
-        <p className="mt-4 font-semibold">{form.title}</p><Button className="mt-6" onClick={() => navigate({ name: 'owner-dashboard' })}>My listings</Button></Surface>}
+        <p className="mt-4 font-semibold">{form.title}</p><Button className="mt-6" onClick={() => navigate({ name: 'owner-dashboard' })}>My listings</Button></section>}
     {status === 'published' && (biddingFlag.enabled || editId) && <section aria-label="Optional competitive bidding" className="owner-listing-bidding">
       {confirmedAuction && <article ref={auctionTicket} tabIndex={-1} aria-label="Your auction ticket" className="owner-auction-ticket">
         <div className="owner-auction-ticket-main">
@@ -910,41 +926,20 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
           </span>
         </div>
       </article>}
-      <details ref={biddingDisclosure} hidden={Boolean(confirmedAuction)} className="owner-disclosure" onToggle={event => { if (event.currentTarget.open) setBiddingOptionsVisited(true); }}>
-        <summary className="owner-bidding-invitation">
-          <span className="owner-bidding-pitch">
-            <span className="owner-bidding-eyebrow"><Gavel size={18} aria-hidden="true" /> Give it the bidding spotlight</span>
-            <span className="owner-bidding-headline">Your gear.<br />Their best bid.</span>
-            <span className="owner-bidding-description">Let renters compete for your available dates. Your starting price. You choose eligible bidders.</span>
-            <span className="owner-bidding-action">
-              <span className="owner-bidding-cta">Set up bidding <ArrowRight size={18} aria-hidden="true" /></span>
-              <span className="owner-bidding-open-label">Bidding options are open</span>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <button type="button" className="owner-bidding-rules-link" onClick={event => event.stopPropagation()}>How bids and deadlines work</button>
-                </DialogTrigger>
-                <DialogContent onClick={event => event.stopPropagation()}>
-                  <DialogHeader>
-                    <DialogTitle>How bids and deadlines work</DialogTitle>
-                    <DialogDescription>Bidding rules for your listing</DialogDescription>
-                  </DialogHeader>
-                  <article className="mt-4 text-sm leading-relaxed text-sec">{BIDDING_RULES_TEXT}</article>
-                </DialogContent>
-              </Dialog>
-              <span className="owner-bidding-optional">Optional. Nothing goes live until you save.</span>
+      <details ref={biddingDisclosure} hidden={Boolean(confirmedAuction)} className="listing-bidding-disclosure" onToggle={event => { if (event.currentTarget.open) setBiddingOptionsVisited(true); }}>
+        <summary className="listing-bidding-summary">
+          <span className="listing-bidding-copy">
+            <span className="listing-bidding-kicker"><Gavel size={16} aria-hidden="true" /> Optional bidding</span>
+            <span className="listing-bidding-title">Let renters bid for dates you choose</span>
+            <span className="listing-bidding-description">Choose the rental window and starting price. Regular rentals stay available outside it.</span>
+            <span className="listing-bidding-action">
+              <span className="listing-bidding-cta">Configure bidding <ArrowRight size={16} aria-hidden="true" /></span>
+              <span className="listing-bidding-note">Nothing goes live until you save.</span>
             </span>
           </span>
-          {photos[0] && <span className="owner-bidding-product" aria-hidden="true">
-            <img src={photos[0]} alt="" />
-            <span className="owner-bidding-product-caption">{form.title}</span>
-          </span>}
-          <span className="owner-bidding-mark" aria-hidden="true"><Gavel strokeWidth={1.25} /><Sparkles className="owner-bidding-spark" /></span>
-          <ChevronDown size={20} aria-hidden="true" className="owner-disclosure-chevron owner-bidding-chevron shrink-0" />
+          <ChevronDown size={18} aria-hidden="true" className="listing-bidding-chevron" />
         </summary>
-        <div className="owner-disclosure-content">
-          <ol aria-label="Bidding setup steps" className="owner-bidding-steps">
-            <li><span>1</span> Choose dates</li><li><span>2</span> Set starting bid</li><li><span>3</span> Review &amp; save</li>
-          </ol>
+        <div className="listing-bidding-details">
           {biddingOptionsVisited && <ListingNegotiationSettings listingId={listingId!} startSetup onSaved={auction => {
             if (auction && ['scheduled', 'open'].includes(auction.status) && auction.starts_at && auction.ends_at) {
               setConfirmedAuction({ ...auction, starts_at: auction.starts_at, ends_at: auction.ends_at });
@@ -952,6 +947,10 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
           }} />}
           <p className="mt-4 text-sm text-sec">Bidding is optional. You can manage it later from Edit listing.</p>
         </div>
+      </details>
+      <details id="listing-bidding-rules" className="owner-bidding-rules">
+        <summary>How bids and deadlines work</summary>
+        <article className="mt-3 text-sm leading-relaxed text-sec">{BIDDING_RULES_TEXT}</article>
       </details>
     </section>}
     {status === 'published' && biddingFlag.error && <Alert tone="warning" title="Bidding options unavailable">{biddingFlag.error} Your listing is still live.</Alert>}
@@ -1005,15 +1004,14 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
         {saveError && <div role="alert" className="owner-listing-save-error mb-5"><Alert tone="error" title="Your changes have not been saved">{saveError}
         <Button variant="secondary" className="mt-3" disabled={working || saving} onClick={() => editId ? void persist(false) : void publish()}>{editId ? 'Retry save' : 'Retry publication'}</Button></Alert></div>}
         <div className="owner-listing-workspace mx-auto">
-          <Surface className="owner-listing-panel min-w-0 overflow-hidden" role="region" aria-label={`Step ${step}: ${STEPS[step - 1]}`}>
+          <section className="owner-listing-panel min-w-0 overflow-hidden" role="region" aria-label={`Step ${step}: ${STEPS[step - 1]}`}>
             <div className="owner-listing-panel-heading px-5 sm:px-6 pt-6 pb-5 border-b border-app">
               <div>
                 <h2 ref={heading} tabIndex={-1} className="text-xl font-bold text-main">{stepHeading}</h2>
                 <p className="text-sm text-sec mt-2 leading-relaxed">{['Add up to ' + photoLimit + ' clear photos. We will check them and suggest item details.', 'Check the suggested details, then add the condition and anything renters should know.', 'Choose your daily price, rental packages and booking approval.', 'Select the pickup and return dates your item is available.', 'Set your private pickup location and handoff preferences.', 'Check your listing. You can edit any section before publishing.'][step - 1]}</p></div>
             </div>
             {notice && <div className="border-b border-app bg-accent-soft px-5 sm:px-6 py-3"><p role="status" className="flex items-start gap-2 text-xs text-accent"><CheckCircle2 size={16} aria-hidden="true" className="shrink-0" />{notice}</p></div>}
-            <motion.fieldset key={step} disabled={working || saving}
-              initial={reducedMotion ? false : { opacity: 0.96, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }}
+            <fieldset key={step} disabled={working || saving}
               className="owner-listing-fields min-w-0 px-5 sm:px-6 py-6 space-y-5">
               {visibleErrors.length > 0 && <div ref={summary} tabIndex={-1} role="alert" className="rounded-card-lg bg-error-soft p-4">
                 <h3 className="font-semibold text-error">A few details need your attention</h3>
@@ -1025,14 +1023,14 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                   }}>{errors[field]}</a>
                 </li>)}</ul>
               </div>}
-              {preparingDetails && step === 1 ? <motion.div initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4" role="status" aria-busy="true" aria-label="Analyzing photos and preparing item details">
+              {preparingDetails && step === 1 ? <div className="space-y-4" role="status" aria-busy="true" aria-label="Analyzing photos and preparing item details">
                 <p className="text-sm font-semibold text-main">Analyzing your photos and preparing item details…</p>
-                <div className="overflow-hidden rounded-card-lg border border-app"><Skeleton className="aspect-[16/10] w-full" rounded="rounded-none" /></div>
+                <div className="overflow-hidden border border-app"><Skeleton className="aspect-[16/10] w-full" /></div>
                 <Skeleton className="h-5 w-2/3" /><Skeleton className="h-11 w-1/2" />
                 <div className="grid grid-cols-2 gap-3"><Skeleton className="h-11" /><Skeleton className="h-11" /></div>
                 <Skeleton className="h-28 w-full" />
                 <span className="sr-only">The next step will show your title and all listing details.</span>
-              </motion.div> : <>
+              </div> : <>
               {step === 1 && <>
                 <ListingPhotoEditor photos={photos} maximum={photoLimit} disabled={working || saving} uploadProgress={uploadProgress} preventLastPhotoRemoval={status === 'published'}
                   decisions={photoDecisions} focusIndex={photoFocusIndex} onFocusHandled={handlePhotoFocusHandled}
@@ -1361,7 +1359,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                 </div>
                   {status === 'published' && <ListingNegotiationSettings listingId={listingId!} />}
               </>}
-            </motion.fieldset>
+            </fieldset>
             {publishError && <div role="alert" className="px-5 sm:px-6 pb-4"><Alert tone="error" title="Your listing has not been published">
               <p>{status === 'draft' && version === savedVersion ? 'Your draft is saved. ' : 'Your entries are kept. '}{publishError}</p>
               <Button variant="secondary" className="mt-3" disabled={working || saving} onClick={() => void publish()}>Retry publication</Button>
@@ -1374,7 +1372,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                   onClick={() => step === STEPS.length ? void publish() : continueStep()}>{nextLabel}</Button>
               </div>
             </div>
-          </Surface>
+          </section>
         </div>
       </div>
     </div>

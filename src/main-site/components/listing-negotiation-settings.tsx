@@ -1,42 +1,12 @@
-import { useEffect, useState, type CSSProperties } from 'react';
-import { createPortal } from 'react-dom';
-import { Gavel, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/auth-context';
-import { Alert, Button } from '@/main-site/components/ui';
+import { ListingAction as Button, ListingNotice as Alert } from '@/main-site/components/listing-ui';
 import { ListingAuctionPreferences } from '@/main-site/components/listing-auction-preferences';
 import { fetchListingById, type DbListingRow } from '@/lib/listings';
 import { enableBiddingPreferences, getListingAuction, listingAuctionError, type ListingAuction, type ListingAuctionPreferences as AuctionPreferences } from '@/lib/listing-auctions';
 import { saveAuctionPreferences } from '@/lib/listing-flow';
 import { auctionPublicationMessage } from '@/lib/listing-auctions';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
-
-function BiddingCelebration({ scheduled }: { scheduled: boolean }) {
-  const [visible, setVisible] = useState(true);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setVisible(false), 4200);
-    return () => window.clearTimeout(timer);
-  }, []);
-  if (!visible) return null;
-  return createPortal(<div aria-hidden="true" className="bidding-celebration">
-    <div className="bidding-celebration-stage">
-      {Array.from({ length: 12 }, (_, index) => <Sparkles key={index} className="bidding-celebration-particle" style={{
-        '--spark-x': `${Math.cos(index * Math.PI / 6) * (130 + index % 3 * 45)}px`,
-        '--spark-y': `${Math.sin(index * Math.PI / 6) * (150 + index % 3 * 35)}px`,
-        '--spark-turn': `${index % 2 ? 90 : -90}deg`,
-        animationDelay: `${index % 3 * 70}ms`,
-      } as CSSProperties} />)}
-      <div className="bidding-celebration-hero">
-        <div className="bidding-celebration-emblem">
-          <i className="bidding-celebration-ring" />
-          <i className="bidding-celebration-ring bidding-celebration-ring-delayed" />
-          <Gavel className="bidding-celebration-gavel" strokeWidth={1.8} />
-        </div>
-        <p>{scheduled ? 'Ready for the bidding spotlight!' : 'Let the bidding begin!'}</p>
-        <span>{scheduled ? 'Your auction is scheduled. The stage is set.' : 'Your auction is open. Let the bids roll in.'}</span>
-      </div>
-    </div>
-  </div>, document.body);
-}
 
 export function ListingNegotiationSettings({ listingId, onSaved, startSetup = false }: { listingId: string; onSaved?: (auction: ListingAuction | null) => void; startSetup?: boolean }) {
   const { user } = useAuth();
@@ -93,7 +63,6 @@ export function ListingNegotiationSettings({ listingId, onSaved, startSetup = fa
     finally { setBusy(false); }
   }
   return <div className="space-y-5">
-    {saved && auction && ['scheduled', 'open'].includes(auction.status) && <BiddingCelebration scheduled={auction.status === 'scheduled'} />}
     {error && <Alert tone="error" title="Bidding settings unavailable">{error}
       {!listing && <Button variant="secondary" className="mt-3" onClick={() => setRetry(value => value + 1)}>Retry settings</Button>}
     </Alert>}
