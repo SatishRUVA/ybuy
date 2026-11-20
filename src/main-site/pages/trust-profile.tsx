@@ -9,6 +9,30 @@ import { Alert, Button, Surface, Badge } from '@/main-site/components/ui';
 import { CheckCircle2, LogOut, UserRound } from 'lucide-react';
 import { fieldClass } from '@/main-site/components/form-classes';
 
+type ColorScheme = 'system' | 'light' | 'dark';
+
+function readColorScheme(): ColorScheme {
+  try {
+    const saved = localStorage.getItem('ybuy-color-scheme');
+    return saved === 'light' || saved === 'dark' ? saved : 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+function applyColorScheme(scheme: ColorScheme, persist = true) {
+  document.documentElement.dataset.colorScheme = scheme;
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]');
+  if (meta) meta.content = scheme === 'system' ? 'light dark' : scheme;
+  if (!persist) return;
+  try {
+    if (scheme === 'system') localStorage.removeItem('ybuy-color-scheme');
+    else localStorage.setItem('ybuy-color-scheme', scheme);
+  } catch {
+    // The preference still applies for this session when storage is unavailable.
+  }
+}
+
 export function TrustProfilePage() {
   const { user, profile, error: authError, authBusy, openSignIn, signOut } = useAuth();
 
@@ -18,6 +42,16 @@ export function TrustProfilePage() {
   const [reviewCount, setReviewCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [colorScheme, setColorScheme] = useState<ColorScheme>(readColorScheme);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== 'ybuy-color-scheme') return;
+      setColorScheme(event.newValue === 'light' || event.newValue === 'dark' ? event.newValue : 'system');
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   useEffect(() => {
     if (!profile) return;
@@ -74,6 +108,30 @@ export function TrustProfilePage() {
         </header>
 
         {error && <Alert tone="error">{error}</Alert>}
+
+        <Surface className="p-5 sm:p-6">
+          <h2 className="font-semibold text-main font-display">Display preferences</h2>
+          <p className="mt-1 text-sm text-sec">Choose a comfortable color scheme. System follows your device setting; text size follows your browser and device settings.</p>
+          <fieldset className="mt-4 flex flex-wrap gap-2">
+            <legend className="mb-2 text-sm font-semibold text-sec">Color scheme</legend>
+            {(['system', 'light', 'dark'] as const).map((scheme) => (
+              <label key={scheme} className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${colorScheme === scheme ? 'border-accent bg-accent-soft text-main' : 'border-app bg-card text-sec hover:bg-subtle'}`}>
+                <input
+                  className="accent-[var(--accent)]"
+                  type="radio"
+                  name="color-scheme"
+                  value={scheme}
+                  checked={colorScheme === scheme}
+                  onChange={() => {
+                    setColorScheme(scheme);
+                    applyColorScheme(scheme);
+                  }}
+                />
+                {scheme === 'system' ? 'System' : scheme === 'light' ? 'Light' : 'Dark'}
+              </label>
+            ))}
+          </fieldset>
+        </Surface>
 
         <Surface className="p-5 sm:p-6">
           <p className="mb-4 text-xs font-bold uppercase tracking-wider text-muted">Account identity</p>

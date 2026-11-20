@@ -34,7 +34,7 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   secondary: 'bg-card text-main border border-strong hover:bg-subtle',
   ghost: 'text-sec hover:text-main hover:bg-subtle',
   danger: 'bg-card text-error border border-app hover:bg-error-soft',
-  success: 'bg-success text-white shadow-xs hover:opacity-90',
+  success: 'bg-success text-[var(--success-ink,white)] shadow-xs hover:opacity-90',
   // For placement on an accent-filled panel.
   inverse: 'bg-card text-accent shadow-xs hover:bg-subtle',
   // For placement over photography.
