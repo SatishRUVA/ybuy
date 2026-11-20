@@ -6,6 +6,17 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="text-scale" content="scale" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      try {
+        const scheme = localStorage.getItem('ybuy-color-scheme');
+        document.querySelector('meta[name="color-scheme"]').content = scheme === 'light' || scheme === 'dark' ? scheme : 'light dark';
+        document.documentElement.dataset.colorScheme = scheme === 'light' || scheme === 'dark' ? scheme : 'system';
+      } catch {
+        document.documentElement.dataset.colorScheme = 'system';
+      }
+    </script>
     <title>YBuy</title>
     <meta property="og:image" content="/ybuy-social.png" />
     <meta name="twitter:card" content="summary_large_image" />

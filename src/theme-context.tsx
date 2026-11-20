@@ -37,6 +37,18 @@ export function ThemeProvider({ children, fixedTheme }: { children: ReactNode; f
     localStorage.setItem(STORAGE_KEY, theme.id);
   }, [theme]);
 
+  useEffect(() => {
+    const syncColorScheme = (event: StorageEvent) => {
+      if (event.key !== 'ybuy-color-scheme') return;
+      const scheme = event.newValue === 'light' || event.newValue === 'dark' ? event.newValue : 'system';
+      document.documentElement.dataset.colorScheme = scheme;
+      const meta = document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]');
+      if (meta) meta.content = scheme === 'system' ? 'light dark' : scheme;
+    };
+    window.addEventListener('storage', syncColorScheme);
+    return () => window.removeEventListener('storage', syncColorScheme);
+  }, []);
+
   return (
     <ThemeContext.Provider value={{ theme, themeId: activeThemeId, setThemeId, themes }}>
       {children}

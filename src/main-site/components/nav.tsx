@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MessageSquare, User, Menu, Home, Search, Plus, PackagePlus, Calendar, LogOut, ShieldCheck, Bell, Gavel } from 'lucide-react';
+import { User, Menu, Search, PackagePlus, LogOut, ShieldCheck, Gavel, Home, Calendar, Users, ArrowRight } from 'lucide-react';
 import { useRouter, type Route } from '@/router';
 import { useAuth } from '@/auth-context';
 import { useAdminAccess } from '@/lib/admin-access';
@@ -8,35 +8,28 @@ import { Alert, Button } from '@/main-site/components/ui';
 import { SHOW_DEMO_THEMES } from '@/lib/feature-flags';
 import { subscribeToNotifications, unreadNotificationCount } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
-import { BrandLogo } from '@/main-site/components/brand-logo';
+import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { Dialog, DialogTrigger, DialogTitle, DialogDescription, SheetContent } from '@/main-site/components/shadcn/dialog';
 import { WorkspaceNavigation } from '@/main-site/components/workspace-navigation';
 
 function Wordmark({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="flex min-h-11 min-w-11 items-center gap-2.5 shrink-0" aria-label="YBuy home">
-      <BrandLogo compact />
+    <button onClick={onClick} className="site-wordmark flex min-h-11 min-w-11 items-center gap-2.5 shrink-0" aria-label="YBuy home">
+      <span className="reference-wordmark"><span aria-hidden="true">y</span>ybuy</span>
     </button>
   );
 }
-export function Header({ workspace = false, focused = false }: { workspace?: boolean; focused?: boolean }) {
+export function Header({ focused = false }: { focused?: boolean }) {
   const { route, navigate } = useRouter();
   const { user, profile, loading, error, signInOpen, authBusy, openSignIn, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState<number | null>(null);
   const adminAccess = useAdminAccess();
-  const rentalWorkspace = ['dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts'].includes(route.name);
+  const itemRequests = useFeatureFlag('item_requests');
   const adminRoute: Route = adminAccess.access?.role === 'super_admin' ? { name: 'super-admin' } : { name: 'admin' };
 
   // A route change while the sheet is open would otherwise leave it covering the new page.
   useEffect(() => { setMenuOpen(false); }, [route, user?.id]);
-
-  useEffect(() => {
-    const desktop = window.matchMedia('(min-width: 1280px)');
-    const closeOnDesktop = () => { if (desktop.matches) setMenuOpen(false); };
-    desktop.addEventListener('change', closeOnDesktop);
-    return () => desktop.removeEventListener('change', closeOnDesktop);
-  }, []);
 
   useEffect(() => {
     if (!user?.id) {
@@ -72,24 +65,19 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
     openSignIn();
   }
 
-  const navItems: { label: string; route: Route; icon: typeof Home }[] = user
-    ? [
-      { label: 'Browse', route: { name: 'search' }, icon: Search },
-      { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
-      ...(!rentalWorkspace ? [{ label: 'My YBuy', route: { name: 'dashboard' } as Route, icon: Calendar }] : []),
-      { label: 'Messages', route: { name: 'messaging' }, icon: MessageSquare },
-    ]
-    : [
-      { label: 'Browse', route: { name: 'search' }, icon: Search },
-      { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
-    ];
+  const navItems: { label: string; route: Route; icon: typeof Search }[] = [
+    { label: 'Explore', route: { name: 'home' }, icon: Home },
+    { label: 'Browse', route: { name: 'search' }, icon: Search },
+    { label: 'My rentals', route: { name: 'dashboard', tab: 'renting' }, icon: Calendar },
+    { label: 'Lend', route: { name: 'dashboard', tab: 'lending' }, icon: PackagePlus },
+    ...(itemRequests.enabled ? [{ label: 'Community', route: { name: 'requests', tab: 'browse' } as Route, icon: Users }] : []),
+    { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
+  ];
 
   const isActive = (r: Route) => {
     if (r.name === 'search') return route.name === 'search' || route.name === 'listing';
-    if (r.name === 'requests') return route.name === 'requests';
     if (r.name === 'bidding') return route.name === 'bidding' || route.name === 'bidding-detail' || route.name === 'auction';
-    if (r.name === 'dashboard') return ['dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts'].includes(route.name);
-    if (r.name === 'messaging') return route.name === 'messaging' || route.name === 'conversation';
+    if (r.name === 'dashboard') return route.name === 'dashboard' && route.tab === r.tab;
     return route.name === r.name;
   };
 
@@ -107,118 +95,80 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
   return (
     <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
       <header className="ybuy-site-header sticky top-0 z-40 border-b border-app">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-16 gap-4">
-            <Wordmark onClick={() => navigate({ name: 'home' })} />
+        <div className="site-header-inner">
+          <Wordmark onClick={() => navigate({ name: 'home' })} />
 
-            <nav className={`${workspace ? 'hidden' : 'hidden md:flex'} items-center gap-0.5`} aria-label="Main">
-              {navItems.map((item) => (
-                <button
-                  key={item.label}
-                  onClick={() => go(item.route)}
-                  aria-current={isActive(item.route) ? 'page' : undefined}
-                  className={`relative inline-flex px-2 xl:px-3 h-11 rounded-card text-sm font-semibold transition-colors duration-fast ${
-                    isActive(item.route) ? 'text-accent bg-accent-soft' : 'text-sec hover:text-main hover:bg-subtle'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
-
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="primary"
-                icon={<PackagePlus size={16} />}
-                onClick={() => go({ name: 'create-listing' })}
-                className={rentalWorkspace ? 'hidden' : 'hidden xl:inline-flex'}
+          <nav className="site-main-navigation" aria-label="Main">
+            {navItems.filter((item) => item.label !== 'Bidding').map((item) => (
+              <button
+                key={item.label}
+                onClick={() => go(item.route)}
+                aria-current={isActive(item.route) ? 'page' : undefined}
+                className="site-main-navigation-link"
               >
-                List an item
-              </Button>
+                {item.label}
+              </button>
+            ))}
+          </nav>
 
-              {SHOW_DEMO_THEMES && <ThemeSwitcher />}
+          <div className="site-header-actions">
+            <button type="button" className="site-header-search" aria-label="Search nearby" onClick={() => go({ name: 'search' })}>
+              <Search size={16} aria-hidden="true" />
+              <span>Search nearby</span>
+              <span className="site-header-search-go"><ArrowRight size={15} aria-hidden="true" /></span>
+            </button>
 
-              {user ? (
-                <>
-                  <button
-                    onClick={() => go({ name: 'notifications' })}
-                    aria-label={unreadCount === null ? 'Notifications, unread count unavailable' : `Notifications, ${unreadCount} unread`}
-                    aria-current={route.name === 'notifications' ? 'page' : undefined}
-                    className="relative grid h-11 w-11 place-items-center rounded-card border border-app bg-card text-sec transition-colors duration-fast hover:border-strong hover:text-accent"
-                  >
-                    <Bell size={18} aria-hidden="true" />
-                    {unreadCount !== null && unreadCount > 0 && <span aria-hidden="true" className="absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-[10px] font-bold text-accent-text">
-                      {unreadCount > 99 ? '99+' : unreadCount}
-                    </span>}
-                    <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-                      {unreadCount === null ? 'Unread notification count unavailable' : `${unreadCount} unread notifications`}
-                    </span>
-                  </button>
-                  {(adminAccess.access?.role === 'admin' || adminAccess.access?.role === 'super_admin') && (
-                    <button
-                      onClick={() => go(adminRoute)}
-                      aria-label="Admin console"
-                      className="hidden sm:grid place-items-center w-11 h-11 rounded-card border border-app bg-card text-sec hover:text-accent hover:border-strong transition-colors duration-fast"
-                    >
-                      <ShieldCheck size={18} />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => go({ name: 'trust-profile' })}
-                    aria-label="Account"
-                    aria-current={route.name === 'trust-profile' ? 'page' : undefined}
-                    className="hidden sm:inline-flex h-11 items-center gap-2 rounded-card border border-app bg-card px-1.5 pr-3 text-sm font-semibold text-main hover:border-strong transition-colors duration-fast"
-                  >
-                    {profile?.avatar_url
-                      ? <img src={profile.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
-                      : <span className="grid place-items-center w-7 h-7 rounded-full bg-subtle"><User size={16} className="text-sec" /></span>}
-                    <span>Account</span>
-                  </button>
-                </>
-              ) : (
-                <Button size="sm" variant="secondary" disabled={loading} onClick={signIn}>Sign in / Join</Button>
-              )}
+            {SHOW_DEMO_THEMES && <ThemeSwitcher />}
 
-              <DialogTrigger asChild>
-                <button
-                  aria-label="Open menu"
-                  className={`grid shrink-0 place-items-center w-11 h-11 rounded-card hover:bg-subtle transition-colors duration-fast ${workspace ? 'xl:hidden' : rentalWorkspace ? 'xl:grid' : 'xl:hidden'}`}
-                >
-                  <Menu size={20} className="text-main" />
-                </button>
-              </DialogTrigger>
-            </div>
+            <DialogTrigger asChild>
+              <button
+                type="button"
+                aria-label="Open menu"
+                aria-current={route.name === 'trust-profile' ? 'page' : undefined}
+                className="site-menu-trigger"
+              >
+                <Menu size={20} aria-hidden="true" />
+                <span className="site-menu-trigger-divider" aria-hidden="true" />
+                <span className="site-menu-avatar">
+                  {profile?.avatar_url
+                    ? <img src={profile.avatar_url} alt="" />
+                    : <User size={16} aria-hidden="true" />}
+                </span>
+                {user && unreadCount !== null && unreadCount > 0 && <span aria-hidden="true" className="site-menu-unread">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+                {user && <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                  {unreadCount === null ? 'Unread notification count unavailable' : `${unreadCount} unread notifications`}
+                </span>}
+              </button>
+            </DialogTrigger>
           </div>
         </div>
 
         {error && !signInOpen && <div role="alert" className="max-w-[1400px] mx-auto px-4 sm:px-6 pb-3"><Alert tone="error">{error}</Alert></div>}
 
       </header>
-      <SheetContent className="left-auto right-0 w-80 max-w-full overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <div className="border-b border-app px-5 py-5 pr-14">
+      <SheetContent className="workspace-navigation-sheet overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="site-menu-heading">
           <DialogTitle>Navigation</DialogTitle>
-          <DialogDescription>Browse rentals and manage your account.</DialogDescription>
+          <DialogDescription>Browse YBuy and manage your rentals, listings, and account.</DialogDescription>
         </div>
-        {user && <WorkspaceNavigation label="Menu" onNavigate={() => setMenuOpen(false)} />}
-        <div className="px-4 py-3 space-y-1">
-          {!user && <nav aria-label="Menu">{navItems.map((item) => {
+        {user
+          ? <WorkspaceNavigation label="Workspace navigation" onNavigate={() => setMenuOpen(false)} />
+          : <nav className="site-menu-navigation" aria-label="Menu">{navItems.map((item) => {
             const Icon = item.icon;
             return (
               <button
                 key={item.label}
                 onClick={() => go(item.route)}
                 aria-current={isActive(item.route) ? 'page' : undefined}
-                className={`w-full flex items-center gap-3 px-3 h-12 rounded-card text-sm font-semibold transition-colors duration-fast ${
-                  isActive(item.route) ? 'text-accent bg-accent-soft' : 'text-sec hover:bg-subtle'
-                }`}
+                className="site-menu-link"
               >
-                <Icon size={18} />
+                <Icon size={18} aria-hidden="true" />
                 {item.label}
               </button>
             );
           })}</nav>}
-          <Button fullWidth icon={<PackagePlus size={18} />} onClick={() => go({ name: 'create-listing' })} className="mt-2">
+        <div className="site-menu-actions">
+          <Button fullWidth icon={<PackagePlus size={18} />} onClick={() => go({ name: 'create-listing' })}>
             List an item
           </Button>
           {user ? (
@@ -239,61 +189,5 @@ export function Header({ workspace = false, focused = false }: { workspace?: boo
         </div>
       </SheetContent>
     </Dialog>
-  );
-}
-
-/** Keep the listing shortcut clear of page actions and preference controls. */
-const ROUTES_WITHOUT_FAB = new Set<Route['name']>(['listing', 'checkout', 'create-listing', 'edit-listing', 'need-something', 'conversation', 'notifications', 'dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts']);
-
-export function BottomNav() {
-  const { route, navigate } = useRouter();
-  function go(next: Route) {
-    navigate(next);
-  }
-
-  const items: { label: string; route: Route; icon: typeof Home }[] = [
-    { label: 'Home', route: { name: 'home' }, icon: Home },
-    { label: 'Browse', route: { name: 'search' }, icon: Search },
-    { label: 'Bookings', route: { name: 'dashboard' }, icon: Calendar },
-    { label: 'Messages', route: { name: 'messaging' }, icon: MessageSquare },
-    { label: 'Account', route: { name: 'trust-profile' }, icon: User },
-  ];
-
-  return (
-    <>
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 glass-nav glass-nav-bottom border-t border-app pb-[env(safe-area-inset-bottom)]" aria-label="Main">
-        <div className="flex items-stretch justify-around h-16">
-          {items.map((item) => {
-            const Icon = item.icon;
-            const active = item.route.name === 'dashboard'
-              ? route.name === 'dashboard' || route.name === 'renter-dashboard' || route.name === 'owner-dashboard'
-              : route.name === item.route.name;
-            return (
-              <button
-                key={item.label}
-                onClick={() => go(item.route)}
-                aria-current={active ? 'page' : undefined}
-                className={`relative flex-1 flex flex-col items-center justify-center gap-1 transition-colors duration-fast ${
-                  active ? 'text-accent' : 'text-sec'
-                }`}
-              >
-                {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-accent" />}
-                <Icon size={20} strokeWidth={active ? 2.4 : 2} />
-                <span className="text-[10px] font-semibold">{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-      <button
-        onClick={() => go({ name: 'create-listing' })}
-        aria-label="List an item"
-        className={`fixed bottom-[calc(4.75rem_+_env(safe-area-inset-bottom))] right-4 z-40 w-14 h-14 rounded-full bg-accent text-accent-text shadow-hover grid place-items-center active:scale-95 transition-transform duration-fast ${
-          ROUTES_WITHOUT_FAB.has(route.name) ? 'hidden' : 'md:hidden'
-        }`}
-      >
-        <Plus size={22} />
-      </button>
-    </>
   );
 }

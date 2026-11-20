@@ -32,21 +32,19 @@ export function ListingAiSkeleton() {
   );
 }
 
-/** Mirrors ListingCard: 4:3 media, meta line, two-line title, rating, price. */
+/** Mirrors ListingCard's image and compact listing details. */
 export function ListingCardSkeleton() {
   return (
-    <div className="flex h-full flex-col bg-card rounded-card-lg overflow-hidden border border-app shadow-xs">
-      <Skeleton className="w-full aspect-[4/3]" rounded="rounded-none" />
-      <div className="flex min-h-[152px] flex-1 flex-col gap-1.5 p-3.5">
-        <Skeleton className="h-4 w-1/2" rounded="rounded-card-sm" />
-        <div className="flex h-10 flex-col justify-center gap-1">
-          <Skeleton className="h-4 w-full" rounded="rounded-card-sm" />
-          <Skeleton className="h-4 w-2/3" rounded="rounded-card-sm" />
+    <div className="flex h-full flex-col">
+      <Skeleton className="w-full aspect-[4/3]" rounded="rounded-card-lg" />
+      <div className="flex flex-1 flex-col gap-2 pt-3">
+        <div className="flex justify-between gap-3">
+          <Skeleton className="h-4 w-1/2" rounded="rounded-card-sm" />
+          <Skeleton className="h-4 w-16" rounded="rounded-card-sm" />
         </div>
         <Skeleton className="h-4 w-1/3" rounded="rounded-card-sm" />
-        <div className="mt-auto pt-2">
-          <Skeleton className="h-5 w-16" rounded="rounded-card-sm" />
-        </div>
+        <Skeleton className="h-4 w-1/4" rounded="rounded-card-sm" />
+        <Skeleton className="h-4 w-full" rounded="rounded-card-sm" />
       </div>
     </div>
   );

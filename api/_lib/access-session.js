@@ -1,4 +1,4 @@
-// Shared by middleware.js, api/access/verify.js and scripts/verify-access-gate.mjs.
+// Shared by middleware.js and api/access/verify.js.
 // Plain JS (not TS) so it can run unmodified on Vercel's Edge runtime and under plain Node,
 // with zero build step and zero new dependencies.
 

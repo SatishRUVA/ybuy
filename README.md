@@ -2,9 +2,10 @@
 
 ## CI/CD
 
-See [GitHub Actions staging and production releases](docs/implementation/CI_CD.md)
-for required environment secrets, branch protection, and the automatic
-backend-first Supabase/Netlify deployment on `dev`.
+GitHub Actions deployment workflows are in `.github/workflows`.
+
+The test suites, verification scripts, Playwright configurations, reports, and
+design references have been removed. Historical notes below may refer to them.
 
 ## YBuy Points MVP (test only)
 
@@ -135,7 +136,7 @@ test Supabase project `jzyjmsixfuwzfnntewqn`, with 76 pickup timezones backfille
 offline in the same transaction. No pickup locations remain unresolved.
 The separate live-production database and redesign deployment were not changed.
 
-Validation passed: 14 focused browser tests on port 5174, all 206 local and
+Validation passed: 14 focused browser tests on port 5300, all 206 local and
 hosted SQL assertions, typecheck, targeted lint, and production builds.
 Hosted checks confirmed the production alias, entry bundle, access-API rejection
 of unauthorized requests, reminder job and owner-approval RPC permissions.
@@ -231,7 +232,7 @@ handlers to that explicit test project. No database migrations, secret changes,
 frontend changes, or production deployments were required.
 
 Verification: all four browser-callable handlers returned 204 preflights with
-the exact `http://localhost:5174` origin and required request headers. Browser
+the exact `http://localhost:5300` origin and required request headers. Browser
 invocations of checkout and both deposit functions reached HTTP 401 when signed
 out, rather than failing at the network/CORS boundary. The reminder worker
 rejected missing credentials (401), and the webhook rejected a missing Stripe
@@ -834,7 +835,7 @@ intentionally left local at the user's request; existing customer sites were
 not redeployed as part of this admin rollout.
 
 The essential TypeScript check and production build pass. The local Vite server
-responds at `http://localhost:5174`. All 24 Preview views (including six admin
+responds at `http://localhost:5300`. All 24 Preview views (including six admin
 sections and the state gallery) rendered without JavaScript errors. The main
 route render check also found no JavaScript crashes; this is not full workflow QA.
 
@@ -1062,7 +1063,7 @@ To run against the isolated hosted test backend, configure the ignored
 pnpm dev -- --host localhost --mode hosted
 ```
 
-Open `http://localhost:5174/`. This mode overrides the default Supabase
+Open `http://localhost:5300/`. This mode overrides the default Supabase
 configuration without changing `.env.local` or applying hosted migrations.
 Use only a public anonymous key in the frontend, never a service-role key.
 Browsing supports hosted schemas without optional duration-discount columns;
@@ -1241,7 +1242,7 @@ Do not expose the local container socket or Studio to untrusted users.
 Docker Desktop and its original YBuy containers/volumes are retained as a
 rollback snapshot. Only the Podman copy should run on ports 54321 (API),
 54322 (Postgres), 54323 (Studio), 54324 (mail), and 54327 (analytics); the
-application stays on port 5174.
+application stays on port 5300.
 Docker's YBuy containers have automatic restart disabled to prevent port
 conflicts. Do not delete either runtime's volumes or run `db reset`.
 The copies do not synchronize: new Podman writes are not in the Docker snapshot.
@@ -1302,7 +1303,7 @@ Loopback development skips the hosted `/access` security-code screen and returns
 to its requested destination. Production and hosted site-access verification
 remain unchanged.
 
-Normal `pnpm dev` startup at `http://localhost:5174/` always uses the isolated
+Normal `pnpm dev` startup at `http://localhost:5300/` always uses the isolated
 local profile setup and fails explicitly if local Supabase is not running.
 `pnpm dev:local` remains an explicit alias for this setup. Builds, preview servers,
 and explicit `--mode e2e` runs do not invoke local profile configuration. Unchanged
@@ -1599,7 +1600,7 @@ node dev\supabase-local.mjs functions serve --env-file .env.local-stripe.local
 
 Start the listener first so it can generate the ignored local-functions
 environment with its matching signing secret. Keep both commands running while
-using `http://localhost:5174/`; this replaces the functions command above, not the
+using `http://localhost:5300/`; this replaces the functions command above, not the
 frontend server. The helper does not change `.env.local` or hosted webhook
 settings, refuses live Stripe keys, and redacts the listener secret from output.
 If a completed payment predates the listener, do not pay again: its existing
@@ -1650,7 +1651,7 @@ RLS, mutation-time feature checks and financial gates remain authoritative.
 
 Flags without implemented consumers do not activate unavailable modules.
 Build-time UI constants in `src/lib/feature-flags.ts` remain build-time switches,
-not database flags. Focused checks (with Vite running on port 5174):
+not database flags. Focused checks (with Vite running on port 5300):
 
 ```powershell
 npx playwright test feature-flag-store.spec.ts marketplace.spec.ts --workers=1 --output "$env:TEMP\ybuy-realtime-tests"

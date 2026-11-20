@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Check, LockKeyhole, MapPin } from 'lucide-react';
 import { useMarketplaceLocation } from '@/location-context';
 import { findCities } from '@/lib/geo';
-import { fieldClass } from '@/main-site/components/form-classes';
+import { listingInputClass as fieldClass } from '@/main-site/components/listing-ui-classes';
 import { loadGooglePlaces, type GooglePlacePrediction, type GooglePlacesLibrary } from '@/lib/google-maps';
 import { countryIsAllowed, fetchMarketplaceCountries, type MarketplaceCountry } from '@/lib/marketplace-countries';
 import { pickupTimeZone } from '@/lib/pickup-timezone';

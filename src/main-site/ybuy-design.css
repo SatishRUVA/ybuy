@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --ybuy-black: #141B2D;
   --ybuy-white: #FFFFFF;
   --ybuy-gray-950: #172033;
@@ -62,6 +62,73 @@
   --success-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+:root:has(> head > meta[name="color-scheme"][content="light"]) { color-scheme: light; }
+:root:has(> head > meta[name="color-scheme"][content="dark"]) { color-scheme: dark; }
+
+/* Follow the operating system until a user pins a scheme in settings. */
+@media (prefers-color-scheme: dark) {
+  :root[data-color-scheme="system"], :root:not([data-color-scheme]) {
+    --ybuy-bg: #101729;
+    --ybuy-bg-subtle: #182238;
+    --ybuy-surface: #1c2840;
+    --ybuy-text: #f4f6fb;
+    --ybuy-text-secondary: #d0d8e6;
+    --ybuy-text-muted: #b3bfd2;
+    --ybuy-border: #39465d;
+    --ybuy-border-strong: #53617a;
+    --ybuy-accent: #9bb2ff;
+    --ybuy-accent-hover: #bac9ff;
+    --ybuy-accent-soft: #26365d;
+    --ybuy-accent-text: #111a2c;
+    --ybuy-success: #70d6a5;
+    --ybuy-success-ink: #10251d;
+    --ybuy-warning: #ffd080;
+    --ybuy-error: #ff9b91;
+    --ybuy-success-soft: #193b32;
+    --ybuy-warning-soft: #44351e;
+    --ybuy-error-soft: #482b31;
+    --ybuy-star: #ffd080;
+    --ybuy-favorite: #ff9baf;
+  }
+}
+
+:root[data-color-scheme="dark"] {
+  color-scheme: dark;
+  --ybuy-bg: #101729;
+  --ybuy-bg-subtle: #182238;
+  --ybuy-surface: #1c2840;
+  --ybuy-text: #f4f6fb;
+  --ybuy-text-secondary: #d0d8e6;
+  --ybuy-text-muted: #b3bfd2;
+  --ybuy-border: #39465d;
+  --ybuy-border-strong: #53617a;
+  --ybuy-accent: #9bb2ff;
+  --ybuy-accent-hover: #bac9ff;
+  --ybuy-accent-soft: #26365d;
+  --ybuy-accent-text: #111a2c;
+  --ybuy-success: #70d6a5;
+  --ybuy-success-ink: #10251d;
+  --ybuy-warning: #ffd080;
+  --ybuy-error: #ff9b91;
+  --ybuy-success-soft: #193b32;
+  --ybuy-warning-soft: #44351e;
+  --ybuy-error-soft: #482b31;
+  --ybuy-star: #ffd080;
+  --ybuy-favorite: #ff9baf;
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --ybuy-text-muted: var(--ybuy-text-secondary);
+    --ybuy-border: var(--ybuy-border-strong);
+  }
+  :focus-visible { outline-width: 3px; }
+}
+
+@media (forced-colors: active) {
+  :focus-visible { outline-color: Highlight; }
+}
+
 :root[data-theme="main"] {
   --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
   --font-display: 'Manrope', 'DM Sans', system-ui, sans-serif;
@@ -82,6 +149,7 @@
   --highlight: var(--ybuy-gray-300);
   --secondary-accent: var(--ybuy-gray-500);
   --success: var(--ybuy-success);
+  --success-ink: var(--ybuy-success-ink, #FFFFFF);
   --success-soft: var(--ybuy-success-soft);
   --warning: var(--ybuy-warning);
   --warning-soft: var(--ybuy-warning-soft);

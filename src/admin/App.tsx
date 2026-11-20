@@ -10,6 +10,7 @@ import { loadLocalProfiles, type LocalLoginProfile } from '@/lib/local-profile-l
 import { ADMIN_PORTAL_ROLE } from '@/lib/admin-portal';
 import '@/main-site/index.css';
 import '@/main-site/theme.css';
+import './admin.css';
 
 const AdminPage = lazy(() => import('./pages/admin-page').then(module => ({ default: module.AdminPage })));
 type Grant = { role: 'admin' | 'super_admin'; profiles: LocalLoginProfile[] };
@@ -135,7 +136,7 @@ function AdminPortal() {
         <Button variant="ghost" className="mt-4" onClick={() => { setBusy(true); void refresh(); }}>Retry access check</Button>
       </main>
       : picker ? <main className="mx-auto max-w-lg px-5 py-12">
-        <h1 className="font-display text-3xl font-bold">Choose a {roleLabel} profile</h1>
+        <h1 className="font-display text-3xl font-bold">Choose {roleLabel === 'Admin' ? 'an' : 'a'} {roleLabel} profile</h1>
         <p className="mt-3 text-sm text-sec">Your authenticator code is verified. You can switch between administrator profiles without entering it again until access expires.</p>
         <label className="mt-6 block text-sm font-semibold">{roleLabel} profile
           <select className={fieldClass('mt-2')} value={authorized ? user.id : ''} disabled={authBusy !== null}

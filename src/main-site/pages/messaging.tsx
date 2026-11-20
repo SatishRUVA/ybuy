@@ -38,17 +38,20 @@ export function MessagingPage({ selectedConversationId }: { selectedConversation
   const desktopConversationId = selectedConversationId ?? conversations?.[0]?.id;
 
   return (
-    <div className="animate-fade-in pb-20 md:pb-10">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
-        {selectedConversationId && <button onClick={() => navigate({ name: 'messaging' })} className="md:hidden inline-flex items-center gap-2 min-h-11 text-sm font-medium text-sec hover:text-main mb-2"><ArrowLeft size={18} /> Messages</button>}
+    <div className="messages-page animate-fade-in">
+      <div className="messages-page-container">
+        {selectedConversationId && <button type="button" onClick={() => navigate({ name: 'messaging' })} className="messages-back md:hidden"><ArrowLeft size={18} aria-hidden="true" /> Messages</button>}
         <SectionHeader
           as="h1"
           title="Messages"
-          className={`mb-5 ${selectedConversationId ? 'hidden md:flex' : ''}`}
+          subtitle="Keep rental conversations and pickup details together."
+          className={`messages-page-heading ${selectedConversationId ? 'hidden md:flex' : ''}`}
         />
-        <div className={`grid ${conversations?.length ? 'md:grid-cols-[320px_minmax(0,1fr)]' : 'md:grid-cols-1'} gap-0 md:gap-4 ${conversations?.length ? 'md:h-[min(38rem,calc(100dvh_-_10rem))] md:min-h-[22rem]' : ''} ${selectedConversationId ? 'h-[calc(100dvh_-_12.5rem_-_env(safe-area-inset-bottom))] min-h-[20rem]' : ''}`}>
+        <div className={`messages-workspace ${conversations?.length ? 'messages-workspace-ready' : ''} ${selectedConversationId ? 'messages-workspace-selected' : ''} ${conversations?.length ? 'md:grid-cols-[320px_minmax(0,1fr)]' : 'md:grid-cols-1'}`}>
           {/* Conversation list */}
-          <div className={`${selectedConversationId ? 'hidden md:block' : ''} md:overflow-y-auto no-scrollbar`}>
+          <section aria-label="Conversation inbox" className={`messages-inbox ${selectedConversationId ? 'hidden md:flex' : 'flex'}`}>
+            <header className="messages-inbox-header"><h2>Inbox</h2></header>
+            <div className="messages-inbox-scroll">
             {error && <Alert tone="warning">{error}</Alert>}
             {!error && conversations === null && <ConversationListSkeleton count={5} />}
             {!error && conversations?.length === 0 && (
@@ -60,44 +63,45 @@ export function MessagingPage({ selectedConversationId }: { selectedConversation
                 onAction={() => navigate({ name: 'search' })}
               />
             )}
-            <div className="divide-y divide-[var(--border)] border-y border-app animate-cross-fade">
+            <ul className="messages-conversation-list animate-cross-fade">
               {conversations?.map((conv) => (
-                <button
-                  key={conv.id}
-                  onClick={() => navigate({ name: 'conversation', id: conv.id })}
-                  className={`w-full flex items-center gap-3 min-h-20 px-2 py-3 text-left transition-colors duration-fast ${
-                    (selectedConversationId ?? conversations[0]?.id) === conv.id ? 'bg-subtle' : 'hover:bg-subtle'
-                  }`}
-                  aria-current={(selectedConversationId ?? conversations[0]?.id) === conv.id ? 'true' : undefined}
-                >
-                  <Avatar src={conv.counterpartAvatar} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-sm text-main truncate">{conv.counterpartName}</span>
-                      <span className="text-xs text-muted shrink-0">{timeAgo(conv.lastMessageAt)}</span>
-                    </div>
-                    {conv.listingTitle && <p className="text-xs text-sec truncate mt-0.5">{conv.listingTitle}</p>}
-                    <p className="text-xs text-muted truncate mt-0.5">{conv.lastMessage || 'No messages yet'}</p>
-                  </div>
-                </button>
+                <li key={conv.id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate({ name: 'conversation', id: conv.id })}
+                    className="messages-conversation"
+                    aria-current={(selectedConversationId ?? conversations[0]?.id) === conv.id ? 'true' : undefined}
+                  >
+                    <Avatar src={conv.counterpartAvatar} />
+                    <span className="messages-conversation-copy">
+                      <span className="messages-conversation-topline">
+                        <span className="messages-conversation-name">{conv.counterpartName}</span>
+                        <time className="messages-conversation-time" dateTime={conv.lastMessageAt}>{timeAgo(conv.lastMessageAt)}</time>
+                      </span>
+                      {conv.listingTitle && <span className="messages-conversation-listing">{conv.listingTitle}</span>}
+                      <span className="messages-conversation-preview">{conv.lastMessage || 'No messages yet'}</span>
+                    </span>
+                  </button>
+                </li>
               ))}
+            </ul>
             </div>
-          </div>
+          </section>
 
           {/* Chat area - desktop */}
-          <div className={`${selectedConversationId ? 'flex' : conversations?.length ? 'hidden md:flex' : 'hidden'} min-h-0 flex-col bg-card md:border border-app md:rounded-card-lg overflow-hidden`}>
+          <section aria-label="Conversation" className={`messages-thread ${selectedConversationId ? 'flex' : conversations?.length ? 'hidden md:flex' : 'hidden'}`}>
             {desktopConversationId ? <ChatView convId={desktopConversationId} /> : (
-              <div className="flex-1 grid place-items-center text-center px-8">
-                <div>
+              <div className="messages-thread-empty">
+                <div className="messages-thread-empty-content">
                   <span className="grid place-items-center w-12 h-12 rounded-full bg-subtle text-sec mx-auto mb-3">
-                    <MessageSquare size={20} />
+                    <MessageSquare size={20} aria-hidden="true" />
                   </span>
                   <p className="font-semibold text-main">Pick a conversation</p>
                   <p className="text-sm text-sec mt-1">Messages about a rental stay attached to that listing.</p>
                 </div>
               </div>
             )}
-          </div>
+          </section>
         </div>
       </div>
     </div>
@@ -123,7 +127,7 @@ function ChatView({ convId }: { convId: string }) {
   const [chatError, setChatError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLOListElement>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -150,7 +154,7 @@ function ChatView({ convId }: { convId: string }) {
   }, [convId, user]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' });
   }, [messages]);
 
   if (!user) return null;
@@ -177,77 +181,76 @@ function ChatView({ convId }: { convId: string }) {
   return (
     <>
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-app">
+      <header className="messages-thread-header">
         <Avatar src={conv.counterpartAvatar} />
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-main truncate">{conv.counterpartName}</p>
-          <p className="text-xs text-sec truncate">{conv.listingTitle}</p>
+        <div className="messages-thread-identity">
+          <h2>{conv.counterpartName}</h2>
+          <p>{conv.listingTitle}</p>
         </div>
-      </div>
+      </header>
 
       {/* Booking context */}
       {conv.listingId && (
-        <button
+        <button type="button"
           onClick={() => navigate({ name: 'listing', id: conv.listingId! })}
-          className="flex items-center gap-3 px-4 py-2.5 bg-subtle border-b border-app text-left hover:bg-[var(--border)] transition-colors duration-fast"
+          className="messages-listing-context"
         >
-          {conv.listingImage && <img src={conv.listingImage} alt="" className="w-9 h-9 rounded-card object-cover shrink-0" />}
-          <p className="flex-1 min-w-0 text-xs font-semibold text-main truncate">{conv.listingTitle}</p>
-          <ChevronRight size={16} className="text-muted" />
+          {conv.listingImage && <img src={conv.listingImage} alt="" width="40" height="40" />}
+          <span>{conv.listingTitle}</span>
+          <ChevronRight size={16} aria-hidden="true" />
         </button>
       )}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2.5">
+      <ol ref={scrollRef} aria-label="Conversation messages" className="messages-thread-body">
         {messages.length === 0 && (
-          <p className="text-center text-sm text-sec py-8">
+          <li className="messages-thread-empty-note">
             No messages yet. Say hello and agree on a pickup time.
-          </p>
+          </li>
         )}
         {messages.map((msg) => {
           const isMe = msg.senderId === user.id;
           return (
-            <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+            <li key={msg.id} className={`messages-thread-message ${isMe ? 'is-mine' : ''}`}>
               <div className={`min-w-0 max-w-[85%] sm:max-w-[78%] px-3.5 py-2.5 ${
                 isMe
                   ? 'bg-accent text-accent-text rounded-card-lg rounded-br-sm'
                   : 'bg-subtle text-main rounded-card-lg rounded-bl-sm'
               }`}>
                 <p className="text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{msg.body}</p>
-                <p className={`text-[10px] mt-1 ${isMe ? 'opacity-75' : 'text-muted'}`}>{timeAgo(msg.createdAt)}</p>
+                <time dateTime={msg.createdAt} className={`text-[10px] mt-1 ${isMe ? 'opacity-75' : 'text-muted'}`}>{timeAgo(msg.createdAt)}</time>
               </div>
-            </div>
+            </li>
           );
         })}
         {notice && (
-          <div className="flex justify-center pt-2">
+          <li className="messages-thread-notice">
             <div className="flex items-start gap-2 max-w-md p-3 rounded-card-lg bg-warning-soft">
-              <ShieldAlert size={16} className="text-warning shrink-0 mt-0.5" />
+              <ShieldAlert size={16} className="text-warning shrink-0 mt-0.5" aria-hidden="true" />
               <p className="text-xs text-sec leading-relaxed">{notice}</p>
             </div>
-          </div>
+          </li>
         )}
-      </div>
+      </ol>
 
       {/* Composer */}
-      <div className="shrink-0 p-3 border-t border-app">
+      <form className="messages-composer" onSubmit={(event) => { event.preventDefault(); void send(); }} aria-label="Send a message" aria-busy={sending}>
         {chatError && <Alert tone="error" className="mb-2">{chatError}</Alert>}
-        <div className="flex items-center gap-2">
+        <div className="messages-composer-row">
           <label htmlFor="message-input" className="sr-only">Write a message</label>
           <input
             id="message-input"
             value={input}
             maxLength={MESSAGE_MAX_LENGTH}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && send()}
             placeholder="Write a message"
             className={fieldClass('flex-1')}
           />
-          <IconButton label="Send message" variant="primary" onClick={send} disabled={!input.trim() || sending}>
-            {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
+          <IconButton type="submit" label="Send message" variant="primary" disabled={!input.trim() || sending}>
+            {sending ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <Send size={17} aria-hidden="true" />}
           </IconButton>
         </div>
-      </div>
+      </form>
     </>
   );
 }

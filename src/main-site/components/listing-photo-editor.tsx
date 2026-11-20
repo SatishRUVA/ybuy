@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, ImagePlus, Plus, RotateCcw, Trash2, UploadCloud } from 'lucide-react';
-import { Button, IconButton } from '@/main-site/components/ui';
-import { Skeleton } from '@/main-site/components/skeleton';
+import { ListingAction as Button, ListingIconAction as IconButton, ListingSkeleton as Skeleton } from '@/main-site/components/listing-ui';
 import type { ListingPhotoDecision } from '@/lib/listing-ai';
 
 export function ListingPhotoEditor({ photos, maximum, disabled, warnings, decisions, focusIndex, onFocusHandled, uploadProgress, preventLastPhotoRemoval = false, onAdd, onDrop, onReplace, onRemove, onReorder, error }: {
@@ -24,7 +22,6 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, decisi
 }) {
   const [selected, setSelected] = useState(0);
   const [dragging, setDragging] = useState(false);
-  const reducedMotion = useReducedMotion();
   const active = Math.min(selected, Math.max(0, photos.length - 1));
   const activePhoto = photos[active];
   useEffect(() => {
@@ -32,9 +29,10 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, decisi
     setSelected(focusIndex);
     const photo = document.getElementById(`listing-photo-${focusIndex}`);
     photo?.focus();
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     photo?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' });
     onFocusHandled();
-  }, [focusIndex, onFocusHandled, photos, reducedMotion]);
+  }, [focusIndex, onFocusHandled, photos]);
   return <div id="listing-photo-editor">
     <div aria-label="Listing photos"
       onDragOver={event => { event.preventDefault(); if (!disabled) setDragging(true); }}
@@ -44,30 +42,28 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, decisi
         aria-label={photos.length === 0 ? 'Add your cover photo' : 'Upload listing photos'}
         aria-describedby={error ? 'listing-photos-error' : 'listing-photo-help'}
         className={`owner-photo-drop flex w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed px-4 py-7 text-center transition-colors disabled:opacity-50 ${dragging ? 'border-accent bg-accent-soft' : 'border-strong bg-subtle hover:border-accent'}`}>
-        <motion.span animate={uploadProgress && !reducedMotion ? { y: [0, -4, 0] } : undefined} transition={{ duration: 1.1, repeat: Infinity }}>
+        <span>
           <UploadCloud size={32} strokeWidth={1.6} aria-hidden="true" className="text-accent" />
-        </motion.span>
+        </span>
         <span className="text-sm font-semibold text-main">{photos.length ? 'Add more item photos' : 'Add photos of your item'}</span>
         <span className="text-xs text-sec">or click to upload</span>
         <span id="listing-photo-help" className="text-[11px] text-sec mt-1">JPEG, PNG or WebP &middot; Choose several photos at once</span>
       </button>
       <div className="mt-3 flex gap-2 overflow-x-auto py-1">
-        <AnimatePresence initial={false}>
-        {photos.map((photo, index) => <motion.button key={photo} id={`listing-photo-${index}`} type="button" disabled={disabled} onClick={() => setSelected(index)}
+        {photos.map((photo, index) => <button key={photo} id={`listing-photo-${index}`} type="button" disabled={disabled} onClick={() => setSelected(index)}
           aria-label={`${index === 0 ? 'Select cover photo' : `Select photo ${index + 1}`}${decisions[photo] ? `, ${decisions[photo].decision.replace('_', ' ')}: ${decisions[photo].reason}` : warnings[photo] ? ', quality suggestion' : ''}`}
-          aria-pressed={active === index} layout={!reducedMotion} initial={reducedMotion ? false : { opacity: 0, scale: 0.92, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={reducedMotion ? undefined : { opacity: 0, scale: 0.9 }} transition={{ duration: 0.2 }} className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-card border-2 ${decisions[photo] && decisions[photo].decision !== 'approved' ? decisions[photo].decision === 'manual_review' ? 'border-warning' : 'border-error' : active === index ? 'border-accent' : 'border-app'}`}>
+          aria-pressed={active === index} className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-card border-2 ${decisions[photo] && decisions[photo].decision !== 'approved' ? decisions[photo].decision === 'manual_review' ? 'border-warning' : 'border-error' : active === index ? 'border-accent' : 'border-app'}`}>
           <img src={photo} alt={`Listing photo ${index + 1}${index === 0 ? ', cover photo' : ''}`} className="h-full w-full object-cover" />
           {index === 0 && <span className="absolute bottom-0 inset-x-0 bg-accent text-accent-text text-[10px] py-0.5">Cover</span>}
           {decisions[photo] && decisions[photo].decision !== 'approved' && <span aria-hidden="true" className={`absolute inset-x-0 top-0 text-[9px] font-semibold py-0.5 ${decisions[photo].decision === 'manual_review' ? 'bg-warning-soft text-warning' : 'bg-error-soft text-error'}`}>
             {decisions[photo].decision === 'manual_review' ? 'Review needed' : 'Replace photo'}
           </span>}
           {active === index && <span className="absolute right-1 top-1 rounded-full bg-accent text-accent-text p-0.5"><Check size={10} aria-hidden="true" /></span>}
-        </motion.button>)}
-        </AnimatePresence>
-        {uploadProgress && Array.from({ length: Math.min(Math.max(1, maximum - photos.length), Math.max(1, uploadProgress.total - uploadProgress.done)) }, (_, index) => <motion.div key={`uploading-${index}`} initial={reducedMotion ? false : { opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} className="relative h-20 w-20 shrink-0 overflow-hidden rounded-card border border-app bg-subtle p-2">
-          <Skeleton className="h-full w-full" rounded="rounded-card-sm" />
+        </button>)}
+        {uploadProgress && Array.from({ length: Math.min(Math.max(1, maximum - photos.length), Math.max(1, uploadProgress.total - uploadProgress.done)) }, (_, index) => <div key={`uploading-${index}`} className="relative h-20 w-20 shrink-0 overflow-hidden border border-app bg-subtle p-2">
+          <Skeleton className="h-full w-full" />
           <span className="absolute inset-x-0 bottom-1 text-center text-[9px] font-medium text-sec">Uploading…</span>
-        </motion.div>)}
+        </div>)}
         {photos.length < maximum && <button type="button" disabled={disabled} onClick={onAdd} aria-label={`Add supporting photo ${photos.length + 1}`}
           className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-card border border-dashed border-strong text-accent">
           <Plus size={18} aria-hidden="true" /><span className="text-[11px] font-semibold">Add more</span>
@@ -88,7 +84,7 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, decisi
     </div>
     {uploadProgress && <div className="mt-3 rounded-card-lg border border-app bg-card p-3" role="status" aria-live="polite" aria-busy="true">
       <div className="mb-2 flex items-center justify-between gap-3 text-xs"><span className="font-semibold text-main">{uploadProgress.text}</span><span className="shrink-0 text-sec">{uploadProgress.done}/{uploadProgress.total}</span></div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-subtle"><motion.div className="h-full rounded-full bg-accent" animate={{ width: `${Math.max(8, uploadProgress.done / Math.max(1, uploadProgress.total) * 100)}%` }} transition={{ duration: reducedMotion ? 0 : 0.35, ease: 'easeOut' }} /></div>
+      <div className="h-1.5 overflow-hidden bg-subtle"><div className="h-full bg-accent" style={{ width: `${Math.max(8, uploadProgress.done / Math.max(1, uploadProgress.total) * 100)}%` }} /></div>
     </div>}
     {preventLastPhotoRemoval && photos.length === 1 && <p className="mt-2 text-xs text-sec">Published listings need at least one photo. Replace it, or archive the listing before removing it.</p>}
     {active > 0 && <Button size="sm" className="mt-2" variant="secondary" disabled={disabled} icon={<ImagePlus size={14} aria-hidden="true" />}

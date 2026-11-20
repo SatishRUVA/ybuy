@@ -5,14 +5,13 @@ import { LocationProvider } from '@/location-context';
 import { RequireAuth } from '@/main-site/components/require-auth';
 import { SignInDialog } from '@/main-site/components/sign-in-dialog';
 import { RouterProvider, useRouter } from '@/router';
-import { Header, BottomNav } from './components/nav';
+import { Header } from './components/nav';
 import { HomePage } from './pages/home';
 import { OutOfScopePage } from '@/main-site/pages/out-of-scope';
 import { AccessPage } from '@/main-site/pages/access';
 import { BiddingTicker } from '@/main-site/components/bidding-ticker';
 import { VpnNotice } from '@/main-site/components/vpn-notice';
 import { PageLoading } from '@/main-site/components/skeleton';
-import { WorkspaceSidebar } from '@/main-site/components/workspace-navigation';
 import { SHOW_OUT_OF_SCOPE_PAGES, OUT_OF_SCOPE_ROUTES } from '@/lib/feature-flags';
 import { UUID_RE } from '@/lib/text-safety';
 import { AdminDestination } from '@/components/admin-destination';
@@ -52,8 +51,6 @@ function AppContent() {
   const { user } = useAuth();
   const skipLink = <a href="#main-content" className="skip-link">Skip to content</a>;
   const focused = ['checkout', 'confirmation', 'create-listing', 'edit-listing', 'need-something', 'check-in', 'check-out'].includes(route.name);
-  const rentalWorkspace = ['dashboard', 'renter-dashboard', 'owner-dashboard', 'owner-listings', 'owner-payouts'].includes(route.name);
-  const workspace = Boolean(user) && !['home', 'search'].includes(route.name) && !focused && !rentalWorkspace;
 
   if (route.name === 'access') return <AccessPage />;
 
@@ -66,8 +63,7 @@ function AppContent() {
       <div className="min-h-dvh flex flex-col bg-app">
         {skipLink}
         <Header />
-        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-[calc(4rem_+_env(safe-area-inset-bottom))] md:pb-0"><OutOfScopePage /></main>
-        <BottomNav />
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-8"><OutOfScopePage /></main>
         <SignInDialog />
       </div>
     );
@@ -127,20 +123,18 @@ function AppContent() {
   return (
     <div className="min-h-dvh flex flex-col bg-app">
       {skipLink}
-      <Header workspace={workspace} focused={focused} />
-      <div className={workspace ? 'workspace-body' : focused ? 'workspace-focused' : 'min-w-0 flex-1'}>
-        {workspace && <WorkspaceSidebar />}
+      <Header focused={focused} />
+      <div className={focused ? 'workspace-focused' : 'min-w-0 flex-1'}>
         <div className="workspace-content">
           {!focused && ['home', 'search', 'bidding', 'bidding-detail', 'auction'].includes(route.name)
             && !(route.name === 'bidding' && route.view === 'my-bids') && <BiddingTicker />}
-          <main id="main-content" tabIndex={-1} className="min-w-0 pb-[calc(4rem_+_env(safe-area-inset-bottom))] md:pb-0">
+          <main id="main-content" tabIndex={-1} className="min-w-0 pb-8">
             <Suspense fallback={<PageLoading />}>
               <div key={`${user?.id ?? 'anonymous'}:${route.name}`} className="animate-page-fade">{page}</div>
             </Suspense>
           </main>
         </div>
       </div>
-      {!focused && <BottomNav />}
       <SignInDialog />
     </div>
   );

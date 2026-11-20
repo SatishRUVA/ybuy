@@ -39,6 +39,7 @@ docs
 /scripts/*
 !/scripts/seed-local-test-users.mjs
 !/scripts/backfill-pickup-timezones.mjs
+!/scripts/check-netlify-env.mjs
 playwright-*-report/
 test-results*/
 .tmp-auction/
@@ -69,3 +70,11 @@ docs/*
 !docs/implementation/
 docs/implementation/*
 !docs/implementation/CI_CD.md
+!docs/platform/
+!docs/platform/*.md
+!docs/DESIGN_MIGRATION_AUDIT.md
+!docs/ROUTE_MIGRATION_MATRIX.md
+!docs/COMPONENT_INVENTORY.md
+!docs/FEATURE_DECISIONS.md
+!docs/UNNECESSARY_AND_REDUNDANT_CODE.md
+!docs/MIGRATION_PROGRESS.md
