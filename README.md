@@ -4,8 +4,8 @@
 
 GitHub Actions deployment workflows are in `.github/workflows`.
 
-The test suites, Playwright configurations, reports, and documentation folders
-have been removed. Historical notes below may refer to those removed files.
+The test suites, verification scripts, Playwright configurations, reports, and
+design references have been removed. Historical notes below may refer to them.
 
 ## YBuy Points MVP (test only)
 
