@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, MapPin, ChevronDown, Check, LocateFixed } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Search, MapPin, ChevronDown, Check, LocateFixed, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useTheme } from '@/theme-context';
 import { Palette, Moon, Check as CheckIcon } from 'lucide-react';
@@ -74,7 +75,9 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
   const desktopLocRef = useRef<HTMLDivElement>(null);
   const mobileLocRef = useRef<HTMLDivElement>(null);
   const locationTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const locationMenuWasOpen = useRef(false);
+  const locationDialogRef = useRef<HTMLDialogElement>(null);
+  const locationBackdropPressed = useRef(false);
+  const locationReturnFocus = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (variant !== 'hero' || location.source !== 'NONE') return;
@@ -101,13 +104,32 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
   }, [variant, what, startDate, endDate, radius]);
 
   useEffect(() => {
-    if (showLocMenu) {
-      const container = window.matchMedia('(min-width: 640px)').matches ? desktopLocRef.current : mobileLocRef.current;
-      container?.querySelector('input')?.focus();
-    } else if (locationMenuWasOpen.current) {
-      locationTriggerRef.current?.focus();
+    if (!showLocMenu) {
+      locationReturnFocus.current?.focus();
+      locationReturnFocus.current = null;
+      return;
     }
-    locationMenuWasOpen.current = showLocMenu;
+    const dialog = locationDialogRef.current;
+    if (!dialog) return;
+    locationReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog.showModal();
+    const place = () => {
+      const fallback = window.matchMedia('(min-width: 640px)').matches ? desktopLocRef.current : mobileLocRef.current;
+      const trigger = locationTriggerRef.current ?? fallback?.querySelector('button');
+      if (!trigger) return;
+      const anchor = trigger.getBoundingClientRect();
+      const box = dialog.getBoundingClientRect();
+      const below = anchor.bottom + 8;
+      dialog.style.left = `${Math.max(12, Math.min(anchor.left, window.innerWidth - box.width - 12))}px`;
+      dialog.style.top = `${Math.max(12, Math.min(below + box.height <= window.innerHeight - 12 ? below : anchor.top - box.height - 8, window.innerHeight - box.height - 12))}px`;
+    };
+    place();
+    dialog.querySelector('input')?.focus();
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('resize', place);
+      if (dialog.open) dialog.close();
+    };
   }, [showLocMenu]);
 
   useEffect(() => {
@@ -115,17 +137,6 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
     const id = setInterval(() => setPlaceholderIndex((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 2000);
     return () => clearInterval(id);
   }, [what]);
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      const target = e.target as Node;
-      const inDesktopMenu = desktopLocRef.current?.contains(target) ?? false;
-      const inMobileMenu = mobileLocRef.current?.contains(target) ?? false;
-      if (!inDesktopMenu && !inMobileMenu) setShowLocMenu(false);
-    }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   useEffect(() => {
     if (!showLocMenu) return;
@@ -239,24 +250,22 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
     setShowLocMenu(!showLocMenu);
   }
 
-  // z-[210] clears the shared dim Overlay (z-200) so the menu never renders under its own backdrop.
-  const locationMenu = (
-    <motion.div role="dialog" aria-modal="true" aria-label="Choose location"
-      initial={reduceMotion ? false : { opacity: 0, y: 7, scale: 0.99 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-      onKeyDown={(event) => {
-      if (event.key === 'Escape') { event.stopPropagation(); setShowLocMenu(false); }
-      if (event.key === 'Tab') {
-        const controls = event.currentTarget.querySelectorAll<HTMLElement>('input, button:not(:disabled)');
-        const first = controls[0], last = controls[controls.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-      }
-    }} className="absolute top-full mt-2 left-0 z-[210] w-[min(19rem,calc(100vw-2rem))] max-h-[min(22rem,calc(100dvh-10rem))] overflow-y-auto overscroll-contain bg-card border border-app rounded-card-lg shadow-pop p-2 animate-modal">
-      <input aria-label="Search city or ZIP" autoComplete="off" value={cityQuery} onChange={(event) => setCityQuery(event.target.value)} onKeyDown={(event) => {
-        if (event.key === 'Enter' && !searchingCities && suggestions[0]) chooseCity(suggestions[0]);
-      }} placeholder="City or ZIP/postal code" className="w-full min-w-0 h-11 px-3 rounded-card border border-strong bg-card text-base sm:text-sm text-main focus:border-accent" />
+  const outsideLocationDialog = (event: React.PointerEvent<HTMLDialogElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    return event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+  };
+  const locationMenu = showLocMenu && createPortal(
+    <dialog ref={locationDialogRef} aria-label="Choose location"
+      onCancel={event => { event.preventDefault(); setShowLocMenu(false); }}
+      onPointerDown={event => { locationBackdropPressed.current = outsideLocationDialog(event); }}
+      onPointerUp={event => { if (locationBackdropPressed.current && outsideLocationDialog(event)) setShowLocMenu(false); locationBackdropPressed.current = false; }}
+      className="search-location-dialog fixed m-0 w-[min(19rem,calc(100vw-2rem))] max-h-[min(22rem,calc(100dvh-2rem))] overflow-y-auto overscroll-contain bg-card border border-app rounded-card-lg shadow-pop p-2 animate-modal">
+      <div className="flex items-center gap-1">
+        <input aria-label="Search city or ZIP" autoComplete="off" value={cityQuery} onChange={(event) => setCityQuery(event.target.value)} onKeyDown={(event) => {
+          if (event.key === 'Enter' && !searchingCities && suggestions[0]) chooseCity(suggestions[0]);
+        }} placeholder="City or ZIP/postal code" className="w-full min-w-0 h-11 px-3 rounded-card border border-strong bg-card text-base sm:text-sm text-main focus:border-accent" />
+        <button type="button" aria-label="Close location picker" onClick={() => setShowLocMenu(false)} className="grid h-11 w-11 shrink-0 place-items-center rounded-card hover:bg-subtle"><X size={18} aria-hidden="true" /></button>
+      </div>
       <div className="mt-1">
         {searchingCities && <p role="status" className="px-2 py-2 text-xs text-sec">Searching cities…</p>}
         {suggestions.map((city) => {
@@ -287,18 +296,13 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
           {locating ? 'Finding your location…' : locationPermission === 'denied' ? 'Location blocked in browser settings' : 'Use current location'}
         </button>
       </div>
-    </motion.div>
+    </dialog>,
+    document.body,
   );
 
   return (
-    // No z-index here: it would cap the location/date popovers below the shared dim Overlay (z-200).
     <div className="relative w-full min-w-0">
-      {/* Not portaled: a portaled backdrop lives in a different stacking context than this menu,
-          so its z-index can't be trusted to lose against the menu's z-[210]. Staying in the same
-          local tree keeps the two comparable and the menu reliably clickable. */}
-      {showLocMenu && (
-        <button type="button" className="fixed inset-0 z-[200] bg-black/45 animate-fade-in" onClick={() => setShowLocMenu(false)} aria-label="Close location picker" />
-      )}
+      {locationMenu}
       {/* Desktop: one pill, three segments, one action. Segments light up on hover/focus. */}
       <div
         className={`search-control hidden sm:grid items-center w-full min-w-0 glass-surface border border-app rounded-card-lg shadow-xs
@@ -335,7 +339,6 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
             <span className="min-w-0 flex-1 truncate text-left">{displayLocation}</span>
             <ChevronDown size={14} className={`text-muted transition-transform duration-fast ${showLocMenu ? 'rotate-180' : ''}`} />
           </button>
-          {showLocMenu && locationMenu}
         </div>
 
         <div className="search-field-radius min-w-0">
@@ -401,7 +404,6 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
                 </span>
                 <ChevronDown size={14} className={`text-muted transition-transform duration-fast ${showLocMenu ? 'rotate-180' : ''}`} />
               </button>
-              {showLocMenu && locationMenu}
             </div>
 
             <SearchRadiusSelect value={radius} onChange={changeRadius} disabled={location.source === 'NONE' || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)} />
@@ -427,7 +429,7 @@ export function SearchBar({ onSearch, onLocationChange, variant = 'hero', defaul
         )}
         </AnimatePresence>
       </div>
-      <p role={initialLocationStatus === 'locating' ? 'status' : undefined} className={`mt-2 text-xs ${variant === 'compact' && !mobileExpanded ? 'hidden sm:block' : ''} ${variant === 'hero' ? 'text-white/90' : 'text-sec'}`}>
+      <p role={initialLocationStatus === 'locating' ? 'status' : undefined} className={`mt-2 text-xs text-sec ${variant === 'compact' && !mobileExpanded ? 'hidden sm:block' : ''}`}>
         {initialLocationStatus === 'locating' && location.source === 'NONE'
           ? 'Finding your area… You can still search while we check.'
           : location.source === 'IP'
@@ -467,7 +469,7 @@ export function ThemeSwitcher() {
       </button>
       {open && (
         <div className="absolute top-full right-0 mt-2 z-[100] w-72 bg-card border border-app rounded-card-xl shadow-hover p-2 animate-modal">
-          <div className="px-2 py-1.5 text-xs font-semibold text-muted uppercase tracking-wide">10 Demo Themes</div>
+          <div className="px-2 py-1.5 text-xs font-semibold text-muted uppercase tracking-wide">Themes</div>
           <div className="max-h-80 overflow-y-auto space-y-0.5">
             {themes.map((t) => (
               <button

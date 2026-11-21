@@ -1,22 +1,22 @@
 import { useEffect, useState } from 'react';
-import { User, Menu, Search, PackagePlus, LogOut, ShieldCheck, Gavel, Home, Calendar, Users, ArrowRight } from 'lucide-react';
-import { useRouter, type Route } from '@/router';
+import { User, Menu, Search, PackagePlus, LogOut, ShieldCheck, Gavel, Home, Calendar, Users, ArrowRight, Bell, MessageCircle } from 'lucide-react';
+import { RouteLink, useRouter, type Route } from '@/router';
 import { useAuth } from '@/auth-context';
 import { useAdminAccess } from '@/lib/admin-access';
 import { ThemeSwitcher } from '@/main-site/components/search';
 import { Alert, Button } from '@/main-site/components/ui';
 import { SHOW_DEMO_THEMES } from '@/lib/feature-flags';
-import { subscribeToNotifications, unreadNotificationCount } from '@/lib/notifications';
+import { NOTIFICATIONS_CHANGED, subscribeToNotifications, unreadMessageCount, unreadNotificationCount } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { Dialog, DialogTrigger, DialogTitle, DialogDescription, SheetContent } from '@/main-site/components/shadcn/dialog';
 import { WorkspaceNavigation } from '@/main-site/components/workspace-navigation';
 
-function Wordmark({ onClick }: { onClick: () => void }) {
+function Wordmark() {
   return (
-    <button onClick={onClick} className="site-wordmark flex min-h-11 min-w-11 items-center gap-2.5 shrink-0" aria-label="YBuy home">
+    <RouteLink route={{ name: 'home' }} className="site-wordmark flex min-h-11 min-w-11 items-center gap-2.5 shrink-0" aria-label="YBuy home">
       <span className="reference-wordmark"><span aria-hidden="true">y</span>ybuy</span>
-    </button>
+    </RouteLink>
   );
 }
 export function Header({ focused = false }: { focused?: boolean }) {
@@ -24,6 +24,7 @@ export function Header({ focused = false }: { focused?: boolean }) {
   const { user, profile, loading, error, signInOpen, authBusy, openSignIn, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState<number | null>(null);
+  const [messageCount, setMessageCount] = useState<number | null>(null);
   const adminAccess = useAdminAccess();
   const itemRequests = useFeatureFlag('item_requests');
   const adminRoute: Route = adminAccess.access?.role === 'super_admin' ? { name: 'super-admin' } : { name: 'admin' };
@@ -34,23 +35,25 @@ export function Header({ focused = false }: { focused?: boolean }) {
   useEffect(() => {
     if (!user?.id) {
       setUnreadCount(0);
+      setMessageCount(0);
       return;
     }
     let active = true;
     const refresh = async () => {
-      try {
-        const count = await unreadNotificationCount(user.id);
-        if (active) setUnreadCount(count);
-      } catch {
-        if (active) setUnreadCount(null);
-      }
+      const [notifications, messages] = await Promise.allSettled([unreadNotificationCount(user.id), unreadMessageCount(user.id)]);
+      if (!active) return;
+      setUnreadCount(notifications.status === 'fulfilled' ? notifications.value : null);
+      setMessageCount(messages.status === 'fulfilled' ? messages.value : null);
     };
+    const onChanged = () => { void refresh(); };
     void refresh();
-    const channel = subscribeToNotifications(user.id, () => { void refresh(); });
-    const fallback = window.setInterval(() => { void refresh(); }, 60_000);
+    const channel = subscribeToNotifications(user.id, onChanged);
+    const fallback = window.setInterval(onChanged, 60_000);
+    window.addEventListener(NOTIFICATIONS_CHANGED, onChanged);
     return () => {
       active = false;
       window.clearInterval(fallback);
+      window.removeEventListener(NOTIFICATIONS_CHANGED, onChanged);
       void supabase.removeChannel(channel);
     };
   }, [user?.id]);
@@ -70,7 +73,7 @@ export function Header({ focused = false }: { focused?: boolean }) {
     { label: 'Browse', route: { name: 'search' }, icon: Search },
     { label: 'My rentals', route: { name: 'dashboard', tab: 'renting' }, icon: Calendar },
     { label: 'Lend', route: { name: 'dashboard', tab: 'lending' }, icon: PackagePlus },
-    ...(itemRequests.enabled ? [{ label: 'Community', route: { name: 'requests', tab: 'browse' } as Route, icon: Users }] : []),
+    ...(itemRequests.enabled ? [{ label: 'Community requests', route: { name: 'requests', tab: 'browse' } as Route, icon: Users }] : []),
     { label: 'Bidding', route: { name: 'bidding' }, icon: Gavel },
   ];
 
@@ -85,7 +88,7 @@ export function Header({ focused = false }: { focused?: boolean }) {
     return (
       <header className="ybuy-site-header sticky top-0 z-40 border-b border-app">
         <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-4 px-4 sm:px-6">
-          <Wordmark onClick={() => navigate({ name: 'home' })} />
+          <Wordmark />
         </div>
         {error && !signInOpen && <div role="alert" className="px-4 pb-3"><Alert tone="error">{error}</Alert></div>}
       </header>
@@ -96,29 +99,51 @@ export function Header({ focused = false }: { focused?: boolean }) {
     <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
       <header className="ybuy-site-header sticky top-0 z-40 border-b border-app">
         <div className="site-header-inner">
-          <Wordmark onClick={() => navigate({ name: 'home' })} />
+          <Wordmark />
 
           <nav className="site-main-navigation" aria-label="Main">
-            {navItems.filter((item) => item.label !== 'Bidding').map((item) => (
-              <button
+            {navItems.filter((item) => item.label !== 'My rentals' && item.label !== 'Lend').map((item) => (
+              <RouteLink
                 key={item.label}
-                onClick={() => go(item.route)}
+                route={item.route}
                 aria-current={isActive(item.route) ? 'page' : undefined}
                 className="site-main-navigation-link"
               >
                 {item.label}
-              </button>
+              </RouteLink>
             ))}
           </nav>
 
           <div className="site-header-actions">
-            <button type="button" className="site-header-search" aria-label="Search nearby" onClick={() => go({ name: 'search' })}>
+            <RouteLink route={{ name: 'search' }} className="site-header-search" aria-label="Search nearby">
               <Search size={16} aria-hidden="true" />
               <span>Search nearby</span>
               <span className="site-header-search-go"><ArrowRight size={15} aria-hidden="true" /></span>
-            </button>
+            </RouteLink>
+            <RouteLink route={{ name: 'create-listing' }} className="site-header-list">List an item</RouteLink>
 
             {SHOW_DEMO_THEMES && <ThemeSwitcher />}
+
+            {user && <>
+              <RouteLink
+                route={{ name: 'messaging' }}
+                className="site-header-icon"
+                aria-current={route.name === 'messaging' || route.name === 'conversation' ? 'page' : undefined}
+                aria-label={messageCount ? `Messages, ${messageCount} unread` : 'Messages'}
+              >
+                <MessageCircle size={20} aria-hidden="true" />
+                {!!messageCount && <span aria-hidden="true" className="site-menu-unread">{messageCount > 99 ? '99+' : messageCount}</span>}
+              </RouteLink>
+              <RouteLink
+                route={{ name: 'notifications' }}
+                className="site-header-icon site-header-bell"
+                aria-current={route.name === 'notifications' ? 'page' : undefined}
+                aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+              >
+                <Bell size={20} aria-hidden="true" />
+                {!!unreadCount && <span aria-hidden="true" className="site-menu-unread">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+              </RouteLink>
+            </>}
 
             <DialogTrigger asChild>
               <button
@@ -134,12 +159,12 @@ export function Header({ focused = false }: { focused?: boolean }) {
                     ? <img src={profile.avatar_url} alt="" />
                     : <User size={16} aria-hidden="true" />}
                 </span>
-                {user && unreadCount !== null && unreadCount > 0 && <span aria-hidden="true" className="site-menu-unread">{unreadCount > 99 ? '99+' : unreadCount}</span>}
-                {user && <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-                  {unreadCount === null ? 'Unread notification count unavailable' : `${unreadCount} unread notifications`}
-                </span>}
+                {user && !!unreadCount && <span aria-hidden="true" className="site-menu-unread site-menu-unread-compact">{unreadCount > 99 ? '99+' : unreadCount}</span>}
               </button>
             </DialogTrigger>
+            {user && <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+              {unreadCount === null ? 'Unread notification count unavailable' : `${unreadCount} unread notifications`}
+            </span>}
           </div>
         </div>
 
@@ -148,29 +173,38 @@ export function Header({ focused = false }: { focused?: boolean }) {
       </header>
       <SheetContent className="workspace-navigation-sheet overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="site-menu-heading">
-          <DialogTitle>Navigation</DialogTitle>
-          <DialogDescription>Browse YBuy and manage your rentals, listings, and account.</DialogDescription>
+          <DialogTitle>Menu</DialogTitle>
+          <DialogDescription className="sr-only">Browse YBuy and manage your rentals, listings, and account.</DialogDescription>
+          {user && profile?.full_name && <p className="site-menu-account">{profile.full_name}</p>}
+        </div>
+        <div className="site-menu-primary">
+          <RouteLink route={{ name: 'create-listing' }} onNavigate={() => setMenuOpen(false)}
+            className="ui-button inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-card bg-accent px-4 py-2.5 text-sm font-semibold text-accent-text shadow-xs hover:bg-accent-hover">
+            <PackagePlus size={18} aria-hidden="true" /> List an item
+          </RouteLink>
+          {itemRequests.enabled && <RouteLink route={{ name: 'need-something' }} onNavigate={() => setMenuOpen(false)}
+            className="ui-button inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-card border border-app bg-card px-4 py-2.5 text-sm font-semibold text-main hover:bg-subtle">
+            Request an item
+          </RouteLink>}
         </div>
         {user
           ? <WorkspaceNavigation label="Workspace navigation" onNavigate={() => setMenuOpen(false)} />
           : <nav className="site-menu-navigation" aria-label="Menu">{navItems.map((item) => {
             const Icon = item.icon;
             return (
-              <button
+              <RouteLink
                 key={item.label}
-                onClick={() => go(item.route)}
+                route={item.route}
+                onNavigate={() => setMenuOpen(false)}
                 aria-current={isActive(item.route) ? 'page' : undefined}
                 className="site-menu-link"
               >
                 <Icon size={18} aria-hidden="true" />
                 {item.label}
-              </button>
+              </RouteLink>
             );
           })}</nav>}
         <div className="site-menu-actions">
-          <Button fullWidth icon={<PackagePlus size={18} />} onClick={() => go({ name: 'create-listing' })}>
-            List an item
-          </Button>
           {user ? (
             <>
               {(adminAccess.access?.role === 'admin' || adminAccess.access?.role === 'super_admin') && (

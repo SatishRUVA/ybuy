@@ -835,7 +835,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
           ) : pending.length === 0 ? (
             <div className="rental-quiet-state">
               <h3 className="text-base font-semibold text-main">You're all caught up</h3>
-              <p className="text-sm text-sec mt-2">New rental requests appear here, ready for your approval.</p>
+              <p className="text-sm text-sec mt-2">New requests will appear here.</p>
               <Button className="mt-4" variant="secondary" onClick={() => navigate({ name: 'owner-listings' })}>Manage listings</Button>
             </div>
           ) : (
@@ -914,7 +914,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
 
         {activityTab === 'active' && <section>
           <h3 className="sr-only">Active rentals</h3>
-          {bookings === null ? <BookingListSkeleton count={2} /> : activeRentals.length === 0 ? <div className="rental-quiet-state"><p className="text-sm text-sec">Nothing is out on rental right now. Picked-up items appear here until they're returned.</p></div> : (
+          {bookings === null ? <BookingListSkeleton count={2} /> : activeRentals.length === 0 ? <div className="rental-quiet-state"><p className="text-sm text-sec">No active rentals right now.</p></div> : (
             <div className="space-y-2.5">
               {activeRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking} onOpen={() => navigate({ name: 'listing', id: booking.listingId })} onMessage={() => void handleMessage(booking.counterpartId, booking.listingId, booking.id)}>
@@ -928,7 +928,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
 
         {activityTab === 'past' && <section>
           <h3 className="sr-only">Past rentals</h3>
-          {bookings === null ? <BookingListSkeleton count={2} /> : pastRentals.length === 0 ? <div className="rental-quiet-state"><p className="text-sm text-sec">Completed, cancelled, and declined rentals are kept here for your records.</p></div> : (
+          {bookings === null ? <BookingListSkeleton count={2} /> : pastRentals.length === 0 ? <div className="rental-quiet-state"><p className="text-sm text-sec">Your past rentals will appear here.</p></div> : (
             <div className="space-y-2.5">
               {pastRentals.map((booking) => (
                 <BookingRow key={booking.id} booking={booking}
@@ -984,7 +984,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
             <EmptyState
               icon={<Package size={20} />}
               title="Turn something you own into income."
-              description="List it, set the dates it is available, and approve each rental request."
+              description="List an item and choose when it's available."
               actionLabel="List an item"
               onAction={() => navigate({ name: 'create-listing' })}
             />
@@ -1099,7 +1099,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
             <StatCard label="Transferred to Stripe" value={payoutsLoading ? '—' : formatUSD(paidOut)} />
             <StatCard label="Upcoming & active" value={upcomingRentals.length + activeRentals.length} />
             </div>
-            <p className="mb-3 text-xs text-sec">Estimate uses saved rental and delivery amounts after the owner service fee, across confirmed, active, and completed rentals. A transfer to Stripe does not confirm a bank payout.</p>
+            <p className="mb-3 text-xs text-sec">Estimated earnings include rental and delivery fees, less the owner service fee. A Stripe transfer is not a bank payout.</p>
           </>}
           {reversedTransferAmount > 0 && <Alert tone="error" className="mt-3">
             <div className="flex flex-wrap items-center justify-between gap-3">

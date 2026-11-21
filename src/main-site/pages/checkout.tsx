@@ -128,7 +128,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center">
         <h1 className="text-xl font-bold text-main font-display">Choose your dates first</h1>
-        <p className="text-sec text-sm mt-2">Pick a pick-up and return date on the listing, then come back here.</p>
+        <p className="text-sec text-sm mt-2">Choose pickup and return dates on the listing to continue.</p>
         <Button className="mt-6" onClick={() => navigate({ name: 'listing', id })}>Back to the listing</Button>
       </div>
     );
@@ -162,7 +162,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
     setError(null);
     try {
       if (!createdBooking && !priceQuote) {
-        throw new Error(quoteError ?? 'Wait for the server to verify the checkout price before continuing.');
+        throw new Error(quoteError ?? 'Please wait while we verify your total.');
       }
       if (!paymentBookingId && availabilityStatus !== 'available') {
         throw new Error(availabilityStatus === 'error'
@@ -275,7 +275,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
                 ? 'Checking these dates and the selected quantity with the owner’s current availability.'
                 : availabilityStatus === 'unavailable'
                   ? <>These dates are no longer available for the selected quantity. <Button variant="secondary" className="mt-2" onClick={() => navigate({ name: 'listing', id })}>Choose other dates</Button></>
-                  : <>Booking is disabled until availability can be verified. <Button variant="secondary" className="mt-2" onClick={() => setAvailabilityRetry((value) => value + 1)}>Retry availability check</Button></>}
+                  : <>We couldn't check availability. Please try again. <Button variant="secondary" className="mt-2" onClick={() => setAvailabilityRetry((value) => value + 1)}>Check again</Button></>}
             </Alert>}
           </section>
 
@@ -297,7 +297,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
                     && <Row label="Package savings" value={-(priceQuote?.discount_amount ?? 0)} />}
                   {!createdBooking && (priceQuote?.extra_days ?? 0) > 0
                     && <Row label={`${priceQuote?.extra_days} extra days at the daily rate`} value={priceQuote?.extra_days_amount ?? 0} />}
-                  <Row label={`Renter service fee${renterServiceFeePct == null ? '' : ` · ${(renterServiceFeePct * 100).toFixed(2)}%`}`} value={serviceFee} />
+                  <Row label={`Service fee${renterServiceFeePct == null ? '' : ` · ${(renterServiceFeePct * 100).toFixed(2)}%`}`} value={serviceFee} />
                   {deliveryFeeAmount > 0 && <Row label="Delivery fee" value={deliveryFeeAmount} />}
                   {createdBooking ? <Row label="Insurance" value={insuranceAmount} />
                     : <InsuranceAmount days={days} replacementValue={listing.declaredValue} quantity={quantity}
@@ -305,16 +305,16 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
                       disabled={submitting || Boolean(paymentBookingId)} />}
                   <Row label={isTaxDemo ? 'Tax (7% test)' : createdBooking?.tax_rate === 0 ? 'Tax' : 'Tax (7%)'} value={tax} />
                   <div className="pt-3 border-t border-app flex justify-between font-bold text-base text-main">
-                    <span>Renter charges</span>
+                    <span>Charges before tax</span>
                     <span className="tnum">${formatMoney(rental + serviceFee + insuranceAmount + deliveryFeeAmount)}</span>
                   </div>
                 </div>
                 <div className="flex justify-between text-sm font-semibold text-main mt-3 pt-3 border-t border-app">
-                  <span>{createdBooking ? 'Backend-confirmed total' : 'Estimated total'}</span><span className="tnum">${formatMoney(total)}</span>
+                  <span>{createdBooking ? 'Confirmed total' : 'Estimated total'}</span><span className="tnum">${formatMoney(total)}</span>
                 </div>
-                <p className="text-xs text-sec mt-2">{createdBooking ? 'Stored fee, tax and total snapshots confirmed by the backend.' : 'Server quote uses the effective service-fee allocation and authoritative package rates. Tax applies to rental and renter service fee only.'}</p>
-                {ownerServiceFeeAmount > 0 && <p className="text-xs text-sec mt-2">The owner service fee (${formatMoney(ownerServiceFeeAmount)}) is deducted from the owner’s earnings; it is not an extra renter charge.</p>}
-                <p className="text-xs text-sec mt-2 leading-relaxed">Rental payment only, including applicable fees, selected optional insurance and tax. The security hold is a separate check-in transaction.</p>
+                <p className="text-xs text-sec mt-2">{createdBooking ? 'Your fees and tax are confirmed.' : 'Tax applies to the rental and service fee.'}</p>
+                {ownerServiceFeeAmount > 0 && <p className="text-xs text-sec mt-2">The owner’s service fee (${formatMoney(ownerServiceFeeAmount)}) comes from their earnings and is not added to your total.</p>}
+                <p className="text-xs text-sec mt-2 leading-relaxed">Includes rental, fees, selected insurance and tax. The security hold is separate.</p>
                 {localRewards && <CheckoutPointsPicker
                   selected={pointsSelected} applied={pointsApplied} onSelectionChange={setPointsSelected}
                   rentalSubtotal={rental} total={total} disabled={submitting} />}
@@ -327,7 +327,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
                   <span className="flex items-center gap-1.5 text-sec"><Lock size={14} /> Temporary security-deposit authorization</span>
                   <span className="font-semibold text-main tnum">${formatMoney(deposit)}</span>
                 </div>
-                <p className="text-xs text-muted mt-1.5 leading-relaxed">Not included in rental payment. After paying, propose a pickup or delivery slot for owner approval. Authorize this temporary hold within 24 hours before that slot. Only separately approved deductions may be captured; otherwise the hold is released.</p>
+                <p className="text-xs text-muted mt-1.5 leading-relaxed">After payment, arrange pickup or delivery with the owner. Authorize this temporary hold within 24 hours before the approved time. It's released unless deductions are separately approved.</p>
                 {createdBooking && !createdBooking.payment_first && <label className="mt-3 flex min-h-11 items-start gap-2 text-xs text-sec">
                   <input type="checkbox" checked={depositConsent} onChange={event => setDepositConsent(event.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
                   <span>I agree to save this card for the temporary security-deposit authorization and any separately approved claim.</span>
@@ -492,7 +492,7 @@ export function ConfirmationPage({ id }: { id: string }) {
           requiresDepositAuthorization={!booking.paymentFirst && booking.depositCollectionModel==='authorization' && booking.deposit>0} /> }
         {booking.status === 'pending_payment' && (
           <Alert tone="info" title="Payment is not confirmed yet" className="mb-4">
-            {checking ? 'Checking for secure backend confirmation. You can leave this page safely.' : 'If you just paid, confirmation may still be processing.'}
+            {checking ? 'Confirming your payment. You can leave this page safely.' : 'If you just paid, confirmation may still be processing.'}
           </Alert>
         )}
         {(booking.status === 'pending_payment' || confirmationError) && (

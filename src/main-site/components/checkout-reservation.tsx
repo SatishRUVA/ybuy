@@ -46,7 +46,7 @@ export function CheckoutReservation({ bookingId,canPay,requiresDepositAuthorizat
   }, [bookingId,retry]);
   if (exception) return <Alert tone="error" title="Payment received — support review required" className="mb-4">{exception} Do not pay again. Contact support with your booking reference; the rental is not confirmed.</Alert>;
   if (error) return <Alert tone="error" title="Could not verify checkout" className="mb-4">{error}<Button className="mt-2" size="sm" variant="secondary" onClick={() => setRetry((value) => value+1)}>Retry checkout status</Button></Alert>;
-  if (status==='confirmed') return <Alert tone="success" title="Backend payment confirmation received" className="mb-4">Your rental is confirmed.<Button className="mt-2" size="sm" onClick={() => window.location.reload()}>Refresh booking details</Button></Alert>;
+  if (status==='confirmed') return <Alert tone="success" title="Payment confirmed" className="mb-4">Your rental is confirmed.<Button className="mt-2" size="sm" onClick={() => window.location.reload()}>Refresh booking details</Button></Alert>;
   if (status!=='pending_payment') return status==='cancelled' && remaining===0 && !paymentReceived
     ? <Alert tone="warning" title="Checkout reservation expired" className="mb-4">Availability has been released. Submit a new booking request if you still want this item. If you already paid, wait for payment reconciliation and contact support before paying again.</Alert> : null;
   const holdReady = !requiresDepositAuthorization || (depositAuthorization?.status === 'authorized'
@@ -56,7 +56,7 @@ export function CheckoutReservation({ bookingId,canPay,requiresDepositAuthorizat
   return <Alert tone={remaining===0 && !paymentReceived ? 'warning' : 'info'} title={paymentReceived
     ? 'Rental payment received; deposit authorization required'
     : 'Secure booking confirmation'} className="mb-4">
-    <p>{remaining===null ? 'Checking server reservation…' : remaining===0 ? 'The payment window has ended. Checking the server for final status.' : `Time remaining: ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`}</p>
+    <p>{remaining===null ? 'Checking your reservation…' : remaining===0 ? 'The payment window has ended. Checking your booking status.' : `Time remaining: ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`}</p>
     <p className="text-xs mt-1">{paymentReceived
       ? 'Do not pay again. The booking will confirm after the separate security-deposit hold is authorized.'
       : requiresDepositAuthorization && !holdReady

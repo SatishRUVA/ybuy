@@ -24,7 +24,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
         <EmptyState
           icon={<LogIn size={20} />}
           title="Sign in to continue"
-          description="One account for renting and lending. Sign in or create your account to continue where you left off."
+          description="Sign in or create an account to continue."
           actionLabel="Sign in or create an account"
           onAction={openSignIn}
         />

@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Calendar, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X, ArrowRight } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { todayIso, addDaysIso, MAX_BOOKING_RANGE_DAYS } from '@/lib/geo';
-import { Overlay } from '@/main-site/components/ui';
 import { pickupToday } from '@/lib/pickup-timezone';
 
 type PresetKey = 'custom' | 'today' | 'tomorrow' | 'weekend' | 'next7' | 'next30';
@@ -70,9 +70,10 @@ function rangeHasUnavailable(start: string, end: string, bookedDates: Set<string
 }
 
 export function MonthGrid({
-  monthDate, todayStr, minDate, draftStart, draftEnd, maxDate, bookedDates, blockedDates, onPick, showMonthLabel = true, rangeView = false,
+  monthDate, todayStr, minDate, draftStart, draftEnd, maxDate, bookedDates, blockedDates, onPick, onNavigateDate, showMonthLabel = true, rangeView = false,
 }: {
   monthDate: Date; todayStr: string; minDate: string; draftStart: string | null; draftEnd: string | null; maxDate: string; bookedDates: Set<string>; blockedDates: Set<string>; onPick: (iso: string) => void; showMonthLabel?: boolean; rangeView?: boolean;
+  onNavigateDate?: (iso: string) => void;
 }) {
   const firstWeekday = monthDate.getDay();
   const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
@@ -127,7 +128,17 @@ export function MonthGrid({
                 if (offset === undefined) return;
                 event.preventDefault();
                 const next = addDaysIso(date, offset);
-                event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`button[data-date="${next}"]:not(:disabled)`)?.focus();
+                if (next < minDate || next > maxDate || bookedDates.has(next) || blockedDates.has(next)) return;
+                const container = event.currentTarget.closest('[data-calendar-months], [role="dialog"], section') ?? event.currentTarget.parentElement;
+                const focusDate = () => {
+                  const target = container?.querySelector<HTMLButtonElement>(`button[data-date="${next}"]:not(:disabled)`);
+                  if (target?.getClientRects().length) { target.focus(); return true; }
+                  return false;
+                };
+                if (!focusDate() && onNavigateDate) {
+                  onNavigateDate(next);
+                  requestAnimationFrame(focusDate);
+                }
               }}
               data-date={date}
               title={isBooked ? 'Booked' : isBlocked ? 'Blocked' : undefined}
@@ -175,6 +186,7 @@ export function DateRangePicker({
   const [activeEndpoint, setActiveEndpoint] = useState<'start' | 'end'>('start');
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);
   const reduceMotion = useReducedMotion();
@@ -197,11 +209,9 @@ export function DateRangePicker({
 
   useEffect(() => {
     if (!open) return;
-    function closeOnEscape(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
-    }
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
+    const dialog = modalRef.current;
+    dialog?.showModal();
+    return () => { if (dialog?.open) dialog.close(); };
   }, [open]);
 
   useEffect(() => {
@@ -312,10 +322,16 @@ export function DateRangePicker({
   const calendarToday = parseIsoLocal(todayStr);
   const leftMonth = new Date(calendarToday.getFullYear(), calendarToday.getMonth() + monthOffset, 1);
   const rightMonth = new Date(leftMonth.getFullYear(), leftMonth.getMonth() + 1, 1);
+  const navigateToDate = (date: string) => {
+    const target = parseIsoLocal(date);
+    setMonthOffset((target.getFullYear() - calendarToday.getFullYear()) * 12 + target.getMonth() - calendarToday.getMonth());
+  };
   const nights = draftStart && draftEnd ? daysBetweenIso(draftStart, draftEnd) : 0;
   const triggerDateLabel = fmtRangeShort(startDate, endDate);
-  const datePickerPanel = (
-    <Overlay className={`flex ${compact ? 'items-center justify-center p-3 listing-calendar-layer' : 'items-end justify-center sm:items-center sm:p-5'} ${open ? '' : 'pointer-events-none'}`}>
+  const datePickerPanel = open && createPortal(
+    <dialog ref={modalRef} aria-label="Choose rental dates"
+      onCancel={event => { event.preventDefault(); setOpen(false); }}
+      className={`calendar-modal ${compact ? 'items-center justify-center p-3 listing-calendar-layer' : 'items-end justify-center sm:items-center sm:p-5'}`}>
       <AnimatePresence initial={false}>
         {open && <motion.button
           key="calendar-backdrop"
@@ -332,19 +348,6 @@ export function DateRangePicker({
         {open && <motion.div
           key="date-range-panel"
           ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Choose rental dates"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); }
-            if (event.key === 'Tab') {
-              const controls = event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled)');
-              const first = controls[0];
-              const last = controls[controls.length - 1];
-              if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-              else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-            }
-          }}
           initial={reduceMotion ? false : { opacity: 0, y: 22, scale: 0.99 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={reduceMotion ? undefined : { opacity: 0, y: 18, scale: 0.99 }}
@@ -419,9 +422,9 @@ export function DateRangePicker({
                 </button>
               </div>
             </div>}
-            <div className="calendar-months">
-              <MonthGrid monthDate={leftMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={selectionMaxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} rangeView showMonthLabel={!rentalPresentation} />
-              {!rentalPresentation && <MonthGrid monthDate={rightMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={selectionMaxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} rangeView />}
+            <div className="calendar-months" data-calendar-months>
+              <MonthGrid monthDate={leftMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={selectionMaxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} onNavigateDate={navigateToDate} rangeView showMonthLabel={!rentalPresentation} />
+              {!rentalPresentation && <MonthGrid monthDate={rightMonth} todayStr={todayStr} minDate={minDate} draftStart={draftStart} draftEnd={draftEnd} maxDate={selectionMaxDate} bookedDates={bookedDates} blockedDates={blockedDates} onPick={handlePick} onNavigateDate={navigateToDate} rangeView />}
             </div>
             {rentalPresentation && <p className="rental-calendar-help">Arrow keys move between days. Choose pickup, then return.</p>}
           </div>
@@ -438,7 +441,8 @@ export function DateRangePicker({
           </footer>
         </motion.div>}
       </AnimatePresence>
-    </Overlay>
+    </dialog>,
+    document.body,
   );
 
   return (

@@ -18,7 +18,7 @@ export function GuidelinesPage() {
         <SectionHeader
           as="h1"
           title="Community guidelines"
-          subtitle="YBuy is for renting everyday items between neighbours. These items are never allowed as listings."
+          subtitle="Help keep YBuy safe. These items cannot be listed."
           className="mb-6"
         />
         <Surface className="p-5">
@@ -34,22 +34,18 @@ export function GuidelinesPage() {
         <Surface className="p-5 mt-4">
           <h2 className="font-semibold text-main">Photo requirements</h2>
           <p className="text-sm text-sec leading-relaxed mt-2">
-            Add up to four clear, relevant photos of the item. Use JPEG, PNG, or WebP files no larger
-            than 3 MB, with both dimensions at least 320 pixels. Do not upload duplicates or images
-            containing personal information. Photo metadata is removed during upload. If a photo
-            needs correction, replace the highlighted image and recheck it; uncertain cases can be
-            sent to support for review. Editing listing text does not repeat the photo review.
+            Add up to four clear photos of your item. Use JPEG, PNG, or WebP files up to 3 MB,
+            at least 320 pixels wide and tall. Avoid duplicates and personal information.
+            Replace flagged photos or contact support if you disagree with the review.
           </p>
         </Surface>
         <p className="text-sm text-sec mt-4 leading-relaxed">
-          Keep contact information inside YBuy messaging. Phone numbers and email addresses in
-          listing details are removed when you continue. Review the corrected text before proceeding.
-          Street addresses and PO boxes do not belong in public listing details; use the private
-          pickup address in Location. Flagged photos must be corrected before leaving Photos.
+          Keep conversations in YBuy messaging. Phone numbers and email addresses are removed from
+          listing details. Keep street addresses and PO boxes out of public listings; add your
+          private pickup address in Location instead.
         </p>
         <p className="text-xs text-muted mt-5 leading-relaxed">
-          Listings suspected of violating these guidelines are reviewed manually. Publishing a
-          listing that violates them may result in removal and account restrictions.
+          Listings that violate these guidelines may be removed and accounts restricted.
         </p>
       </div>
     </div>

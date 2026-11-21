@@ -58,7 +58,7 @@ export function MessagingPage({ selectedConversationId }: { selectedConversation
               <EmptyState
                 icon={<MessageSquare size={20} />}
                 title="No conversations yet"
-                description="Messaging opens up when you request a rental or contact an owner from a listing."
+                description="Contact an owner or request a rental to start a conversation."
                 actionLabel="Browse rentals"
                 onAction={() => navigate({ name: 'search' })}
               />

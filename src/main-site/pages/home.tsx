@@ -1,25 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowRight, Sparkles, Clock,
+  ArrowRight, Sparkles,
 } from 'lucide-react';
 import { SearchBar } from '@/main-site/components/search';
 import { ListingCard } from '@/main-site/components/listing-card';
-import { SignupRewardOffer } from '@/main-site/components/signup-reward-offer';
 import { Badge, Button, SectionHeader, EmptyState, Alert } from '@/main-site/components/ui';
 import { ListingGridSkeleton } from '@/main-site/components/skeleton';
 import { CategoryIcon } from '@/main-site/components/category-icon';
-import { useRouter } from '@/router';
+import { RouteLink, useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import type { Listing, Category } from '@/data';
-import { auctions } from '@/data';
 import {
-  fetchCategories, fetchCategoryCounts, searchListings,
+  fetchCategories, searchListings,
   toUiCategory, toUiListing, enrichListingsWithRatings,
 } from '@/lib/listings';
 import { fetchFavoriteListingIds, addFavorite, removeFavorite } from '@/lib/favorites';
 import { haversineMiles, listingIsInCity, locationLabel } from '@/lib/geo';
 import { useMarketplaceLocation } from '@/location-context';
-import { BrandLogo } from '@/main-site/components/brand-logo';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { savedSearchState, type SearchRadius } from '@/lib/search-state';
 import { useUtcDay } from '@/lib/use-utc-day';
@@ -31,14 +28,12 @@ const RAIL_SIZE = 8;
 
 export function HomePage() {
   const utcDay = useUtcDay();
-  const { enabled: mockBiddingEnabled } = useFeatureFlag('mock_bidding');
   const itemRequests = useFeatureFlag('item_requests');
   const { navigate } = useRouter();
   const { user, openSignIn } = useAuth();
   const userId = user?.id;
   const { location } = useMarketplaceLocation();
   const [pool, setPool] = useState<Listing[]>([]);
-  const [fresh, setFresh] = useState<Listing[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,23 +64,6 @@ export function HomePage() {
         setLoading(false);
         void enrichListingsWithRatings(recommended.rows.map(toUiListing))
           .then((rows) => { if (!cancelled) setPool(rows); });
-
-        void searchListings({ sortBy: 'newest', pageSize: RAIL_SIZE })
-          .then((newest) => {
-            if (cancelled) return;
-            const rows = newest.rows.map(toUiListing);
-            setFresh(rows);
-            void enrichListingsWithRatings(rows)
-              .then((ratedRows) => { if (!cancelled) setFresh(ratedRows); });
-          })
-          .catch(() => {});
-
-        void fetchCategoryCounts()
-          .then((counts) => {
-            if (cancelled) return;
-            setCategories(catRows.map((c) => toUiCategory(c, counts)));
-          })
-          .catch(() => {});
       })
       .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load listings.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -159,11 +137,6 @@ export function HomePage() {
     [available, location],
   );
 
-  // Rails shouldn't repeat the same item twice on one page.
-  const justAdded = useMemo(() => {
-    const shown = new Set([...featured, ...nearby].map((l) => l.id));
-    return fresh.filter((l) => !shown.has(l.id));
-  }, [fresh, featured, nearby]);
   const discoveryListings = nearby.length > 0 ? nearby : featured;
   const discoveryTitle = nearby.length > 0
     ? location.source === 'BROWSER' ? 'Rentals near you' : `Rentals near ${locationLabel(location)}`
@@ -182,6 +155,7 @@ export function HomePage() {
         onSearch={navigate}
         radius={searchRadius}
         onRadiusChange={setSearchRadius}
+        requestsEnabled={itemRequests.enabled}
       />
 
       {error && (
@@ -196,8 +170,7 @@ export function HomePage() {
       {(loading || categories.length > 0 || !error) && <Shell className="home-category-section">
         <div className="home-category-layout" aria-labelledby="browse-categories-heading">
           <div className="home-category-heading">
-            <p className="marketplace-eyebrow">A little of everything</p>
-            <h2 id="browse-categories-heading">What could make<br />your day easier?</h2>
+            <h2 id="browse-categories-heading">Browse by category</h2>
             <button type="button" className="home-category-all" onClick={() => navigate({ name: 'search' })}>See all categories <ArrowRight size={14} /></button>
           </div>
           <div className="workspace-category-grid" aria-busy={loading && categories.length === 0}>
@@ -209,17 +182,15 @@ export function HomePage() {
           </div>
           {loading && categories.length === 0 && <p role="status" className="sr-only">Loading categories</p>}
           {!loading && categories.length === 0 && (
-            <p role="status" className="text-sm text-sec">{error ? 'Categories could not be loaded. Please try again above.' : 'No categories are available yet. You can still explore all rentals.'}</p>
+            <p role="status" className="text-sm text-sec">{error ? 'Categories could not be loaded. Please try again above.' : 'No categories yet. Browse all rentals instead.'}</p>
           )}
         </div>
       </Shell>}
 
       {/* One primary rental rail avoids repeating the same items in separate featured and nearby rows. */}
       {!(error && discoveryListings.length === 0 && !loading) && <Shell className="home-discovery-section pt-12 sm:pt-16">
-        <p className="marketplace-eyebrow">A good place to start</p>
         <SectionHeader
           title={discoveryTitle}
-          subtitle={nearby.length > 0 ? 'Available items from nearby owners.' : 'Well-reviewed items from owners with a track record.'}
           actionLabel="Browse all rentals"
           onAction={() => navigate({ name: 'search' })}
           className="mb-5"
@@ -230,8 +201,8 @@ export function HomePage() {
           <EmptyState
             icon={<Sparkles size={20} />}
             title="Nothing listed yet"
-            description="YBuy grows one item at a time. List something you already own and it shows up right here."
-            actionLabel="List your first item"
+            description="Be the first to share something nearby."
+            actionLabel="List an item"
             onAction={() => navigate({ name: 'create-listing' })}
           />
         ) : (
@@ -248,15 +219,13 @@ export function HomePage() {
           <section className="home-community-panel">
             <div className="home-community-intro">
               <div className="home-community-copy">
-                <p className="marketplace-eyebrow">The neighborhood works better together</p>
-                <h2>Need something<br />a little different?</h2>
-                <p>Put the word out to nearby owners. You might be surprised what’s already close by.</p>
+                <h2>Someone nearby might have it.</h2>
+                <p>Looking for something specific? Ask your community, or help a neighbor find what they need.</p>
                 <div className="flex flex-wrap gap-2">
-                  <Button onClick={() => navigate({ name: 'need-something' })} trailingIcon={<ArrowRight size={16} />}>Ask your neighbors</Button>
-                  <Button variant="secondary" onClick={() => navigate({ name: 'requests', tab: 'browse' })}>Browse renter requests</Button>
+                  <Button onClick={() => navigate({ name: 'need-something' })} trailingIcon={<ArrowRight size={16} />}>Request an item</Button>
+                  <Button variant="secondary" onClick={() => navigate({ name: 'requests', tab: 'browse' })}>Browse requests</Button>
                 </div>
               </div>
-              <img src="https://images.pexels.com/photos/4505166/pexels-photo-4505166.jpeg?auto=compress&cs=tinysrgb&w=1100&h=850&fit=crop" alt="Garden tools gathered for a shared project" loading="lazy" />
             </div>
             {user && requestsError && (
               <Alert tone="error" title="Could not load nearby requests" className="mt-5">
@@ -265,7 +234,7 @@ export function HomePage() {
               </Alert>
             )}
             {user && nearbyRequests.length > 0 && (
-              <div className="mt-5 border-t border-app pt-5">
+              <div className="home-community-requests">
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <h3 className="text-sm font-semibold text-main">Recently requested nearby</h3>
                   <span className="text-xs text-sec">Within {searchRadius === null ? 'any distance' : `${searchRadius} miles`} of {locationLabel(location)}</span>
@@ -296,70 +265,17 @@ export function HomePage() {
         </Shell>
       )}
 
-      {/* Recently added */}
-      {(loading || justAdded.length > 0) && (
-        <Shell className="home-recent-section pt-12 sm:pt-16">
-          <SectionHeader
-            title="Just added"
-            subtitle="The newest items on YBuy."
-            actionLabel="See all"
-            onAction={() => navigate({ name: 'search' })}
-            className="mb-5"
-          />
-          {loading ? (
-            <ListingGridSkeleton count={4} className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4" />
-          ) : (
-            <Rail count={justAdded.length}>
-              {justAdded.map((listing) => (
-                <RailItem key={listing.id}><ListingCard {...cardProps(listing)} /></RailItem>
-              ))}
-            </Rail>
-          )}
-        </Shell>
-      )}
-
-      {mockBiddingEnabled && (
-        <Shell className="home-bidding-section pt-12 sm:pt-16">
-          <SectionHeader
-            title="Mock bidding"
-            subtitle="Demo only. No real bids, bookings or payments."
-            actionLabel="See all"
-            onAction={() => navigate({ name: 'bidding' })}
-            className="mb-5"
-          />
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {auctions.map((auction) => (
-              <button
-                key={auction.id}
-                onClick={() => navigate({ name: 'auction', id: auction.id })}
-                className="group text-left bg-card border border-app rounded-card-lg overflow-hidden shadow-xs card-hover cursor-pointer"
-              >
-                <div className="relative aspect-[4/3] overflow-hidden bg-subtle">
-                  <img src={auction.image} alt={auction.title} loading="lazy" className="w-full h-full object-cover zoom-media" />
-                  <span className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent text-accent-text text-[11px] font-semibold">
-                    Demo
-                  </span>
-                </div>
-                <div className="p-3.5">
-                  <h3 className="font-semibold text-[15px] text-main line-clamp-1 font-display">{auction.title}</h3>
-                  <div className="flex items-end justify-between mt-2">
-                    <div>
-                      <p className="text-[11px] text-muted">Current demo bid</p>
-                      <p className="text-lg font-bold text-accent tnum">${auction.currentBid}</p>
-                    </div>
-                    <p className="text-[11px] text-sec flex items-center gap-1"><Clock size={11} /> {auction.endsIn}</p>
-                  </div>
-                </div>
-              </button>
-            ))}
+      <Shell className="home-sharing-section">
+        <div className="home-sharing">
+          <h2>Good things are meant to be used.</h2>
+          <div>
+            <p>That item sitting at home could be just what a neighbor needs. List it on YBuy and put it to good use.</p>
+            <RouteLink route={{ name: 'create-listing' }}>List an item <ArrowRight size={16} aria-hidden="true" /></RouteLink>
           </div>
-        </Shell>
-      )}
+        </div>
+      </Shell>
 
-      {!user && <HowItWorks />}
-      {!user && <OwnerCta onStart={() => navigate({ name: 'create-listing' })} />}
-      <div className="home-reward-section"><SignupRewardOffer /></div>
-      <Footer onNavigate={navigate} />
+      <Footer />
     </div>
   );
 }
@@ -368,10 +284,10 @@ function Shell({ children, className = '' }: { children: React.ReactNode; classN
   return <section className={`max-w-[1400px] mx-auto px-4 sm:px-6 ${className}`}>{children}</section>;
 }
 
-/** Horizontal, snap-scrolling on mobile; sparse rails center capped cards on desktop. */
+/** Horizontal, snap-scrolling on mobile; sparse rails keep capped cards on desktop. */
 function Rail({ children, count }: { children: React.ReactNode; count: number }) {
   const columns = count <= 2
-    ? 'lg:grid-cols-[repeat(auto-fit,minmax(280px,360px))] lg:justify-center'
+    ? 'lg:grid-cols-[repeat(auto-fit,minmax(280px,360px))]'
     : 'lg:grid-cols-4';
   return (
     <div className={`flex lg:grid ${columns} gap-3 sm:gap-4 overflow-x-auto lg:overflow-visible no-scrollbar snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0 animate-cross-fade`}>
@@ -385,11 +301,12 @@ function RailItem({ children }: { children: React.ReactNode }) {
 }
 
 function Hero({
-  onSearch, radius, onRadiusChange,
+  onSearch, radius, onRadiusChange, requestsEnabled,
 }: {
   onSearch: ReturnType<typeof useRouter>['navigate'];
   radius: SearchRadius;
   onRadiusChange: (radius: SearchRadius) => void;
+  requestsEnabled: boolean;
 }) {
   const [searchDraft] = useState(savedSearchState);
   return (
@@ -398,22 +315,23 @@ function Hero({
     <section className="marketplace-hero">
       <div className="marketplace-hero-inner">
         <div className="marketplace-hero-copy">
-          <p className="marketplace-eyebrow">A neighborhood marketplace</p>
-          <h1>Good things,<br /><em>close to home.</em></h1>
-          <p>Find the useful things you need from people just around the corner.</p>
-          <button type="button" className="marketplace-hero-link" onClick={() => onSearch({ name: 'search' })}>Explore what’s nearby <ArrowRight size={17} /></button>
-          <p className="marketplace-hero-note">Made for sharing, right where you live.</p>
+          <h1>More moments. Less stuff.</h1>
+          <p>For the projects, plans and little adventures ahead, rent what you need from people nearby.</p>
+          <div className="marketplace-hero-actions">
+            <RouteLink route={{ name: 'create-listing' }}>List an item <ArrowRight size={16} aria-hidden="true" /></RouteLink>
+            {requestsEnabled && <RouteLink route={{ name: 'need-something' }}>Request an item <ArrowRight size={16} aria-hidden="true" /></RouteLink>}
+          </div>
         </div>
 
-        <figure className="marketplace-hero-media" role="group" aria-label="Marketplace inspiration">
-          <div className="marketplace-hero-image">
-            <img src="https://images.pexels.com/photos/31726722/pexels-photo-31726722.jpeg?auto=compress&cs=tinysrgb&w=1100&h=850&fit=crop" alt="A portable projector" />
-          </div>
-          <figcaption>Make a night of it.</figcaption>
-        </figure>
-        <div className="marketplace-hero-aside" aria-hidden="true">
-          <img src="https://images.pexels.com/photos/19969452/pexels-photo-19969452.jpeg?auto=compress&cs=tinysrgb&w=500&h=700&fit=crop" alt="" />
-          <span><Sparkles size={16} /> Good finds, shared locally</span>
+        <div className="marketplace-hero-photo">
+          <img
+            src="https://images.pexels.com/photos/4505166/pexels-photo-4505166.jpeg?auto=compress&cs=tinysrgb&w=1100&h=850&fit=crop"
+            alt=""
+            width={1100}
+            height={850}
+            fetchPriority="high"
+          />
+          <p>Make room<br />for what matters.</p>
         </div>
 
         <div className="marketplace-hero-search">
@@ -437,7 +355,7 @@ function Hero({
               end: p.endDate,
             })}
           />
-          </div>
+        </div>
       </div>
     </section>
   );
@@ -481,78 +399,22 @@ function CategoryTile({ category, onClick }: { category: Category; onClick: () =
       <span className="home-category-name">
         {category.name}
       </span>
-        <ArrowRight size={15} aria-hidden="true" />
     </button>
   );
 }
 
-const STEPS = [
-  { title: 'Discover', desc: 'Search by item, place and the dates you need it.' },
-  { title: 'Request', desc: 'Pick your dates and send a request to the owner.' },
-  { title: 'Rent', desc: 'Pay securely once the owner approves, then pick it up.' },
-  { title: 'Return', desc: 'Hand it back, mark it returned, leave a review.' },
-];
-
-function HowItWorks() {
-  return (
-    <Shell className="home-explainer-section pt-14 sm:pt-20">
-      <div className="rounded-card-xl border border-app bg-card p-6 sm:p-10">
-        <SectionHeader title="How YBuy works" subtitle="Four steps, start to finish." className="mb-8" />
-        <ol className="home-steps grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-4">
-          {STEPS.map((step) => {
-            return (
-              <li key={step.title}>
-                <div>
-                  <h3 className="font-semibold text-main font-display">{step.title}</h3>
-                  <p className="text-sm text-sec mt-1 leading-relaxed">{step.desc}</p>
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-      </div>
-    </Shell>
-  );
-}
-
-function OwnerCta({ onStart }: { onStart: () => void }) {
-  return (
-    <Shell className="home-owner-section pt-6 sm:pt-8">
-      <div className="rounded-card-xl bg-subtle p-6 sm:p-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 sm:gap-8">
-        <div className="min-w-0 max-w-xl">
-          <h2 className="text-xl sm:text-2xl font-bold text-main font-display leading-tight">
-            Rent out what you already own
-          </h2>
-          <p className="mt-2 text-sm text-sec leading-relaxed">
-            Add photos, set available dates and choose which requests to approve.
-          </p>
-        </div>
-        <Button
-          size="md"
-          variant="primary"
-          onClick={onStart}
-          className="w-full sm:w-auto shrink-0"
-          trailingIcon={<ArrowRight size={16} />}
-        >
-          List an item
-        </Button>
-      </div>
-    </Shell>
-  );
-}
-
-function Footer({ onNavigate }: { onNavigate: ReturnType<typeof useRouter>['navigate'] }) {
+function Footer() {
   return (
     <footer>
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-5">
           <div className="flex items-center gap-2.5">
-            <BrandLogo />
+            <span className="reference-wordmark"><span aria-hidden="true">y</span>ybuy</span>
           </div>
           <nav className="flex items-center gap-6 text-sm text-sec">
-            <button onClick={() => onNavigate({ name: 'search' })} className="hover:text-main transition-colors duration-fast">Browse</button>
-            <button onClick={() => onNavigate({ name: 'create-listing' })} className="hover:text-main transition-colors duration-fast">List an item</button>
-            <button onClick={() => onNavigate({ name: 'guidelines' })} className="hover:text-main transition-colors duration-fast">Guidelines</button>
+            <RouteLink route={{ name: 'search' }} className="hover:text-main transition-colors duration-fast">Browse</RouteLink>
+            <RouteLink route={{ name: 'create-listing' }} className="hover:text-main transition-colors duration-fast">List an item</RouteLink>
+            <RouteLink route={{ name: 'guidelines' }} className="hover:text-main transition-colors duration-fast">Guidelines</RouteLink>
           </nav>
           <p className="text-sm text-muted">© {new Date().getFullYear()} YBuy</p>
         </div>

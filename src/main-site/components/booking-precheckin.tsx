@@ -137,7 +137,7 @@ export function BookingPrecheckin({
       }
     }}>
       <p className="text-sm font-semibold text-main">Choose a {kind} time</p>
-      <p className="text-xs text-sec">Only the owner’s available hours are shown. Each time reserves a one-hour handoff window; past times are hidden.</p>
+      <p className="text-xs text-sec">Choose an available one-hour handoff window.</p>
       {options.map(option => <fieldset key={option.window} className="space-y-2" disabled={busy}>
         <legend className="text-sm font-semibold text-main">{SLOT_LABELS[option.window]}</legend>
         <div className="flex flex-wrap gap-2">{option.hours.map(value => <button key={value} type="button"
@@ -154,7 +154,7 @@ export function BookingPrecheckin({
       <label className="block text-sm text-main">Optional note
         <textarea value={note} maxLength={240} rows={2}
           onChange={(event) => setNote(event.target.value)}
-          placeholder="Example: I’ll arrive about 10 minutes early."
+          placeholder="I’ll arrive about 10 minutes early."
           className="mt-2 w-full rounded-card border border-app bg-card px-3 py-2 text-sm text-main focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" />
       </label>
       <div className="flex flex-wrap gap-2">

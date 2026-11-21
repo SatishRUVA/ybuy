@@ -46,8 +46,8 @@ export function FavoritesPage() {
           as="h1"
           title="Saved items"
           subtitle={listings && listings.length > 0
-            ? `${listings.length} ${listings.length === 1 ? 'item' : 'items'} you're keeping an eye on.`
-            : 'Items you save are kept here while you decide.'}
+            ? `${listings.length} saved ${listings.length === 1 ? 'item' : 'items'}`
+            : 'Keep your favorites in one place.'}
           className="mb-6"
         />
         {error && <Alert tone="warning" className="mb-4">{error}</Alert>}
@@ -57,7 +57,7 @@ export function FavoritesPage() {
           <EmptyState
             icon={<Heart size={20} />}
             title="Nothing saved yet"
-            description="Tap the heart on any listing and it lands here, so you can compare before you book."
+            description="Save items you like to find them here later."
             actionLabel="Browse rentals"
             onAction={() => navigate({ name: 'search' })}
           />

@@ -480,9 +480,9 @@ export function BookingHandoff({ bookingId, kind }: Props) {
         </PageBackButton>
         <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-main font-display sm:text-3xl">{handoff.is_owner ? 'Owner flow' : 'Renter flow'}</h1>
+            <h1 className="text-2xl font-bold text-main font-display sm:text-3xl">{kind === 'pickup' ? 'Pickup' : 'Return'}</h1>
             <p className="mt-1 text-sm text-sec">
-              You’re {handoff.is_owner ? 'lending' : 'renting'} · {kind === 'pickup' ? 'Pickup handoff' : 'Return handoff'} · Confirm the item condition together.
+              You’re {handoff.is_owner ? 'lending' : 'renting'} · Confirm the item condition together.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -721,7 +721,7 @@ export function BookingHandoff({ bookingId, kind }: Props) {
                         onClick={() => setPhotoFiles(current => current.filter((_, position) => position !== index))}>Remove</Button>
                     </li>)}
                   </ul>}
-                  <p className="text-xs text-sec">Publishing confirms your record and shares an immutable revision with the renter. Drafts remain private.</p>
+                  <p className="text-xs text-sec">Publishing shares a permanent record with the renter. Drafts stay private.</p>
                   <div className="flex flex-wrap gap-3">
                     <Button type="submit" disabled={!canPublishInspection || draftConflict} loading={busy === 'publish-inspection'}>Publish &amp; confirm</Button>
                     <Button type="button" variant="secondary" disabled={!can('save_draft') || draftConflict} loading={busy === 'save-inspection'}
@@ -835,7 +835,7 @@ export function BookingHandoff({ bookingId, kind }: Props) {
             {kind === 'return' && handoff.is_owner && workflow.allowed_actions.includes('report_receipt') && (
               <details className="mb-5 rounded-card border border-app p-4">
                 <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-main">Received the item but cannot verify the code?</summary>
-                <p className="mt-2 text-sm text-sec">Report physical receipt for support verification. This does not complete the return or authorize settlement.</p>
+                <p className="mt-2 text-sm text-sec">Report receipt for support to verify. This doesn't complete the return or authorize settlement.</p>
                 <form className="mt-3 space-y-3" onSubmit={event => {
                   event.preventDefault();
                   void perform('report-receipt', async () => {
@@ -880,7 +880,7 @@ export function BookingHandoff({ bookingId, kind }: Props) {
         {!done && (
           <details className="mb-5 rounded-card-lg border border-app bg-card p-4 sm:p-5">
             <summary className="cursor-pointer font-semibold text-main focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Report a no-show, issue, or dispute</summary>
-            <p className="mt-2 text-sm text-sec">Use this if either participant is unavailable, the inspection is disputed, or you need support with an early or overdue return. Verification is still required; an issue report cannot mark an item picked up or returned.</p>
+            <p className="mt-2 text-sm text-sec">Report an issue if someone is unavailable, an inspection is disputed, or you need help with an early or late return. Pickup or return still requires verification.</p>
             <form onSubmit={(event) => void handleIssue(event)} className="mt-4 space-y-3">
               <label className="block text-sm font-semibold text-main">Case type
                 <select value={issueKind} onChange={(event) => {
@@ -920,7 +920,7 @@ export function BookingHandoff({ bookingId, kind }: Props) {
         {kind === 'return' && !done && booking.isOwner && booking.depositCollectionModel === 'authorization' && booking.deposit > 0 && (
           <details className="mb-5 rounded-card-lg border border-app bg-card p-4 sm:p-5">
             <summary className="cursor-pointer font-semibold text-main">Submit a damage claim</summary>
-            <p className="mt-2 text-sm text-sec">Describe newly discovered damage, missing accessories, or functional issues and attach evidence. A staff decision is required; the deposit is never automatically captured while a claim is disputed.</p>
+            <p className="mt-2 text-sm text-sec">Describe any new damage, missing accessories or functional issues and attach evidence. Staff must review the claim; a disputed deposit is not captured automatically.</p>
             <form onSubmit={(event) => void handleDepositClaim(event)} className="mt-4 space-y-3">
               <label className="block text-sm font-semibold text-main">Claim subject
                 <input required minLength={3} maxLength={160} value={claimSubject} onChange={(event) => setClaimSubject(event.target.value)} className="mt-1.5 h-11 w-full rounded-card border border-app bg-card px-3 text-sm font-normal text-main" />

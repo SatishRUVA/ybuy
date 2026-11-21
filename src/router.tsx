@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
 import { readSearchState, searchStateParams, type SearchState } from '@/lib/search-state';
 import { UUID_RE } from '@/lib/text-safety';
 
@@ -252,4 +252,15 @@ export function useRouter() {
   const ctx = useContext(RouterContext);
   if (!ctx) throw new Error('useRouter must be used within RouterProvider');
   return ctx;
+}
+
+export function RouteLink({ route, onClick, onNavigate, ...props }: Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> & { route: Route; onNavigate?: () => void }) {
+  const { navigate } = useRouter();
+  return <a {...props} href={routeToPath(route)} onClick={event => {
+    onClick?.(event);
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || (props.target && props.target !== '_self') || props.download) return;
+    event.preventDefault();
+    onNavigate?.();
+    navigate(route);
+  }} />;
 }

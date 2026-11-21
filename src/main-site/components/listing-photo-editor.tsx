@@ -3,9 +3,11 @@ import { ArrowLeft, ArrowRight, Check, ImagePlus, Plus, RotateCcw, Trash2, Uploa
 import { ListingAction as Button, ListingIconAction as IconButton, ListingSkeleton as Skeleton } from '@/main-site/components/listing-ui';
 import type { ListingPhotoDecision } from '@/lib/listing-ai';
 
-export function ListingPhotoEditor({ photos, maximum, disabled, warnings, decisions, focusIndex, onFocusHandled, uploadProgress, preventLastPhotoRemoval = false, onAdd, onDrop, onReplace, onRemove, onReorder, error }: {
+export function ListingPhotoEditor({ photos, maximum, maxBytes, minDimension, disabled, warnings, decisions, focusIndex, onFocusHandled, uploadProgress, preventLastPhotoRemoval = false, onAdd, onDrop, onReplace, onRemove, onReorder, error }: {
   photos: string[];
   maximum: number;
+  maxBytes: number;
+  minDimension: number;
   disabled: boolean;
   warnings: Record<string, string>;
   decisions: Record<string, ListingPhotoDecision>;
@@ -24,6 +26,7 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, decisi
   const [dragging, setDragging] = useState(false);
   const active = Math.min(selected, Math.max(0, photos.length - 1));
   const activePhoto = photos[active];
+  const maxSize = maxBytes % 1048576 === 0 ? `${maxBytes / 1048576} MB` : `${maxBytes.toLocaleString()} bytes`;
   useEffect(() => {
     if (focusIndex === null || !photos[focusIndex]) return;
     setSelected(focusIndex);
@@ -34,24 +37,28 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, decisi
     onFocusHandled();
   }, [focusIndex, onFocusHandled, photos]);
   return <div id="listing-photo-editor">
-    <div aria-label="Listing photos"
+    <div role="group" aria-label="Listing photos"
       onDragOver={event => { event.preventDefault(); if (!disabled) setDragging(true); }}
       onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
       onDrop={event => { event.preventDefault(); setDragging(false); if (!disabled) onDrop(Array.from(event.dataTransfer.files)); }}>
+      {activePhoto && <div className={`owner-photo-stage ${dragging ? 'is-dragging' : ''}`}>
+        <img src={activePhoto} alt={`Selected listing photo ${active + 1}`} />
+      </div>}
       <button id="listing-add-photo" type="button" aria-invalid={Boolean(error)} disabled={disabled || photos.length >= maximum} onClick={onAdd}
-        aria-label={photos.length === 0 ? 'Add your cover photo' : 'Upload listing photos'}
-        aria-describedby={error ? 'listing-photos-error' : 'listing-photo-help'}
+        aria-label={photos.length === 0 ? 'Choose photos' : 'Add another photo'}
+        aria-describedby={error ? 'listing-photo-help listing-photos-error' : 'listing-photo-help'}
+        data-has-photos={photos.length > 0}
         className={`owner-photo-drop flex w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed px-4 py-7 text-center transition-colors disabled:opacity-50 ${dragging ? 'border-accent bg-accent-soft' : 'border-strong bg-subtle hover:border-accent'}`}>
         <span>
           <UploadCloud size={32} strokeWidth={1.6} aria-hidden="true" className="text-accent" />
         </span>
-        <span className="text-sm font-semibold text-main">{photos.length ? 'Add more item photos' : 'Add photos of your item'}</span>
-        <span className="text-xs text-sec">or click to upload</span>
-        <span id="listing-photo-help" className="text-[11px] text-sec mt-1">JPEG, PNG or WebP &middot; Choose several photos at once</span>
+        <span className="text-sm font-semibold text-main">{photos.length ? 'Add another photo' : 'Choose photos'}</span>
+        <span className="text-xs text-sec">or drag and drop them here</span>
+        <span id="listing-photo-help" className="text-[11px] text-sec mt-1">JPEG, PNG or WebP &middot; Max {maxSize} each &middot; Min {minDimension} &times; {minDimension} px</span>
       </button>
-      <div className="mt-3 flex gap-2 overflow-x-auto py-1">
+      {(photos.length > 0 || uploadProgress) && <div className="mt-3 flex gap-2 overflow-x-auto py-1">
         {photos.map((photo, index) => <button key={photo} id={`listing-photo-${index}`} type="button" disabled={disabled} onClick={() => setSelected(index)}
-          aria-label={`${index === 0 ? 'Select cover photo' : `Select photo ${index + 1}`}${decisions[photo] ? `, ${decisions[photo].decision.replace('_', ' ')}: ${decisions[photo].reason}` : warnings[photo] ? ', quality suggestion' : ''}`}
+          aria-label={`${index === 0 ? 'Select cover photo' : `Select photo ${index + 1}`}${decisions[photo] ? `, ${decisions[photo].decision.replace('_', ' ')}: ${decisions[photo].reason}` : warnings[photo] ? ', photo notice' : ''}`}
           aria-pressed={active === index} className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-card border-2 ${decisions[photo] && decisions[photo].decision !== 'approved' ? decisions[photo].decision === 'manual_review' ? 'border-warning' : 'border-error' : active === index ? 'border-accent' : 'border-app'}`}>
           <img src={photo} alt={`Listing photo ${index + 1}${index === 0 ? ', cover photo' : ''}`} className="h-full w-full object-cover" />
           {index === 0 && <span className="absolute bottom-0 inset-x-0 bg-accent text-accent-text text-[10px] py-0.5">Cover</span>}
@@ -64,12 +71,12 @@ export function ListingPhotoEditor({ photos, maximum, disabled, warnings, decisi
           <Skeleton className="h-full w-full" />
           <span className="absolute inset-x-0 bottom-1 text-center text-[9px] font-medium text-sec">Uploading…</span>
         </div>)}
-        {photos.length < maximum && <button type="button" disabled={disabled} onClick={onAdd} aria-label={`Add supporting photo ${photos.length + 1}`}
+        {photos.length > 0 && photos.length < maximum && <button type="button" disabled={disabled} onClick={onAdd} aria-label={`Add supporting photo ${photos.length + 1}`}
           className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-card border border-dashed border-strong text-accent">
           <Plus size={18} aria-hidden="true" /><span className="text-[11px] font-semibold">Add more</span>
           <span className="text-[10px] text-sec">{photos.length}/{maximum} photos</span>
         </button>}
-      </div>
+      </div>}
       {photos.length > 0 && <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-sec">Photo {active + 1} of {photos.length}</span>
         <div className="flex">

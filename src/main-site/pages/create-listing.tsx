@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, BellRing, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Gavel, ImagePlus, MapPin, Minus, Plus, ShieldCheck, Sparkles, Truck, X, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Gavel, MapPin, Minus, Plus, ShieldCheck, Sparkles, Truck, X, Zap } from 'lucide-react';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import type { Category } from '@/data';
@@ -39,10 +39,14 @@ import { fetchOwnerEarningsQuote, type ListingPriceQuote } from '@/lib/listing-p
 import { fetchMainItemRequest, type MainItemRequest } from '../request-flow';
 import { RequestFulfillment } from '../components/request-fulfillment';
 import { maskListingContact } from '../../../supabase/functions/_shared/listing-contact';
+import './create-listing.css';
 
-const STEPS = ['Photos', 'Details', 'Rental settings', 'Availability', 'Location', 'Review'] as const;
-const STEP_TITLES = ['Add photos of your item', 'Review and edit item details', 'Set rental settings', 'Set availability', 'Set location and handoff options', 'Review and publish'];
+const STEPS = ['Photos', 'Details', 'Pricing', 'Availability', 'Pickup', 'Review'] as const;
+const STEP_TITLES = ['Add your photos', 'Describe your item', 'Set your price', 'Choose your dates', 'Plan pickup and return', 'Review your listing'];
 const BLOCKING_FLAG_TYPES = new Set<ListingFlag['type']>(['prohibited_item', 'drug_related', 'profanity', 'content_violation']);
+const deferLocalPhotoReview = import.meta.env.DEV
+  && ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+  && ['localhost', '127.0.0.1', '[::1]'].includes(new URL(import.meta.env.VITE_SUPABASE_URL).hostname);
 const EMPTY_PICKUP: PickupLocationValue = { formattedAddress: '', streetAddress: '', city: '', state: '', postalCode: '', country: '', latitude: null, longitude: null, placeId: '' };
 const CONDITION_LABELS: Record<string, string> = { new: 'New', like_new: 'Like new', good: 'Good', fair: 'Fair' };
 const formatListingDate = (date: string) => date ? new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Choose date';
@@ -99,6 +103,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [step, setStep] = useState(1);
+  const [furthestStep, setFurthestStep] = useState(1);
   const [attempted, setAttempted] = useState(false);
   const [working, setWorking] = useState(false);
   const operation = useRef(false);
@@ -143,6 +148,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   const fileInput = useRef<HTMLInputElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const summary = useRef<HTMLDivElement>(null);
+  const initialStepReady = useRef(false);
 
   useEffect(() => {
     if (!completed) return;
@@ -213,7 +219,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
         setCategories(rows.map((category) => toUiCategory(category, new Map())));
         setSourceRequest(request);
         if (ownRow) {
-          if (!Number.isSafeInteger(ownRow.revision)) throw new Error('Listing editing requires the latest database migration.');
+          if (!Number.isSafeInteger(ownRow.revision)) throw new Error('Listing editing is unavailable right now. Please try again later.');
           revision.current = ownRow.revision!;
           idRef.current = ownRow.id;
           setListingId(ownRow.id);
@@ -313,8 +319,15 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
 
   useEffect(() => {
     if (!ready || completed) return;
-    const id = ['listing-add-photo', 'listing-title', 'listing-price', 'listing-availability', 'pickup-address'][step - 1];
-    const timer = requestAnimationFrame(() => focusListingControl(id ? document.getElementById(id) : heading.current));
+    setFurthestStep((current) => Math.max(current, step));
+    if (!initialStepReady.current) {
+      initialStepReady.current = true;
+      return;
+    }
+    const timer = requestAnimationFrame(() => {
+      heading.current?.focus({ preventScroll: true });
+      heading.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    });
     return () => cancelAnimationFrame(timer);
   }, [step, ready, completed]);
   useEffect(() => {
@@ -326,7 +339,13 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   useEffect(() => {
     if (!focusTarget) return;
     const timer = requestAnimationFrame(() => {
-      focusListingControl(document.getElementById(focusTarget));
+      const target = document.getElementById(focusTarget);
+      let disclosure = target?.closest('details');
+      while (disclosure) {
+        disclosure.open = true;
+        disclosure = disclosure.parentElement?.closest('details') ?? null;
+      }
+      focusListingControl(target);
       setFocusTarget(null);
     });
     return () => cancelAnimationFrame(timer);
@@ -481,7 +500,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
           : result.status === 'archived' ? 'Changes saved. This listing remains archived.'
             : result.status === 'suspended' ? 'Changes saved. This listing remains suspended.' : 'Listing changes saved.');
         if (publish) {
-          if (result.status !== 'published' && result.status !== 'pending_approval') throw new Error('The backend has not confirmed publication. Your listing has not been marked live.');
+          if (result.status !== 'published' && result.status !== 'pending_approval') throw new Error('We could not confirm publication. Your listing is not live yet.');
           setCompleted(true);
         }
         return true;
@@ -495,13 +514,13 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
     finally { saveInFlight.current = null; }
   }
 
-  async function analyze(id: string, urls: string[]) {
+  async function analyze(id: string, urls: string[], applySuggestions = true) {
     if (!urls.length) { setFlags([]); return false; }
     const run = ++aiRun.current;
-    setAiLoading(true); setAiError(null);
+    setAiLoading(true); setAiError(null); setPhotoError(null);
     const captured = formRef.current;
     try {
-      const result = await moderateListingContent({ listingId: id, photoUrls: urls, title: captured.title, description: captured.description });
+      const result = await moderateListingContent({ listingId: id, photoUrls: urls, title: captured.title, description: captured.description }, applySuggestions ? 'suggestions' : 'publication');
       if (run !== aiRun.current) return false;
       setFlags(result.flags);
       setPhotoDecisions(Object.fromEntries(result.photoDecisions.map((decision) => [urls[decision.photoIndex], decision])));
@@ -514,6 +533,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
       if (problem || photoFlag) {
         setPhotoError(problem ? `Photo ${problem.photoIndex + 1}: ${problem.reason} Replace or recheck this photo before continuing.` : photoFlag!.reason);
         if (problem) setPhotoFocusIndex(problem.photoIndex);
+        if (!applySuggestions) setStep(1);
         return false;
       }
       if (result.masked.changed) {
@@ -525,7 +545,9 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
         setForm(next);
         changed();
         setNotice('Contact information was removed. Review the updated details before continuing.');
+        if (!applySuggestions) { setStep(2); return false; }
       }
+      if (!applySuggestions) return true;
       if (!result.suggestion) {
         setAiError(result.aiError || 'AI could not identify enough details. Please describe the item yourself.');
         return true;
@@ -547,20 +569,27 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
       if (result.masked.changed) setNotice('Contact information was removed. Review the updated details before continuing.');
       return true;
     } catch (error) {
-      if (run === aiRun.current) setAiError(message(error, 'AI suggestions are unavailable. Continue manually.'));
+      if (run === aiRun.current) {
+        if (applySuggestions) setAiError(message(error, 'AI suggestions are unavailable. Continue manually.'));
+        else {
+          setPhotoError(message(error, 'Photo review could not be completed. Recheck your photos before publishing.'));
+          setStep(1);
+        }
+      }
       return false;
     } finally { if (run === aiRun.current) setAiLoading(false); }
   }
 
-  async function reviewDetails(publishing = false): Promise<boolean> {
+  async function reviewDetails(publishing = false, photoReviewJustCompleted = false): Promise<boolean> {
     const current = formRef.current;
     const photoProblem = Object.values(photoDecisions).find(decision => decision.decision !== 'approved');
-    if (photoProblem || blockingFlags.some(flag => flag.source === 'photo' || flag.source === 'both')) {
+    if (!photoReviewJustCompleted && (photoProblem || blockingFlags.some(flag => flag.source === 'photo' || flag.source === 'both'))) {
       setPublishError('Resolve the flagged photos before continuing. Replace or recheck the highlighted photo.');
       setStep(1);
       if (photoProblem) setPhotoFocusIndex(photoProblem.photoIndex);
       return false;
     }
+    if (!publishing && deferLocalPhotoReview && (!hasPhotoReview.current || photoChangesPending.current)) return true;
     if (!publishing && reviewedText.current === textKey(current)) return true;
     const result = await moderateListingContent({ listingId: await ensureDraft(), photoUrls: photos,
       title: current.title, description: listingText(current), reviewMode: 'text' }, 'publication');
@@ -616,12 +645,12 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
         try {
           const prepared = await prepareListingPhoto(file, policy.min_photo_dimension, Math.min(policy.max_photo_bytes, MAX_LISTING_PHOTO_BYTES));
           const safeFile = prepared.file;
-          const { width, height } = prepared;
           let url: string;
           if (id) {
             const result = await uploadListingPhoto(id, safeFile, replacing ?? next.length, replacing === undefined ? undefined : next[replacing]);
             url = result.url;
-            if (result.warning || width < 1000 || height < 1000) setWarnings((current) => ({ ...current, [url]: result.warning ?? 'Try a higher-resolution, well-lit photo so renters can inspect the item.' }));
+            const warning = result.warning;
+            if (warning) setWarnings((current) => ({ ...current, [url]: warning }));
           } else {
             url = URL.createObjectURL(safeFile);
             localPhotoUrls.current.add(url);
@@ -629,7 +658,6 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
               URL.revokeObjectURL(next[replacing]);
               localPhotoUrls.current.delete(next[replacing]);
             }
-            if (width < 1000 || height < 1000) setWarnings((current) => ({ ...current, [url]: 'Try a higher-resolution, well-lit photo so renters can inspect the item.' }));
           }
           if (replacing === undefined) next.push(url); else next[replacing] = url;
           if (replacing === undefined) nextFiles.push(id ? null : safeFile); else nextFiles[replacing] = id ? null : safeFile;
@@ -753,10 +781,27 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
     }, false);
   }
 
-  async function continueStep() {
+  async function continueStep(destination = Math.min(STEPS.length, step + 1)) {
     if (saving || working) return;
     setAttempted(true);
     if (fieldsForStep.some((field) => errors[field])) { focusFirstError(fieldsForStep); return; }
+    if (step === 1 && deferLocalPhotoReview) {
+      if (!editId && photoFiles.some(Boolean)) {
+        setWorking(true); operation.current = true; setPhotoError(null);
+        try {
+          const id = await ensureDraft();
+          await uploadStagedPhotos(id);
+          photoChangesPending.current = true;
+        } catch (error) {
+          setPhotoError(message(error, 'Could not prepare your photos. Click Continue to retry.'));
+          return;
+        } finally {
+          setWorking(false); operation.current = false; setUploadProgress(null);
+        }
+      }
+      setAttempted(false); setStep(2);
+      return;
+    }
     if (!editId && step === 1 && (!hasPhotoReview.current || photoChangesPending.current || photoFiles.some(Boolean))) {
       setPreparingDetails(true); setWorking(true); operation.current = true; setPhotoError(null);
       try {
@@ -799,7 +844,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
     }
     try {
       if (editId && !await persist(false)) return;
-      setAttempted(false); setStep((current) => Math.min(STEPS.length, current + 1));
+      setAttempted(false); setStep(destination);
     } finally { setPreparingDetails(false); }
   }
   async function goBack() {
@@ -843,7 +888,12 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
         return;
       }
       if (editId && status === 'draft' && !await persist(false)) return;
-      if (!await reviewDetails(true)) return;
+      let photoReviewJustCompleted = false;
+      if (deferLocalPhotoReview && (!hasPhotoReview.current || photoChangesPending.current)) {
+        if (!await analyze(await ensureDraft(), photos, false)) return;
+        photoReviewJustCompleted = true;
+      }
+      if (!await reviewDetails(true, photoReviewJustCompleted)) return;
       await persist(true);
     } catch (error) { setPublishError(message(error, 'The required listing review did not finish. Retry publication.')); }
     finally { operation.current = false; setWorking(false); }
@@ -876,7 +926,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
     hasPhotoReview.current = false;
     setForm({ ...EMPTY_FORM, start: todayIso(), end: addDaysIso(todayIso(), Math.min(LISTING_DEFAULT_AVAILABLE_DAYS, policy.listing_duration_days)) });
     setListingId(null); setStatus('draft'); setCompleted(false); setPhotos([]); setPhotoFiles([]);
-    setPickup(EMPTY_PICKUP); setPickupConfirmed(false); setStep(1); setAttempted(false);
+    setPickup(EMPTY_PICKUP); setPickupConfirmed(false); setStep(1); setFurthestStep(1); setAttempted(false);
     setIncludedItem(''); setIncludedError(null);
     setVersion(0); setSavedVersion(0); setSaveError(null); setPublishError(null); setNotice(null); setShareCopied(false);
     setAiLoading(false); setAiApplied(false); setAiError(null); setFlags([]); setPhotoDecisions({});
@@ -945,7 +995,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
               setConfirmedAuction({ ...auction, starts_at: auction.starts_at, ends_at: auction.ends_at });
             }
           }} />}
-          <p className="mt-4 text-sm text-sec">Bidding is optional. You can manage it later from Edit listing.</p>
+          <p className="mt-4 text-sm text-sec">Bidding is optional and can be managed later.</p>
         </div>
       </details>
       <details id="listing-bidding-rules" className="owner-bidding-rules">
@@ -956,7 +1006,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
     {status === 'published' && biddingFlag.error && <Alert tone="warning" title="Bidding options unavailable">{biddingFlag.error} Your listing is still live.</Alert>}
     {status === 'published' && sourceRequest && <RequestFulfillment request={sourceRequest} publishedListingId={listingId!} />}
     {status === 'pending_approval' && sourceRequest && <div className="space-y-3">
-      <p className="text-sm text-sec">Return after approval to notify the renter; pending listings cannot be linked or advertised as available.</p>
+      <p className="text-sm text-sec">Once approved, return here to notify the renter.</p>
       <Button variant="secondary" onClick={() => navigate({ name: 'edit-listing', id: listingId!, requestId: sourceRequest.id })}>Review this listing and request</Button>
     </div>}
     {!editId && status !== 'published' && <div className="text-center"><Button variant="ghost" onClick={startFresh}>List another item</Button></div>}
@@ -964,24 +1014,24 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
 
   const invalid = (field: keyof FlowErrors) => attempted && fieldsForStep.includes(field) ? errors[field] : undefined;
   const fieldProps = (field: ListingField) => ({ 'aria-invalid': Boolean(invalid(field)), 'aria-describedby': invalid(field) ? `${LISTING_FIELD_IDS[field]}-error` : undefined });
-  const nextLabel = step === STEPS.length ? editId && status !== 'draft' ? 'Save changes' : 'Publish listing' : 'Continue';
+  const nextLabel = step === STEPS.length ? editId && status !== 'draft' ? 'Save changes' : 'Publish listing' : `Next: ${STEPS[step].toLowerCase()}`;
   const stepHeading = step === STEPS.length && status === 'archived' ? 'Review archived listing'
     : step === STEPS.length && status === 'suspended' ? 'Review listing changes' : STEP_TITLES[step - 1];
   const activePreview = Math.min(previewPhoto, Math.max(0, photos.length - 1));
   return (
-    <div className="owner-listing min-h-screen pb-10">
-      <div className="owner-listing-shell max-w-3xl mx-auto px-4 sm:px-6 pt-5 sm:pt-7">
+    <div className="owner-listing listing-studio min-h-screen pb-10">
+      <div className="owner-listing-shell listing-studio-shell mx-auto px-4 sm:px-6">
         {sourceRequest && <Alert tone="info" title={`Listing for: ${sourceRequest.title}`}>
           Requested {sourceRequest.preferred_start_date} – {sourceRequest.preferred_end_date} in {sourceRequest.location_label}. Review the suggested details and enter your own item photos and pickup address.
         </Alert>}
         {sourceRequestError && <Alert tone="warning" title="Saved request context unavailable">{sourceRequestError}</Alert>}
         {sourceRequest && editId && status === 'published' && <RequestFulfillment request={sourceRequest} publishedListingId={listingId!} />}
-        <div className="owner-listing-toolbar flex flex-wrap items-center justify-between gap-3 mb-2">
-          <div className="flex min-w-0 flex-col items-start gap-2">
+        <header className="listing-studio-header">
+          <div className="owner-listing-toolbar">
             <Button variant="ghost" size="sm" disabled={working || saving} icon={<ArrowLeft aria-hidden="true" size={16} />} onClick={() => void leavePage()}>
               {requestId ? 'Back to request matches' : 'Back to my listings'}
             </Button>
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight text-main">{editId ? 'Manage your listing' : 'Create a listing'}</h1>
+            <h1>{editId ? 'Edit listing' : 'List an item'}</h1>
           </div>
           {editId && <div className="flex flex-wrap items-center gap-2">
           <span role="status" className="inline-flex items-center gap-2 text-xs text-sec min-h-11">
@@ -989,26 +1039,37 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
           </span>
           {status === 'draft' && <Button size="sm" variant="secondary" disabled={working || saving} loading={saving} onClick={() => void persist(false)}>Save draft</Button>}
           </div>}
-        </div>
+        </header>
         <p className="owner-listing-mobile-step mb-2 text-sm font-semibold text-main sm:hidden" aria-live="polite">Step {step} of {STEPS.length}<span className="mx-2 text-sec" aria-hidden="true">·</span>{STEPS[step - 1]}</p>
-        <ol aria-label="Listing progress" className="owner-listing-progress grid grid-cols-6 mb-4 sm:mb-6">
-          {STEPS.map((label, index) => <li key={label} className="relative min-w-0" data-reached={index + 1 <= step}>
-            <button type="button" disabled={working || saving || index + 1 > step} onClick={() => { setStep(index + 1); setAttempted(false); }}
-              aria-current={step === index + 1 ? 'step' : undefined}
-              className={`owner-step-button relative flex w-full min-h-16 flex-col items-center gap-2 px-1 py-2 text-[10px] sm:text-xs disabled:cursor-default ${step === index + 1 ? 'text-accent' : 'text-sec'}`}>
-              <span className={`owner-step-number relative grid h-6 w-6 shrink-0 place-items-center rounded-full border text-xs font-bold ${index + 1 <= step ? 'bg-accent border-accent text-accent-text' : 'bg-card border-strong text-sec'}`}>{index + 1 < step ? <Check aria-hidden="true" size={12} /> : index + 1}</span>
-              <span className="owner-step-copy text-center"><span className="owner-step-label block font-semibold">{label}</span></span>
-            </button>
-          </li>)}
-        </ol>
         {saveError && <div role="alert" className="owner-listing-save-error mb-5"><Alert tone="error" title="Your changes have not been saved">{saveError}
         <Button variant="secondary" className="mt-3" disabled={working || saving} onClick={() => editId ? void persist(false) : void publish()}>{editId ? 'Retry save' : 'Retry publication'}</Button></Alert></div>}
-        <div className="owner-listing-workspace mx-auto">
+        <div className="listing-studio-layout">
+          <nav className="listing-step-rail" aria-label="Listing steps">
+            <ol aria-label="Listing progress" className="owner-listing-progress">
+              {STEPS.map((label, index) => <li key={label} className="relative min-w-0" data-reached={index + 1 <= furthestStep}>
+                <button type="button" disabled={working || saving || index + 1 > furthestStep} onClick={() => {
+                  if (index + 1 > step) void continueStep(index + 1);
+                  else { setStep(index + 1); setAttempted(false); }
+                }}
+                  aria-label={`${label}, step ${index + 1} of ${STEPS.length}`}
+                  aria-current={step === index + 1 ? 'step' : undefined}
+                  className={`owner-step-button ${step === index + 1 ? 'text-accent' : 'text-sec'}`}>
+                  <span className={`owner-step-number ${index + 1 <= furthestStep ? 'bg-accent border-accent text-accent-text' : 'bg-card border-strong text-sec'}`}>{index + 1 < furthestStep && index + 1 !== step ? <Check aria-hidden="true" size={14} /> : index + 1}</span>
+                  <span className="owner-step-copy"><span className="owner-step-label">{label}</span></span>
+                </button>
+              </li>)}
+            </ol>
+          </nav>
+          <div className="owner-listing-workspace listing-studio-workspace">
           <section className="owner-listing-panel min-w-0 overflow-hidden" role="region" aria-label={`Step ${step}: ${STEPS[step - 1]}`}>
             <div className="owner-listing-panel-heading px-5 sm:px-6 pt-6 pb-5 border-b border-app">
               <div>
                 <h2 ref={heading} tabIndex={-1} className="text-xl font-bold text-main">{stepHeading}</h2>
-                <p className="text-sm text-sec mt-2 leading-relaxed">{['Add up to ' + photoLimit + ' clear photos. We will check them and suggest item details.', 'Check the suggested details, then add the condition and anything renters should know.', 'Choose your daily price, rental packages and booking approval.', 'Select the pickup and return dates your item is available.', 'Set your private pickup location and handoff preferences.', 'Check your listing. You can edit any section before publishing.'][step - 1]}</p></div>
+                <p className="text-sm text-sec mt-2 leading-relaxed">{[
+                  deferLocalPhotoReview ? `Add up to ${photoLimit} clear photos.` : `Add up to ${photoLimit} clear photos. We will check them and suggest item details.`,
+                  deferLocalPhotoReview ? 'Tell people about your item.' : 'Review the suggestions and add your item’s details.',
+                  'Set your daily price and how bookings work.', 'Choose when your item is available.', 'Set your pickup location and times.', 'Check the details before publishing.',
+                ][step - 1]}</p></div>
             </div>
             {notice && <div className="border-b border-app bg-accent-soft px-5 sm:px-6 py-3"><p role="status" className="flex items-start gap-2 text-xs text-accent"><CheckCircle2 size={16} aria-hidden="true" className="shrink-0" />{notice}</p></div>}
             <fieldset key={step} disabled={working || saving}
@@ -1032,35 +1093,40 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                 <span className="sr-only">The next step will show your title and all listing details.</span>
               </div> : <>
               {step === 1 && <>
-                <ListingPhotoEditor photos={photos} maximum={photoLimit} disabled={working || saving} uploadProgress={uploadProgress} preventLastPhotoRemoval={status === 'published'}
+                <ListingPhotoEditor photos={photos} maximum={photoLimit} maxBytes={Math.min(policy.max_photo_bytes, MAX_LISTING_PHOTO_BYTES)} minDimension={policy.min_photo_dimension} disabled={working || saving} uploadProgress={uploadProgress} preventLastPhotoRemoval={status === 'published'}
                   decisions={photoDecisions} focusIndex={photoFocusIndex} onFocusHandled={handlePhotoFocusHandled}
                   warnings={{ ...warnings, ...qualitySuggestions }} error={invalid('photos')} onAdd={() => { setReplaceIndex(null); fileInput.current?.click(); }}
                   onDrop={(files) => void upload(files)} onReplace={(index) => { setReplaceIndex(index); fileInput.current?.click(); }}
                   onRemove={(index) => void removePhoto(index)}
                   onReorder={(from, to) => void reorderPhoto(from, to)} />
-                <input ref={fileInput} aria-label="Upload listing photos" type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only"
+                <input ref={fileInput} aria-hidden="true" tabIndex={-1} type="file" accept="image/jpeg,image/png,image/webp" multiple className="listing-photo-input"
                   disabled={working || saving} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; const target = replaceIndex; setReplaceIndex(null); void upload(files, target ?? undefined); }} />
-                <p className="text-xs text-sec">Choose photos from your camera or device. Use the original photo, not a small thumbnail. JPEG, PNG, or WebP, up to {Math.floor(Math.min(policy.max_photo_bytes, MAX_LISTING_PHOTO_BYTES) / 1048576)} MB each; at least {policy.min_photo_dimension} x {policy.min_photo_dimension} pixels. Photo metadata is removed during upload.</p>
                 {aiLoading && <ListingAiSkeleton />}
                 {photoError && <Alert tone="error" title="Photos need attention before publishing">{photoError}</Alert>}
                 {photos.length > 0 && (photoError || aiError) && <Button variant="secondary" disabled={working || saving || aiLoading}
-                  onClick={() => { photoChangesPending.current = true; void continueStep(); }}>Recheck photos</Button>}
+                  onClick={async () => {
+                    photoChangesPending.current = true;
+                    if (deferLocalPhotoReview && listingId) {
+                      operation.current = true; setWorking(true);
+                      try { await analyze(listingId, photos, false); }
+                      finally { operation.current = false; setWorking(false); }
+                    } else void continueStep();
+                  }}>Recheck photos</Button>}
                 {failedUploads.map((item, index) => <Alert key={`${item.file.name}-${index}`} tone="error" title={item.file.name}>{item.error}
                   <div className="flex gap-2 mt-2"><Button variant="secondary" disabled={working || saving} onClick={() => retryFailedUpload(item)}>Retry photo</Button>
                     <Button variant="ghost" onClick={() => setFailedUploads((items) => items.filter((_, at) => at !== index))}>Dismiss</Button></div></Alert>)}
-                <div className="flex gap-3 rounded-card-lg bg-warning-soft p-4"><ImagePlus aria-hidden="true" size={20} className="shrink-0 text-warning" /><div><p className="text-sm font-semibold text-main">A little light goes a long way</p><p className="text-sm text-sec mt-1 leading-relaxed">Use natural light and a clear background. Include different angles, accessories, and visible wear.</p></div></div>
               </>}
               {step === 2 && <>
-                <div className="owner-ai-panel rounded-card">
+                {!deferLocalPhotoReview && <div className="owner-ai-panel rounded-card">
                   <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold text-accent inline-flex items-center gap-2"><Sparkles aria-hidden="true" size={14} />{aiLoading ? 'Creating suggestions from your photos...' : aiApplied ? 'AI suggestions ready' : 'AI suggestions'}</p>
                     <Button variant="secondary" disabled={working || saving || aiLoading || !photos.length} onClick={() => void ensureDraft().then((id) => analyze(id, photos)).catch((error) => setAiError(message(error, 'Could not analyze photos.')))}>{aiApplied ? 'Regenerate' : 'Generate details'}</Button></div>
-                  <p className="text-xs text-sec mt-1">AI fills details, including brand and model, when identifiable. Review the suggestions and enter anything missing. Your edits are preserved when you regenerate.</p>
+                  <p className="text-xs text-sec mt-1">Review the suggestions and add anything missing. Your edits are kept if you regenerate.</p>
                   {aiLoading && <Button variant="ghost" onClick={() => { aiRun.current += 1; setAiLoading(false); setAiError('Continue manually. You can retry AI later.'); }}>Continue manually</Button>}
-                </div>
+                </div>}
                 {aiLoading && <ListingAiSkeleton />}
                 {aiError && <div role="status" className="text-xs text-warning"><p className="font-semibold">Manual entry is available</p><p className="mt-1">{aiError}</p></div>}
                 {flags.length > 0 && <Alert tone={blockingFlags.length ? 'error' : 'warning'} title={blockingFlags.length ? 'Does not meet Community Guidelines' : 'Review these suggestions'}><ul className="list-disc pl-4">{flags.map((flag, index) => <li key={index}>{flag.reason}</li>)}</ul>
-                  <p className="mt-2">Replace affected photos to recheck them. Correct flagged text, then continue to review it again. Unchanged photos are not analyzed again. Contact support if you disagree with the review.</p></Alert>}
+                  <p className="mt-2">Replace flagged photos and correct flagged text to continue. Contact support if you disagree with the review.</p></Alert>}
                 {Object.values(photoDecisions).some((decision) => decision.decision !== 'approved') && <Alert tone="error" title="Photos need attention before publishing">
                   <ul className="space-y-2">{Object.values(photoDecisions).filter((decision) => decision.decision !== 'approved').map((decision) => (
                     <li key={decision.photoIndex} className="flex flex-wrap items-center justify-between gap-2">
@@ -1141,23 +1207,8 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                     </div>
                     <p className="mt-2 text-xs text-sec">Your regular price for each rental day.</p>
                   </Field>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Independent 7-day package rate (USD, optional)" htmlFor="listing-weekly-rate">
-                      <input id="listing-weekly-rate" inputMode="decimal" value={form.weeklyRate}
-                        onChange={event => update('weeklyRate', event.target.value)} className={fieldClass()} aria-invalid={Boolean(invalid('weekly-rate'))}
-                        aria-describedby={invalid('weekly-rate') ? 'listing-weekly-rate-error' : undefined} placeholder="Use discount settings" />
-                      {invalid('weekly-rate') && <p id="listing-weekly-rate-error" role="alert" className="mt-1 text-xs text-error">{invalid('weekly-rate')}</p>}
-                    </Field>
-                    <Field label="Independent 30-day package rate (USD, optional)" htmlFor="listing-monthly-rate">
-                      <input id="listing-monthly-rate" inputMode="decimal" value={form.monthlyRate}
-                        onChange={event => update('monthlyRate', event.target.value)} className={fieldClass()} aria-invalid={Boolean(invalid('monthly-rate'))}
-                        aria-describedby={invalid('monthly-rate') ? 'listing-monthly-rate-error' : undefined} placeholder="Use discount settings" />
-                      {invalid('monthly-rate') && <p id="listing-monthly-rate-error" role="alert" className="mt-1 text-xs text-error">{invalid('monthly-rate')}</p>}
-                    </Field>
-                  </div>
-                  <p className="text-xs text-sec">These are independent package prices, not daily prices multiplied by a conversion. Extra days use your daily rate. Leave either blank to use its existing discount setting.</p>
-                  {priceForPreview > 0 && earningsQuotes && <div className="rounded-card bg-subtle p-4 space-y-2 text-sm">
-                    <h4 className="font-semibold text-main">Estimated owner earnings · backend quote</h4>
+                  {priceForPreview > 0 && earningsQuotes && <div className="listing-earnings space-y-2 text-sm">
+                    <h4 className="font-semibold text-main">Estimated earnings</h4>
                     {[1, 7, 30].map(days => {
                       const quote = earningsQuotes[days];
                       return quote && <div key={days} className="flex justify-between gap-3">
@@ -1165,13 +1216,38 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                         <strong className="text-main tnum">${quote.estimated_owner_net?.toFixed(2)}</strong>
                       </div>;
                     })}
-                    <p className="text-xs text-sec">Estimate only; the booking snapshots final rates and fees when created.</p>
+                    <p className="text-xs text-sec">Estimate only. Final rates and fees are set when a booking is created.</p>
                   </div>}
                   {earningsQuoteError && <Alert tone="error" title="Earnings estimate unavailable">{earningsQuoteError}</Alert>}
+                  <details className="owner-disclosure listing-longer-rentals" open={Boolean(invalid('weekly-rate') || invalid('monthly-rate') || invalid('weekly-discount') || invalid('monthly-discount')) || undefined}>
+                    <summary>
+                      <span><span className="block font-semibold text-main">Weekly and monthly pricing</span>
+                        <span className="block text-xs font-normal text-sec mt-1">{durationDiscountFlag.loading ? 'Checking discount settings…' : <>
+                          Weekly: {form.weeklyRate ? `$${form.weeklyRate} package` : (durationDiscountFlag.enabled || editId) && form.weeklyDiscountEnabled ? `${form.weeklyDiscount}% discount` : 'daily rate'}
+                          {' · '}Monthly: {form.monthlyRate ? `$${form.monthlyRate} package` : (durationDiscountFlag.enabled || editId) && form.monthlyDiscountEnabled ? `${form.monthlyDiscount}% discount` : 'daily rate'}
+                        </>}</span></span>
+                      <ChevronDown size={18} aria-hidden="true" className="owner-disclosure-chevron shrink-0" />
+                    </summary>
+                    <div className="owner-disclosure-content space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="7-day package price (USD, optional)" htmlFor="listing-weekly-rate">
+                      <input id="listing-weekly-rate" inputMode="decimal" value={form.weeklyRate}
+                        onChange={event => update('weeklyRate', event.target.value)} className={fieldClass()} aria-invalid={Boolean(invalid('weekly-rate'))}
+                        aria-describedby={invalid('weekly-rate') ? 'listing-weekly-rate-error' : undefined} placeholder="Use discount settings" />
+                      {invalid('weekly-rate') && <p id="listing-weekly-rate-error" role="alert" className="mt-1 text-xs text-error">{invalid('weekly-rate')}</p>}
+                    </Field>
+                    <Field label="30-day package price (USD, optional)" htmlFor="listing-monthly-rate">
+                      <input id="listing-monthly-rate" inputMode="decimal" value={form.monthlyRate}
+                        onChange={event => update('monthlyRate', event.target.value)} className={fieldClass()} aria-invalid={Boolean(invalid('monthly-rate'))}
+                        aria-describedby={invalid('monthly-rate') ? 'listing-monthly-rate-error' : undefined} placeholder="Use discount settings" />
+                      {invalid('monthly-rate') && <p id="listing-monthly-rate-error" role="alert" className="mt-1 text-xs text-error">{invalid('monthly-rate')}</p>}
+                    </Field>
+                  </div>
+                  <p className="text-xs text-sec">Package prices replace the daily rate for 7 or 30 days. Extra days use your daily rate.</p>
                   <div className="space-y-3">
                     <h4 className="text-sm font-semibold text-main">Offer weekly and monthly rentals</h4>
-                    <p className="mt-1 text-sm leading-relaxed text-sec">Choose a legacy discount when no independent package rate is set. Changes apply to new bookings only.</p>
-                    {!durationDiscountFlag.loading && !durationDiscountFlag.enabled && <p className="mt-2 text-xs text-sec">Rental packages are turned off for this test environment.</p>}
+                    <p className="mt-1 text-sm leading-relaxed text-sec">Discounts apply when no package price is set. Changes apply to new bookings only.</p>
+                    {!durationDiscountFlag.loading && !durationDiscountFlag.enabled && <p className="mt-2 text-xs text-sec">Rental packages aren't available right now.</p>}
                     <fieldset disabled={!durationDiscountFlag.enabled || durationDiscountFlag.loading} className="mt-3 space-y-3">
                       <div className="border-b border-app pb-3">
                         <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-semibold text-main">
@@ -1179,10 +1255,10 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                           <input type="checkbox" role="switch" checked={form.weeklyDiscountEnabled} onChange={event => { if (event.target.checked && Number(form.weeklyDiscount) <= 0) update('weeklyDiscount', '20'); update('weeklyDiscountEnabled', event.target.checked); }} aria-label="Offer Weekly rentals" className="h-5 w-5 accent-[var(--accent)]" />
                         </label>
                         {form.weeklyDiscountEnabled && <div className="mt-3 grid gap-3 sm:grid-cols-2 sm:items-end">
-                          <Field label="Weekly discount" htmlFor="listing-weekly-discount" error={invalid('weekly-discount')}>
-                            <div className="relative"><input id="listing-weekly-discount" aria-invalid={Boolean(invalid('weekly-discount'))} aria-describedby={invalid('weekly-discount') ? 'listing-weekly-discount-error' : undefined} type="number" min={0} max={50} step="0.5" inputMode="decimal" value={form.weeklyDiscount} onChange={event => update('weeklyDiscount', event.target.value)} className={fieldClass('pr-8')} /><span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-sec">%</span></div>
+                          <Field label="Weekly discount (%)" htmlFor="listing-weekly-discount" error={invalid('weekly-discount')}>
+                            <input id="listing-weekly-discount" aria-invalid={Boolean(invalid('weekly-discount'))} aria-describedby={invalid('weekly-discount') ? 'listing-weekly-discount-error' : undefined} type="number" min={0} max={50} step="0.5" inputMode="decimal" value={form.weeklyDiscount} onChange={event => update('weeklyDiscount', event.target.value)} className={fieldClass()} />
                           </Field>
-                          <p className="pb-2 text-xs text-sec">{earningsQuotes?.[7] ? <>7-day price: <strong className="text-main">${earningsQuotes[7].rental_subtotal.toFixed(2)}</strong>{earningsQuotes[7].discount_amount > 0 && <span className="block mt-1">Discount savings ${earningsQuotes[7].discount_amount.toFixed(2)}</span>}</> : 'Enter rates to load a server quote.'}</p>
+                          <p className="pb-2 text-xs text-sec">{earningsQuotes?.[7] ? <>7-day price: <strong className="text-main">${earningsQuotes[7].rental_subtotal.toFixed(2)}</strong>{earningsQuotes[7].discount_amount > 0 && <span className="block mt-1">Discount savings ${earningsQuotes[7].discount_amount.toFixed(2)}</span>}</> : 'Enter rates to see the price.'}</p>
                         </div>}
                       </div>
                       <div>
@@ -1191,14 +1267,16 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                           <input type="checkbox" role="switch" checked={form.monthlyDiscountEnabled} onChange={event => { if (event.target.checked && Number(form.monthlyDiscount) <= 0) update('monthlyDiscount', '30'); update('monthlyDiscountEnabled', event.target.checked); }} aria-label="Offer Monthly rentals" className="h-5 w-5 accent-[var(--accent)]" />
                         </label>
                         {form.monthlyDiscountEnabled && <div className="mt-3 grid gap-3 sm:grid-cols-2 sm:items-end">
-                          <Field label="Monthly discount" htmlFor="listing-monthly-discount" error={invalid('monthly-discount')}>
-                            <div className="relative"><input id="listing-monthly-discount" aria-invalid={Boolean(invalid('monthly-discount'))} aria-describedby={invalid('monthly-discount') ? 'listing-monthly-discount-error' : undefined} type="number" min={0} max={50} step="0.5" inputMode="decimal" value={form.monthlyDiscount} onChange={event => update('monthlyDiscount', event.target.value)} className={fieldClass('pr-8')} /><span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-sec">%</span></div>
+                          <Field label="Monthly discount (%)" htmlFor="listing-monthly-discount" error={invalid('monthly-discount')}>
+                            <input id="listing-monthly-discount" aria-invalid={Boolean(invalid('monthly-discount'))} aria-describedby={invalid('monthly-discount') ? 'listing-monthly-discount-error' : undefined} type="number" min={0} max={50} step="0.5" inputMode="decimal" value={form.monthlyDiscount} onChange={event => update('monthlyDiscount', event.target.value)} className={fieldClass()} />
                           </Field>
-                          <p className="pb-2 text-xs text-sec">{earningsQuotes?.[30] ? <>30-day price: <strong className="text-main">${earningsQuotes[30].rental_subtotal.toFixed(2)}</strong>{earningsQuotes[30].discount_amount > 0 && <span className="block mt-1">Discount savings ${earningsQuotes[30].discount_amount.toFixed(2)}</span>}</> : 'Enter rates to load a server quote.'}</p>
+                          <p className="pb-2 text-xs text-sec">{earningsQuotes?.[30] ? <>30-day price: <strong className="text-main">${earningsQuotes[30].rental_subtotal.toFixed(2)}</strong>{earningsQuotes[30].discount_amount > 0 && <span className="block mt-1">Discount savings ${earningsQuotes[30].discount_amount.toFixed(2)}</span>}</> : 'Enter rates to see the price.'}</p>
                         </div>}
                       </div>
                     </fieldset>
                   </div>
+                    </div>
+                  </details>
                 </section>
                 <section aria-label="Booking approval settings" className="space-y-5">
                 <div id="listing-quantity" tabIndex={-1} aria-invalid={Boolean(invalid('quantity'))}><p className="text-sm font-semibold mb-3">Available quantity</p><div className="inline-flex items-center rounded-card border border-strong overflow-hidden bg-card">
@@ -1213,30 +1291,23 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                 </Field>
                 <fieldset className="space-y-3"><legend className="text-sm font-semibold text-main mb-2">Booking approval</legend>
                   <div className="grid gap-3">
-                  {[{ value: false, label: 'Owner approval required', detail: 'You review rental requests before confirming them.', icon: ShieldCheck }, { value: true, label: 'Instant booking', detail: 'Eligible renters book without waiting for your approval.', icon: Zap }].map((option) => <label key={option.label} className={`flex items-start gap-3 rounded-card-lg border p-4 cursor-pointer ${form.instant === option.value ? 'border-accent bg-accent-soft' : 'border-app'}`}>
+                  {[{ value: false, label: 'Review requests', detail: 'Approve each rental request.', icon: ShieldCheck }, { value: true, label: 'Instant booking', detail: 'Eligible renters can book without waiting for approval.', icon: Zap }].map((option) => <label key={option.label} className={`flex items-start gap-3 rounded-card-lg border p-4 cursor-pointer ${form.instant === option.value ? 'border-accent bg-accent-soft' : 'border-app'}`}>
                     <input type="radio" name="booking-mode" className="mt-1 accent-[var(--accent)]" checked={form.instant === option.value} onChange={() => update('instant', option.value)} />
                     <option.icon size={19} aria-hidden="true" className="mt-0.5 shrink-0 text-accent" />
                     <span><span className="block text-sm font-semibold">{option.label}</span><span className="block text-xs text-sec mt-1">{option.detail}</span></span></label>)}
                   </div>
                 </fieldset>
-                <p className="text-sm text-sec leading-relaxed">Regular rentals use this approval setting. Competitive bidding is optional after your listing is live.</p>
+                <p className="text-sm text-sec leading-relaxed">This applies to regular rentals. You can add bidding after your listing is live.</p>
                 </section>
-                <aside aria-label="How booking works" className="rounded-card bg-subtle p-4 text-sm text-sec self-start">
-                  <h3 className="text-sm font-semibold text-main mb-2">Bidding comes after publication</h3>
-                  <p className="leading-relaxed">Your listing works without bidding. After publishing, expand the bidding options below the confirmation if you want to participate.</p>
-                </aside>
                 </div>
               </>}
               {step === 4 && <>
                 <ListingAvailabilityPicker start={form.start} end={form.end} today={availabilityToday}
                   error={invalid('availability')} onChange={(start, end) => { setForm(current => ({ ...current, start, end })); changed(); }} />
                 {retainedAvailability && <p className="text-xs text-sec">Your saved listing dates are retained until you select a new range.</p>}
-                <div className="flex gap-3 rounded-card bg-subtle p-3 text-xs text-sec"><BellRing size={17} aria-hidden="true" className="shrink-0 text-accent" />
-                  <div><p className="font-semibold text-main">We'll remind you</p><p className="mt-1 leading-relaxed">In-app reminders run 7 days and 1 day before published availability begins, when your booking notifications are enabled.</p></div>
-                </div>
               </>}
               {step === 5 && <>
-                <div className="space-y-4 min-w-0">
+                <div className="listing-location-sections space-y-4 min-w-0">
                   <div aria-invalid={Boolean(invalid('pickup'))} aria-describedby={invalid('pickup') ? 'listing-pickup-error' : undefined} tabIndex={-1}>
                   <PickupLocation showAreaMap error={invalid('pickup')} value={pickup} onChange={(next) => {
                     setPickup(next);
@@ -1248,7 +1319,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                   </div>
                   <fieldset className="space-y-3">
                     <legend className="text-sm font-semibold text-main mb-2">Pickup options</legend>
-                    <p className="flex items-center gap-2 text-xs text-sec"><CheckCircle2 size={16} aria-hidden="true" className="text-accent" />Local pickup is included. Renters collect from your location.</p>
+                    <p className="flex items-center gap-2 text-xs text-sec"><CheckCircle2 size={16} aria-hidden="true" className="text-accent" />Pickup at your location is included.</p>
                     <label className="flex items-center justify-between gap-3 min-h-11"><span><span className="block text-sm font-semibold">Delivery available</span><span className="block text-xs text-sec mt-1">Optional local delivery, arranged separately.</span></span>
                       <input type="checkbox" role="switch" checked={form.delivery} onChange={(event) => update('delivery', event.target.checked)} aria-label="Delivery available" className="h-5 w-5 accent-[var(--accent)]" /></label>
                     {form.delivery && <Field label="Delivery fee per trip (USD)" htmlFor="listing-delivery" error={invalid('delivery')}>
@@ -1264,11 +1335,11 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                     </Field>}
                   </fieldset>
                   <fieldset className="space-y-3">
-                    <legend className="text-sm font-semibold text-main mb-2">Handoff availability windows</legend>
-                    <p className="text-xs text-sec">Renter picks one of these windows on the booking’s pickup and return date.</p>
+                    <legend className="text-sm font-semibold text-main mb-2">Pickup and return times</legend>
+                    <p className="text-xs text-sec">Choose when you're available for pickup and return.</p>
                     <div className="space-y-2">
                       <p className="text-xs font-semibold text-main">Pickup windows</p>
-                      <p className="text-xs text-sec">Hours are one-hour handoff start times in your pickup timezone. Renters only see future hours on the booking date.</p>
+                      <p className="text-xs text-sec">Each time starts a one-hour window in your pickup time zone.</p>
                       <div className="flex flex-wrap gap-2">{HANDOFF_WINDOWS.map((window) => <button key={`pickup-${window}`} type="button"
                         className={`min-h-11 rounded-full border px-3 text-sm ${form.itemDetails.pickup_windows.includes(window)
                           ? 'bg-accent text-accent-text border-accent' : 'bg-card text-sec border-strong'}`}
@@ -1288,7 +1359,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                   </fieldset>
                   <fieldset className="space-y-3">
                     <legend className="text-sm font-semibold text-main mb-2">Return rules</legend>
-                    <p className="text-xs text-sec">Tap the expectations renters must follow when returning the item.</p>
+                    <p className="text-xs text-sec">Choose what renters need to do before returning your item.</p>
                     <div className="flex flex-wrap gap-2">{RETURN_RULE_OPTIONS.map((rule) => <button key={rule} type="button"
                       className={`min-h-11 rounded-full border px-3 text-sm text-left ${form.itemDetails.return_rules.includes(rule)
                         ? 'bg-accent text-accent-text border-accent' : 'bg-card text-sec border-strong'}`}
@@ -1297,7 +1368,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                     </div>
                     <Field label="Return note (optional)" htmlFor="listing-return-note">
                       <textarea id="listing-return-note" value={form.itemDetails.return_note} maxLength={240} rows={2}
-                        placeholder="Example: Place lens cap and charger in the case before handoff."
+                        placeholder="Place lens cap and charger in the case before handoff."
                         onChange={event => updateItemDetails('return_note', event.target.value)} className={textareaClass()} />
                       <p className="text-xs text-sec text-right mt-1">{form.itemDetails.return_note.length}/240</p>
                     </Field>
@@ -1326,7 +1397,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                   <p className="flex gap-2"><CheckCircle2 aria-hidden="true" size={17} className="shrink-0 text-accent" />Pickup windows: {form.itemDetails.pickup_windows.map(window => HANDOFF_WINDOW_LABELS[window]).join(', ')}</p>
                   <p className="flex gap-2"><CheckCircle2 aria-hidden="true" size={17} className="shrink-0 text-accent" />Return windows: {form.itemDetails.return_windows.map(window => HANDOFF_WINDOW_LABELS[window]).join(', ')}</p>
                   <p className="flex gap-2"><CheckCircle2 aria-hidden="true" size={17} className="shrink-0 text-accent" />{form.quantity} {form.quantity === 1 ? 'unit' : 'units'} available</p>
-                  <p className="flex gap-2"><ShieldCheck aria-hidden="true" size={17} className="shrink-0 text-accent" />{form.instant ? 'Instant booking rules apply' : 'Owner approval required'}</p>
+                  <p className="flex gap-2"><ShieldCheck aria-hidden="true" size={17} className="shrink-0 text-accent" />{form.instant ? 'Instant booking' : 'You approve each request'}</p>
                   {form.delivery && <p className="flex gap-2"><Truck aria-hidden="true" size={17} className="shrink-0 text-accent" />Delivery available - ${form.deliveryFee || '0'} per trip{form.itemDetails.delivery_radius_miles ? `, within ${form.itemDetails.delivery_radius_miles} miles (owner-declared)` : ''}, arranged separately</p>}</div>
                 </div>
                 <section className="border-t border-app pt-5"><h3 className="font-semibold text-main mb-2">About this item</h3><p className="text-sm text-sec whitespace-pre-wrap leading-relaxed">{form.description || 'No additional description.'}</p></section>
@@ -1340,9 +1411,9 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                   {STEPS.slice(0, -1).map((label, index) => <Button key={label} size="sm" variant="secondary"
                     onClick={() => { setStep(index + 1); setAttempted(false); }}>Edit {label.toLowerCase()}</Button>)}
                 </nav>
-                <p className="text-sm leading-relaxed text-sec">Your exact pickup address stays private until an eligible booking is confirmed. Availability, payment, return and deposit rules apply to every rental.</p>
+                <p className="text-sm leading-relaxed text-sec">Your exact pickup address stays private until an eligible booking is confirmed.</p>
                 {blockingFlags.length > 0 && <Alert tone="error" title="Does not meet Community Guidelines">{blockingFlags.map((flag) => flag.reason).join(' ')} <Button variant="secondary" onClick={() => setStep(2)}>Review details</Button></Alert>}
-                <div className="rounded-card-lg border border-app bg-subtle p-4 text-xs text-sec"><ShieldCheck aria-hidden="true" size={18} className="text-accent mb-2" />{policy.high_value_threshold === null || Number(form.value) > policy.high_value_threshold ? 'This declared value requires administrative review. The listing will not be marked live until approved.' : 'Publication is confirmed only after the server checks your photos, content, location and listing policy.'}</div>
+                <div className="rounded-card-lg border border-app bg-subtle p-4 text-xs text-sec"><ShieldCheck aria-hidden="true" size={18} className="text-accent mb-2" />{policy.high_value_threshold === null || Number(form.value) > policy.high_value_threshold ? 'This item needs review before it can go live.' : 'Your listing will be checked before it goes live.'}</div>
                 {biddingFlag.error
                   ? <Alert tone="error" title="Bidding settings unavailable">{biddingFlag.error}</Alert>
                   : !biddingFlag.loading && !biddingFlag.enabled
@@ -1373,6 +1444,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
               </div>
             </div>
           </section>
+          </div>
         </div>
       </div>
     </div>

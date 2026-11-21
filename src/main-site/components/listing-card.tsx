@@ -123,7 +123,6 @@ export function ListingCard({ listing, onClick, href, favorited, onToggleFavorit
           </div>
           <MetaLine listing={listing} />
           <RatingLine listing={listing} />
-          {listing.description && <p className="line-clamp-2 text-xs text-sec leading-relaxed mt-1">{listing.description}</p>}
           {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && <ProtectionBadge size="sm" />}
         </div>
       </a>

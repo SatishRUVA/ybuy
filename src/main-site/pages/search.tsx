@@ -396,9 +396,7 @@ export function SearchPage({
   return (
     <div className="marketplace-browse animate-fade-in min-h-screen pb-20 md:pb-8">
       <div className="marketplace-browse-intro">
-        <p className="marketplace-eyebrow">Close to you</p>
-        <h1>Find your next good thing.</h1>
-        <p>Useful finds, shared by people in {preciseLocation ? formatLocation(location) : 'your area'} and nearby.</p>
+        <h1>Explore rentals</h1>
       </div>
       <div className="workspace-search-toolbar">
         <div className="marketplace-browse-controls">

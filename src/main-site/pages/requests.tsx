@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import { Alert, Badge, Button, EmptyState, SectionHeader, Surface } from '@/main-site/components/ui';
@@ -56,6 +56,7 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
   const flagsReady = !flagsLoading && !featureError;
   const enabled = flagsReady && flags?.some((flag) => flag.key === 'item_requests' && flag.enabled) === true;
   const [tab, setTab] = useState<RequestTab>(initialTab === 'offers' ? 'mine' : initialTab);
+  const tabId = useId();
   const [categories, setCategories] = useState<Category[]>([]);
   const [listingMatches,setListingMatches]=useState<Record<string,OwnerListing[]>>({});
   const [requests, setRequests] = useState<ItemRequest[] | null>(null);
@@ -151,7 +152,7 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
   if (!enabled) {
     return <div className="max-w-2xl mx-auto px-4 py-12"><EmptyState icon={<HeartHandshake size={22} />}
       title="Item requests are not enabled yet"
-      description="The request workflow is installed but remains off until an authorized administrator enables the item_requests feature flag." /></div>;
+      description="Please check back later." /></div>;
   }
   const tabs: { id: RequestTab; label: string }[] = [
     ...(enabled ? [{ id: 'browse' as const, label: 'Find requests' }, { id: 'mine' as const, label: 'My requests' }] : []),
@@ -163,8 +164,18 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
         <SectionHeader as="h1" title="Item requests" subtitle="Ask for something you can't find, or offer a rental that fits." action={
           enabled && <Button icon={<Plus size={16} />} onClick={() => navigate({ name: 'need-something' })}>Request an item</Button>
         } />
-        <div className="flex gap-1 p-1 rounded-card-lg bg-subtle" role="tablist" aria-label="Item request activity">
-          {tabs.map((item) => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id}
+        <div className="flex gap-1 p-1 rounded-card-lg bg-subtle" role="tablist" aria-label="Item request activity"
+          onKeyDown={event => {
+            const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+            const index = buttons.indexOf(event.target as HTMLButtonElement);
+            if (index < 0) return;
+            const next = event.key === 'ArrowRight' ? (index + 1) % buttons.length
+              : event.key === 'ArrowLeft' ? (index + buttons.length - 1) % buttons.length
+                : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : -1;
+            if (next >= 0) { event.preventDefault(); buttons[next].focus(); }
+          }}>
+          {tabs.map((item) => <button key={item.id} id={`${tabId}-${item.id}`} type="button" role="tab" aria-selected={tab === item.id}
+            tabIndex={tab === item.id ? 0 : -1} aria-controls={`${tabId}-${item.id}-panel`}
             onClick={() => selectTab(item.id)}
             className={`min-w-0 flex-1 min-h-11 rounded-card px-2 py-2 text-xs sm:text-sm font-semibold transition-colors duration-fast ${tab === item.id ? 'bg-card text-main shadow-xs' : 'text-sec hover:text-main'}`}>
             {item.label}
@@ -175,7 +186,7 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
           {error}<Button size="sm" variant="secondary" className="mt-2" onClick={() => void reload()}>Try again</Button>
         </Alert>}
 
-        {tab === 'browse' && enabled && <>
+        {tab === 'browse' && enabled && <div role="tabpanel" id={`${tabId}-browse-panel`} aria-labelledby={`${tabId}-browse`} className="space-y-5">
           <div className="grid gap-3 rounded-card-xl border border-app bg-card p-4 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1.2fr]">
             <label className="text-xs font-semibold text-sec">Search item
               <span className="relative block mt-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -231,9 +242,9 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
           {areaChoices.length > 0 && <div role="group" aria-label="Choose nearby request area" className="flex flex-wrap gap-2">
             {areaChoices.map((choice, index) => <Button key={index} size="sm" variant="secondary" onClick={() => { setArea(choice); setLocationFilter(locationLabel(choice)); setAreaChoices([]); setPage(0); }}>{locationLabel(choice)}</Button>)}
           </div>}
-          <p className="text-sm text-sec">{searchArea?.latitude === undefined ? 'Choose a verified area to find renter requests near you. Currently showing requests without a distance filter.' : `Renter requests near ${locationLabel(searchArea)} · ${radius === null ? 'all distances' : `within ${radius} miles`}`}</p>
+          <p className="text-sm text-sec">{searchArea?.latitude === undefined ? 'Choose an area to see nearby requests. Showing all distances for now.' : `Requests near ${locationLabel(searchArea)} · ${radius === null ? 'all distances' : `within ${radius} miles`}`}</p>
           <Button size="sm" variant="secondary" onClick={() => { setStartDate(todayIso()); setEndDate(addDaysIso(todayIso(), 7)); setPage(0); }}>Needed in the next 7 days</Button>
-          <p className="text-xs text-muted">Date filters show overlapping rental windows. Linked listings are checked against request dates and availability.</p>
+          <p className="text-xs text-muted">Dates include requests that overlap your selected range.</p>
           {!requests ? <RequestSkeleton /> : requests.length === 0 ? (
             <EmptyState icon={<Search size={21} />} title="No open requests match those filters"
               description="Try a wider location, another category or a different date range."
@@ -254,22 +265,22 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
               </div>
             </div>
           </div>}
-        </>}
+        </div>}
 
-        {tab === 'mine' && enabled && <>
+        {tab === 'mine' && enabled && <div role="tabpanel" id={`${tabId}-mine-panel`} aria-labelledby={`${tabId}-mine`} className="space-y-5">
           <div className="flex justify-end">
             <Button size="sm" icon={<Plus size={15} />} onClick={() => navigate({ name: 'need-something' })}>Post request</Button>
           </div>
           {myRequests === null ? <RequestSkeleton /> : visibleMine.length === 0 ? (
             <EmptyState icon={<PackagePlus size={21} />} title="You haven't requested an item yet"
-              description="Tell nearby owners what you need and when you need it."
+              description="Share what you need and when you need it."
               actionLabel="Request an item" onAction={() => navigate({ name: 'need-something' })} />
           ) : <div className="space-y-3">{visibleMine.map((request) => (
             <MyRequestCard key={request.id} request={request}
               matchingListings={listingMatches[request.id] ?? []}
               onRefresh={() => void reload()} />
           ))}</div>}
-        </>}
+        </div>}
 
       </div>
     </div>
@@ -305,7 +316,7 @@ function RequestCard({ request, matchingListings, active, onOffer }: {
       <span className="inline-flex items-center gap-1"><Clock size={13} />Expires {new Date(request.expires_at).toLocaleDateString()}</span>
     </div>
     {matchingListings.length > 0 && <p className="mt-3 text-xs text-success">
-      Available nearby fit: {matchingListings[0].title}. Category, coordinates, rental dates, quantity and budget match. Booking still revalidates availability.
+      A matching listing: {matchingListings[0].title}. Availability is checked again when booking.
     </p>}
     {active && <RequestFulfillment request={request} />}
   </Surface>;
@@ -597,12 +608,12 @@ export function NeedSomethingPage() {
   if (loading || flagLoading) return <div className="max-w-2xl mx-auto px-4 py-8 space-y-3" aria-busy="true"><Skeleton className="h-8 w-52" /><Skeleton className="h-96 w-full" rounded="rounded-card-lg" /></div>;
   if (error && categories.length === 0) return <div className="max-w-2xl mx-auto px-4 py-10"><Alert tone="error">{error}</Alert></div>;
   if (!enabled) return <div className="max-w-xl mx-auto px-4 py-12"><EmptyState title="Item requests are not enabled yet"
-    description="An authorized administrator can enable the item_requests feature flag after the backend migration is installed." /></div>;
+    description="Please check back later." /></div>;
   if (complete) return <div className="max-w-xl mx-auto px-4 py-12 sm:py-16">
     <Surface className="p-5 sm:p-7">
       <div className="grid place-items-center w-12 h-12 rounded-full bg-success-soft text-success"><Check size={23} /></div>
       <h1 className="mt-5 text-2xl font-bold text-main font-display">Your request is posted</h1>
-      <p className="mt-2 text-sm text-sec">Nearby owners can review it and list matching items. Track available items in your requests.</p>
+      <p className="mt-2 text-sm text-sec">Nearby owners can respond with matching items.</p>
       <dl className="mt-5 divide-y divide-app rounded-card-lg border border-app px-4">
         <div className="py-3"><dt className="text-xs text-muted">Item</dt><dd className="mt-1 font-semibold text-main">{title}</dd></div>
         <div className="py-3"><dt className="text-xs text-muted">Rental dates</dt><dd className="mt-1 text-sm text-main">{new Date(`${startDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} – {new Date(`${endDate}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</dd></div>
@@ -620,7 +631,7 @@ export function NeedSomethingPage() {
   return <div className="animate-fade-in pb-20 md:pb-10">
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
       <PageBackButton fallback={{ name: 'requests' }}>Back to requests</PageBackButton>
-      <SectionHeader as="h1" title="Request an item" subtitle="Share what you need and owners can respond with a listing and price." className="mb-6" />
+      <SectionHeader as="h1" title="Request an item" subtitle="Tell nearby owners what you need." className="mb-6" />
       <form onSubmit={(event) => void submit(event)} className="space-y-4">
         <Surface className="p-4 sm:p-5 space-y-4">
           <div className="grid sm:grid-cols-2 gap-3">
@@ -679,7 +690,7 @@ export function NeedSomethingPage() {
               <input maxLength={500} value={specifications} onChange={(e) => setSpecifications(e.target.value)} placeholder="Sizes, required accessories…" className={fieldClass('mt-1')} />
             </label>
           </div>
-          <p className="text-xs text-sec">Owners can link a public listing at its advertised price. Availability and booking terms are checked in the regular booking flow.</p>
+          <p className="text-xs text-sec">Owners can offer a listing at its advertised price. Availability is checked when you book.</p>
           <label className="flex min-h-11 items-center gap-2 text-sm text-sec">
             <input type="checkbox" checked={notifyMatches} onChange={event => setNotifyMatches(event.target.checked)} />
             Notify me in-app when an owner lists a matching item
@@ -707,7 +718,7 @@ export function NeedSomethingPage() {
         </Surface>
         {error && <Alert tone="error" title="Request was not posted">{error}</Alert>}
         <Button type="submit" fullWidth loading={busy} loadingLabel="Posting your request…" icon={<ArrowRight size={16} />}>Post request</Button>
-        <p className="text-center text-xs text-muted">No payment is due to post a request. Any accepted offer still follows YBuy's normal checkout and payment verification.</p>
+        <p className="text-center text-xs text-muted">Posting is free. Pay only when you book.</p>
       </form>
     </div>
   </div>;

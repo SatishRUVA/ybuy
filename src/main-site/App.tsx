@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { ThemeProvider } from '@/theme-context';
 import { AuthProvider, useAuth } from '@/auth-context';
 import { LocationProvider } from '@/location-context';
@@ -43,12 +43,27 @@ const ProtectionPage = lazy(() => import('@/main-site/pages/protection').then(({
 const TrustProfilePage = lazy(() => import('@/main-site/pages/trust-profile').then(({ TrustProfilePage: page }) => ({ default: page })));
 const BiddingPage = lazy(() => import('@/main-site/pages/bidding').then(({ BiddingPage: page }) => ({ default: page })));
 const BiddingDetailPage = lazy(() => import('@/main-site/pages/bidding').then(({ BiddingDetailPage: page }) => ({ default: page })));
-const AuctionPage = lazy(() => import('@/main-site/pages/bidding').then(({ AuctionPage: page }) => ({ default: page })));
 const GuidelinesPage = lazy(() => import('@/main-site/pages/guidelines').then(({ GuidelinesPage: page }) => ({ default: page })));
 
 function AppContent() {
   const { route } = useRouter();
   const { user } = useAuth();
+  useEffect(() => {
+    const titles: Record<typeof route.name, string> = {
+      home: 'Home', search: 'Explore rentals', listing: 'Rental', checkout: 'Checkout',
+      confirmation: 'Booking confirmation', dashboard: 'My rentals', 'renter-dashboard': 'My rentals',
+      'owner-dashboard': 'Lending', 'owner-listings': 'My listings', 'owner-payouts': 'Earnings and payouts',
+      'create-listing': 'List an item', 'edit-listing': 'Edit listing', 'check-in': 'Check in',
+      'check-out': 'Check out', 'item-passport': 'Item passport', claims: 'Rental disputes',
+      'claim-detail': 'Rental dispute', support: 'Support', wallet: 'Points and rewards',
+      notifications: 'Notifications', messaging: 'Messages', conversation: 'Conversation',
+      requests: 'Item requests', favorites: 'Saved items', 'need-something': 'Request an item',
+      protection: 'Protection', 'trust-profile': 'Profile and settings', bidding: 'Bidding',
+      'bidding-detail': 'Auction', auction: 'Auction', guidelines: 'Guidelines', admin: 'Admin',
+      'super-admin': 'Super admin', access: 'Access',
+    };
+    document.title = `${route.name === 'dashboard' && route.tab === 'lending' ? 'Lending' : titles[route.name]} | YBuy`;
+  }, [route]);
   const skipLink = <a href="#main-content" className="skip-link">Skip to content</a>;
   const focused = ['checkout', 'confirmation', 'create-listing', 'edit-listing', 'need-something', 'check-in', 'check-out'].includes(route.name);
 
@@ -115,7 +130,7 @@ function AppContent() {
     case 'trust-profile': page = <RequireAuth><TrustProfilePage /></RequireAuth>; break;
     case 'bidding': page = <BiddingPage />; break;
     case 'bidding-detail': page = <BiddingDetailPage key={route.id} id={route.id} />; break;
-    case 'auction': page = UUID_RE.test(route.id) ? <BiddingDetailPage key={route.id} id={route.id} /> : <AuctionPage id={route.id} />; break;
+    case 'auction': page = UUID_RE.test(route.id) ? <BiddingDetailPage key={route.id} id={route.id} /> : <OutOfScopePage />; break;
     case 'guidelines': page = <GuidelinesPage />; break;
     default: page = <HomePage />; break;
   }
@@ -130,7 +145,7 @@ function AppContent() {
             && !(route.name === 'bidding' && route.view === 'my-bids') && <BiddingTicker />}
           <main id="main-content" tabIndex={-1} className="min-w-0 pb-8">
             <Suspense fallback={<PageLoading />}>
-              <div key={`${user?.id ?? 'anonymous'}:${route.name}`} className="animate-page-fade">{page}</div>
+              <div key={`${route.name === 'need-something' ? 'request-draft' : user?.id ?? 'anonymous'}:${route.name}`} className="animate-page-fade">{page}</div>
             </Suspense>
           </main>
         </div>
@@ -146,11 +161,6 @@ function App() {
       <AuthProvider>
         <LocationProvider>
           <RouterProvider>
-            {import.meta.env.VITE_TEST_ENVIRONMENT === 'true' && (
-              <div role="status" className="bg-warning-soft text-warning px-4 py-2 text-center text-sm font-semibold">
-                Test environment - synthetic accounts and sandbox payments only. Notification email delivery is disabled.
-              </div>
-            )}
             <AppContent />
             <VpnNotice />
           </RouterProvider>

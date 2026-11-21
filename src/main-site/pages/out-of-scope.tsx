@@ -4,10 +4,9 @@ export function OutOfScopePage() {
   const { navigate } = useRouter();
   return (
     <div className="animate-fade-in flex flex-col items-center justify-center gap-3 py-24 px-4 text-center">
-      <h2 className="text-lg font-semibold text-main">Not available in Part 1</h2>
+      <h2 className="text-lg font-semibold text-main">Not available right now</h2>
       <p className="text-sm text-sec max-w-sm">
-        This feature is out of scope for the current build. Set
-        VITE_SHOW_OUT_OF_SCOPE_PAGES=true locally to preview it.
+        This feature isn't available yet. Explore rentals in the meantime.
       </p>
       <button
         onClick={() => navigate({ name: 'home' })}

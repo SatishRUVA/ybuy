@@ -131,7 +131,7 @@ export function ListingAuctionPreferences({ value, start, end, askingPrice, disa
           <p role="status" aria-live="polite" className="text-center text-xs font-medium text-sec">{choosingReturn ? 'Choose the return date' : 'Choose the pickup date'}</p>
           <button type="button" aria-label="Next month" disabled={month.getFullYear() === parseDate(maxDate).getFullYear() && month.getMonth() >= parseDate(maxDate).getMonth()} onClick={() => setMonth(nextMonth)} className="grid h-11 w-11 shrink-0 place-items-center rounded-card text-sec hover:bg-subtle disabled:opacity-35"><ChevronRight size={18} /></button>
         </div>
-        <MonthGrid monthDate={month} todayStr={today} minDate={minDate} maxDate={maxDate} draftStart={pickup || null} draftEnd={returnDate || null} bookedDates={NO_DATES} blockedDates={NO_DATES} onPick={pick} />
+        <MonthGrid monthDate={month} todayStr={today} minDate={minDate} maxDate={maxDate} draftStart={pickup || null} draftEnd={returnDate || null} bookedDates={NO_DATES} blockedDates={NO_DATES} onPick={pick} onNavigateDate={date => setMonth(parseDate(`${date.slice(0, 7)}-01`))} />
       </div> : <p className="text-sm text-sec">Set listing availability before enabling bidding.</p>}
       </div>
       <div className="owner-auction-schedule space-y-4">

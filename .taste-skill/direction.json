@@ -1,0 +1,401 @@
+{
+ "version": 1,
+ "at": "2026-11-21T01:17:10.038Z",
+ "seed": 213239174,
+ "redraws": 0,
+ "input": {
+  "brief": "A neighborhood rental marketplace where people share useful things",
+  "sector": "consumer-app",
+  "tone": "warm",
+  "have": [],
+  "keep": [
+   "palette",
+   "type"
+  ],
+  "avoid": [],
+  "sections": [
+   "intro",
+   "showcase",
+   "cta",
+   "footer"
+  ],
+  "direction": "split-stage"
+ },
+ "imagery": "interface",
+ "allow": [],
+ "direction": {
+  "id": "split-stage",
+  "name": "The split stage",
+  "sectors": [
+   "restaurant",
+   "hospitality",
+   "personal-portfolio",
+   "physical-product",
+   "fashion",
+   "real-estate",
+   "health",
+   "culture",
+   "ecommerce",
+   "saas",
+   "consumer-app"
+  ],
+  "tones": [
+   "warm",
+   "quiet",
+   "editorial"
+  ],
+  "needs": [],
+  "idea": "Half the screen never moves. One side is a fixed photograph (or object, or product view) that stays in place for the whole visit; the other side is a calm scrolling column with everything you need to read. The fixed half keeps the feeling present while the reader gets on with the facts, like sitting in the room while reading the menu. As sections pass, the fixed image may quietly change to the one that matches.",
+  "composition": "Desktop: a two-column page, 50/50 or 45/55. One column is `position: sticky; top: 0; height: 100svh` and holds a single photograph filling it edge to edge, or the object centred on a flat field. The other column scrolls and holds all content in a single narrow measure (max 46ch) with comfortable padding (48–72px): name and one-line description first, then sections separated by generous space, then contact and footer. Headings in the scrolling column are modest (32–44px). The column grounds differ: photograph on one side, flat paper colour on the other, meeting at a clean vertical edge. On a phone the fixed half becomes a 60svh image at the top that stays sticky behind the first section, then releases.",
+  "typography": "A text-first setting: a readable serif or a calm sans at 17–19px, with one display size for the name. Left-aligned throughout.",
+  "typeClasses": [
+   "serif-text",
+   "serif-display",
+   "grotesk-light",
+   "slab"
+  ],
+  "colour": "The paper colour of the reading column is chosen against the photograph: a tone taken from its shadows or its lightest area. One ink, optionally one accent ink for links and the action.",
+  "paletteTags": [
+   "two-tone",
+   "earth",
+   "light-neutral",
+   "photographic-neutral"
+  ],
+  "imagery": "One excellent portrait-orientation photograph for the fixed half, plus three or four more that crossfade in as their sections arrive. Small inline photographs in the reading column are optional and should be few.",
+  "sectionTags": [
+   "quiet",
+   "photo-led",
+   "type-led"
+  ],
+  "motion": "slow-crossfade",
+  "richness": "A full-height photograph always in view, against a quiet, well-set column of text.",
+  "pitfalls": "The reading column must be genuinely well typeset, since it is half the page. Do not put cards or grids in it. Check that the fixed image crops well at short viewport heights. In blind tests the commonest complaint was monotony: several screens of the same split with only the text changing. Change what the reading half holds from section to section (a list, a large figure, a table, a full-colour panel, a drawing) and let at least one section break the split and run full width.",
+  "seenIn": [
+   "opl-le-petit-bleu",
+   "opl-rafael-derolez-2026",
+   "opl-flowjam-2",
+   "opl-devonshire"
+  ],
+  "allow": []
+ },
+ "hero": {
+  "id": "striped-card-beside-room",
+  "name": "Striped card beside the room",
+  "archetype": "split",
+  "directions": [
+   "one-motif",
+   "page-is-the-object",
+   "split-stage"
+  ],
+  "needs": [],
+  "blueprint": "The viewport is split 50/50 with a 12px gap and 12px outer margins. The right half is one full-height photograph of the room, corners radiused 16px, `position: sticky` so it stays in view while the left half scrolls. The left half is a printed card: a flat paper-colour panel with the same 16px radius, and the subject's stripe (from its awning, label or ribbon) as the only ornament. Across the card's top runs a band 56px tall made of alternating bars of the single ink colour and paper, each bar 28px wide, built as a flex row of filled blocks. The same stripe returns as an 8px band above the footer and inside the button on hover. Under the band, centred: the wordmark about 300px wide, then a two-line headline in a light serif at clamp(40px, 3.6vw, 56px) in the ink colour, one supporting sentence at 17px held to 36ch, and the single action as a solid rectangular button. Three text links sit in one centred row at 15px, 28px above the card's bottom edge. One ink on paper; the photograph supplies every other colour.",
+  "mobile": "The photograph comes first at full width inside 12px margins, 48svh tall, with the 16px radius. The card follows and overlaps the photograph's bottom edge by 24px using a negative margin. Its striped band is 40px tall; below it the wordmark at 56% width, the headline at 8vw on two lines, the sentence and the button, all centred. The links wrap into the card's foot.",
+  "headline": "A warm two-line welcome of three to six words, up to about 18 characters per line at 3.6vw.",
+  "motion": "slow-crossfade",
+  "seenIn": [
+   "opl-le-petit-bleu",
+   "opl-zara-webb"
+  ]
+ },
+ "type": null,
+ "palette": null,
+ "photos": {
+  "set": "architecture",
+  "title": "Architecture",
+  "note": "structure, lines, bridges, facades and building interiors",
+  "treatment": null,
+  "others": [
+   "water"
+  ],
+  "photos": [
+   {
+    "id": 378,
+    "alt": "Silhouetted people at tall windows overlooking a city, black and white",
+    "tone": "dark",
+    "colours": [
+     "black",
+     "grey",
+     "white"
+    ],
+    "mono": true,
+    "calm": "bottom",
+    "quality": 4,
+    "ratio": 1.5,
+    "by": "Charles Forerunner",
+    "page": "https://unsplash.com/photos/3fPXt37X6UQ"
+   },
+   {
+    "id": 855,
+    "alt": "Small figure walking past a huge bright yellow wall",
+    "tone": "light",
+    "colours": [
+     "bright yellow",
+     "black"
+    ],
+    "mono": false,
+    "calm": "left",
+    "quality": 5,
+    "ratio": 1.5,
+    "by": "Rodion Kutsaev",
+    "page": "https://unsplash.com/photos/IJ25m7fXqtk"
+   },
+   {
+    "id": 693,
+    "alt": "Red suspension bridge tower rising from fog above rugged cliffs",
+    "tone": "mid",
+    "colours": [
+     "rust red",
+     "grey",
+     "dark teal"
+    ],
+    "mono": false,
+    "calm": "left",
+    "quality": 5,
+    "ratio": 2.15,
+    "by": "Rob Bye",
+    "page": "https://unsplash.com/photos/bopC0sTGu-E"
+   },
+   {
+    "id": 942,
+    "alt": "White angular concrete building against a black sky",
+    "tone": "dark",
+    "colours": [
+     "black",
+     "white",
+     "pale grey"
+    ],
+    "mono": true,
+    "calm": "top",
+    "quality": 5,
+    "ratio": 1.5,
+    "by": "Carl Nenzen Loven",
+    "page": "https://unsplash.com/photos/busqfOj6i80"
+   }
+  ]
+ },
+ "motion": {
+  "id": "slow-crossfade",
+  "name": "Slow crossfade",
+  "description": "The principal photograph quietly changes: three or four images of the same framing crossfade over about 1.6 seconds, holding five to six seconds each, or the fixed image changes when its matching section arrives. It should feel like light shifting in a room. Pause when the tab is hidden; under reduced motion show only the first image."
+ },
+ "sections": [
+  {
+   "id": "intro-narrow-column",
+   "role": "intro",
+   "name": "Narrow column, empty field",
+   "shape": "stack",
+   "tags": [
+    "quiet",
+    "type-led"
+   ],
+   "directions": [
+    "quiet-instrument",
+    "split-stage",
+    "hero-object",
+    "name-as-monument",
+    "contact-sheet",
+    "product-performs"
+   ],
+   "needs": [],
+   "blueprint": "A single text column 300–340px wide, its left edge at 15% of the viewport width, starting 64px below the section top. It holds four or five short paragraphs at 15–16px with leading 1.5 and one blank line between them; the first paragraph is in medium weight and full ink, the rest in regular weight and the soft ink. No heading, no image, no button; one underlined text link may end the last paragraph. The remaining three-quarters of the 1440 screen is untouched ground, and the section is only as tall as the text plus 160px of padding below. The column's left edge must match a line used elsewhere on the page (the wordmark's left edge or a later column). Where the page has a large object or a fixed photograph, this column is the small text beside it. Holds 90–150 words comfortably.",
+   "mobile": "The column becomes 78% of the width, left-aligned at the 20px margin, so a strip of empty ground remains on the right as a deliberate margin. Text stays at 15–16px with the first paragraph in medium weight. Padding is 72px above and 96px below.",
+   "seenIn": [
+    "opl-when-you-wish-upon-a-starboy",
+    "opl-deeo-studio-2",
+    "aww-vero-new-york"
+   ]
+  },
+  {
+   "id": "showcase-output-index-live-sheet",
+   "role": "showcase",
+   "name": "Output index, live sheet",
+   "shape": "index",
+   "tags": [
+    "ui-led",
+    "object-led"
+   ],
+   "directions": [
+    "editorial-report",
+    "split-stage",
+    "borrowed-category",
+    "product-performs",
+    "colour-chapters"
+   ],
+   "needs": [],
+   "blueprint": "For products that make documents: invoices, reports, emails, statements. Columns 1–5 list the names of three to five outputs, one per line, at clamp(36px, 4vw, 64px), leading 1.1, each a `<button>`; the selected name is in full ink, the rest in the soft ink. There is no other heading. Columns 7–12 are a stage in a flat tone one step from the ground, 88svh tall, and on it lies the selected output as an object: a paper-white sheet 560px wide, built in HTML at true size, root marked data-ui, with a real sender, real line items, sums that add up and a date. The sheet starts 72px below the stage's top and runs past its bottom edge, which crops it. Selecting a name swaps the sheet with a 200ms crossfade; an email is narrower (440px), a receipt narrower still (300px), all left-aligned 64px into the stage.",
+   "mobile": "Names become one sideways-scrolling row at 22px with scroll-snap, the selected one in full ink. Beneath, the stage fills the width and is 70svh tall; the sheet keeps its true size, anchored top-left with a 16px inset and cropped by the stage's right and bottom edges. Tapping a name swaps it.",
+   "seenIn": [
+    "aww-cominvi"
+   ]
+  },
+  {
+   "id": "cta-plain-sentence-one-action",
+   "role": "cta",
+   "name": "A plain sentence, one action",
+   "shape": "stack",
+   "tags": [
+    "quiet"
+   ],
+   "directions": [
+    "quiet-instrument",
+    "product-performs",
+    "contact-sheet",
+    "uneven-photographs",
+    "split-stage",
+    "dark-room"
+   ],
+   "needs": [],
+   "blueprint": "The page ends on an almost empty screen. On the page ground, with no band and no panel, one sentence of eight to fourteen words is set at 18–22px in the regular weight, in the full ink, no wider than 34ch, on the same left edge as the page's text column (or centred only if the whole page is centred). 24px beneath it sits one small filled button, about 40px tall with 18px side padding, and optionally one text link beside it on the same baseline. That is all. Above the sentence leave at least 30svh of empty ground and below it at least 20svh before the footer line, so the emptiness reads as decided. The sentence is written as something a person would say, and it names the action plainly. No headline-sized type appears anywhere in this section.",
+   "mobile": "Identical in spirit: the sentence at 18px with 20px margins, the button beneath at its natural width (not full width), 44px tall. Keep 20svh of empty ground above the sentence and 14svh below the button, before the footer line.",
+   "seenIn": [
+    "opl-compile",
+    "opl-rows"
+   ]
+  },
+  {
+   "id": "footer-photograph-and-large-menu",
+   "role": "footer",
+   "name": "Photograph half, menu half",
+   "shape": "split",
+   "tags": [
+    "photo-led",
+    "type-led"
+   ],
+   "directions": [
+    "split-stage",
+    "loud-flat-poster",
+    "hero-object",
+    "uneven-photographs",
+    "pinned-poster",
+    "place-carries-it"
+   ],
+   "needs": [],
+   "blueprint": "A split footer one viewport tall. The left half is a single photograph filling columns 1–6 edge to edge, cropped hard by the left and bottom viewport edges: a close crop of the page's main subject, larger than it appeared anywhere above. The right half, on a flat field, is the site's menu set large: five or six section names stacked as links at about 2.6vw bold, 28px apart, starting at column 8 and 80px from the top. Rows are separated by space only; on hover a row's label shifts right by 12px and the others drop to the softer ink. Under the menu, 64px lower, two short blocks at 15px side by side: contact and social. The legal line runs along the very bottom of the right half at 12px. The wordmark sits small at the top of the right half, on the menu's left edge.",
+   "mobile": "The photograph leads at full width and 50svh, cropped tight. The menu follows on the flat field at 8vw per item with 20px between items, then contact and social stacked at 15px, then the legal line at 12px. The wordmark sits small above the menu.",
+   "seenIn": [
+    "aww-trevor-noah",
+    "aww-monolog"
+   ]
+  }
+ ],
+ "references": [
+  {
+   "id": "opl-le-petit-bleu",
+   "name": "Le Petit Bleu",
+   "url": "https://www.lepetitbleucafe.com/",
+   "source": "One Page Love",
+   "kind": "restaurant",
+   "score": 7.8,
+   "idea": "The cafe's teal-and-white stripes become the whole system: one teal ink on cream, everything boxed in thin double outlines like printed menu cards, beside a permanently visible photo of the room.",
+   "mood": [
+    "cheerful",
+    "charming",
+    "retro",
+    "tidy",
+    "sunny"
+   ],
+   "archetype": "split-text-media",
+   "hero": "Viewport split 50/50 with 12px gaps. Left: a cream panel with a thin pale-teal outline and rounded corners. Inside, a second outlined box is the nav bar: two-line hamburger left, teal brush-script logo about 300px wide centred, a caps order link right. Below, a two-line light serif headline at about 3.5vw, centred, in teal, then two centred stacks, each a bold caps label, a serif line and a solid teal button wrapped in a second thin outline. Right: a full-height rounded photo of a striped booth, with an outlined hours bar across its top, three slide dots bottom-left and a white address card bottom-right.",
+   "type": "Self Modern, a light bookish serif, for headline and 15px body; Matter SQ bold caps for labels and buttons; Archive Mono Pro typewriter caps for menu rows; a brush-script logo. Section titles are tall condensed serif caps sized so four to seven letters fill the column.",
+   "colour": "#fcfbf7 #13a7b2 #058599 #cfe5e7 #e9b81f — Cream paper and a single teal used for every word, rule, outline and button; no black anywhere. Yellow, floral reds and marble enter only through the interior photographs.",
+   "imagery": "Bright, saturated interior and food photographs; the right-hand panel is a full-height slideshow with rounded corners. Small food shots sit in a horizontal strip, and a fine line drawing of the shopfront with one teal awning fills a card.",
+   "layout": "The left half scrolls as a stack of outlined cream cards (full-width or two-up) with 12px gaps while the right half stays fixed. Card contents are centred. A sticky nav card rides over the stack. On mobile the photo becomes the hero card's background.",
+   "sections": [
+    {
+     "role": "list",
+     "description": "A card containing only the section word in tall condensed serif caps, teal, sized so its four letters fill the column edge to edge. Below it, a stack of full-width outlined rows about 36px high, each with a category name in typewriter mono caps at left and a thin plus sign at right, separated by 6px gaps. Above the title: a ticker row of tiny caps and a strip of four small food photos with rounded corners."
+    },
+    {
+     "role": "about",
+     "description": "The same giant condensed title treatment, then centred serif paragraphs in teal with underlined links in a narrow measure of about 280px. Further down, a landscape photo of the two proprietors with a centred two-line caption in tiny sans, followed by more centred paragraphs. All of it lives in the left half while the right photo panel has advanced to a shelf-wall image."
+    },
+    {
+     "role": "gallery",
+     "description": "A header row with a tiny bold caps label at left and a script follow-us link with arrow at right, then three portrait images (about 3:5) with 12px rounded corners in a row, the third cropped by the column edge to imply a carousel. Directly below, the next giant section title begins and is cropped by the viewport."
+    }
+   ],
+   "steal": [
+    "Print everything in one brand ink on cream, including body text, rules and buttons, and let photographs supply the other colours.",
+    "Wrap buttons and panels in a second thin outline offset by a few pixels to get a printed-ticket feel.",
+    "Keep a tall photo panel fixed on one half and scroll a stack of cards on the other, swapping the photo as sections change."
+   ]
+  },
+  {
+   "id": "opl-rafael-derolez-2026",
+   "name": "Rafael Derolez",
+   "url": "https://derolez.dev/",
+   "source": "One Page Love",
+   "kind": "personal-portfolio",
+   "score": 7.3,
+   "idea": "A portfolio as a phone carousel: a fixed text rail on the left narrates whichever phone-shaped screen is centred on the right.",
+   "mood": [
+    "compact",
+    "dark",
+    "friendly",
+    "app-like"
+   ],
+   "archetype": "split-text-media",
+   "hero": "Dark charcoal page split by a vertical hairline at 30% width. Left rail: a 55px header row with name, slash and current section as a breadcrumb in 16px sans, plus a small cobalt ticket-shaped hire button with a perforated divider and arrow; below a hairline, four short paragraphs of 16px grey text with white links, top-aligned, leaving the lower 40% of the rail empty. Right 70%: three phone-proportioned frames with large rounded corners in a row; the centre one upright, full brightness and about 680px tall, the outer two smaller, dimmed and rotated in perspective toward the centre.",
+   "type": "Suisse at a single 16px size, weight 400, for everything; hierarchy comes only from grey versus white and from the breadcrumb. The one larger setting is a bold two-word line inside the blue contact card. No display type at all.",
+   "colour": "#18181b #030303 #969696 #173ded #ffffff — Zinc-black field with grey text and white for links and the active breadcrumb. Cobalt blue appears only on the hire button and contact card; all other colour comes from the app screenshots.",
+   "imagery": "Phone-shaped frames with large corner radius holding app screens, a selfie and short videos; side frames are dimmed to about 40% and tilted in 3D like a cover-flow.",
+   "layout": "Single viewport, no page scroll: a fixed 432px text rail with 32px padding and a media stage filling the rest. Scrolling advances the carousel and replaces the rail's text; hairlines separate rail, header and stage. On mobile the stage stacks above the rail.",
+   "sections": [
+    {
+     "role": "work",
+     "description": "Same two-part frame. The breadcrumb's last word changes to the project name; under the header sit three tiny grey meta tags (employer, platform), then two paragraphs. On the stage the centred phone shows the product screen at full brightness while neighbours show the previous and next items dimmed and tilted, so the carousel works as both navigation and preview."
+    },
+    {
+     "role": "about",
+     "description": "In the rail, a cobalt card shaped like a ticket with notched sides: tiny labels top-left and top-right, a large bold two-word heading, name and local time in small text, then a perforated lower strip with email at left and a copy button at right. Under it, a career list: company in white with dates in small grey on one line, role on the next, and a small arrow at the far right of each row."
+    }
+   ],
+   "steal": [
+    "Use a breadcrumb (name / current item) as the only heading and update its last word as the content changes.",
+    "Show work in device-shaped frames arranged as a cover-flow, with neighbours dimmed and tilted so the next item is always previewed.",
+    "Shape the contact card like a ticket with notches and a perforated strip so the one accent-colour element feels like an object."
+   ]
+  },
+  {
+   "id": "opl-proooof",
+   "name": "PROOOOF",
+   "url": "https://proooof.app",
+   "source": "One Page Love",
+   "kind": "consumer-app",
+   "score": 7.4,
+   "idea": "The product's output is the page: a wall of photos each wearing its coloured EXIF strip, with all the copy folded into one small floating card.",
+   "mood": [
+    "playful",
+    "photographic",
+    "compact",
+    "nerdy"
+   ],
+   "archetype": "other: floating-card-over-image-wall",
+   "hero": "The whole viewport is a six-column masonry of photographs on a warm off-white ground with about 15px gutters, columns offset vertically so rows never line up. Each photo has a flat strip fused to its bottom edge carrying tiny monospaced capture data, every strip a different solid colour (black, red, orange, yellow, violet, green). Dead centre floats a white card about 380px wide and 410px tall with roughly 28px corner radius and a soft shadow. It contains an extended wordmark with chained O's, a two-row accordion with the first row open, an App Store badge and a monospaced line of links. There is no navigation.",
+   "type": "An extended, heavy wordmark with interlocked O's is the only display type. Card text is Wintyr VF at about 14-16px, medium weight for accordion headings. EXIF strips and footer links are monospace at roughly 8-13px. No headline anywhere.",
+   "colour": "#f3eee9 #fafafa #191818 #ff6a2b #f7c531 #5a4fcf — Colour comes from the photographs and the saturated caption strips, one hue per photo. Card and gutters stay off-white; a final panel flips to near-black with grey characters.",
+   "imagery": "Casual travel, food, pet and concert photos in mixed portrait and landscape crops, square corners, ungraded, tiled edge to edge. The page ends on an ASCII-art rendering of a hand holding a camera.",
+   "layout": "Effectively a single screen: the photo wall sits behind a centred card that carries every word. Six columns on desktop, two on mobile where the card widens to nearly full width. The only second scene is a dark, inset ASCII panel.",
+   "sections": [
+    {
+     "role": "features",
+     "description": "All product copy lives in the centred card as an accordion: a row with heading left and chevron right, a hairline divider, the open panel's four-line paragraph, a centred store badge, another divider, a collapsed second row, then a small monospaced line with a version number and underlined links. The card stays put while the wall remains visible on all four sides."
+    },
+    {
+     "role": "gallery",
+     "description": "Each tile is a photo with a data strip attached below: two or three rows of monospaced text, four values spread evenly across the first row, date and time at opposite ends of the second, maker and model on the third. Strip and text colours change per tile, for example yellow on black, black on yellow, white on violet, so a uniform grid looks varied."
+    },
+    {
+     "role": "cta",
+     "description": "The closing panel is a near-black rectangle inset with wide margins and filled edge to edge with rows of grey ASCII characters that resolve into a picture of a hand gripping a camera. One line of tiny monospaced uppercase text sits at the exact centre as the call to action. No button and no logo."
+    }
+   ],
+   "steal": [
+    "Show the product's output at wall scale as the background and confine all copy to one small card on top of it.",
+    "Give every repeated tile its own flat accent colour for the caption strip so a strict grid reads as lively.",
+    "Hold the explanatory copy in an accordion inside the hero card so the page needs no scrolling."
+   ]
+  }
+ ],
+ "scenes": []
+}

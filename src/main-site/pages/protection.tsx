@@ -13,7 +13,7 @@ export function ProtectionPage() {
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-main font-display">Rental Protection</h1>
           <p className="text-sec text-sm mt-2 max-w-md mx-auto">
-            You don't have to trust a stranger. We verify, document, protect, and provide a fair process for every rental.
+            Know what to expect before, during and after your rental.
           </p>
         </div>
 
@@ -23,7 +23,7 @@ export function ProtectionPage() {
             <Lock size={24} className="text-warning mb-3" />
             <h3 className="font-semibold text-main text-sm mb-1">Security Deposit</h3>
             <p className="text-xs text-sec leading-relaxed">
-              A refundable charge at checkout, not a rental fee. Refunded after owner-confirmed return when no unresolved dispute exists.
+              A refundable charge separate from the rental fee. Eligible for refund after owner-confirmed return, unless a dispute remains unresolved.
             </p>
           </div>
           <div className="p-5 rounded-card-xl bg-card border border-app">
@@ -51,13 +51,13 @@ export function ProtectionPage() {
             <div>
               <h3 className="font-semibold text-main">Refundable Security Deposit</h3>
               <p className="text-sm text-sec mt-1 leading-relaxed">
-                This is separate from protection. The amount shown on the listing is charged at checkout.
-                It is eligible for refund after the owner confirms return when no unresolved dispute exists.
+                Separate from protection, the deposit is charged at checkout and eligible for refund
+                after the owner confirms return, unless a dispute remains unresolved.
               </p>
               <div className="mt-3 p-3 rounded-card-lg bg-warning-soft border border-app">
                 <p className="text-xs text-sec">
-                  <strong className="text-warning">Important:</strong> The security deposit is not owner rental revenue.
-                  Check your rental for the verified refund status; unresolved disputes require review.
+                  <strong className="text-warning">Important:</strong> The deposit is not owner rental revenue.
+                  Check your rental for refund status; unresolved disputes require review.
                 </p>
               </div>
             </div>

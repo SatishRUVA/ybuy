@@ -65,8 +65,8 @@ export function DurationDiscountControl({ listingId, onSaved }: { listingId: str
     </Button>
     {open && <Surface className="mt-3 p-4 space-y-3">
       <div><h5 className="text-sm font-semibold text-main">Weekly and monthly rentals</h5>
-        <p className="text-xs text-sec mt-1">You fund these discounts; renters pay less. Extra days are charged at your daily price. Changes apply to new bookings only.</p></div>
-      {!flag.enabled && <Alert tone="info">Rental packages are currently turned off for this test environment.</Alert>}
+        <p className="text-xs text-sec mt-1">Discounts apply to new bookings. Extra days use your daily rate.</p></div>
+      {!flag.enabled && <Alert tone="info">Rental packages aren't available right now.</Alert>}
       {flag.error && <Alert tone="warning">{flag.error}</Alert>}
       {error && <Alert tone="error">{error}</Alert>}
       {saved && <p role="status" className="text-sm text-accent">Rental discounts saved.</p>}

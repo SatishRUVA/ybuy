@@ -1,13 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { auctions } from '@/data';
 import { useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { Alert, Badge, Button, EmptyState, Surface } from '@/main-site/components/ui';
-import { fieldClass } from '@/main-site/components/form-classes';
 import { ArrowUpRight, CalendarDays, Clock3, Gavel, Package, RefreshCw } from 'lucide-react';
-import { BIDDING_SAMPLES } from '@/lib/bidding-samples';
 import { getListingAuction, getListingAuctionFeed, getMyListingAuctionBids, selectListingAuctionWinner, type AuctionFeed, type ListingAuction, type RenterAuctionParticipation } from '@/lib/listing-auctions';
 import { CategoryIcon } from '@/main-site/components/category-icon';
 import { ListingGridSkeleton } from '@/main-site/components/skeleton';
@@ -28,7 +25,6 @@ function AuctionImage({ url }: { url: string | null }) {
       : <Package size={40} strokeWidth={1.5} className="text-muted" aria-hidden="true" />}
   </div>;
 }
-
 type OwnerAuction = { listing: Listing; auction: ListingAuction };
 type AuctionFilter = 'all' | 'live' | 'scheduled' | 'completed' | 'closed';
 
@@ -99,9 +95,9 @@ function OwnerBiddingDashboard({
     <header className="flex flex-wrap items-start justify-between gap-4 mb-6">
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold font-display text-main flex items-center gap-3">
-          <Gavel className="text-accent" aria-hidden="true" />Owner — Bidding
+          <Gavel className="text-accent" aria-hidden="true" />Your auctions
         </h1>
-        <p className="mt-2 text-sm text-sec max-w-prose">Manage your auctions, review bidder profiles and full bid history, and track rental status.</p>
+        <p className="mt-2 text-sm text-sec max-w-prose">Manage auctions and review bids.</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" disabled={loading} icon={<RefreshCw size={16} aria-hidden="true" />} onClick={onRefresh}>Refresh auctions</Button>
@@ -119,7 +115,7 @@ function OwnerBiddingDashboard({
           </button>;
         })}
       </nav>
-      <p className="text-xs text-sec pb-2">Select eligible bidders before bidding closes. Without an owner decision, bidding expires. The system never selects bidders automatically.</p>
+      <p className="text-xs text-sec pb-2">Choose a bidder before bidding closes. If you don't, the auction expires.</p>
     </div>
 
     {error && <Alert tone="error" title="Your auctions could not be loaded">
@@ -156,7 +152,7 @@ function OwnerBiddingDashboard({
                   </span>}
                 </div>
                 <Button size="sm" variant="secondary" className="mt-4" onClick={() => navigate({ name: 'listing', id: listing.id })}>View listing</Button>
-                {auction.selected_payment_status && <p className="mt-3 text-sm text-sec">Selected renter payment: {auction.selected_payment_status}.</p>}
+                {auction.selected_payment_status && <p className="mt-3 text-sm text-sec">Selected bidder’s payment: {auction.selected_payment_status}.</p>}
               </div>
 
               <div className="min-w-0">
@@ -335,11 +331,9 @@ function LiveBidding() {
 
 function LiveBiddingDirectory() {
   const { navigate } = useRouter();
-  const { enabled: mockBiddingEnabled } = useFeatureFlag('mock_bidding');
   const reducedMotion = useReducedMotion();
   const [feed, setFeed] = useState<AuctionFeed | null>(null);
   const [category, setCategory] = useState<string | null>(null);
-  const [sampleCategory, setSampleCategory] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -370,21 +364,13 @@ function LiveBiddingDirectory() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const sampleMode = mockBiddingEnabled && import.meta.env.VITE_TEST_ENVIRONMENT === 'true' && feed !== null
-    && feed.categories.length === 0 && feed.total === 0 && category === null && !error;
-  const categories = sampleMode
-    ? [...new Set(BIDDING_SAMPLES.map(item => item.category))].map(name => ({
-      id: name, name, count: BIDDING_SAMPLES.filter(item => item.category === name).length,
-    }))
-    : feed?.categories ?? [];
-  const selected = sampleMode ? sampleCategory : category;
-  const samples = BIDDING_SAMPLES.filter(item => !sampleCategory || item.category === sampleCategory);
+  const categories = feed?.categories ?? [];
+  const selected = category;
   const items = feed?.items.filter(item => Date.parse(item.expires_at) > now) ?? [];
-  const total = sampleMode ? samples.length : feed?.total ?? 0;
+  const total = feed?.total ?? 0;
   const allCount = categories.reduce((sum, item) => sum + item.count, 0);
 
   function filter(id: string | null) {
-    if (sampleMode) { setSampleCategory(id); return; }
     if (id === category) return;
     setCategory(id); setOffset(0); setFeed(null); setLoading(true); setError(null);
   }
@@ -393,15 +379,11 @@ function LiveBiddingDirectory() {
     <header className="flex flex-wrap items-start justify-between gap-4 mb-7">
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold font-display text-main flex items-center gap-3"><Gavel className="text-accent" aria-hidden="true" />Live bidding</h1>
-        <p className="mt-2 text-sm text-sec max-w-prose">Find your next rental. Browse open auctions by category, then review the dates and place your bid.</p>
+        <p className="mt-2 text-sm text-sec max-w-prose">Find a rental and place your bid.</p>
       </div>
       <Button variant="secondary" disabled={loading} icon={<RefreshCw size={16} aria-hidden="true" />}
         onClick={() => { setOffset(0); setLoading(true); setRetry(value => value + 1); }}>Refresh auctions</Button>
     </header>
-    {sampleMode && <div className="rounded-card-lg bg-warning-soft text-warning p-4 mb-6">
-      <p className="text-sm font-semibold">TEST DATA · 10 sample auctions</p>
-      <p className="text-sm mt-1">Preview the browsing experience. These items are not available to bid on; no bookings or payments are created.</p>
-    </div>}
     <fieldset className="mb-6">
       <legend className="text-sm font-semibold text-main mb-3">Filter by category</legend>
       <div className="flex flex-wrap gap-2">
@@ -415,25 +397,13 @@ function LiveBiddingDirectory() {
       </div>
     </fieldset>
     <p role="status" aria-live="polite" className="text-sm text-sec mb-4">
-      {loading ? 'Loading auctions...' : error ? 'Auctions could not be refreshed.' : `${total} ${sampleMode ? 'sample' : 'open'} ${total === 1 ? 'auction' : 'auctions'}${selected ? ` in ${categories.find(item => item.id === selected)?.name ?? 'this category'}` : ''}`}
+      {loading ? 'Loading auctions...' : error ? 'Auctions could not be refreshed.' : `${total} open ${total === 1 ? 'auction' : 'auctions'}${selected ? ` in ${categories.find(item => item.id === selected)?.name ?? 'this category'}` : ''}`}
     </p>
     {error && <Alert tone="error" title="Live bidding unavailable"><p>{error}</p>
       <Button variant="secondary" onClick={() => { setLoading(true); setRetry(value => value + 1); }}>Retry auctions</Button>
     </Alert>}
     <div aria-busy={loading}>
-      {loading && !feed ? <ListingGridSkeleton /> : sampleMode ? (
-        <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" aria-label="Sample auctions">
-          {samples.map(item => <motion.li key={item.listing_id} layout={!reducedMotion} transition={{ duration: reducedMotion ? 0 : 0.2 }}
-            className="rounded-card-xl border border-app bg-card p-4">
-            <AuctionImage url={item.image_url} />
-            <div className="flex justify-between gap-3 mt-4 text-xs text-sec"><span>{item.category}</span><span className="font-semibold text-warning">SAMPLE</span></div>
-            <h2 className="font-semibold text-main mt-2 break-words">{item.title}</h2>
-            <p className="text-sm text-sec mt-3">Illustrative daily bid</p>
-            <p className="font-bold text-lg text-accent tnum">{dollars(item.daily_rate)}<span className="text-xs font-normal text-sec"> / day</span></p>
-            <p className="text-xs text-sec mt-3">Sample only · Bidding unavailable</p>
-          </motion.li>)}
-        </ul>
-      ) : items.length ? (
+      {loading && !feed ? <ListingGridSkeleton /> : items.length ? (
         <>
           <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" aria-label="Open auctions">
             {items.map(item => <motion.li key={item.listing_id} layout={!reducedMotion} transition={{ duration: reducedMotion ? 0 : 0.2 }}>
@@ -461,29 +431,6 @@ function LiveBiddingDirectory() {
   </div>;
 }
 
-function MockBiddingGate({ children }: { children: ReactNode }) {
-  const { enabled, loading, error, reload } = useFeatureFlag('mock_bidding');
-  return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
-      <h1 className="text-2xl font-bold font-display text-main">Mock bidding</h1>
-      {loading ? <p role="status">Checking demo availability...</p>
-        : error ? <Alert tone="error" title="Could not check demo availability">
-          <p>{error}</p><Button onClick={() => void reload()}>Try again</Button>
-        </Alert>
-          : !enabled ? <Alert tone="warning" title="Mock bidding is offline">
-            The bidding demo is not available. A Super Admin can enable mock_bidding in Feature flags.
-          </Alert>
-            : <>
-              <Alert tone="info" title="Demo only">
-                All auctions and bids are simulated. No real bids, bookings or payments are created.
-                Demo bids reset when you leave this page.
-              </Alert>
-              {children}
-            </>}
-    </div>
-  );
-}
-
 export function BiddingPage() {
   const { route } = useRouter();
   if (route.name === 'bidding' && route.view === 'my-bids') return <MyBidsPage />;
@@ -494,7 +441,7 @@ function LiveBiddingGate() {
   const { enabled, loading, error, reload } = useFeatureFlag('bidding');
   if (loading) return <div className="max-w-6xl mx-auto p-6"><ListingGridSkeleton /></div>;
   if (error) return <div className="max-w-6xl mx-auto p-6"><Alert tone="error" title="Could not check bidding availability">{error}<Button onClick={() => void reload()}>Retry bidding</Button></Alert></div>;
-  return enabled ? <LiveBidding /> : <MockBiddingPage />;
+  return enabled ? <LiveBidding /> : <div className="max-w-6xl mx-auto p-6"><Alert tone="info" title="Bidding is unavailable">Browse rentals while bidding is unavailable.</Alert></div>;
 }
 
 function myBidState(item: RenterAuctionParticipation) {
@@ -572,7 +519,7 @@ function MyBidsPage() {
     <header className="flex flex-wrap items-start justify-between gap-4 mb-6">
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold font-display text-main flex items-center gap-3"><Gavel className="text-accent" aria-hidden="true" />My bids</h1>
-        <p className="mt-2 text-sm text-sec max-w-prose">Track your position and any payment deadlines. Placing a bid does not charge you or create a booking.</p>
+        <p className="mt-2 text-sm text-sec max-w-prose">Track your bids and payment deadlines. Bidding won't charge you or reserve a rental.</p>
       </div>
       {user && <Button variant="secondary" onClick={() => setRetry(value => value + 1)} disabled={loading}>Refresh bids</Button>}
     </header>
@@ -580,7 +527,7 @@ function MyBidsPage() {
       : !user ? <EmptyState icon={<Gavel size={24} />} title="Sign in to see your bids" description="Your auction activity will be available here after you sign in." actionLabel="Sign in" onAction={openSignIn} />
       : error && items.length === 0 ? <Alert tone="error" title="Your bids could not be loaded"><p>{error}</p><Button variant="secondary" className="mt-2" onClick={() => setRetry(value => value + 1)}>Retry</Button></Alert>
         : loading && items.length === 0 ? <ListingGridSkeleton />
-          : items.length === 0 ? <EmptyState icon={<Gavel size={24} />} title="No bids yet" description="When you place a bid on a rental auction, it will appear here with its current status." actionLabel="Explore auctions" onAction={() => navigate({ name: 'bidding' })} />
+          : items.length === 0 ? <EmptyState icon={<Gavel size={24} />} title="No bids yet" description="Your bids will appear here." actionLabel="Explore auctions" onAction={() => navigate({ name: 'bidding' })} />
             : <div className="space-y-4" aria-busy={loading || loadingMore}>
               {error && <Alert tone="error" title="Could not load more bids"><p>{error}</p><Button variant="secondary" className="mt-2" onClick={() => void loadMore()}>Retry</Button></Alert>}
               {items.map(item => {
@@ -684,97 +631,10 @@ function RentalAuctionDetail({ id }: { id: string }) {
       </header>
       {listing.owner.id === user?.id ? <Surface className="p-5 space-y-3">
         <h2 className="text-lg font-semibold text-main">Manage your auction</h2>
-        <p className="text-sm text-sec">Review anonymous bids, select a winner, and track payment from your owner dashboard.</p>
+        <p className="text-sm text-sec">Review anonymous bids, select a winner and track payment in your lending activity.</p>
         <Button onClick={() => navigate({ name: 'bidding' })}>Manage my auctions</Button>
       </Surface> : <ListingAuctionPanel key={`${id}:${user?.id ?? 'anonymous'}`} listingId={id} deposit={listing.deposit} listedPrice={listing.pricePerDay} replacementValue={listing.declaredValue} />}
       </div>
     </>}
   </div>;
-}
-
-function MockBiddingPage() {
-  const { navigate } = useRouter();
-  return (
-    <MockBiddingGate>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {auctions.map((auction) => (
-          <button
-            key={auction.id}
-            onClick={() => navigate({ name: 'auction', id: auction.id })}
-            className="group text-left p-4 rounded-card-xl bg-card border border-app shadow-card card-hover"
-          >
-            <img src={auction.image} alt="" loading="lazy" className="aspect-[5/3] w-full object-cover rounded-card-lg mb-3" />
-            <h2 className="font-semibold text-main">{auction.title}</h2>
-            <p className="text-sm text-sec">{auction.rentalDays}-day demo rental</p>
-            <p className="mt-3 font-bold text-accent">Current demo bid: ${auction.currentBid}</p>
-            <span className="text-sm text-sec">View demo auction</span>
-          </button>
-        ))}
-      </div>
-    </MockBiddingGate>
-  );
-}
-
-export function AuctionPage({ id }: { id: string }) {
-  return <MockBiddingGate><DemoAuction key={id} id={id} /></MockBiddingGate>;
-}
-
-function DemoAuction({ id }: { id: string }) {
-  const { navigate } = useRouter();
-  const auction = auctions.find((row) => row.id === id);
-  const [bids, setBids] = useState(() => auction?.bids ?? []);
-  const [amount, setAmount] = useState(String((auction?.currentBid ?? 0) + 5));
-  const [error, setError] = useState<string | null>(null);
-  const [placed, setPlaced] = useState(false);
-  const currentBid = bids[bids.length - 1]?.amount ?? auction?.currentBid ?? 0;
-
-  function placeBid(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const next = Number(amount);
-    if (!/^\d+(\.\d{1,2})?$/.test(amount) || next <= currentBid || next > 1_000_000) {
-      setError(`Enter a bid above $${currentBid} and no more than $1,000,000, with up to two decimal places.`);
-      setPlaced(false);
-      return;
-    }
-    setBids((previous) => [...previous.map((bid) => ({ ...bid, isLeading: false })), {
-      id: crypto.randomUUID(), bidder: 'You (demo)', avatar: '', amount: next, time: 'Just now', isLeading: true,
-    }]);
-    setAmount(String(Math.min(next + 5, 1_000_000)));
-    setError(null);
-    setPlaced(true);
-  }
-
-  return (
-    <div className="space-y-5">
-      <Button variant="secondary" onClick={() => navigate({ name: 'bidding' })}>Back to demo auctions</Button>
-      {!auction ? <EmptyState icon={<Gavel size={20} />} title="Demo auction not found" description="Choose an auction from the demo list." />
-        : <div className="grid sm:grid-cols-2 gap-6">
-          <div>
-            <img src={auction.image} alt="" className="aspect-[4/3] w-full object-cover rounded-card-xl mb-4" />
-            <h2 className="text-xl font-bold text-main">{auction.title}</h2>
-            <p className="text-sm text-sec">{auction.rentalDays}-day simulated rental. No real rental slot is reserved.</p>
-          </div>
-          <div className="space-y-4">
-            <p className="text-lg font-bold text-accent" role="status">Current demo bid: ${currentBid}</p>
-            <form onSubmit={placeBid} className="space-y-3">
-              <label htmlFor="demo-bid" className="block text-sm font-semibold text-main">Your demo bid</label>
-              <input id="demo-bid" type="number" step="0.01" max="1000000" required value={amount}
-                onChange={(event) => setAmount(event.target.value)} className={fieldClass()}
-                aria-invalid={Boolean(error)} aria-describedby={error ? 'demo-bid-error' : undefined} />
-              {error && <p id="demo-bid-error" role="alert" className="text-sm text-error">{error}</p>}
-              <Button type="submit">Place demo bid</Button>
-            </form>
-            {placed && <Alert tone="success">Demo bid placed. No money was charged.</Alert>}
-            <h3 className="font-semibold text-main">Demo bid history</h3>
-            <ul className="space-y-2 text-sm text-sec">
-              {[...bids].reverse().map((bid) => (
-                <li key={bid.id} className="flex justify-between gap-3">
-                  <span>{bid.bidder}{bid.isLeading ? ' - Leading' : ''}</span><span>${bid.amount}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>}
-    </div>
-  );
 }

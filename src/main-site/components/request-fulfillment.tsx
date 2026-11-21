@@ -41,10 +41,10 @@ export function RequestFulfillment({ request, publishedListingId }: { request: M
     <p className="text-sm text-sec">{request.title} · {request.preferred_start_date} – {request.preferred_end_date} · {request.location_label}</p>
     {result ? <div role="status" className="space-y-3">
       <p className="font-semibold text-success">{result.in_app_notified ? 'Rental linked. The renter’s in-app match notification is available.' : 'Rental linked without a new in-app notification.'}</p>
-      <p className="text-sm text-sec">The renter can find this item in their request matches. Existing notifications are not removed, and linking does not reserve the item.</p>
+      <p className="text-sm text-sec">The renter can find this item in their matches. Linking it doesn't reserve it.</p>
       <Button variant="secondary" onClick={() => navigate({ name: 'requests' })}>Back to requests</Button>
     </div> : <>
-      {loading && <p role="status" className="text-sm text-sec">Checking your published listings against the request dates, area, quantity and daily budget…</p>}
+      {loading && <p role="status" className="text-sm text-sec">Finding listings that match this request…</p>}
       {!loading && listings.length > 0 && <label className="block text-sm font-semibold text-main">Use an existing listing
         <select value={listingId} onChange={event => setListingId(event.target.value)} className={fieldClass('mt-1')} disabled={busy}>
           <option value="">Choose a matching listing</option>
@@ -55,7 +55,7 @@ export function RequestFulfillment({ request, publishedListingId }: { request: M
         ? 'Your published item does not currently match the requested dates, area, quantity or daily budget. Update the listing, then retry.'
         : 'No published listing fits yet. Create a listing with the request details already filled in.'}</p>}
       {!publishedListingId && <Button variant="secondary" disabled={busy} onClick={() => navigate({ name: 'create-listing', requestId: request.id })}>Create a new listing for this request</Button>}
-      {request.notify_matches_in_app === false && <p className="text-sm text-sec">The renter has turned off in-app match notifications for this request. You can still link your item.</p>}
+      {request.notify_matches_in_app === false && <p className="text-sm text-sec">The renter won't receive an in-app notification, but you can still link your item.</p>}
       <div className="flex flex-wrap gap-2">
         <Button disabled={busy || loading || !listings.some(listing => listing.id === listingId)} loading={busy} onClick={() => void link(true)}>Link rental and notify renter</Button>
         <Button variant="secondary" disabled={busy || loading || !listings.some(listing => listing.id === listingId)} onClick={() => void link(false)}>Link rental · skip notification</Button>

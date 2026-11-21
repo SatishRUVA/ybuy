@@ -7,6 +7,11 @@ GitHub Actions deployment workflows are in `.github/workflows`.
 The test suites, verification scripts, Playwright configurations, reports, and
 design references have been removed. Historical notes below may refer to them.
 
+Local development on a loopback host using a loopback Supabase backend defers
+automatic listing photo analysis until publication. Photo and text moderation
+must still succeed before a listing can be published; hosted environments keep
+the existing review flow.
+
 ## YBuy Points MVP (test only)
 
 Apply `20261117000008_signup_points_mvp.sql` for the separate points wallet and
@@ -654,7 +659,7 @@ The restored bidding screens retain scheduled opening/closing times, configured
 increments, renter-only bid history/rank, owner full history/profiles/ratings,
 and owner-only winner selection before bidding closes. There is no post-close
 decision window or automatic winner selection. Both UUID auction URL forms
-use real bidding; sample auction IDs and empty-feed samples require `mock_bidding`.
+use real bidding; non-UUID auction links are unavailable.
 The main entry loads its stylesheet and fixes its theme to `main`, ignoring saved
 theme preferences, and uses DM Sans and Manrope typography.
 Legacy `/dashboard/listings` and `/payouts` URLs open the original lending
@@ -870,9 +875,9 @@ to the authorized hosted test backend as recorded above):
   migration turns off the private-offer flag without deleting historical records.
 - Saved bidding settings confirm the actual opening/closing schedule and link to
   auction management. The ribbon is mounted in both variants, includes zero-bid
-  open auctions at their opening rate, shows the newest 24 first, and refreshes
+  open auctions at their opening rate, shows up to three, and refreshes
   after saving and every 15 seconds. Scheduled auctions appear only when they open.
-  Sample ribbon cards require the explicit `mock_bidding` flag.
+  When there are no open auctions, the ribbon links to bidding without inventing activity.
 - **Default charged tax** is 7% of discounted rental plus service fees for new
   bookings, with both test and live Stripe keys. Deposits, insurance and delivery
   are excluded. Migration `20261102000007_default_booking_tax.sql` supersedes the
@@ -1101,25 +1106,14 @@ categories** and **More** open the existing unfiltered search with its category
 filters; there is no separate category discovery route. Search, dates, location
 and filter logic are unchanged.
 
-## Top Offers banner
+## Bidding ticker
 
-The shared mint offer banner retains the reference's curved accents, white cards,
-top-corner ranks/status pills and green TEST DATA pill. It is 100px tall on desktop
-and phones, with compact
-site typography and continuous news-style scrolling instead of navigation arrows.
-Cards share fixed dimensions, equal padding, a one-pixel border and aligned
-48px images. Long titles truncate with an ellipsis and retain their full tooltip.
-Displayed daily prices round to whole dollars; underlying offer amounts do not
-change. LIVE BIDDING has a slow double-heartbeat glow and toggles motion on click.
-Hover pauses scrolling; keyboard focus and reduced motion provide a static,
-manually scrollable feed. Visual loop copies are hidden from assistive technology
-and cannot receive keyboard focus.
-
-The existing bidding flag, fifteen-second refresh, expiry filtering, retry and
-listing destinations remain unchanged. Real offers always take priority.
-Only an empty test-environment feed shows clearly labeled sample offers; its
-first three photos are cropped from the supplied reference. HOT, POPULAR and
-GREAT DEAL are illustrative sample labels, never inferred claims for real offers.
+The bidding ticker stays visible on marketplace discovery pages while the
+`bidding` flag is enabled, including when there are no open auctions. It shows
+real open auctions, refreshes every 15 seconds, and offers retry on errors.
+When multiple auctions are scrolling, users can pause the ticker; keyboard focus
+and reduced motion expose a static, scrollable list. Visual loop copies are
+hidden from assistive technology and cannot receive keyboard focus.
 
 ## Owner and Renter implementation increment (2026-10-21)
 
@@ -1170,15 +1164,8 @@ fixture listings accept offers, with five persisted synthetic Renter offers for
 the top-five news ribbon. These demo offers expire seven days after creation;
 they are not real customer demand and are not automatically renewed. The banner
 appears above marketplace page content, refreshes every 15 seconds, and retains
-keyboard-accessible bid links. It stays visible with an honest
-empty state when enabled but no eligible offers exist. Production flags are unchanged.
-The compact, approximately 72px dark emerald ribbon scrolls continuously like a
-TV news feed, with mint prices, gold ranks and a slow heartbeat glow on LIVE BIDDING.
-It has no navigation arrows or separate pause/resume buttons. The LIVE BIDDING
-badge toggles motion; hover pauses scrolling, and keyboard focus or reduced-motion
-preferences expose a static, wrapping list with no glow animation. Duplicate visual
-copies are hidden from screen readers and keyboard navigation. Missing or failed images
-show an item icon; the banner never invents percentage gains or bid activity.
+keyboard-accessible bid links. Production flags are unchanged. The current ticker
+behavior is described in the Bidding ticker section above.
 
 - The server, not the browser countdown, controls checkout expiry. A late
   verified payment must revalidate inventory; conflicts enter a private
@@ -1501,12 +1488,8 @@ Auction countdowns use days and weeks for longer waits and approximate 30-day
 months (labeled "About") beyond a month. Within 24 hours they show live hours,
 minutes and seconds; actual auction deadlines and payment windows are unchanged.
 
-`/auction/:id` remains a mock-only demo route using the existing sample auctions.
-Enable `mock_bidding` in Admin Feature flags to show the Home demo rail and allow
-demo bids. Disabling it immediately hides the rail and replaces the demo route
-with an offline banner. Demo bids live only in page memory, reset when leaving
-the auction or disabling the flag, and never create real offers, bookings or
-payments. The independent `bidding` flag does not enable this demo.
+`/auction/:id` and `/bidding/:id` open real auctions when the ID is a UUID.
+Simulated auctions are not exposed in the customer-facing bidding screens.
 
 The `item_requests` feature flag controls request discovery, creation and
 request-based offers. The `bidding` flag controls direct offers on listings that
@@ -1639,7 +1622,7 @@ subscription per active app instance. Admin flag switches and the implemented
 `item_requests` / `bidding` consumers update without refresh, focus, or navigation.
 The `bidding` flag controls competitive listing auctions and continues to update
 their directory and owner-management view without refresh, focus, or navigation.
-The separate `mock_bidding` flag only controls the simulated demo route.
+The customer-facing bidding screens do not use the legacy `mock_bidding` flag.
 
 Apply [migration 10](supabase/migrations/20261018000010_feature_flags_realtime.sql)
 to publish flag changes. The client waits for the database subscription before

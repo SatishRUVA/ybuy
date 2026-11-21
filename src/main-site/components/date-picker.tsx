@@ -75,7 +75,8 @@ export function DatePicker({ value, onChange, label, id, min, max, required = fa
           </div>
         </div>
         <MonthGrid monthDate={month} todayStr={todayIso()} minDate={minimum} maxDate={maximum} draftStart={selected}
-          draftEnd={windowDays ? end : null} bookedDates={NO_DATES} blockedDates={NO_DATES} onPick={setSelected} showMonthLabel={false} />
+          draftEnd={windowDays ? end : null} bookedDates={NO_DATES} blockedDates={NO_DATES} onPick={setSelected}
+          onNavigateDate={date => setMonth(new Date(`${date.slice(0, 7)}-01T12:00:00`))} showMonthLabel={false} />
       </div>
       <div className="mt-4 border-t border-app px-5 py-4 sm:px-6">
         <div className="mb-4 flex min-h-11 items-center justify-between gap-3" role="status" aria-live="polite">

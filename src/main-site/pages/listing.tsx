@@ -298,7 +298,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
           <span className="text-[32px] leading-none font-extrabold text-main font-display tnum">${listing.pricePerDay}</span>
           <span className="text-sec text-sm font-medium">per day</span>
         </p>
-        <span className="text-xs text-sec">{isOwner ? 'Your listing · view only' : 'Choose your dates'}</span>
+        {isOwner && <span className="text-xs text-sec">Your listing · view only</span>}
       </div>
 
       <div id="listing-availability" className="mt-5 scroll-mt-24">
@@ -341,7 +341,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       {availabilityLoading && <p className="mt-3 text-sm text-sec" role="status">Checking date availability…</p>}
       {availabilityError && (
         <Alert tone="error" className="mt-3">
-          <p>We couldn't verify date availability. Booking is disabled until it can be checked.</p>
+          <p>We couldn't check availability. Please try again.</p>
           <Button size="sm" variant="secondary" className="mt-2" onClick={() => setAvailabilityRetry((attempt) => attempt + 1)}>Try again</Button>
         </Alert>
       )}
@@ -352,7 +352,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       {!listing.available && <Alert tone="warning" className="mt-3">{listing.availabilityExpired ? 'This listing has expired. The owner must update availability before it can be booked again.' : 'This listing is not currently available for booking.'}</Alert>}
       {!isOwner && datesValid && rangeUnavailable && (
         <Alert tone="warning" className="mt-3">
-          <p>Those dates are already taken. Choose another available range.</p>
+          <p>Those dates are taken. Choose another range.</p>
           {nextAvailableRange && <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs">Next available for {days} {days === 1 ? 'day' : 'days'}: {formatDateShort(nextAvailableRange.start)} – {formatDateShort(nextAvailableRange.end)}.</p>
             <Button size="sm" variant="secondary" onClick={() => { setStartDate(nextAvailableRange.start); setEndDate(nextAvailableRange.end); }}>Use suggested dates</Button>
@@ -363,7 +363,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       {listing.pickup && <div className="mt-5 flex gap-2.5 text-sm">
         <MapPin size={18} className="text-accent shrink-0 mt-0.5" aria-hidden="true" />
         <div><p className="font-semibold text-main">{listing.pickup}</p>
-          <p className="text-xs text-sec mt-1">Approximate pickup area. Exact address after confirmation.</p></div>
+          <p className="text-xs text-sec mt-1">Approximate pickup area. Exact address after booking confirmation.</p></div>
       </div>}
 
       <div className="mt-4 flex items-center justify-between text-xs text-sec">
@@ -387,23 +387,20 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
         <div className="pt-3 border-t border-app flex justify-between gap-3 font-bold text-main">
           <span>Rental and fees</span><span className="tnum">${formatMoney(rental + serviceFee)}</span>
         </div>
-        <p className="text-xs text-sec leading-relaxed">Tax is 7% of discounted rental and service fees only. Optional insurance is available at checkout and is not included unless selected.</p>
+        <p className="text-xs text-sec leading-relaxed">Tax is 7% of the discounted rental and service fees.</p>
       </div>}
       <div className="listing-deposit-box mt-4 flex gap-3">
         <ShieldCheck size={26} className="shrink-0 text-accent mt-0.5" aria-hidden="true" />
         <div>
           <h2 className="text-sm font-bold text-main">Separate security hold at check-in</h2>
           <p className="mt-1 font-bold text-accent tnum">${formatMoney(listing.deposit)}</p>
-          <p className="text-xs text-sec mt-2 leading-relaxed">{listing.deposit > 0 ? 'Not included in rental payment. Authorize the temporary hold within 24 hours before an owner-approved pickup or delivery slot.' : 'No security deposit is required for this item.'}</p>
+          <p className="text-xs text-sec mt-2 leading-relaxed">{listing.deposit > 0 ? 'No hold is placed yet. Authorize it within 24 hours before your approved pickup or delivery slot.' : 'No security deposit is required for this item.'}</p>
         </div>
-      </div>
-      <div className="mt-4 flex justify-between gap-3 text-sm text-sec">
-        <span>Security hold</span><span>No card hold placed</span>
       </div>
       {datesValid && <div className="mt-4 flex justify-between gap-3 text-sm font-bold text-main">
         <span>Estimated total</span><span className="tnum">${formatMoney(total)}</span>
       </div>}
-      <p className="text-xs text-sec mt-2">Includes rental, service fee and estimated tax only. Optional insurance can be added at checkout; review the backend-confirmed total before paying.</p>
+      <p className="text-xs text-sec mt-2">Includes rental, service fee and estimated tax. Review your total at checkout.</p>
       {!isOwner && <><Button fullWidth size="lg" className="mt-5" disabled={!canBook} onClick={goToCheckout}>
         {listing.instantBooking ? 'Book instantly' : 'Request to book'}
       </Button>
@@ -471,7 +468,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
           <div className="listing-details min-w-0 space-y-7">
             {listing.auctionEnabled && biddingFlagError && <Alert tone="error" title="Could not check competitive bidding">{biddingFlagError} Retrying automatically.</Alert>}
             <div className="listing-trust-strip flex flex-wrap gap-x-5 gap-y-2 text-xs text-sec">
-              <span className="inline-flex items-center gap-2"><CheckCircle2 size={16} className="text-accent" aria-hidden="true" />{listing.instantBooking ? 'Instant booking rules apply' : 'Owner approval required'}</span>
+              <span className="inline-flex items-center gap-2"><CheckCircle2 size={16} className="text-accent" aria-hidden="true" />{listing.instantBooking ? 'Instant booking' : 'Owner approval required'}</span>
               <span className="inline-flex items-center gap-2"><Lock size={16} className="text-accent" aria-hidden="true" />{listing.deposit > 0 ? `$${formatMoney(listing.deposit)} refundable deposit` : 'No security deposit'}</span>
               {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && (
                 <span className="inline-flex items-center px-3 py-2 rounded-card bg-accent-soft"><ProtectionBadge size="md" /></span>

@@ -33,8 +33,8 @@ export function OwnerPromotionControl({ listingId, onSaved }: { listingId: strin
   return <div className="mt-2">
     <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen((item) => !item)}>{open ? 'Close promo' : 'Promo code'}</Button>
     {open && <Surface className="mt-3 p-4 space-y-3">
-      <div><h5 className="text-sm font-semibold text-main">Owner-funded promotion</h5><p className="text-xs text-sec mt-1">One promo or weekly/monthly package discount can apply to each booking. Discounts do not stack.</p></div>
-      {!flag.enabled && <Alert tone="info">Promotions are disabled for this test environment. Enable the owner_promotions feature flag to configure one.</Alert>}
+      <div><h5 className="text-sm font-semibold text-main">Owner-funded promotion</h5><p className="text-xs text-sec mt-1">One promotion or rental discount can apply per booking; discounts can't be combined.</p></div>
+      {!flag.enabled && <Alert tone="info">Promotions aren't available right now.</Alert>}
       {error && <Alert tone="error">{error}</Alert>}{saved && <p role="status" className="text-sm text-accent">Promo saved.</p>}
       <fieldset disabled={!flag.enabled || busy} className="grid sm:grid-cols-2 gap-3">
         <Field label="Code (3–24 characters)" htmlFor={`promo-code-${listingId}`}><input id={`promo-code-${listingId}`} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} maxLength={24} className={fieldClass()} placeholder="SUMMER10" /></Field>

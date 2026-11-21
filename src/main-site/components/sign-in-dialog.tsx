@@ -5,7 +5,6 @@ import { useAuth } from '@/auth-context';
 import { Alert, Button } from '@/main-site/components/ui';
 import { fieldClass } from '@/main-site/components/form-classes';
 import { HOSTED_PROFILE_LOGIN, LOCAL_PROFILE_LOGIN, loadLocalProfiles, type LocalLoginProfile } from '@/lib/local-profile-login';
-import { SignupRewardOffer } from '@/main-site/components/signup-reward-offer';
 
 export function SignInDialog() {
   const { user, error, signInOpen, passwordRecovery, authBusy, closeSignIn, authenticate, requestPasswordReset, finishPasswordReset, signInWithGoogle } = useAuth();
@@ -77,7 +76,6 @@ export function SignInDialog() {
             : 'No password needed. These are isolated local test accounts.'
             : user ? `You're signed in as ${user.email}. Signing in switches accounts on this device.` : 'One account to rent items and list your own.'}
         </p>
-        {!user && !passwordRecovery && !resetMode && <SignupRewardOffer compact />}
         {(LOCAL_PROFILE_LOGIN || HOSTED_PROFILE_LOGIN) && !passwordRecovery ? <LocalProfilePicker /> : <>
         {error && <div role="alert" className="mb-4"><Alert tone="error">{error}</Alert></div>}
         {submitted && !error && <Alert tone="info">Check your email for a confirmation link before signing in. If you already have an account, sign in instead.</Alert>}
@@ -113,7 +111,7 @@ export function SignInDialog() {
         </form>
         <p className="mt-5 flex items-start justify-center gap-2 border-t border-app pt-4 text-center text-xs leading-relaxed text-sec">
           <LockKeyhole size={16} aria-hidden="true" className="shrink-0" />
-          <span>Authentication is handled by Supabase. Bookings and saved items stay with their original account.</span>
+          <span>Your rentals and saved items stay with your account.</span>
         </p>
         </>}
       </div>

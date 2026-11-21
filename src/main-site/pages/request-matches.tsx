@@ -83,7 +83,7 @@ export function RequestMatchesPage({ id }: { id: string }) {
 
   return <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-5">
     <Button variant="ghost" onClick={() => navigate({ name: 'requests', tab: 'mine' })}>Back to my requests</Button>
-    <SectionHeader as="h1" title="Items matching your request" subtitle={request ? `${request.title} · ${request.preferred_start_date} – ${request.preferred_end_date} · ${request.location_label}` : 'Listings are checked against your request, not just its category.'} />
+    <SectionHeader as="h1" title="Items matching your request" subtitle={request ? `${request.title} · ${request.preferred_start_date} – ${request.preferred_end_date} · ${request.location_label}` : 'Find items that fit your request.'} />
     {request && <div className="flex flex-wrap gap-3 items-center text-sm text-sec">
       <span>{request.max_daily_budget == null ? 'No daily budget limit' : `Maximum $${request.max_daily_budget}/day`}</span>
       <span>{request.requested_quantity} {request.requested_quantity === 1 ? 'unit' : 'units'} requested</span>
@@ -98,7 +98,7 @@ export function RequestMatchesPage({ id }: { id: string }) {
     {favoriteError && <Alert tone="error" title="Saved items unavailable">{favoriteError}</Alert>}
     {flag.loading || (loading && flag.enabled) ? <ListingGridSkeleton />
       : !flag.enabled && !flag.error ? <EmptyState title="Item requests are not enabled" description="Request matching is temporarily unavailable." />
-      : !error && listings.length === 0 ? <EmptyState title="No matching items available yet" description="New listings can appear here when they match your dates, area, quantity and daily budget." />
+      : !error && listings.length === 0 ? <EmptyState title="No matches yet" description="Matching items will appear here as they're listed." />
       : !error && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {listings.map(listing => <div key={listing.id} className="flex flex-col gap-2">
           <div><Badge tone="success">Matches your request · available for requested dates</Badge></div>
@@ -112,6 +112,6 @@ export function RequestMatchesPage({ id }: { id: string }) {
       <div className="flex gap-2"><Button variant="secondary" disabled={page === 0 || loading} onClick={() => setPage(value => value - 1)}>Previous</Button>
         <Button variant="secondary" disabled={(page + 1) * 12 >= total || loading} onClick={() => setPage(value => value + 1)}>Next</Button></div>
     </div>}
-    <p className="text-xs text-sec">Matches do not reserve stock. Availability and payment are verified again during booking. In-app alerts also follow your account notification settings; device push is not enabled.</p>
+    <p className="text-xs text-sec">Matching items aren't reserved. Availability is checked when you book.</p>
   </div>;
 }

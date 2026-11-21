@@ -44,7 +44,7 @@ export function ListingAvailabilityPicker({ start, end, onChange, error, today =
   }
 
   return <section id="listing-availability" tabIndex={-1} aria-invalid={Boolean(currentError)} aria-label="Listing availability" aria-describedby={currentError ? 'listing-availability-error' : undefined} className="space-y-4">
-    <p className="text-sm text-sec">Choose your first available day to start with 7 days. Adjust the last day for 1 to 30 days, including both dates. Then block any unavailable days.</p>
+    <p className="text-sm text-sec">Choose an available range of 1–30 days, then block any dates you can't rent.</p>
     <div className="grid grid-cols-2 gap-3" aria-label="Selected availability dates">
       <button type="button" aria-pressed={!choosingEnd} onClick={() => { setChoosingEnd(false); const date = new Date(`${start || today}T12:00:00`); setMonth(new Date(date.getFullYear(), date.getMonth(), 1)); }}
         className={`listing-date-option ${!choosingEnd ? 'is-selected' : ''}`}>
@@ -67,10 +67,11 @@ export function ListingAvailabilityPicker({ start, end, onChange, error, today =
       <IconButton label="Next availability month" variant="ghost" disabled={monthNumber(month) >= monthNumber(lastMonth)}
         onClick={() => setMonth(nextMonth)}><ChevronRight size={18} aria-hidden="true" /></IconButton>
     </div>
-      <div className="owner-availability-months grid sm:grid-cols-2 gap-3 border border-app bg-card p-2 sm:p-3">
+      <div data-calendar-months className="owner-availability-months grid sm:grid-cols-2 gap-3 border border-app bg-card p-2 sm:p-3">
         {[month, nextMonth].map((date, index) => <div key={date.toISOString()} className={index ? 'hidden sm:block' : ''}>
           <MonthGrid monthDate={date} todayStr={today} minDate={minimum} maxDate={maximum}
-            draftStart={start} draftEnd={lastAvailable} bookedDates={NO_DATES} blockedDates={NO_DATES} onPick={pick} />
+            draftStart={start} draftEnd={lastAvailable} bookedDates={NO_DATES} blockedDates={NO_DATES} onPick={pick}
+            onNavigateDate={target => setMonth(new Date(`${target.slice(0, 7)}-01T12:00:00`))} />
         </div>)}
       </div>
     {currentError && <p id="listing-availability-error" role="alert" className="text-sm text-error mt-3">{currentError}</p>}

@@ -111,7 +111,7 @@ export function TrustProfilePage() {
 
         <Surface className="p-5 sm:p-6">
           <h2 className="font-semibold text-main font-display">Display preferences</h2>
-          <p className="mt-1 text-sm text-sec">Choose a comfortable color scheme. System follows your device setting; text size follows your browser and device settings.</p>
+          <p className="mt-1 text-sm text-sec">Choose a color scheme, or follow your device settings.</p>
           <fieldset className="mt-4 flex flex-wrap gap-2">
             <legend className="mb-2 text-sm font-semibold text-sec">Color scheme</legend>
             {(['system', 'light', 'dark'] as const).map((scheme) => (
@@ -156,7 +156,7 @@ export function TrustProfilePage() {
 
           <Surface className="p-5 sm:p-6">
             <h2 className="font-semibold text-main font-display">Trust and verification</h2>
-            <p className="mt-1 mb-4 text-sm text-sec">Your account signals help the YBuy community rent with confidence.</p>
+            <p className="mt-1 mb-4 text-sm text-sec">Help others rent with confidence.</p>
             <div className="space-y-2.5">
               <TrustRow label={`Signed in with ${authProviderLabel(user?.app_metadata.provider)}`} verified={Boolean(user?.app_metadata.provider)} />
               <TrustRow label="Email verified" verified={Boolean(user?.email_confirmed_at)} />
@@ -215,7 +215,7 @@ function ProfileGeography({userId,initialCountry,initialRegion}:{userId:string;i
   },[country]);
   return <Surface className="p-5 mb-4">
     <h2 className="font-semibold text-main font-display">Country and region</h2>
-    <p className="mt-1 text-sm text-sec">Optional details saved with future rentals. They don’t verify identity or change existing rentals.</p>
+    <p className="mt-1 text-sm text-sec">Optional details for future rentals. These don't verify your identity or change existing rentals.</p>
     <form className="mt-3 space-y-3" onSubmit={async event=>{
       event.preventDefault();setError(null);setSaved(false);setSaving(true);
       try{
