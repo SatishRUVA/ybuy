@@ -728,8 +728,8 @@ same-origin API routes, and access-gate Edge Function. The `dev` branch
 production workflow uses GitHub Actions to deploy only changed layers: Supabase
 first when both backend and frontend change, then Netlify. Disable Netlify's
 automatic Git deployments to avoid duplicate or out-of-order production
-deploys. Existing GitHub Actions run typecheck, lint, all three app builds, and
-database checks.
+deploys. GitHub Actions run typecheck, lint, Node tests, all three app builds,
+and database checks.
 
 Set environment variables in the Netlify site's UI, not in `netlify.toml` or
 Git. The build intentionally fails if `VITE_SUPABASE_URL` or
