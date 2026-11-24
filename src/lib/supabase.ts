@@ -10,5 +10,5 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: { flowType: 'pkce', ...(ADMIN_PORTAL && !COMBINED_TEST_PROFILE_LOGIN ? { storageKey: 'ybuy-admin-auth', persistSession: false } : {}) },
+  auth: { flowType: 'pkce', ...(ADMIN_PORTAL && !COMBINED_TEST_PROFILE_LOGIN ? { storageKey: 'ybuy-admin-auth', storage: window.sessionStorage } : {}) },
 });

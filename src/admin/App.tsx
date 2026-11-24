@@ -8,6 +8,7 @@ import { BrandLogo } from '@/main-site/components/brand-logo';
 import { fieldClass } from '@/main-site/components/form-classes';
 import { COMBINED_TEST_PROFILE_LOGIN, loadLocalProfiles, type LocalLoginProfile } from '@/lib/local-profile-login';
 import { ADMIN_PORTAL_ROLE } from '@/lib/admin-portal';
+import { useAdminAccess } from '@/lib/admin-access';
 import '@/main-site/index.css';
 import '@/main-site/theme.css';
 import './admin.css';
@@ -41,7 +42,8 @@ async function accessRequest(method: 'GET' | 'POST' | 'DELETE', body?: { role: '
 
 function AdminPortal() {
   const { route, navigate } = useRouter();
-  const { user, profile, loading: authLoading, error: authError, authBusy, selectLocalProfile, signOut } = useAuth();
+  const { user, profile, loading: authLoading, error: authError, authBusy, selectLocalProfile, signInWithGoogle, signOut } = useAuth();
+  const { access, loading: accessLoading, error: accessError, retry: retryAccess } = useAdminAccess();
   const [grant, setGrant] = useState<Grant | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(true);
@@ -56,16 +58,22 @@ function AdminPortal() {
     checking.current = true;
     const currentRevision = revision.current;
     try {
-      const verifiedRole = COMBINED_TEST_PROFILE_LOGIN ? ADMIN_PORTAL_ROLE : await accessRequest('GET');
+      const verifiedRole = await accessRequest('GET');
       if (currentRevision !== revision.current) return;
       if (!verifiedRole) { setGrant(null); return; }
-      const allProfiles = await loadLocalProfiles();
+      let profiles: LocalLoginProfile[] = [];
+      let profileError: string | null = null;
+      try {
+        const allProfiles = await loadLocalProfiles();
+        profiles = COMBINED_TEST_PROFILE_LOGIN ? allProfiles.filter(item => item.role === profileRole) : allProfiles;
+        if (profiles.some(item => item.role !== profileRole)) throw new Error('Administrator profiles do not match your verified role.');
+      } catch (reason) {
+        profiles = [];
+        profileError = reason instanceof Error ? reason.message : 'Could not load administrator test profiles.';
+      }
       if (currentRevision !== revision.current) return;
-      const profiles = COMBINED_TEST_PROFILE_LOGIN ? allProfiles.filter(item => item.role === profileRole) : allProfiles;
-      if (profiles.some(item => item.role !== profileRole)) throw new Error('Administrator profiles do not match your verified role.');
-      if (profiles.length === 0) throw new Error(`No active ${roleLabel} test profile is available.`);
       setGrant({ role: verifiedRole, profiles });
-      setError(null);
+      setError(profileError);
     } catch (reason) {
       if (currentRevision !== revision.current) return;
       setGrant(null);
@@ -90,12 +98,9 @@ function AdminPortal() {
       const verifiedRole = await accessRequest('POST', { role: ADMIN_PORTAL_ROLE, code });
       setCode('');
       if (!verifiedRole) throw new Error('Administrator verification did not return a role.');
-      const allProfiles = await loadLocalProfiles();
-      const profiles = COMBINED_TEST_PROFILE_LOGIN ? allProfiles.filter(item => item.role === profileRole) : allProfiles;
-      if (profiles.some(item => item.role !== profileRole)) throw new Error('Administrator profiles do not match your verified role.');
-      if (profiles.length === 0) throw new Error(`No active ${roleLabel} test profile is available.`);
-      setGrant({ role: verifiedRole, profiles });
       setSwitching(true);
+      mutating.current = false;
+      await refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not verify your authenticator code.');
     } finally { mutating.current = false; setBusy(false); }
@@ -114,7 +119,7 @@ function AdminPortal() {
     } finally { mutating.current = false; setBusy(false); }
   }
 
-  const authorized = grant && user && grant.profiles.some(item => item.id === user.id);
+  const authorized = Boolean(grant && user && access?.role === grant.role);
   const picker = !authorized || switching;
   return <div className="admin-portal min-h-screen bg-app text-main">
     <header className="admin-gate-header flex flex-wrap items-center justify-between gap-3 border-b border-app bg-card px-4 py-4 sm:px-6">
@@ -126,7 +131,7 @@ function AdminPortal() {
       </div>}
     </header>
     {(error || authError) && <div role="alert" className="mx-auto max-w-xl px-5 pt-5"><Alert tone="error">{error || authError}</Alert></div>}
-    {busy || authLoading || authBusy !== null ? <p role="status" className="p-8 text-center text-sec">Checking administrator access...</p>
+    {busy || authLoading || authBusy !== null || (grant && user && accessLoading) ? <p role="status" className="p-8 text-center text-sec">Checking administrator access...</p>
       : !grant ? <main className="mx-auto max-w-lg px-5 py-12 sm:py-20">
         <ShieldCheck className="mb-5 text-main" size={32} aria-hidden="true" />
         <h1 className="font-display text-3xl font-bold">{signInTitle} sign-in</h1>
@@ -144,19 +149,26 @@ function AdminPortal() {
         <Button variant="ghost" className="mt-4" onClick={() => { setBusy(true); void refresh(); }}>Retry access check</Button>
       </main>
       : picker ? <main className="mx-auto max-w-lg px-5 py-12">
-        <h1 className="font-display text-3xl font-bold">Choose {roleLabel === 'Admin' ? 'an' : 'a'} {roleLabel} profile</h1>
-        <p className="mt-3 text-sm text-sec">Your authenticator code is verified. You can switch between administrator profiles without entering it again until access expires.</p>
+        <h1 className="font-display text-3xl font-bold">{roleLabel} sign-in</h1>
+        <p className="mt-3 text-sm text-sec">Your authenticator code is verified. Sign in with an authorized Google account or choose a test profile.</p>
+        {user && !authorized && <div className="mt-4"><Alert tone="error">{accessError || `This account does not have active ${roleLabel} access.`}</Alert>
+          {accessError && <Button type="button" variant="secondary" className="mt-2" onClick={retryAccess}>Retry access check</Button>}</div>}
+        <Button type="button" fullWidth variant="secondary" className="mt-6" disabled={authBusy !== null} onClick={() => void signInWithGoogle()}>
+          Continue with Google
+        </Button>
+        {grant.profiles.length > 0 && <>
         <label className="mt-6 block text-sm font-semibold">{roleLabel} profile
-          <select className={fieldClass('mt-2')} value={authorized ? user.id : ''} disabled={authBusy !== null}
+          <select className={fieldClass('mt-2')} value={grant.profiles.some(item => item.id === user?.id) ? user?.id : ''} disabled={authBusy !== null}
             onChange={event => { setSwitching(false); void selectLocalProfile(event.target.value); }}>
             <option value="" disabled>Select a profile</option>
             {grant.profiles.map(item => <option key={item.id} value={item.id}>{item.name} - {item.role}</option>)}
           </select>
         </label>
+        </>}
         {authBusy && <p role="status" className="mt-3 text-sm text-sec">Signing in...</p>}
         {authorized && <Button variant="secondary" className="mt-4" onClick={() => setSwitching(false)}>Back to dashboard</Button>}
       </main>
-      : <Suspense fallback={<p role="status" className="p-8">Loading admin console...</p>}>
+      : user && <Suspense fallback={<p role="status" className="p-8">Loading admin console...</p>}>
         <AdminPage key={user.id} section={(route.name === 'admin' || route.name === 'super-admin') && route.section !== 'login' ? route.section : undefined}
           recordId={route.name === 'admin' || route.name === 'super-admin' ? route.recordId : undefined} />
         {route.name !== 'admin' && route.name !== 'super-admin' && <Button className="sr-only focus:not-sr-only" onClick={() => navigate({ name: ADMIN_PORTAL_ROLE === 'super_admin' ? 'super-admin' : 'admin' })}>Open admin dashboard</Button>}

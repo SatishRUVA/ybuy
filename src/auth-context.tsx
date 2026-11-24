@@ -227,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.location.assign(data.url);
     } catch (error) {
       console.error('Google sign-in failed:', error instanceof Error ? error.message : 'Unknown error');
-      setError('Could not start Google sign-in. Please try again or use your YBuy email and password.');
+      setError('Could not start Google sign-in. Please try again.');
     } finally {
       signingOut.current = false;
       setAuthBusy(null);

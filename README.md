@@ -710,6 +710,9 @@ exact host to both `VITE_TEST_PROFILE_HOSTS` and
 server-only `YBUY_TOTP_SECRET`, `YBUY_ACCESS_SESSION_SECRET` and
 `SUPABASE_SERVICE_ROLE_KEY`. The existing authenticator verifier grants a signed,
 HttpOnly, two-hour tester cookie; both listing and selecting profiles require it.
+On the combined site's administrator routes, the same tester cookie also gates
+Google sign-in. A matching active administrator role and its database
+permissions are required; Google accounts are not added to the test picker.
 Only marked `owner1`-`owner5`, `renter1`-`renter5`, `admin`, and `super-admin`
 synthetic accounts are allowed. Administrator fixtures must have their matching
 active database role; Owner and Renter fixtures with any administrator record
@@ -789,14 +792,19 @@ Configure these production environment variables **only on the admin project**:
   `VITE_TEST_PROFILE_LOGIN=false`; the customer authenticator is not used here.
 
 Enter the role-specific authenticator code at `/admin` or `/super-admin`, then
-choose a matching profile. The Admin portal admits only `admin@example.test`
-profiles, while Super Admin admits only `super-admin@example.test` profiles;
+sign in with Google or choose a matching test profile. Google users need an
+existing YBuy account with the matching active administrator role; Admin users
+also need the permissions assigned by a Super Admin. Google Auth and each
+portal's return URL must be configured in Supabase before sign-in can work.
+The test picker admits only `admin@example.test` profiles for Admin and
+`super-admin@example.test` profiles for Super Admin;
 each must carry the
 `ybuy-local-lifecycle-v1` fixture marker and matching active database role.
 Switching profiles does not ask for another code. Tokens are signed with a
 host-and-role-specific key and kept in a host-only HttpOnly, Secure,
-SameSite=Strict cookie for up to two hours. Supabase sessions on the portal are
-memory-only; profile selection is required again after a reload. The
+SameSite=Strict cookie for up to two hours. Supabase sessions on the dedicated
+portal use tab-scoped session storage so the Google redirect can complete; they
+survive reloads but are cleared when the tab closes. The
 site-level gate is not enabled on this separate Vercel host; use the combined
 Netlify setup when all three authenticator checks are required.
 

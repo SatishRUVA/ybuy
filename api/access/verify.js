@@ -1,6 +1,6 @@
 // Vercel Edge Function — the only endpoint allowed to verify a TOTP code and mint the
 // temporary access session cookie. Runs same-origin so the cookie is scoped to YBuy's own domain.
-import { verifyTotp, signAccessSession, ACCESS_COOKIE_NAME } from '../_lib/access-session.js';
+import { verifyTotp, signAccessSession, verifyAccessSession, ACCESS_COOKIE_NAME } from '../_lib/access-session.js';
 
 export const config = { runtime: 'edge' };
 
@@ -35,7 +35,15 @@ function auditLog(event, ip) {
 
 export default async function handler(request) {
   if (process.env.YBUY_TEMP_ACCESS_ENABLED !== 'true' && process.env.YBUY_TEST_PROFILE_LOGIN !== 'true') return json(404, { error: 'Not found' });
-  if (!['POST', 'DELETE'].includes(request.method)) return json(405, { error: 'Method not allowed' });
+  if (!['GET', 'POST', 'DELETE'].includes(request.method)) return json(405, { error: 'Method not allowed' });
+  if (request.method === 'GET') {
+    const secret = process.env.YBUY_ACCESS_SESSION_SECRET;
+    if (!secret) return json(503, { error: 'Service temporarily unavailable' });
+    const cookie = request.headers.get('cookie')?.split(';').map(part => part.trim())
+      .find(part => part.startsWith(`${ACCESS_COOKIE_NAME}=`))?.slice(ACCESS_COOKIE_NAME.length + 1);
+    if (!await verifyAccessSession(secret, cookie)) return json(401, { error: 'Tester verification expired.' }, { 'cache-control': 'no-store' });
+    return json(200, { ok: true }, { 'cache-control': 'no-store' });
+  }
   if (request.headers.get('origin') !== new URL(request.url).origin) return json(403, { error: 'Same-origin verification required.' });
   if (request.method === 'DELETE') {
     return json(200, { ok: true }, {
