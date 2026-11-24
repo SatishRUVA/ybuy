@@ -35,8 +35,14 @@ function auditLog(event, ip) {
 
 export default async function handler(request) {
   if (process.env.YBUY_TEMP_ACCESS_ENABLED !== 'true' && process.env.YBUY_TEST_PROFILE_LOGIN !== 'true') return json(404, { error: 'Not found' });
-  if (request.method !== 'POST') return json(405, { error: 'Method not allowed' });
+  if (!['POST', 'DELETE'].includes(request.method)) return json(405, { error: 'Method not allowed' });
   if (request.headers.get('origin') !== new URL(request.url).origin) return json(403, { error: 'Same-origin verification required.' });
+  if (request.method === 'DELETE') {
+    return json(200, { ok: true }, {
+      'set-cookie': `${ACCESS_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`,
+      'cache-control': 'no-store',
+    });
+  }
 
   const totpSecret = process.env.YBUY_TOTP_SECRET;
   const sessionSecret = process.env.YBUY_ACCESS_SESSION_SECRET;

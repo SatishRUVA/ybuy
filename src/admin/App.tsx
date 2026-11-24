@@ -6,7 +6,7 @@ import { RouterProvider, useRouter } from '@/router';
 import { Alert, Button } from '@/main-site/components/ui';
 import { BrandLogo } from '@/main-site/components/brand-logo';
 import { fieldClass } from '@/main-site/components/form-classes';
-import { loadLocalProfiles, type LocalLoginProfile } from '@/lib/local-profile-login';
+import { COMBINED_TEST_PROFILE_LOGIN, loadLocalProfiles, type LocalLoginProfile } from '@/lib/local-profile-login';
 import { ADMIN_PORTAL_ROLE } from '@/lib/admin-portal';
 import '@/main-site/index.css';
 import '@/main-site/theme.css';
@@ -17,7 +17,8 @@ type Grant = { role: 'admin' | 'super_admin'; profiles: LocalLoginProfile[] };
 const roleLabel = ADMIN_PORTAL_ROLE === 'super_admin' ? 'Super Admin' : 'Admin';
 const signInTitle = ADMIN_PORTAL_ROLE === 'super_admin' ? 'Super Admin' : 'Administrator';
 const profileRole = roleLabel;
-const accessEndpoint = ADMIN_PORTAL_ROLE === 'super_admin' ? '/api/super-admin/access' : '/api/admin/access';
+const accessEndpoint = COMBINED_TEST_PROFILE_LOGIN ? '/api/access/verify'
+  : ADMIN_PORTAL_ROLE === 'super_admin' ? '/api/super-admin/access' : '/api/admin/access';
 
 async function accessRequest(method: 'GET' | 'POST' | 'DELETE', body?: { role: 'admin' | 'super_admin'; code: string }) {
   const response = await fetch(accessEndpoint, {
@@ -29,6 +30,9 @@ async function accessRequest(method: 'GET' | 'POST' | 'DELETE', body?: { role: '
   if (!response.ok) throw new Error(data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
     ? data.error : 'Could not verify administrator access. Please retry.');
   if (method === 'DELETE') return null;
+  if (COMBINED_TEST_PROFILE_LOGIN && data && typeof data === 'object' && 'ok' in data && data.ok === true) {
+    return ADMIN_PORTAL_ROLE;
+  }
   if (!data || typeof data !== 'object' || !('role' in data) || data.role !== ADMIN_PORTAL_ROLE) {
     throw new Error('Administrator verification returned an invalid role.');
   }
@@ -52,12 +56,14 @@ function AdminPortal() {
     checking.current = true;
     const currentRevision = revision.current;
     try {
-      const verifiedRole = await accessRequest('GET');
+      const verifiedRole = COMBINED_TEST_PROFILE_LOGIN ? ADMIN_PORTAL_ROLE : await accessRequest('GET');
       if (currentRevision !== revision.current) return;
       if (!verifiedRole) { setGrant(null); return; }
-      const profiles = await loadLocalProfiles();
+      const allProfiles = await loadLocalProfiles();
       if (currentRevision !== revision.current) return;
+      const profiles = COMBINED_TEST_PROFILE_LOGIN ? allProfiles.filter(item => item.role === profileRole) : allProfiles;
       if (profiles.some(item => item.role !== profileRole)) throw new Error('Administrator profiles do not match your verified role.');
+      if (profiles.length === 0) throw new Error(`No active ${roleLabel} test profile is available.`);
       setGrant({ role: verifiedRole, profiles });
       setError(null);
     } catch (reason) {
@@ -84,8 +90,10 @@ function AdminPortal() {
       const verifiedRole = await accessRequest('POST', { role: ADMIN_PORTAL_ROLE, code });
       setCode('');
       if (!verifiedRole) throw new Error('Administrator verification did not return a role.');
-      const profiles = await loadLocalProfiles();
+      const allProfiles = await loadLocalProfiles();
+      const profiles = COMBINED_TEST_PROFILE_LOGIN ? allProfiles.filter(item => item.role === profileRole) : allProfiles;
       if (profiles.some(item => item.role !== profileRole)) throw new Error('Administrator profiles do not match your verified role.');
+      if (profiles.length === 0) throw new Error(`No active ${roleLabel} test profile is available.`);
       setGrant({ role: verifiedRole, profiles });
       setSwitching(true);
     } catch (reason) {
@@ -124,7 +132,7 @@ function AdminPortal() {
         <h1 className="font-display text-3xl font-bold">{signInTitle} sign-in</h1>
         <p className="mt-3 text-sm leading-relaxed text-sec">Isolated test environment. Administrator access uses an authenticator code for up to two hours.</p>
         <form method="post" action={accessEndpoint} onSubmit={event => void verify(event)} className="mt-7 space-y-5">
-          <label htmlFor="admin-auth-code" className="block text-sm font-semibold">{roleLabel} authenticator code</label>
+          <label htmlFor="admin-auth-code" className="block text-sm font-semibold">{COMBINED_TEST_PROFILE_LOGIN ? 'Tester security code' : `${roleLabel} authenticator code`}</label>
           <p id="admin-auth-code-hint" className="text-sm text-sec">Enter the six-digit code from your authenticator app.</p>
           <input id="admin-auth-code" name="code" type="text" className={fieldClass('mt-2')} value={code}
             onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}

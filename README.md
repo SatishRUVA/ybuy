@@ -710,8 +710,10 @@ exact host to both `VITE_TEST_PROFILE_HOSTS` and
 server-only `YBUY_TOTP_SECRET`, `YBUY_ACCESS_SESSION_SECRET` and
 `SUPABASE_SERVICE_ROLE_KEY`. The existing authenticator verifier grants a signed,
 HttpOnly, two-hour tester cookie; both listing and selecting profiles require it.
-Only marked `owner1`-`owner5` and `renter1`-`renter5` synthetic accounts are allowed.
-Any fixture with administrator access is excluded, even when its role is inactive.
+Only marked `owner1`-`owner5`, `renter1`-`renter5`, `admin`, and `super-admin`
+synthetic accounts are allowed. Administrator fixtures must have their matching
+active database role; Owner and Renter fixtures with any administrator record
+are excluded.
 No accounts, permissions or emails are created by the picker. Keep the site-wide
 `YBUY_TEMP_ACCESS_ENABLED` flag separate; missing tester configuration fails closed.
 The top-right avatar opens a compact anchored dropdown with Sign out and, in
@@ -748,24 +750,20 @@ hostname `ybuys.netlify.app` and configure these build variables:
 
 Configure these Functions and Edge variables:
 
-- `YBUY_TEMP_ACCESS_ENABLED=true`, `YBUY_TEST_PROFILE_LOGIN=true`,
-  `YBUY_TEST_PROFILE_ALLOWED_HOSTS=ybuys.netlify.app`, and
-  `YBUY_ADMIN_HOST=ybuys.netlify.app`.
-- Three different server-side TOTP seeds: `YBUY_TOTP_SECRET` for the site gate,
-  `YBUY_ADMIN_TOTP_SECRET` for `/admin`, and
-  `YBUY_SUPER_ADMIN_TOTP_SECRET` for `/super-admin`. The API refuses role
-  access unless both role seeds are valid and all three are distinct.
-- `YBUY_ACCESS_SESSION_SECRET` and `YBUY_ADMIN_ACCESS_SESSION_SECRET` (each at
-  least 32 characters and different), plus server-only
+- `YBUY_TEMP_ACCESS_ENABLED=true`, `YBUY_TEST_PROFILE_LOGIN=true`, and
+  `YBUY_TEST_PROFILE_ALLOWED_HOSTS=ybuys.netlify.app`.
+- Server-only `YBUY_TOTP_SECRET`, `YBUY_ACCESS_SESSION_SECRET`, and
   `SUPABASE_SERVICE_ROLE_KEY`. Make the Supabase public URL available to
   Functions as well.
 
-The site gate runs first across the hostname; Admin and Super Admin then use
-their separate role-specific authenticator seeds. The customer app is at `/`,
-the Admin portal is at `/admin`, and Super Admin is at `/super-admin`. The
-portals list only already-provisioned synthetic profiles whose fixture marker
-and active database role match that portal; this setup does not create accounts
-or promote users. Keep every seed and service-role key secret in Netlify.
+The site gate runs first across the hostname. The same two-hour tester session
+unlocks the customer app at `/`, Admin at `/admin`, and Super Admin at
+`/super-admin`, without another authenticator prompt. Each admin portal accepts
+only already-provisioned synthetic profiles whose fixture marker and active
+database role match that portal; this setup does not create accounts or promote
+users. Anyone with the shared tester code can select those admin fixtures, so
+use this setup only with an isolated test backend and trusted testers. Keep the
+seed and service-role key secret in Netlify.
 
 ### Dedicated administrator test portal
 

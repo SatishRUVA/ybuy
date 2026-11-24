@@ -187,7 +187,7 @@ jobs:
             exit 1
           fi
       - name: Build and publish Netlify production site
-        run: netlify deploy --prod --context production --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
+        run: netlify deploy --remote --prod --context production --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
       - name: Check deployed homepage
         shell: bash
         run: |
