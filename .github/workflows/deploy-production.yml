@@ -17,6 +17,7 @@ on:
       - 'tailwind.config.*'
       - 'tsconfig*.json'
       - 'scripts/check-netlify-env.mjs'
+      - '.github/workflows/deploy-production.yml'
       - 'supabase/**'
 
 permissions:
@@ -55,7 +56,7 @@ jobs:
           backend=false
           while IFS= read -r path; do
             case "$path" in
-              src/*|public/*|api/*|netlify/*|netlify.toml|index.html|package.json|pnpm-lock.yaml|vite.config.*|postcss.config.*|tailwind.config.*|tsconfig*.json|scripts/check-netlify-env.mjs)
+              src/*|public/*|api/*|netlify/*|netlify.toml|index.html|package.json|pnpm-lock.yaml|vite.config.*|postcss.config.*|tailwind.config.*|tsconfig*.json|scripts/check-netlify-env.mjs|.github/workflows/deploy-production.yml)
                 frontend=true
                 ;;
             esac
@@ -186,8 +187,18 @@ jobs:
             echo "::error::Netlify VITE_SUPABASE_URL does not match the approved Supabase project."
             exit 1
           fi
+          supabase_anon_key="$(netlify env:get VITE_SUPABASE_ANON_KEY --context production --scope builds --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN")"
+          if [[ -z "$supabase_anon_key" || "$supabase_anon_key" == *$'\n'* || "$supabase_anon_key" == *$'\r'* ]]; then
+            echo "::error::Netlify VITE_SUPABASE_ANON_KEY is missing or invalid."
+            exit 1
+          fi
+          printf '::add-mask::%s\n' "$supabase_anon_key"
+          {
+            printf 'VITE_SUPABASE_URL=%s\n' "$supabase_url"
+            printf 'VITE_SUPABASE_ANON_KEY=%s\n' "$supabase_anon_key"
+          } >> "$GITHUB_ENV"
       - name: Build and publish Netlify production site
-        run: netlify deploy --remote --prod --context production --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
+        run: netlify deploy --prod --context production --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
       - name: Check deployed homepage
         shell: bash
         run: |
