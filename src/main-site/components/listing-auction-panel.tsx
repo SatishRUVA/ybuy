@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { ChevronLeft, ChevronRight, Clock3, Crown, Gavel, ShieldCheck, UserRound } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Clock3, Crown, Gavel } from 'lucide-react';
 import { Alert, Button, Field } from '@/main-site/components/ui';
 import { fieldClass } from '@/main-site/components/form-classes';
 import { useAuth } from '@/auth-context';
@@ -13,6 +13,7 @@ import { calculateRentalPricing } from '@/lib/rental-pricing';
 import { bookingTaxCents } from '@/lib/booking-tax';
 import { insuranceAmountCents } from '@/lib/insurance-pricing';
 import { usePlatformFee } from '@/lib/settings';
+import { BidReviewDialog } from '@/main-site/components/bid-review-dialog';
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Could not load competitive bidding. Please retry.';
 const deadlineLabel = (iso: string | null) => iso ? new Date(iso).toLocaleString() : 'Not started';
@@ -22,7 +23,7 @@ const NO_DATES = new Set<string>();
 function FixedAuctionCalendar({ start, end }: { start: string; end: string }) {
   const [month, setMonth] = useState(() => new Date(`${start.slice(0, 7)}-01T12:00:00`));
   const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
-  return <section aria-label="Auction rental calendar" className="rental-calendar rounded-card border border-app p-3">
+  return <section aria-label="Bidding rental calendar" className="rental-calendar rounded-card border border-app p-3">
     <h3 className="text-sm font-bold">Rental dates</h3>
     <p className="mt-1 text-xs text-sec">These dates are fixed by the owner. All bids cover pickup {start} to return {end}; the return date is not a charged rental day.</p>
     <div className="my-3 flex items-center justify-between gap-2">
@@ -47,6 +48,8 @@ export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0, r
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const submitting = useRef(false);
   const [rate, setRate] = useState('');
   const amount = Number(rate);
   const [depositConsent, setDepositConsent] = useState(false);
@@ -74,9 +77,9 @@ export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0, r
     return () => { mounted.current = false; window.clearInterval(timer); window.clearInterval(tick); };
   }, [refresh, user?.id]);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!auction) return;
+  async function submit() {
+    if (!auction || submitting.current) return;
+    submitting.current = true;
     setBusy(true); setError(null);
     try {
       if (fee.error || fee.loading || fee.pct === null) throw new Error(fee.error ?? 'Wait for the current service fee to load before bidding.');
@@ -86,9 +89,9 @@ export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0, r
       if (deposit > 0 && !depositConsent) throw new Error('Agree to the temporary deposit authorization before placing a bid.');
       if (!pendingBid.current || pendingBid.current.rate !== amount) pendingBid.current = { rate: amount, key: crypto.randomUUID() };
       apply(await placeListingAuctionBid(listingId, amount, pendingBid.current.key, depositConsent));
-      pendingBid.current = null; setRate('');
+      pendingBid.current = null; setReviewOpen(false); setRate('');
     } catch (reason) { setError(errorMessage(reason)); }
-    finally { setBusy(false); }
+    finally { submitting.current = false; setBusy(false); }
   }
   const deadline = auction?.status === 'scheduled' ? auction.starts_at ?? null : auction?.status === 'owner_selection' ? auction.selection_deadline : auction?.status === 'awaiting_payment' ? auction.payment_deadline : auction?.ends_at ?? null;
   const open = auction?.status === 'open' && !!deadline && Date.parse(deadline) > now;
@@ -105,19 +108,19 @@ export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0, r
   return <section id="competitive-auction" aria-labelledby="competitive-auction-title" className="scroll-mt-24 rounded-card-lg border border-app overflow-hidden">
     <header className="flex items-start gap-3 bg-accent-soft px-5 py-4">
       <Gavel size={21} aria-hidden="true" className="text-accent mt-0.5" /><div>
-        <h2 id="competitive-auction-title" className="text-lg font-bold text-main">Competitive bidding</h2>
+        <h2 id="competitive-auction-title" className="text-lg font-bold text-main">Place your bid</h2>
         <p className="text-xs text-sec mt-1">Renter identities stay private from other bidders. No payment is taken when bidding.</p>
       </div>
     </header>
     <div className="p-5">
       {loading && <p role="status" className="text-sm text-sec">Loading current bids...</p>}
       {error && <Alert tone="error" title="Competitive bidding could not be confirmed">{error}<Button variant="secondary" size="sm" className="mt-2" disabled={busy} onClick={() => void refresh()}>Refresh bids</Button></Alert>}
-      {!loading && !error && !auction && <p role="status" className="text-sm text-sec">There is no active auction for this listing.</p>}
+      {!loading && !error && !auction && <p role="status" className="text-sm text-sec">There is no active bidding for this listing.</p>}
       {auction && <div className="grid md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-5">
         <div className="space-y-4">
           <div className="flex gap-3 rounded-card bg-subtle p-3">
             <Clock3 size={22} className="shrink-0 text-accent" aria-hidden="true" />
-            <div className="text-xs"><p className="font-semibold">{auction.status === 'scheduled' ? 'Bidding opens in' : auction.status === 'owner_selection' ? 'Owner selection ends in' : auction.status === 'awaiting_payment' ? 'Payment deadline in' : open ? 'Bidding ends in' : auction.status === 'completed' ? 'Auction rental booked' : 'Bidding is closed'}</p>
+            <div className="text-xs"><p className="font-semibold">{auction.status === 'scheduled' ? 'Bidding opens in' : auction.status === 'owner_selection' ? 'Owner selection ends in' : auction.status === 'awaiting_payment' ? 'Payment deadline in' : open ? 'Bidding ends in' : auction.status === 'completed' ? 'Rental booked' : 'Bidding is closed'}</p>
               {['scheduled', 'open', 'owner_selection', 'awaiting_payment'].includes(auction.status) && <p className="mt-1 text-lg text-accent font-bold tnum" aria-label="Time remaining">{deadline ? auctionCountdown(deadline, now) : 'Not started'}</p>}
               <p className="text-sec mt-1">{deadlineLabel(deadline)}</p>
             </div>
@@ -142,14 +145,20 @@ export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0, r
                 <span>{bid.selected ? 'Selected' : bid.passed ? 'Payment window expired' : bid.is_current ? 'Current bid' : 'Earlier bid'}</span>
                 {bid.rank !== null && <span>#{bid.rank}</span>}
               </li>)}
-            </ol> : <p className="text-xs text-sec">You have not placed a bid in this auction.</p>}
+            </ol> : <p className="text-xs text-sec">You have not placed a bid on this listing.</p>}
           </div>}
           {auction.is_owner ? <p className="text-xs text-sec">Owners choose the winner from the separate Bidding section. Selecting a winner closes bidding and starts a one-hour payment window.</p> :
             auction.my_booking_id && auction.status === 'awaiting_payment' ? <div role="status" className="space-y-3">
               <Alert tone="success" title="Your bid was selected">Complete payment before the deadline. Availability and payment verification still apply.</Alert>
               <Button onClick={() => navigate({ name: 'confirmation', id: auction.my_booking_id! })}>Continue to payment</Button>
             </div> : auction.status === 'completed' && auction.my_booking_id ? <Button onClick={() => navigate({ name: 'confirmation', id: auction.my_booking_id! })}>View booking</Button> :
-              user && open ? <form onSubmit={event => void submit(event)} className="space-y-3">
+              user && open && auction.my_bid_count >= 3 ? <p role="status" className="rounded-card bg-subtle p-4 text-sm text-main">You have used all 3 bids for this listing. You’ll be notified if your bid is selected.</p> :
+              user && open ? <form onSubmit={event => {
+                event.preventDefault();
+                setError(null);
+                if (deposit > 0 && !depositConsent) { setError('Agree to the temporary deposit authorization before placing a bid.'); return; }
+                setReviewOpen(true);
+              }} className="space-y-3">
                 <div className="flex justify-between items-center"><p className="text-xs font-semibold">Your bids ({auction.my_bid_count}/3 used)</p><div className="flex gap-1" aria-hidden="true">{[1, 2, 3].map(at => <span key={at} className={`h-3 w-3 rounded-full border ${at <= auction.my_bid_count ? 'bg-accent border-accent' : 'border-strong'}`} />)}</div></div>
                 {auction.my_daily_rate !== null && <p role="status" className="text-xs text-sec">Your highest bid: ${auction.my_daily_rate.toFixed(2)}/day.</p>}
                 <Field label="Your competitive bid per day (USD)" htmlFor="auction-bid-rate">
@@ -171,23 +180,20 @@ export function ListingAuctionPanel({ listingId, deposit = 0, listedPrice = 0, r
                   <p className="mt-2 text-xs text-sec">Estimate only; insurance is selected at checkout. Placing a bid does not charge you. Checkout recalculates the final rental payment.</p>
                 </div>}
                 {!fee.error && (fee.loading || fee.pct === null) && <p role="status" className="text-xs text-sec">Loading the current service fee to estimate your total…</p>}
-                {deposit > 0 && <p className="text-xs text-sec">Separate security hold: {money(deposit)}. Not included in the rental payment estimate; temporary authorization only if your bid wins.</p>}
                 {deposit > 0 && <label className="flex items-start gap-2 text-xs text-sec">
                   <input type="checkbox" checked={depositConsent} disabled={busy} onChange={event => setDepositConsent(event.target.checked)} className="mt-0.5" />
-                  <span>I agree to a temporary {money(deposit)} security-hold authorization if my bid wins. It is not charged with this bid.</span>
+                  <span>I agree to a temporary {money(deposit)} security hold if my bid is selected. This is separate from the rental payment.</span>
                 </label>}
-                <Button type="submit" className="w-full" disabled={busy || !!error || fee.loading || !!fee.error || auction.my_bid_count >= 3} loading={busy} loadingLabel="Placing bid...">Place bid</Button>
+                <Button type="submit" className="w-full" disabled={busy || fee.loading || !!fee.error || auction.my_bid_count >= 3}>Continue to review bid</Button>
               </form> : !user && open ? <Button className="w-full" onClick={openSignIn}>Sign in to bid</Button> :
                 <p role="status" className="text-xs text-sec">{auction.my_bid_count > 0 ? 'Your bid is recorded. You will be notified if selected.' : 'New bids are not being accepted.'}</p>}
+          <BidReviewDialog open={reviewOpen} onClose={() => setReviewOpen(false)} onConfirm={() => void submit()} busy={busy} error={error}
+            start={auction.start_date} end={auction.end_date} rate={amount} subtotal={estimate?.subtotal ?? 0} deposit={deposit} />
         </div>
         <aside aria-label="How competitive bidding works" className="rounded-card bg-subtle p-4 text-xs text-sec">
           <h3 className="font-bold text-main mb-4">What happens next?</h3>
-          <ol className="space-y-5">
-            <li className="flex gap-3"><Gavel size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Bidding ends</strong><p className="mt-1">A bid in the final 2 minutes adds 2 minutes, up to 10 minutes. Closing stays at least 2 hours before pickup. Renters see the top 3 bids anonymously.</p></div></li>
-            <li className="flex gap-3"><UserRound size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Owner must select a winner</strong><p className="mt-1">The owner must choose before bidding closes. Without a decision, bidding expires. The system never selects a bidder automatically.</p></div></li>
-            <li className="flex gap-3"><Clock3 size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Winner pays within {auction.winner_payment_hours ?? 1} hours</strong><p className="mt-1">Unpaid selections expire. Another bidder is never selected automatically. Dates and capacity are checked again.</p></div></li>
-            <li className="flex gap-3"><ShieldCheck size={18} className="text-accent shrink-0" aria-hidden="true" /><div><strong className="text-main">Booking confirmed</strong><p className="mt-1">Only after successful payment verification. Bidding alone never confirms a rental.</p></div></li>
-          </ol>
+          <p>The owner chooses a bid. If yours is selected, you’ll be notified to complete payment within {auction.winner_payment_hours ?? 1} {auction.winner_payment_hours === 1 || auction.winner_payment_hours == null ? 'hour' : 'hours'}. Your rental is confirmed after payment.</p>
+          <p className="mt-3">Bids placed near closing may extend the bidding time.</p>
         </aside>
       </div>}
     </div>

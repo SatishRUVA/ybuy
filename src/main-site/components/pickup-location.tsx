@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Check, LockKeyhole, MapPin } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useMarketplaceLocation } from '@/location-context';
 import { findCities } from '@/lib/geo';
 import { listingInputClass as fieldClass } from '@/main-site/components/listing-ui-classes';
@@ -51,6 +51,8 @@ export function PickupLocation({
   const [places, setPlaces] = useState<GooglePlacesLibrary | null>(null);
   const [suggestions, setSuggestions] = useState<GooglePlacePrediction[]>([]);
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const [addressFocused, setAddressFocused] = useState(false);
+  const [manualOpen, setManualOpen] = useState(Boolean(!value.placeId && (value.city || value.state || value.postalCode)));
   const [countries, setCountries] = useState<MarketplaceCountry[]>([]);
   const [pickupCountry, setPickupCountry] = useState(value.country || location.country);
   const [countryError, setCountryError] = useState<string | null>(null);
@@ -93,7 +95,7 @@ export function PickupLocation({
 
   useEffect(() => {
     const query = input.trim();
-    if (!places || query.length < 3) {
+    if (!places || !addressFocused || !manualEntry || manualOpen || resolving || query.length < 3) {
       setSuggestions([]);
       setActiveSuggestion(-1);
       return;
@@ -119,7 +121,7 @@ export function PickupLocation({
       active = false;
       window.clearTimeout(timeout);
     };
-  }, [input, places, countryCode]);
+  }, [input, places, countryCode, manualEntry, manualOpen, addressFocused, resolving]);
 
   useEffect(() => {
     if (!manualEntry || !value.city.trim() || value.latitude !== null || value.longitude !== null) return;
@@ -146,6 +148,8 @@ export function PickupLocation({
   }, [manualEntry, value.city, value.state, value.postalCode, value.country, value.latitude, value.longitude]);
 
   function updateManualField(field: 'city' | 'state' | 'postalCode', fieldValue: string) {
+    geocodeRequest.current += 1;
+    setResolving(false);
     const next: PickupLocationValue = {
       ...value,
       [field]: fieldValue,
@@ -166,6 +170,7 @@ export function PickupLocation({
     setInput(text);
     setAddressError(null);
     geocodeRequest.current += 1;
+    setResolving(false);
     onChangeRef.current({
       formattedAddress: text,
       streetAddress: text.trim(),
@@ -230,6 +235,7 @@ export function PickupLocation({
 
   async function chooseSuggestion(prediction: GooglePlacePrediction) {
     const text = String(prediction.text ?? '');
+    const requestId = ++geocodeRequest.current;
     setInput(text);
     setSuggestions([]);
     setAddressError(null);
@@ -237,6 +243,7 @@ export function PickupLocation({
     try {
       const place = prediction.toPlace();
       await place.fetchFields({ fields: ['id', 'formattedAddress', 'addressComponents', 'location'] });
+      if (requestId !== geocodeRequest.current) return;
       const formattedAddress = place.formattedAddress?.trim() ?? '';
       const streetAddress = [getComponent(place, 'street_number'), getComponent(place, 'route')].filter(Boolean).join(' ');
       const city = getComponent(place, 'locality') || getComponent(place, 'postal_town') || getComponent(place, 'sublocality_level_1');
@@ -246,9 +253,12 @@ export function PickupLocation({
       if (!matchedCountry || !formattedAddress || !streetAddress || !city || !getComponent(place, 'administrative_area_level_1')
         || !getComponent(place, 'postal_code') || latitude == null || longitude == null
         || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        updateAddressText(text);
+        setManualOpen(true);
         setAddressError('Choose a complete street address with a city, state and ZIP code, or enter those details manually.');
         return;
       }
+      setManualOpen(false);
       setPickupCountry(matchedCountry.code);
       setInput(formattedAddress);
       onChangeRef.current({
@@ -265,9 +275,13 @@ export function PickupLocation({
         manualConfirmed: false,
       });
     } catch {
-      updateAddressText(text);
+      if (requestId === geocodeRequest.current) {
+        updateAddressText(text);
+        setManualOpen(true);
+        setAddressError('Could not load this address. Enter the location details manually.');
+      }
     } finally {
-      setResolving(false);
+      if (requestId === geocodeRequest.current) setResolving(false);
     }
   }
 
@@ -288,6 +302,8 @@ export function PickupLocation({
   }
 
   function confirmManualAddress(confirmed: boolean) {
+    geocodeRequest.current += 1;
+    setResolving(false);
     onChangeRef.current({
       ...value,
       formattedAddress: input.trim(),
@@ -301,19 +317,15 @@ export function PickupLocation({
   return (
     <section className="space-y-5">
       <div>
-        <h2 className="text-base font-bold text-main font-display">Where will renters pick up the item?</h2>
-        <p className="text-sm text-sec mt-1">Enter the pickup address. We&apos;ll use it to determine the approximate location renters see.</p>
-      </div>
-
-      <div>
         <label htmlFor="pickup-address" className="block text-sm font-semibold text-main mb-1.5">Pickup address</label>
-        <p className="mb-2 text-xs leading-relaxed text-sec">Select an address suggestion or enter the complete address manually.</p>
+        <p className="mb-2 text-xs leading-relaxed text-sec">Kept private until you confirm a booking.</p>
         {countries.length > 1 && <label className="block text-sm font-semibold text-main mb-2">Pickup country
           <select className={fieldClass('mt-1')} value={countryCode ?? pickupCountry}
             onChange={event => {
               const nextCountry = event.target.value;
               setPickupCountry(nextCountry);
               setAddressError(null);
+              setManualOpen(false);
               onChangeRef.current({
                 ...value, country: nextCountry, latitude: null, longitude: null, placeId: '', manualConfirmed: false,
               });
@@ -330,7 +342,8 @@ export function PickupLocation({
             type="text"
             value={input}
             onChange={event => updateAddressText(event.target.value)}
-            onBlur={() => { window.setTimeout(() => setSuggestions([]), 120); void geocodeManualAddress(); }}
+            onFocus={() => setAddressFocused(true)}
+            onBlur={() => { setAddressFocused(false); if (manualEntry && !manualOpen) void geocodeManualAddress(); }}
             onKeyDown={handleAddressKeyDown}
             placeholder="Enter street address, city, ZIP code"
             className={fieldClass(error ? 'border-error' : '')}
@@ -343,7 +356,7 @@ export function PickupLocation({
             aria-describedby={error ? 'listing-pickup-error' : addressError ? 'pickup-address-error' : undefined}
           />
           {suggestions.length > 0 && <ul id="pickup-address-suggestions" role="listbox" aria-label="Address suggestions"
-            className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-card border border-app bg-card p-1 shadow-lg">
+            className="mt-1 max-h-60 w-full overflow-y-auto rounded-card border border-app bg-card p-1">
             {suggestions.map((suggestion, index) => {
               const label = String(suggestion.text ?? '');
               return <li key={`${label}-${index}`} role="presentation">
@@ -362,11 +375,20 @@ export function PickupLocation({
         </div>
         {resolving && <p role="status" className="mt-1.5 text-xs text-sec">Checking this address…</p>}
         {addressError && <p id="pickup-address-error" role="alert" className="mt-1.5 text-sm text-error">{addressError}</p>}
+        {manualEntry && input.trim() && !manualOpen && <button type="button"
+          className="mt-2 min-h-11 text-sm font-semibold text-accent underline underline-offset-4"
+          onClick={() => { setSuggestions([]); setManualOpen(true); }}>
+          Enter location details manually
+        </button>}
       </div>
 
-      {manualEntry && <fieldset className="space-y-3 rounded-card-lg border border-app bg-subtle p-4">
-        <legend className="px-1 text-sm font-semibold text-main">Confirm the approximate location</legend>
-        <p className="text-xs leading-relaxed text-sec">We couldn&apos;t fill these details from a suggestion. Confirm the city, state and ZIP code renters will see.</p>
+      {manualEntry && manualOpen && <fieldset className="space-y-3">
+        <legend className="text-sm font-semibold text-main">Location details</legend>
+        <p className="text-xs leading-relaxed text-sec">Add the area renters will see and confirm the pickup time zone.</p>
+        {places && <button type="button" className="min-h-11 text-sm font-semibold text-accent underline underline-offset-4"
+          onClick={() => { setManualOpen(false); inputRef.current?.focus(); }}>
+          Search for an address instead
+        </button>}
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="text-sm font-medium text-main">City
             <input autoComplete="address-level2" required value={value.city} onChange={event => updateManualField('city', event.target.value)}
@@ -385,7 +407,11 @@ export function PickupLocation({
         {value.latitude === null && value.longitude === null && <label className="block text-sm font-medium text-main">
           Pickup time zone
           <select className={fieldClass('mt-1')} value={value.timeZone || browserTimeZone()}
-            onChange={event => onChangeRef.current({ ...value, timeZone: event.target.value, manualConfirmed: false })}>
+            onChange={event => {
+              geocodeRequest.current += 1;
+              setResolving(false);
+              onChangeRef.current({ ...value, timeZone: event.target.value, manualConfirmed: false });
+            }}>
             {[...new Set([value.timeZone || browserTimeZone(), browserTimeZone(), ...TIME_ZONES])]
               .map(zone => <option key={zone} value={zone}>{zone}</option>)}
           </select>
@@ -403,26 +429,12 @@ export function PickupLocation({
         </p>}
       </fieldset>}
 
-      {value.formattedAddress && <div className="flex min-w-0 items-start gap-3 rounded-card-lg border border-accent/30 bg-accent-soft p-4">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-card text-accent"><Check size={18} aria-hidden="true" /></span>
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wide text-accent">Pickup address</p>
-          <p className="mt-1 break-words text-sm font-semibold text-main">{value.formattedAddress}</p>
-          {value.city && <p className="mt-1 flex items-center gap-1.5 text-xs text-sec"><MapPin size={13} aria-hidden="true" />Approximate renter location: {[value.city, value.state].filter(Boolean).join(', ')}</p>}
-        </div>
-      </div>}
       {showAreaMap && value.city && <figure className="overflow-hidden rounded-card border border-app">
         <iframe title="Approximate pickup area" loading="lazy" referrerPolicy="no-referrer"
           src={`https://maps.google.com/maps?q=${encodeURIComponent([value.city, value.state, value.country].filter(Boolean).join(', '))}&z=11&output=embed`}
           className="h-44 w-full border-0" />
         <figcaption className="bg-subtle p-3 text-center text-xs text-sec">This map shows the city only, not your exact pickup address.</figcaption>
       </figure>}
-      <div className="flex items-start gap-3 rounded-card-lg border border-app bg-card p-4">
-        <LockKeyhole aria-hidden="true" size={18} className="shrink-0 text-accent mt-0.5" />
-        <div><p className="text-sm font-semibold text-main">Your exact address stays private</p>
-          <p className="text-xs leading-relaxed text-sec mt-1">Renters see your approximate city before booking. Your exact pickup address is shared only after booking confirmation.</p>
-        </div>
-      </div>
     </section>
   );
 }

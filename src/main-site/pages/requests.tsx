@@ -23,7 +23,7 @@ import { RequestFulfillment } from '../components/request-fulfillment';
 import { PageBackButton } from '@/main-site/components/page-back-button';
 import {
   ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, DollarSign,
-  HeartHandshake, MapPin, PackagePlus, Plus, Search, SlidersHorizontal, ChevronDown,
+  HeartHandshake, MapPin, PackagePlus, Plus, Search,
 } from 'lucide-react';
 
 type Category = { id: string; name: string };
@@ -49,7 +49,7 @@ const dateLabel = (start: string, end: string) => {
 const money = (value: number | null | undefined) => value == null ? 'No limit set' : `$${Number(value).toFixed(2)}/day`;
 
 export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTab }) {
-  const { user, openSignIn } = useAuth();
+  const { user, loading: authLoading, openSignIn } = useAuth();
   const { navigate } = useRouter();
   const { location: marketplaceLocation } = useMarketplaceLocation();
   const { data: flags, loading: flagsLoading, error: featureError, reload: reloadFlags } = useFeatureFlags();
@@ -57,6 +57,7 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
   const enabled = flagsReady && flags?.some((flag) => flag.key === 'item_requests' && flag.enabled) === true;
   const [tab, setTab] = useState<RequestTab>(initialTab === 'offers' ? 'mine' : initialTab);
   const tabId = useId();
+  const filtersRef = useRef<HTMLElement>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [listingMatches,setListingMatches]=useState<Record<string,OwnerListing[]>>({});
   const [requests, setRequests] = useState<ItemRequest[] | null>(null);
@@ -79,11 +80,12 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user || !enabled) return;
     let cancelled = false;
     listRequestCategories().then((rows) => { if (!cancelled) setCategories(rows); })
       .catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Could not load categories.'); });
     return () => { cancelled = true; };
-  }, []);
+  }, [user, enabled]);
 
   const reload = useCallback(async () => {
     if (!user || !enabled) return;
@@ -130,16 +132,7 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
     setError(null);
   }
 
-  if (!user) {
-    return (
-      <div className="max-w-xl mx-auto px-4 py-16">
-        <EmptyState icon={<HeartHandshake size={22} />} title="Sign in to find or request an item"
-          description="Community requests are available to signed-in YBuy members."
-          actionLabel="Sign in" onAction={openSignIn} />
-      </div>
-    );
-  }
-  if (flagsLoading && !featureError) {
+  if (authLoading || (flagsLoading && !featureError)) {
     return <div className="max-w-4xl mx-auto px-4 py-8 space-y-3" aria-busy="true">
       <Skeleton className="h-9 w-56" /><Skeleton className="h-32 w-full" rounded="rounded-card-lg" />
     </div>;
@@ -154,17 +147,43 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
       title="Item requests are not enabled yet"
       description="Please check back later." /></div>;
   }
+  if (!user) {
+    return <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-20">
+      <div className="rounded-[24px] bg-[var(--text)] text-[var(--bg-card)] px-6 py-10 sm:px-12 sm:py-16">
+        <h1 className="max-w-2xl text-4xl sm:text-6xl font-bold font-display tracking-tight leading-[1.08]">Ask your community.</h1>
+        <p className="mt-4 max-w-xl text-base sm:text-lg leading-relaxed opacity-80">Find what you need nearby, or help a neighbor find it.</p>
+        <div className="mt-7 flex flex-wrap gap-3">
+          <Button size="lg" trailingIcon={<ArrowRight size={17} />} onClick={() => navigate({ name: 'need-something' })}>Request an item</Button>
+          <Button size="lg" variant="secondary" onClick={openSignIn}>Sign in to browse</Button>
+        </div>
+      </div>
+      <div className="grid gap-8 sm:grid-cols-2 mt-10 sm:mt-12 max-w-4xl">
+        <section>
+          <h2 className="text-xl font-semibold text-main">Looking for something?</h2>
+          <p className="mt-2 text-sm leading-relaxed text-sec">Share what you need and when. Your community can help you find a match.</p>
+        </section>
+        <section>
+          <h2 className="text-xl font-semibold text-main">Have something to share?</h2>
+          <p className="mt-2 text-sm leading-relaxed text-sec">See what people are looking for and offer an item that fits.</p>
+        </section>
+      </div>
+    </div>;
+  }
   const tabs: { id: RequestTab; label: string }[] = [
     ...(enabled ? [{ id: 'browse' as const, label: 'Find requests' }, { id: 'mine' as const, label: 'My requests' }] : []),
   ];
 
   return (
     <div className="pb-20 md:pb-10">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-9 space-y-5">
-        <SectionHeader as="h1" title="Item requests" subtitle="Ask for something you can't find, or offer a rental that fits." action={
-          enabled && <Button icon={<Plus size={16} />} onClick={() => navigate({ name: 'need-something' })}>Request an item</Button>
-        } />
-        <div className="flex gap-1 p-1 rounded-card-lg bg-subtle" role="tablist" aria-label="Item request activity"
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-9 space-y-6">
+        <div className="rounded-[24px] bg-[var(--text)] text-[var(--bg-card)] px-6 py-8 sm:px-10 sm:py-10 flex flex-wrap items-end justify-between gap-5">
+          <div className="min-w-0">
+            <h1 className="text-3xl sm:text-5xl font-bold font-display tracking-tight">Community requests</h1>
+            <p className="mt-3 text-sm sm:text-base opacity-80">A little help from your neighborhood.</p>
+          </div>
+          <Button size="lg" icon={<Plus size={16} />} onClick={() => navigate({ name: 'need-something' })}>Request an item</Button>
+        </div>
+        <div className="flex gap-6 border-b border-app w-full" role="tablist" aria-label="Item request activity"
           onKeyDown={event => {
             const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
             const index = buttons.indexOf(event.target as HTMLButtonElement);
@@ -177,7 +196,7 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
           {tabs.map((item) => <button key={item.id} id={`${tabId}-${item.id}`} type="button" role="tab" aria-selected={tab === item.id}
             tabIndex={tab === item.id ? 0 : -1} aria-controls={`${tabId}-${item.id}-panel`}
             onClick={() => selectTab(item.id)}
-            className={`min-w-0 flex-1 min-h-11 rounded-card px-2 py-2 text-xs sm:text-sm font-semibold transition-colors duration-fast ${tab === item.id ? 'bg-card text-main shadow-xs' : 'text-sec hover:text-main'}`}>
+            className={`min-h-12 border-b-2 px-1 text-sm whitespace-nowrap font-semibold transition-colors duration-fast ${tab === item.id ? 'border-accent text-main' : 'border-transparent text-sec hover:text-main'}`}>
             {item.label}
           </button>)}
         </div>
@@ -186,21 +205,25 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
           {error}<Button size="sm" variant="secondary" className="mt-2" onClick={() => void reload()}>Try again</Button>
         </Alert>}
 
-        {tab === 'browse' && enabled && <div role="tabpanel" id={`${tabId}-browse-panel`} aria-labelledby={`${tabId}-browse`} className="space-y-5">
-          <div className="grid gap-3 rounded-card-xl border border-app bg-card p-4 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1.2fr]">
-            <label className="text-xs font-semibold text-sec">Search item
+        {tab === 'browse' && enabled && <div role="tabpanel" id={`${tabId}-browse-panel`} aria-labelledby={`${tabId}-browse`} className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
+          <section ref={filtersRef} tabIndex={-1} aria-labelledby={`${tabId}-filters`} className="order-2 lg:order-1 scroll-mt-24 rounded-[20px] bg-subtle p-5">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 id={`${tabId}-filters`} className="text-base font-semibold text-main">Filter requests</h2>
+              <button type="button" className="text-sm font-semibold text-accent hover:underline" onClick={() => {
+                setSearch(''); setCategoryId(''); setLocationFilter(''); setArea(null); setAreaChoices([]); setRadius(null); setStartDate(''); setEndDate(''); setMaxBudget(''); setSort('newest'); setPage(0);
+              }}>Clear</button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-1">
+            <label className="col-span-2 lg:col-span-1 text-xs font-semibold text-sec">Search item
               <span className="relative block mt-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                 <input value={search} maxLength={100} onChange={(e) => { setPage(0); setSearch(e.target.value); }} placeholder="Projector, drill…" className={fieldClass('pl-9 !h-10')} />
               </span>
             </label>
-            <label className="text-xs font-semibold text-sec">Category
-              <select value={categoryId} onChange={(e) => { setPage(0); setCategoryId(e.target.value); }} className={fieldClass('mt-1 !h-10')}>
-                <option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-              </select>
-            </label>
-            <label className="text-xs font-semibold text-sec">Near city or ZIP code
-              <input value={locationFilter} maxLength={100} onChange={(e) => { setPage(0); setArea(null); setAreaChoices([]); setLocationFilter(e.target.value); }} placeholder="City or postal code" className={fieldClass('mt-1 !h-10')} />
-              <Button type="button" size="sm" variant="secondary" className="mt-2" loading={findingArea} onClick={async () => {
+            <div className="col-span-2 lg:col-span-1 text-xs font-semibold text-sec">
+              <label htmlFor={`${tabId}-area`}>Near city or ZIP code</label>
+              <span className="mt-1 flex gap-2">
+              <input id={`${tabId}-area`} value={locationFilter} maxLength={100} onChange={(e) => { setPage(0); setArea(null); setAreaChoices([]); setLocationFilter(e.target.value); }} placeholder="City or ZIP code" className={fieldClass('!h-10 min-w-0')} />
+              <Button type="button" size="sm" variant="secondary" className="shrink-0 !whitespace-nowrap" loading={findingArea} onClick={async () => {
                 setFindingArea(true); setError(null);
                 try {
                   const choices = await findCities(locationFilter);
@@ -208,55 +231,59 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
                   setAreaChoices(choices);
                 } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not look up your search area.'); }
                 finally { setFindingArea(false); }
-              }}>Find area</Button>
+              }}>Find area</Button></span>
+            </div>
+            <label className="text-xs font-semibold text-sec">Category
+              <select value={categoryId} onChange={(e) => { setPage(0); setCategoryId(e.target.value); }} className={fieldClass('mt-1 !h-10')}>
+                <option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              </select>
             </label>
             <label className="text-xs font-semibold text-sec">Distance
               <select disabled={searchArea?.latitude === undefined} value={radius ?? 'all'} className={fieldClass('mt-1 !h-10')} onChange={event => { setPage(0); setRadius(event.target.value === 'all' ? null : Number(event.target.value)); }}>
                 {[5, 10, 25, 50].map(miles => <option value={miles} key={miles}>Within {miles} miles</option>)}<option value="all">All distances</option>
               </select>
             </label>
-          </div>
-          <details className="group rounded-card-lg border border-app bg-card">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-4 py-2 text-sm font-semibold text-main [&::-webkit-details-marker]:hidden">
-              <SlidersHorizontal size={16} className="text-accent" aria-hidden="true" />
-              More filters
-              <ChevronDown size={16} className="ml-auto text-muted transition-transform group-open:rotate-180" aria-hidden="true" />
-            </summary>
-            <div className="grid gap-3 border-t border-app p-4 sm:grid-cols-2 lg:grid-cols-4">
               <label className="text-xs font-semibold text-sec">Maximum daily budget
                 <input type="number" min="0.01" step="0.01" value={maxBudget} onChange={(e) => { setPage(0); setMaxBudget(e.target.value); }} placeholder="Any budget" className={fieldClass('mt-1 !h-10')} />
               </label>
-              <label className="text-xs font-semibold text-sec">Needed by
+              <div className="col-span-2 sm:col-span-1 text-xs font-semibold text-sec">Needed by
                 <DatePicker label="Requests starting by" value={endDate} min={todayIso()} onChange={(date) => { setPage(0); setEndDate(date); }} className="mt-1" />
-              </label>
-              <label className="text-xs font-semibold text-sec">Available after
+              </div>
+              <div className="col-span-2 sm:col-span-1 text-xs font-semibold text-sec">Available after
                 <DatePicker label="Requests ending after" value={startDate} min={todayIso()} onChange={(date) => { setPage(0); setStartDate(date); }} className="mt-1" />
-              </label>
+              </div>
               <label className="text-xs font-semibold text-sec">Sort by
                 <select value={sort} onChange={(e) => { setPage(0); setSort(e.target.value as typeof sort); }} className={fieldClass('mt-1 !h-10')}>
                   <option value="newest">Newest</option><option value="earliest">Earliest dates</option><option value="budget">Budget (low to high)</option>
                 </select>
               </label>
             </div>
-          </details>
-          {areaChoices.length > 0 && <div role="group" aria-label="Choose nearby request area" className="flex flex-wrap gap-2">
+          {areaChoices.length > 0 && <div role="group" aria-label="Choose nearby request area" className="mt-3 flex flex-wrap gap-2">
             {areaChoices.map((choice, index) => <Button key={index} size="sm" variant="secondary" onClick={() => { setArea(choice); setLocationFilter(locationLabel(choice)); setAreaChoices([]); setPage(0); }}>{locationLabel(choice)}</Button>)}
           </div>}
-          <p className="text-sm text-sec">{searchArea?.latitude === undefined ? 'Choose an area to see nearby requests. Showing all distances for now.' : `Requests near ${locationLabel(searchArea)} · ${radius === null ? 'all distances' : `within ${radius} miles`}`}</p>
-          <Button size="sm" variant="secondary" onClick={() => { setStartDate(todayIso()); setEndDate(addDaysIso(todayIso(), 7)); setPage(0); }}>Needed in the next 7 days</Button>
-          <p className="text-xs text-muted">Dates include requests that overlap your selected range.</p>
+          <p className="mt-3 text-xs text-sec">Dates include requests that overlap your selected range.</p>
+          <Button size="sm" variant="secondary" className="mt-3" onClick={() => { setStartDate(todayIso()); setEndDate(addDaysIso(todayIso(), 7)); setPage(0); }}>Needed in the next 7 days</Button>
+          </section>
+          <section aria-labelledby={`${tabId}-results`} className="order-1 lg:order-2 min-w-0 space-y-4">
+          <div className="relative pr-16 lg:pr-0">
+            <h2 id={`${tabId}-results`} className="text-2xl font-semibold text-main">Find a request</h2>
+            <p className="mt-1 text-sm text-sec">{searchArea?.latitude === undefined ? 'Showing all distances. Choose an area to find requests nearby.' : `Near ${locationLabel(searchArea)} · ${radius === null ? 'all distances' : `within ${radius} miles`}`}</p>
+            <button type="button" onClick={() => filtersRef.current?.focus()} className="absolute right-0 top-0 text-sm font-semibold text-accent hover:underline lg:hidden">Filters</button>
+          </div>
           {!requests ? <RequestSkeleton /> : requests.length === 0 ? (
             <EmptyState icon={<Search size={21} />} title="No open requests match those filters"
               description="Try a wider location, another category or a different date range."
               actionLabel="Clear filters" onAction={() => {
-                setSearch(''); setCategoryId(''); setLocationFilter(''); setArea(null); setRadius(null); setStartDate(''); setEndDate(''); setMaxBudget(''); setPage(0);
+                setSearch(''); setCategoryId(''); setLocationFilter(''); setArea(null); setAreaChoices([]); setRadius(null); setStartDate(''); setEndDate(''); setMaxBudget(''); setSort('newest'); setPage(0);
               }} />
           ) : <div className="space-y-3">
-            {requests.map((request) => <RequestCard key={request.id} request={request}
+            <ul className="grid gap-4 xl:grid-cols-2">
+            {requests.map((request) => <li key={request.id}><RequestCard request={request}
               matchingListings={listingMatches[request.id]??[]}
               active={activeRequest === request.id}
               onOffer={() => setActiveRequest(activeRequest === request.id ? null : request.id)}
-            />)}
+            /></li>)}
+            </ul>
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <span className="text-sm text-sec">{total} requests · page {page + 1} of {pages}</span>
               <div className="flex gap-2">
@@ -265,21 +292,20 @@ export function RequestsPage({ initialTab = 'browse' }: { initialTab?: RequestTa
               </div>
             </div>
           </div>}
+          </section>
         </div>}
 
         {tab === 'mine' && enabled && <div role="tabpanel" id={`${tabId}-mine-panel`} aria-labelledby={`${tabId}-mine`} className="space-y-5">
-          <div className="flex justify-end">
-            <Button size="sm" icon={<Plus size={15} />} onClick={() => navigate({ name: 'need-something' })}>Post request</Button>
-          </div>
+          <div><h2 className="text-xl font-semibold text-main">Your requests</h2><p className="mt-1 text-sm text-sec">Keep track of what you've asked for.</p></div>
           {myRequests === null ? <RequestSkeleton /> : visibleMine.length === 0 ? (
             <EmptyState icon={<PackagePlus size={21} />} title="You haven't requested an item yet"
               description="Share what you need and when you need it."
               actionLabel="Request an item" onAction={() => navigate({ name: 'need-something' })} />
-          ) : <div className="space-y-3">{visibleMine.map((request) => (
-            <MyRequestCard key={request.id} request={request}
+          ) : <ul className="space-y-3">{visibleMine.map((request) => (
+            <li key={request.id}><MyRequestCard request={request}
               matchingListings={listingMatches[request.id] ?? []}
-              onRefresh={() => void reload()} />
-          ))}</div>}
+              onRefresh={() => void reload()} /></li>
+          ))}</ul>}
         </div>}
 
       </div>
@@ -292,33 +318,31 @@ function RequestCard({ request, matchingListings, active, onOffer }: {
   active: boolean; onOffer: () => void;
 }) {
   const category = request.categories?.name ?? 'Item';
-  return <Surface className="p-4 sm:p-5">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-main font-display">{request.title}</h2>
-          <Badge>{category}</Badge>
-        </div>
-        <p className="mt-2 text-sm text-sec whitespace-pre-wrap">{request.description}</p>
-        {request.reference_image_paths.length > 0 && <RequestImages paths={request.reference_image_paths} title={request.title} />}
-        {request.intended_use && <p className="mt-2 text-xs text-sec"><strong>Intended use:</strong> {request.intended_use}</p>}
-        {request.specifications && <p className="mt-1 text-xs text-sec"><strong>Specifications:</strong> {request.specifications}</p>}
-        {request.additional_notes && <p className="mt-1 text-xs text-sec"><strong>Notes:</strong> {request.additional_notes}</p>}
-      </div>
-      <Button size="sm" onClick={onOffer} icon={<ArrowRight size={15} />} aria-expanded={active}>{active ? 'Hide request response' : 'View request and list your item'}</Button>
+  return <Surface className="h-full p-5 sm:p-6 !rounded-[20px]">
+    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-sec">
+      <span className="font-semibold text-accent">{category}</span>
+      <span className="inline-flex items-center gap-1.5"><Clock size={14} />Expires {new Date(request.expires_at).toLocaleDateString()}</span>
     </div>
-    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-sec">
-      <span className="inline-flex items-center gap-1"><CalendarDays size={13} />{dateLabel(request.preferred_start_date, request.preferred_end_date)}</span>
-      <span className="inline-flex items-center gap-1"><MapPin size={13} />{request.location_label}</span>
-      <span className="inline-flex items-center gap-1"><DollarSign size={13} />Budget: {money(request.max_daily_budget)}</span>
+    <h3 className="mt-4 text-xl sm:text-2xl font-semibold text-main font-display leading-tight [overflow-wrap:anywhere]">{request.title}</h3>
+    <p className="mt-2 text-sm leading-relaxed text-sec whitespace-pre-wrap [overflow-wrap:anywhere]">{request.description}</p>
+    {request.reference_image_paths.length > 0 && <RequestImages paths={request.reference_image_paths} title={request.title} />}
+    {request.intended_use && <p className="mt-2 text-xs text-sec"><strong>Intended use:</strong> {request.intended_use}</p>}
+    {request.specifications && <p className="mt-1 text-xs text-sec"><strong>Specifications:</strong> {request.specifications}</p>}
+    {request.additional_notes && <p className="mt-1 text-xs text-sec"><strong>Notes:</strong> {request.additional_notes}</p>}
+    <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 text-sm text-sec">
+      <span className="inline-flex items-center gap-1.5"><CalendarDays size={15} />{dateLabel(request.preferred_start_date, request.preferred_end_date)}</span>
+      <span className="inline-flex items-center gap-1.5"><MapPin size={15} />{request.location_label}</span>
       <span>{request.requested_quantity} requested</span>
       {request.distance_miles != null && <span>{request.distance_miles.toFixed(1)} miles away</span>}
-      <span className="inline-flex items-center gap-1"><Clock size={13} />Expires {new Date(request.expires_at).toLocaleDateString()}</span>
     </div>
     {matchingListings.length > 0 && <p className="mt-3 text-xs text-success">
       A matching listing: {matchingListings[0].title}. Availability is checked again when booking.
     </p>}
-    {active && <RequestFulfillment request={request} />}
+    <div className="mt-5 pt-4 border-t border-app flex flex-wrap items-end justify-between gap-3">
+      <div><p className="text-xs text-sec">Daily budget</p><p className="mt-1 text-lg font-semibold text-main">{money(request.max_daily_budget)}</p></div>
+      <Button size="sm" variant="secondary" onClick={onOffer} trailingIcon={<ArrowRight size={15} />} aria-expanded={active} aria-controls={`request-response-${request.id}`}>{active ? 'Close response' : 'Offer an item'}</Button>
+    </div>
+    <div id={`request-response-${request.id}`}>{active && <RequestFulfillment request={request} />}</div>
   </Surface>;
 }
 

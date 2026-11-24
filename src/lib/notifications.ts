@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { biddingNotificationCopy } from '@/lib/bidding-copy';
 
 export type NotificationCategory = 'bookings' | 'messages' | 'requests' | 'listings' | 'bidding' | 'payments' | 'cases' | 'promotions';
 export type NotificationChannel = 'in_app' | 'email';
@@ -52,7 +53,7 @@ export async function listNotifications(params: {
   if (params.read === 'unread') query = query.is('read_at', null);
   const { data, count, error } = await query;
   if (error) throw new Error(error.message);
-  return { rows: data ?? [], total: count ?? 0 };
+  return { rows: (data ?? []).map(row => ({ ...row, ...biddingNotificationCopy(row.event_key, row.title, row.body) })), total: count ?? 0 };
 }
 
 export async function unreadNotificationCount(userId: string): Promise<number> {

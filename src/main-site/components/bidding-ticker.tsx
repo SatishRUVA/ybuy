@@ -49,7 +49,7 @@ export function BiddingTicker() {
         setNow(Date.now());
       } catch (reason) {
         if (!active) return;
-        setError(reason instanceof Error ? reason.message : 'Could not load live auctions.');
+        setError(reason instanceof Error ? reason.message : 'Could not load live bidding.');
         setRows([]);
       }
     }
@@ -85,7 +85,7 @@ export function BiddingTicker() {
           <span className="bid-banner-mark"><Gavel size={19} aria-hidden="true" /></span>
           <div>
             <h2>Find your deal</h2>
-            <p>{waiting ? 'Checking auctions' : unavailable ? 'Bidding is temporarily unavailable' : offers.length ? 'Live rental auctions' : 'No open auctions right now'}</p>
+            <p>{waiting ? 'Checking bidding activity' : unavailable ? 'Bidding is temporarily unavailable' : offers.length ? 'Live rental bidding' : 'No open bidding right now'}</p>
           </div>
         </div>
         {unavailable && !waiting ? <div className="bid-banner-error" role="alert">
@@ -95,13 +95,13 @@ export function BiddingTicker() {
               <div className="bid-banner-track">
                 {[0, 1].map(copy => (
                   <ul key={copy} className={`bid-banner-group${copy ? ' bid-banner-copy' : ''}`} aria-hidden={copy ? true : undefined}>
-                    {(moving ? [0, 1, 2] : [0]).flatMap(repeat => offers.map((row) => {
+                    {(moving ? [0, 1, 2] : [0]).flatMap(repeat => offers.map((row, index) => {
                       const activity = row.bid_count > 0
                         ? `${row.bid_count} bid${row.bid_count === 1 ? '' : 's'} · ${row.participant_count} bidder${row.participant_count === 1 ? '' : 's'}`
                         : 'Waiting for first bid';
                       const label = `${row.title}. ${row.has_bids ? 'Current high bid' : 'Opening bid'} ${formatRate(row.daily_rate)} per day. ${activity}. ${timeToBid(row.expires_at, now)}. Rental dates ${formatDate(row.start_date)} to ${formatDate(row.end_date)}.`;
                       return (
-                        <li key={`${repeat}:${row.listing_id}`} className={`bid-banner-item${repeat ? ' bid-banner-repeat' : ''}`} aria-hidden={repeat ? true : undefined}>
+                        <li key={`${repeat}:${row.listing_id}`} className={`bid-banner-item${repeat ? ' bid-banner-repeat' : ''}${moving && index === offers.length - 1 ? ' bid-banner-cycle-end' : ''}`} aria-hidden={repeat ? true : undefined}>
                           <a href={`/bidding/${row.listing_id}`} className="bid-card" aria-label={label} tabIndex={copy || repeat ? -1 : 0}
                             onFocus={event => event.currentTarget.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'nearest' })}>
                             <BidImage key={row.image_url} url={row.image_url} />
@@ -126,7 +126,7 @@ export function BiddingTicker() {
         </div>
       </div>
       {!waiting && !unavailable && <p className="sr-only" role="status" aria-atomic="true">
-        {offers.length} auction{offers.length === 1 ? '' : 's'} accepting bids, with {bidCount} bids across the featured auctions.
+        {offers.length} listing{offers.length === 1 ? '' : 's'} accepting bids, with {bidCount} bids across the featured listings.
       </p>}
     </section>
   );

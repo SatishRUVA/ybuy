@@ -87,7 +87,7 @@ export function validateListing(v: ListingFormValues): Partial<Record<ListingFie
   else if (titleText.length < title.min) errors.title = `Title must be at least ${title.min} characters.`;
   else if (titleText.length > title.max) errors.title = `Title must be ${title.max} characters or fewer.`;
   else if (UNSAFE_TEXT.test(titleText)) errors.title = 'Title can only contain plain text (no HTML or scripts).';
-  else if (GIBBERISH_TEXT.test(titleText)) errors.title = 'Enter a clear, meaningful title instead of gibberish or placeholder text.';
+  else if (GIBBERISH_TEXT.test(titleText)) errors.title = 'Enter a descriptive title, such as “Cordless drill”.';
 
   if (!v.categoryId) errors.category = 'Choose a category.';
   if (v.valueText !== undefined) {
@@ -101,7 +101,7 @@ export function validateListing(v: ListingFormValues): Partial<Record<ListingFie
   else if (descriptionText.length < description.min) errors.description = `Description must be at least ${description.min} characters.`;
   else if (descriptionText.length > description.max) errors.description = `Description must be ${description.max.toLocaleString('en-US')} characters or fewer.`;
   else if (UNSAFE_TEXT.test(descriptionText)) errors.description = 'Description can only contain plain text (no HTML, scripts or hidden characters).';
-  else if (GIBBERISH_TEXT.test(descriptionText)) errors.description = 'Enter a clear, meaningful description instead of gibberish or placeholder text.';
+  else if (GIBBERISH_TEXT.test(descriptionText)) errors.description = 'Describe the item, what is included and any wear.';
 
   if (!v.pickupConfirmed) errors.pickup = 'Enter a complete pickup address and confirm its city, state and ZIP code, or select an address suggestion.';
   else {

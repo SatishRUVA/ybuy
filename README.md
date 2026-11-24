@@ -1311,6 +1311,12 @@ selection requests. Anyone with access to this development machine can select
 these local staff accounts; never expose the local server or database publicly.
 Local mode clears inherited payment/email provider credentials rather than
 sending real payments or emails.
+Local startup also disables the listing-photo moderation trigger in the local
+database, and the local listing flow skips photo analysis. Deterministic text
+checks and other publication checks still apply; if the AI provider is not
+configured, local publication continues without contextual AI text review.
+Other review errors still block publication. Hosted databases and production
+builds retain photo and AI moderation; never expose the local database publicly.
 
 Verify the 22 real account sessions, Owner/Renter versus staff permissions,
 profile switching, reload persistence, mobile layout, sign-out, and rejected
@@ -1453,15 +1459,15 @@ this change does not delete or rewrite backend data.
 discover active requests, submit offers, link published listings and negotiate
 through a persistent proposal history. Real offers remain in `/requests`.
 
-`/bidding` is the live competitive-auction section. Owners manage their listings'
-auctions in My auctions. Explore auctions excludes the signed-in user's own listings
-before pagination and category counts; anonymous visitors see all eligible auctions.
-Renters explore auctions and place bids on the dedicated
+`/bidding` shows published bidding listings from all owners, including the signed-in
+owner, across all statuses. Live now is the default filter; scheduled bidding appears
+under All. Search, ownership, status counts and sorting are calculated before pagination. Owners with bidding
+listings can filter to My bidding listings and open a listing to manage it. Renters can place bids on live listings on the dedicated
 `/bidding/:listingId` page. Listings only link into Bidding; they do not contain a
 bid form or leaderboard. Renters see the anonymous top three and their own bid
 history and current rank; competing renter identities remain private. Owners see
 all bids, bidder profiles, ratings, payment state and the decision deadline in My
-auctions. Owners must choose eligible bidders before bidding closes; undecided
+bidding listings. Owners must choose eligible bidders before bidding closes; undecided
 bidding expires immediately. Missed-decision counts and audit records are
 admin-only, never displayed beside marketplace ratings. Review stars are unchanged. The system never selects a bidder
 automatically, including after a winner fails to pay. Flexible-date auctions

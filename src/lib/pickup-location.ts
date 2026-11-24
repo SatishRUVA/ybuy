@@ -15,6 +15,20 @@ export interface PickupLocationValue {
   manualConfirmed?: boolean;
 }
 
+export function formatPickupAddress(value: PickupLocationValue): string {
+  const address = value.formattedAddress.trim() || value.streetAddress.trim();
+  if (value.placeId) return address;
+
+  const enteredArea = (address.includes(',') ? address.split(',').slice(1).join(',') : address).toLocaleLowerCase();
+  const missing = [value.city, value.state, value.postalCode].filter(part => {
+    const text = part.trim().toLocaleLowerCase();
+    if (!text) return false;
+    const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return !new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'u').test(enteredArea);
+  });
+  return [address, ...missing].filter(Boolean).join(', ');
+}
+
 interface GeocoderLibrary {
   Geocoder: new () => {
     geocode: (request: { location: { lat: number; lng: number } }) => Promise<{

@@ -917,6 +917,7 @@ a.bid-card:hover { background: #ebe4df; }
 @media (prefers-reduced-motion: no-preference) {
   .bid-banner:not(.bid-banner-stopped) .bid-banner-track { animation: bid-news-scroll 60s linear infinite; }
   .bid-banner-viewport:hover .bid-banner-track { animation-play-state: paused; }
+  .bid-banner:not(.bid-banner-stopped) .bid-banner-viewport:not(:focus-within) .bid-banner-cycle-end { margin-right: 64px; }
 }
 .bid-banner-stopped .bid-banner-track, .bid-banner-viewport:focus-within .bid-banner-track { animation: none; transform: none; }
 .bid-banner-stopped .bid-banner-copy, .bid-banner-stopped .bid-banner-repeat, .bid-banner-viewport:focus-within .bid-banner-copy, .bid-banner-viewport:focus-within .bid-banner-repeat { display: none; }

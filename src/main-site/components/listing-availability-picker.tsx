@@ -44,7 +44,15 @@ export function ListingAvailabilityPicker({ start, end, onChange, error, today =
   }
 
   return <section id="listing-availability" tabIndex={-1} aria-invalid={Boolean(currentError)} aria-label="Listing availability" aria-describedby={currentError ? 'listing-availability-error' : undefined} className="space-y-4">
-    <p className="text-sm text-sec">Choose an available range of 1–30 days, then block any dates you can't rent.</p>
+    <div className="listing-calendar-presets" aria-label="Quick availability">
+      {[7, 14, 30].map(count => <button key={count} type="button" onClick={() => {
+        const presetEnd = addDaysIso(today, count);
+        onChange(today, presetEnd < horizon ? presetEnd : horizon);
+        setMonth(new Date(`${today.slice(0, 7)}-01T12:00:00`));
+        setChoosingEnd(false);
+        setSelectionError(undefined);
+      }}>{count === 7 ? '1 week' : count === 14 ? '2 weeks' : '30 days'}</button>)}
+    </div>
     <div className="grid grid-cols-2 gap-3" aria-label="Selected availability dates">
       <button type="button" aria-pressed={!choosingEnd} onClick={() => { setChoosingEnd(false); const date = new Date(`${start || today}T12:00:00`); setMonth(new Date(date.getFullYear(), date.getMonth(), 1)); }}
         className={`listing-date-option ${!choosingEnd ? 'is-selected' : ''}`}>
@@ -76,8 +84,7 @@ export function ListingAvailabilityPicker({ start, end, onChange, error, today =
       </div>
     {currentError && <p id="listing-availability-error" role="alert" className="text-sm text-error mt-3">{currentError}</p>}
     <div className="rounded-card bg-accent-soft p-3 mt-3" role="status">
-      <p className="text-xs font-semibold text-accent">Selected availability</p>
-      <p className="mt-1 text-sm font-semibold text-main">{start && end ? `Available ${label(start)} through ${label(lastAvailable)}` : 'Choose your dates'} {days > 0 && <span className="block text-xs font-normal text-sec mt-1">{days} available {days === 1 ? 'day' : 'days'}, including both dates. Renters return the item by {label(end)}.</span>}</p>
+      <p className="text-sm text-main">{days > 0 ? `${days} available ${days === 1 ? 'day' : 'days'}. Renters return the item by ${label(end)}.` : 'Choose your dates.'}</p>
     </div>
   </section>;
 }

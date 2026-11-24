@@ -18,6 +18,11 @@ import { PageHeader, ReasonDialog } from '@/main-site/components/operations/shar
 import { useFeatureFlags } from '@/lib/use-feature-flags';
 import { fetchDepositRules } from '@/lib/listings';
 import { parseMoney } from '@/lib/listing-rules';
+import { biddingErrorMessage } from '@/lib/bidding-copy';
+
+const settingLabel = (key: string) => key.startsWith('auction_')
+  ? `Bidding ${key.slice('auction_'.length).replace(/_/g, ' ')}`
+  : key;
 
 function LoadState({ loading, error, reload, rows }: { loading: boolean; error: string | null; reload: () => void; rows: number }) {
   if (error) {
@@ -285,8 +290,8 @@ export function SettingsSection({ isSuperAdmin = false }: { isSuperAdmin?: boole
           <Card key={s.key}>
             <CardHeader className="flex-row items-start justify-between gap-3">
               <div className="min-w-0">
-                <CardTitle><code className="text-sm [overflow-wrap:anywhere]">{s.key}</code></CardTitle>
-                <CardDescription className="mt-1">{s.description}</CardDescription>
+                <CardTitle><code className="text-sm [overflow-wrap:anywhere]">{settingLabel(s.key)}</code></CardTitle>
+                <CardDescription className="mt-1">{biddingErrorMessage(s.description)}</CardDescription>
               </div>
               <Button size="sm" variant="secondary" icon={<Pencil size={13} />} onClick={() => {
                 setTarget(s); setValue(String(s.value)); setCountryCodes(Array.isArray(s.value) ? s.value : []);
@@ -304,7 +309,7 @@ export function SettingsSection({ isSuperAdmin = false }: { isSuperAdmin?: boole
       </div>
       <ReasonDialog
         open={target !== null} onOpenChange={(o) => !o && setTarget(null)}
-        title={`Change ${target?.key ?? 'setting'}`}
+        title={`Change ${target ? settingLabel(target.key) : 'setting'}`}
         description={target?.value_type === 'country_codes'
           ? 'Controls city search, location detection, new pickup addresses and new item requests. Existing rentals and historical addresses remain unchanged.'
           : 'The new value applies to future activity only. Existing bookings keep their price snapshot.'}

@@ -10,6 +10,14 @@ const status = JSON.parse(result.stdout);
 const url = new URL(status.API_URL);
 assert.ok(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) && url.port === '54321', 'Only isolated local Supabase is allowed.');
 assert.ok(status.ANON_KEY && status.SERVICE_ROLE_KEY, 'Local Supabase keys are missing.');
+const photoReview = spawnSync(podman, ['exec', '-i', 'supabase_db_YBuy', 'psql', '-X',
+  '-U', 'postgres', '-d', 'postgres', '-qAt', '-v', 'ON_ERROR_STOP=1'], {
+  input: "alter table public.listings disable trigger z_listing_photo_moderation_guard; select tgenabled from pg_trigger where tgrelid='public.listings'::regclass and tgname='z_listing_photo_moderation_guard';",
+  encoding: 'utf8', timeout: 30_000,
+});
+if (photoReview.error) throw photoReview.error;
+assert.equal(photoReview.status, 0, `Could not disable local listing photo review. Apply local migrations first.\n${photoReview.stderr}`);
+assert.equal(photoReview.stdout.trim(), 'D', 'Local listing photo review was not disabled.');
 const financial = spawnSync(podman, ['exec', '-i', 'supabase_db_YBuy', 'psql', '-X',
   '-U', 'postgres', '-d', 'postgres', '-qAt', '-v', 'ON_ERROR_STOP=1'], {
   input: "update public.admin_financial_test_gate set environment='local_test',enabled=true where singleton returning environment,enabled;",

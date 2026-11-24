@@ -59,7 +59,7 @@ function AppContent() {
       notifications: 'Notifications', messaging: 'Messages', conversation: 'Conversation',
       requests: 'Item requests', favorites: 'Saved items', 'need-something': 'Request an item',
       protection: 'Protection', 'trust-profile': 'Profile and settings', bidding: 'Bidding',
-      'bidding-detail': 'Auction', auction: 'Auction', guidelines: 'Guidelines', admin: 'Admin',
+      'bidding-detail': 'Bidding', auction: 'Bidding', guidelines: 'Guidelines', admin: 'Admin',
       'super-admin': 'Super admin', access: 'Access',
     };
     document.title = `${route.name === 'dashboard' && route.tab === 'lending' ? 'Lending' : titles[route.name]} | YBuy`;
@@ -119,9 +119,9 @@ function AppContent() {
     case 'notifications': page = <RequireAuth><NotificationsPage /></RequireAuth>; break;
     case 'messaging': page = <RequireAuth><MessagingPage /></RequireAuth>; break;
     case 'conversation': page = <RequireAuth><ConversationPage id={route.id} /></RequireAuth>; break;
-    case 'requests': page = <RequireAuth>{route.matches && route.requestId
-      ? <RequestMatchesPage key={route.requestId} id={route.requestId} />
-      : <RequestsPage initialTab={route.tab ?? 'browse'} />}</RequireAuth>; break;
+    case 'requests': page = route.matches && route.requestId
+      ? <RequireAuth><RequestMatchesPage key={route.requestId} id={route.requestId} /></RequireAuth>
+      : <RequestsPage initialTab={route.tab ?? 'browse'} />; break;
     case 'favorites': page = <RequireAuth><FavoritesPage /></RequireAuth>; break;
     // Let visitors prepare a request before signing in; NeedSomethingPage opens
     // the auth dialog on submit so the in-progress form stays mounted.
@@ -141,8 +141,7 @@ function AppContent() {
       <Header focused={focused} />
       <div className={focused ? 'workspace-focused' : 'min-w-0 flex-1'}>
         <div className="workspace-content">
-          {!focused && ['home', 'search', 'bidding', 'bidding-detail', 'auction'].includes(route.name)
-            && !(route.name === 'bidding' && route.view === 'my-bids') && <BiddingTicker />}
+          {!focused && ['home', 'search'].includes(route.name) && <BiddingTicker />}
           <main id="main-content" tabIndex={-1} className="min-w-0 pb-8">
             <Suspense fallback={<PageLoading />}>
               <div key={`${route.name === 'need-something' ? 'request-draft' : user?.id ?? 'anonymous'}:${route.name}`} className="animate-page-fade">{page}</div>

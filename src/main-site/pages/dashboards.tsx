@@ -1045,6 +1045,7 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
                     {!selectingListings && (
                       <div className="flex flex-wrap gap-1 mt-1.5">
                       <Button size="sm" variant="secondary" onClick={() => navigate({ name: 'edit-listing',id: listing.id })}>Edit listing</Button>
+                      {listing.available && <Button size="sm" variant="secondary" onClick={() => setNegotiationListing(listing)}>Bidding settings</Button>}
                       <details className="rental-listing-tools">
                       <summary>More options</summary>
                       <div className="rental-listing-tools-body">
@@ -1053,7 +1054,6 @@ export function OwnerDashboard({ onRequestCount, view = 'activity' }: {
                       </Button>
                       {listing.listingStatus === 'published' && listing.availabilityExpired && <p className="text-xs text-sec">Hidden from search. Edit availability to make this listing available again.</p>}
                       {listing.available && <>
-                        <Button size="sm" variant="secondary" onClick={() => setNegotiationListing(listing)}>Bidding settings</Button>
                         <DurationDiscountControl listingId={listing.id} onSaved={reload} />
                         <OwnerPromotionControl listingId={listing.id} onSaved={reload} />
                       </>}

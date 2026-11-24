@@ -3,6 +3,7 @@ import type { CategoryDepositRule, ListingPickupLocation } from '@/lib/listings'
 import type { ListingItemDetails } from '@/lib/listing-item-details';
 import type { ListingAuctionPreferences } from '@/lib/listing-auctions';
 import { pickupTimeZone } from '@/lib/pickup-timezone';
+import { biddingErrorMessage } from '@/lib/bidding-copy';
 
 export type ListingFlowStatus = 'draft' | 'pending_approval' | 'published' | 'archived' | 'suspended';
 
@@ -93,7 +94,7 @@ export async function saveListingFlow(
   const { data, error } = await supabase.rpc('owner_save_listing_flow', {
     ...args, p_details: { ...details, availability_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(biddingErrorMessage(error.message));
   const saved = result(data);
   if (publish && saved.status === 'published' && details.auction_preferences?.enabled) {
     window.dispatchEvent(new Event('ybuy-auction-published'));
@@ -102,15 +103,15 @@ export async function saveListingFlow(
 }
 
 export async function saveAuctionPreferences(
-  listingId: string, revision: number, auction: ListingAuctionPreferences,
+  listingId: string, revision: number, auction: ListingAuctionPreferences, timeZone: string,
 ): Promise<ListingFlowResult> {
   const { data, error } = await supabase.rpc('owner_configure_listing_negotiation', {
     p_listing_id: listingId, p_revision: revision,
     p_offers: { negotiation_enabled: false, offer_minimum_daily: null, offer_maximum_daily: null,
       offer_target_daily: null, offer_start_date: null, offer_end_date: null, offer_expiration_hours: null },
-    p_auction: { ...auction, availability_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' },
+    p_auction: { ...auction, availability_timezone: timeZone },
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(biddingErrorMessage(error.message));
   const saved = result(data);
   window.dispatchEvent(new Event('ybuy-auction-published'));
   return saved;

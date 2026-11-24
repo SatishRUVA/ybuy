@@ -1,21 +1,20 @@
 .owner-listing.listing-studio {
-  --listing-paper: #faf9f7;
-  --listing-sheet: #fff;
-  --listing-ink: #252220;
-  --listing-muted: #68615e;
-  --listing-rule: #e9e5e2;
-  --listing-control: #a89f9a;
-  --listing-accent: #b64a36;
-  --listing-accent-soft: #fbefea;
-  color-scheme: light;
+  --listing-paper: var(--bg);
+  --listing-sheet: var(--bg-card);
+  --listing-ink: var(--text);
+  --listing-muted: var(--text-secondary);
+  --listing-rule: var(--border);
+  --listing-control: var(--border-strong);
+  --listing-accent: var(--accent);
+  --listing-accent-soft: var(--accent-soft);
   color: var(--listing-ink);
   background: var(--listing-paper);
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .listing-studio-shell {
   width: 100%;
-  max-width: 1040px;
+  max-width: 1120px;
   padding: 1.5rem clamp(1rem, 3vw, 2.5rem) 4rem;
 }
 
@@ -49,7 +48,7 @@
 .owner-listing .owner-listing-toolbar h1 {
   margin: 0;
   color: var(--listing-ink);
-  font-family: Manrope, 'DM Sans', system-ui, sans-serif;
+  font-family: var(--font-display);
   font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem);
   font-weight: 700;
   letter-spacing: -.04em;
@@ -59,25 +58,26 @@
 .owner-listing .owner-listing-mobile-step { display: none; }
 
 .listing-studio-layout {
-  display: grid;
-  grid-template-columns: 12rem minmax(0, 1fr);
-  align-items: start;
-  column-gap: clamp(2rem, 5vw, 4.5rem);
+  display: block;
+  max-width: 72rem;
+  margin-inline: auto;
 }
 
 .listing-step-rail {
-  position: sticky;
-  top: 1.5rem;
+  position: static;
   min-width: 0;
+  margin-bottom: 1.5rem;
 }
 
 .listing-step-rail .owner-listing-progress {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: .25rem;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: .5rem;
   margin: 0;
-  padding: 0;
-  border: 0;
+  padding: .5rem;
+  border: 1px solid var(--listing-rule);
+  border-radius: 1rem;
+  background: var(--listing-sheet);
   list-style: none;
 }
 
@@ -86,12 +86,13 @@
 .listing-step-rail .owner-step-button {
   display: flex;
   width: 100%;
-  min-height: 3rem;
+  min-height: 3.5rem;
   align-items: center;
-  gap: .75rem;
-  padding: .5rem .75rem;
+  justify-content: center;
+  gap: .55rem;
+  padding: .5rem .65rem;
   border: 0;
-  border-radius: .6rem;
+  border-radius: .75rem;
   color: var(--listing-muted);
   background: transparent;
   cursor: pointer;
@@ -101,28 +102,28 @@
 .listing-step-rail .owner-step-button:hover:not(:disabled),
 .listing-step-rail .owner-step-button[aria-current='step'] {
   color: var(--listing-ink);
-  background: #eae7e4;
+  background: var(--listing-accent-soft);
 }
 
 .listing-step-rail .owner-step-button:disabled { opacity: 1; cursor: default; }
 
 .listing-step-rail .owner-step-number {
   display: grid;
-  width: 1.65rem;
-  height: 1.65rem;
+  width: 1.85rem;
+  height: 1.85rem;
   flex: 0 0 auto;
   place-items: center;
   border: 0;
   border-radius: 50%;
   color: var(--listing-muted);
-  background: #edeae7;
+  background: var(--bg-subtle);
   font-size: .75rem;
   font-weight: 700;
 }
 
 .listing-step-rail li[data-reached='true'] .owner-step-number {
-  color: #fff;
-  background: var(--listing-ink);
+  color: var(--accent-text);
+  background: var(--listing-accent);
 }
 
 .listing-step-rail .owner-step-copy { min-width: 0; text-align: left; }
@@ -133,22 +134,23 @@
   min-height: 100%;
   overflow: visible;
   padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0;
-  background: transparent !important;
+  border: 1px solid var(--listing-rule) !important;
+  border-radius: 1rem;
+  background: var(--listing-sheet) !important;
+  box-shadow: 0 8px 28px -22px rgb(20 27 45 / 32%);
 }
 
 .owner-listing .owner-listing-panel-heading {
-  padding: 0 0 1.5rem !important;
+  padding: 1.75rem 1.75rem 1.25rem !important;
   border: 0 !important;
   background: transparent !important;
 }
 
 .owner-listing .owner-listing-panel-heading h2 {
-  scroll-margin-top: 1.5rem;
+  scroll-margin-top: 6rem;
   color: var(--listing-ink);
-  font-family: Manrope, 'DM Sans', system-ui, sans-serif;
-  font-size: clamp(1.65rem, 1.25rem + 1.2vw, 2.25rem);
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 1.35rem + .5vw, 1.9rem);
   font-weight: 700;
   letter-spacing: -.04em;
   line-height: 1.15;
@@ -165,7 +167,7 @@
 .owner-listing .owner-listing-fields {
   display: grid;
   gap: 1.5rem !important;
-  padding: 0 !important;
+  padding: .5rem 1.75rem 1.75rem !important;
 }
 .owner-listing .owner-listing-fields > :not([hidden]) ~ :not([hidden]) { margin-top: 0; }
 
@@ -189,31 +191,29 @@
   border-top: 1px solid var(--listing-rule);
 }
 .listing-location-sections > fieldset > legend { padding-right: .75rem; }
-.owner-listing .listing-longer-rentals { border-color: var(--listing-rule); border-radius: .75rem; }
-.owner-listing .listing-longer-rentals > summary { min-height: 4.5rem; }
+.owner-listing .listing-choice-section { padding-top: 1.5rem; border-top: 1px solid var(--listing-rule); }
+.owner-listing fieldset.listing-choice-section > legend { padding-right: .75rem; }
 .listing-earnings { padding: 1rem; border-radius: .75rem; background: #f0eeeb; }
 .owner-listing .text-sec,
 .owner-listing .text-muted { color: var(--listing-muted); }
 
 .owner-listing .listing-control {
   min-height: 3rem;
-  border-color: #b9b1ac;
+  border-color: var(--listing-control);
   border-radius: .6rem;
   color: var(--listing-ink);
-  background: #fff;
+  background: var(--listing-sheet);
 }
 
 .owner-listing .listing-control:focus-visible {
-  outline: 3px solid rgb(182 74 54 / 30%);
+  outline: 2px solid var(--listing-accent);
   outline-offset: 2px;
   border-color: var(--listing-accent);
 }
 .owner-listing #listing-price { padding-inline: 2.25rem 5rem; font-weight: 600; }
 
 .owner-listing .owner-listing-actions {
-  position: sticky;
-  z-index: 10;
-  bottom: 0;
+  position: static;
   justify-content: space-between;
   margin-top: 1.5rem;
   padding: 1.25rem 0 max(1rem, env(safe-area-inset-bottom)) !important;
@@ -225,31 +225,31 @@
 .owner-listing .owner-listing-actions .listing-action--primary {
   min-width: 9.5rem;
   min-height: 3.25rem;
-  border-color: var(--listing-ink);
-  border-radius: 999px;
-  background: var(--listing-ink);
+  border-color: var(--listing-accent);
+  border-radius: .75rem;
+  background: var(--listing-accent);
 }
 .owner-listing .owner-listing-actions .listing-action--primary:hover:not(:disabled) {
-  border-color: #49413d;
-  background: #49413d;
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
 }
 
 .owner-listing .owner-listing-fields .owner-condition {
   min-height: 3rem;
-  border-color: #b9b1ac;
+  border-color: var(--listing-control);
   border-radius: .6rem;
-  background: #fff;
+  background: var(--listing-sheet);
   color: var(--listing-muted);
 }
 .owner-listing .owner-listing-fields .owner-condition.bg-accent {
   border-color: var(--listing-accent);
   background: var(--listing-accent);
-  color: #fff;
+  color: var(--accent-text);
 }
 .owner-listing .owner-ai-panel {
   padding: 1rem;
   border: 1px solid var(--listing-rule);
-  background: #fff;
+  background: var(--listing-sheet);
 }
 
 .owner-listing .owner-photo-stage {
@@ -258,7 +258,7 @@
   place-items: center;
   overflow: hidden;
   border-radius: 1rem;
-  background: #f0eeeb;
+  background: var(--bg-subtle);
 }
 .owner-listing .owner-photo-stage img { width: 100%; height: 100%; object-fit: contain; }
 .owner-listing .owner-photo-stage.is-dragging { outline: 3px solid var(--listing-accent); outline-offset: -3px; }
@@ -266,13 +266,13 @@
 .owner-listing #listing-photo-editor .owner-photo-drop:not([data-has-photos='true']) {
   min-height: 16.5rem;
   gap: .65rem;
-  border: 1.5px dashed #c9c0ba;
+  border: 1.5px dashed var(--listing-control);
   border-radius: 1rem;
-  background: #fff;
+  background: var(--listing-sheet);
 }
 .owner-listing .owner-photo-drop:not([data-has-photos='true']):hover:not(:disabled) {
   border-color: var(--listing-accent);
-  background: #fffcfb;
+  background: var(--listing-accent-soft);
 }
 .owner-listing .owner-photo-drop:not([data-has-photos='true']) > span:first-child {
   display: grid;
@@ -281,14 +281,14 @@
   margin-bottom: .3rem;
   place-items: center;
   border-radius: 50%;
-  background: #f5f2ef;
+  background: var(--bg-subtle);
 }
 .owner-listing .owner-photo-drop:not([data-has-photos='true']) > span:nth-child(2) {
   display: inline-flex;
   align-items: center;
   min-height: 2.75rem;
   padding: .5rem 1.25rem;
-  border: 1px solid #d5ceca;
+  border: 1px solid var(--listing-control);
   border-radius: 999px;
   font-size: .875rem;
 }
@@ -301,7 +301,7 @@
   padding: .65rem .8rem;
   border: 1px solid var(--listing-rule);
   border-radius: .6rem;
-  background: #fff;
+  background: var(--listing-sheet);
   text-align: left;
 }
 .owner-listing .owner-photo-drop[data-has-photos='true'] > span:nth-child(3) { display: none; }
@@ -311,7 +311,7 @@
 .owner-listing .owner-photo-drop[data-has-photos='true'] > span:nth-child(2) { font-size: .875rem; }
 
 .owner-listing #listing-photo-editor button:not(.owner-photo-drop) { border-radius: .6rem; }
-.owner-listing .listing-success { padding: 1.5rem; border: 1px solid var(--listing-rule); border-radius: 1rem; background: #fff; }
+.owner-listing .listing-success { padding: 1.5rem; border: 1px solid var(--listing-rule); border-radius: 1rem; background: var(--listing-sheet); }
 
 @media (max-width: 700px) {
   .listing-studio-shell { padding: 1rem 1rem 2rem; }
@@ -333,4 +333,199 @@
   .owner-listing .owner-listing-panel-heading h2 { font-size: 1.65rem; }
   .owner-listing .owner-photo-stage { aspect-ratio: 4 / 3; }
   .owner-listing .owner-photo-drop:not([data-has-photos='true']) { min-height: 14rem; }
+}
+
+/* Listing studio: guided stages, clear task surface, and brand-aligned controls. */
+.listing-step-rail .owner-step-button { text-align: center; }
+.listing-step-rail .owner-step-button[aria-current='step'] { color: var(--listing-accent); }
+.owner-listing .owner-listing-panel-heading h2 { letter-spacing: -.025em; }
+.owner-listing .owner-listing-panel-heading p { max-width: 64ch; }
+.owner-listing .owner-listing-fields { padding-inline: 1.75rem !important; }
+.owner-listing .listing-choice-section { border-color: var(--listing-rule); }
+.listing-earnings { border: 1px solid var(--listing-rule); background: var(--bg-subtle); }
+.owner-listing .listing-control { border-color: var(--listing-control); background: var(--listing-sheet); }
+.owner-listing .owner-listing-actions { padding-inline: 1.75rem !important; }
+.owner-listing .owner-listing-fields .owner-condition { border-color: var(--listing-control); background: var(--listing-sheet); }
+.owner-listing .owner-ai-panel { border-color: var(--listing-rule); background: var(--listing-sheet); }
+.owner-listing .owner-photo-stage { background: var(--bg-subtle); }
+.owner-listing .owner-photo-drop:not([data-has-photos='true']) { border-color: var(--listing-control); background: var(--listing-sheet); }
+.owner-listing .owner-photo-drop:not([data-has-photos='true']) > span:nth-child(2) { color: var(--listing-ink); background: var(--listing-sheet); }
+.owner-listing #listing-photo-editor .owner-photo-drop[data-has-photos='true'] { border-color: var(--listing-rule); background: var(--listing-sheet); }
+.owner-listing #listing-auction {
+  border: 1px solid var(--listing-rule);
+  border-radius: 1rem;
+  background: var(--listing-sheet);
+  padding: 1.25rem;
+}
+.owner-listing #listing-auction input[type='date'] { min-height: 3rem; }
+.owner-listing .listing-bidding-details { display: grid; gap: 1.25rem; }
+.owner-listing .listing-bidding-copy { border-bottom: 1px solid var(--listing-rule); padding-bottom: 1rem; }
+.owner-listing .listing-bidding-title { color: var(--listing-ink); font-size: 1.125rem; font-weight: 700; }
+.owner-listing .listing-bidding-description { margin-top: .35rem; color: var(--listing-muted); font-size: .875rem; line-height: 1.5; }
+.owner-listing #longer-rental-prices { margin: 0; }
+
+@media (max-width: 700px) {
+  .owner-listing .owner-listing-panel-heading { padding: 1.25rem 1.25rem 1rem !important; }
+  .owner-listing .owner-listing-fields { padding: .5rem 1.25rem 1.25rem !important; }
+  .owner-listing .owner-listing-actions { padding-inline: 1.25rem !important; }
+  .owner-listing .owner-auction-setup { grid-template-columns: minmax(0, 1fr); }
+}
+
+.listing-studio-shell { max-width: 960px; padding-top: 1.75rem; }
+.listing-studio-header { padding-bottom: 1.5rem; }
+.owner-listing .owner-listing-toolbar h1 {
+  font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+  font-weight: 800;
+  letter-spacing: -.025em;
+}
+.listing-studio-intro { margin-top: .5rem; color: var(--listing-muted); }
+.listing-step-rail { margin-bottom: 1rem; }
+.listing-step-rail .owner-listing-progress {
+  display: flex;
+  gap: .375rem;
+  overflow-x: auto;
+  padding: .2rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  scrollbar-width: thin;
+}
+.listing-step-rail .owner-listing-progress > li { flex: 1 0 auto; }
+.listing-step-rail .owner-step-button {
+  min-height: 3rem;
+  padding: .5rem .75rem;
+  border: 1px solid var(--listing-rule);
+  border-radius: .75rem;
+  background: var(--listing-sheet);
+}
+.listing-step-rail .owner-step-button[aria-current='step'] {
+  border-color: var(--listing-accent);
+  color: var(--listing-ink);
+}
+.listing-step-rail .owner-step-button:disabled { opacity: .58; }
+.listing-step-rail .owner-step-number { width: 1.4rem; height: 1.4rem; background: var(--listing-rule); }
+.listing-step-rail .owner-step-label { display: block; font-size: .85rem; }
+.listing-step-status { margin: .65rem 0 .4rem; color: var(--listing-muted); font-size: .875rem; }
+.listing-step-progress {
+  display: block;
+  width: 100%;
+  height: .3rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--listing-rule);
+  color: var(--listing-accent);
+}
+.listing-step-progress::-webkit-progress-bar { background: var(--listing-rule); }
+.listing-step-progress::-webkit-progress-value { background: var(--listing-accent); }
+.listing-step-progress::-moz-progress-bar { background: var(--listing-accent); }
+.owner-listing .owner-listing-panel {
+  border-radius: 1.25rem !important;
+  box-shadow: none;
+}
+.owner-listing .owner-listing-panel-heading h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  letter-spacing: -.02em;
+}
+.owner-listing .owner-listing-actions {
+  margin: 0;
+  border-top: 1px solid var(--listing-rule) !important;
+  border-radius: 0 0 1.25rem 1.25rem;
+  background: var(--listing-sheet) !important;
+}
+.owner-listing .listing-action { border-radius: .75rem; }
+.owner-listing .listing-action--primary,
+.owner-listing .listing-action--primary:hover:not(:disabled) { color: var(--accent-text); }
+.owner-listing .listing-action--secondary { border-color: var(--listing-rule); }
+.owner-listing .listing-control {
+  border-radius: .75rem;
+  background: var(--bg-subtle);
+  font-size: 1rem;
+}
+.owner-listing #listing-photo-editor .owner-photo-drop:not([data-has-photos='true']) {
+  min-height: 9rem;
+  background: var(--listing-sheet);
+}
+.owner-listing .owner-photo-drop:not([data-has-photos='true']) > span:first-child {
+  display: block;
+  width: auto;
+  height: auto;
+  margin: 0;
+  background: transparent;
+}
+.owner-listing .owner-photo-drop:not([data-has-photos='true']) > span:nth-child(2) {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.owner-listing .owner-photo-stage { max-height: 32rem; }
+.owner-listing .listing-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: .75rem;
+  margin-top: .75rem;
+}
+.owner-listing .listing-photo-tile { width: 100%; aspect-ratio: 1; }
+.owner-listing .listing-photo-tile img { width: 100%; height: 100%; object-fit: cover; }
+.owner-listing .listing-duration-choice { display: grid; gap: .6rem; }
+.owner-listing .listing-duration-options,
+.owner-listing .listing-calendar-presets { display: flex; flex-wrap: wrap; gap: .5rem; }
+.owner-listing .listing-duration-options label,
+.owner-listing .listing-calendar-presets button {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: .4rem;
+  padding: .4rem .8rem;
+  border: 1px solid var(--listing-control);
+  border-radius: 999px;
+  background: var(--listing-sheet);
+  color: var(--listing-ink);
+  font-size: .875rem;
+  font-weight: 600;
+}
+.owner-listing .listing-duration-options label:has(input:checked) {
+  border-color: var(--listing-accent);
+  background: var(--listing-accent-soft);
+}
+.owner-listing .listing-duration-options input { accent-color: var(--listing-accent); }
+.owner-listing .owner-availability-months { border-radius: 1rem; background: var(--bg-subtle); }
+
+.owner-listing .owner-listing-review { display: block; }
+.owner-listing .owner-listing-review.space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.5rem; }
+.listing-review-card {
+  display: grid;
+  grid-template-columns: minmax(100px, 150px) minmax(0, 1fr);
+  gap: 1rem;
+  padding: .75rem;
+  border: 1px solid var(--listing-rule);
+  border-radius: 1rem;
+}
+.listing-review-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: .75rem; }
+.listing-review-details { font-size: .875rem; }
+.listing-review-details > section { padding: 1rem 0; border-bottom: 1px solid var(--listing-rule); }
+.listing-review-details > section:first-child { border-top: 1px solid var(--listing-rule); }
+.listing-review-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .35rem; }
+.listing-review-heading h3 { color: var(--listing-ink); font-weight: 700; }
+.listing-review-details p { margin: .25rem 0 0; color: var(--listing-muted); overflow-wrap: anywhere; line-height: 1.5; }
+.listing-review-details p:first-of-type { color: var(--listing-ink); }
+
+@media (max-width: 700px) {
+  .listing-studio-shell { padding-top: 1rem; }
+  .owner-listing .owner-listing-toolbar h1 { font-size: 1.8rem; }
+  .listing-step-rail { margin-bottom: 1rem; }
+  .listing-step-rail .owner-step-button { padding: .5rem .75rem; }
+  .owner-listing .listing-step-rail .owner-listing-progress .owner-step-label {
+    display: block;
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: nowrap;
+  }
+  .owner-listing .owner-listing-panel-heading h2 { font-size: 1.5rem; }
 }

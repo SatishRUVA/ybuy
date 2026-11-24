@@ -413,7 +413,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
           if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
           navigate({ name: 'bidding-detail', id: listing.id });
-        }} className="flex justify-center items-center min-h-11 text-sm font-semibold text-accent mt-2">View auction in Bidding <ChevronRight size={15} aria-hidden="true" /></a>)}
+        }} className="flex justify-center items-center min-h-11 text-sm font-semibold text-accent mt-2">View bidding details <ChevronRight size={15} aria-hidden="true" /></a>)}
     </Surface>
   );
 

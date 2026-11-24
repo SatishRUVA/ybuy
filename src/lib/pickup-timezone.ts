@@ -14,3 +14,10 @@ export function pickupToday(timeZone: string, now = new Date()): string {
   }).formatToParts(now);
   return ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)!.value).join('-');
 }
+
+export async function pickupMidnight(date: string, timeZone: string): Promise<string> {
+  const native = (globalThis as typeof globalThis & { Temporal?: typeof import('temporal-polyfill').Temporal }).Temporal;
+  const temporal = native ?? (await import('temporal-polyfill')).Temporal;
+  const midnight = temporal.ZonedDateTime.from(`${date}T00:00[${timeZone}]`, { disambiguation: 'reject' });
+  return midnight.toInstant().toString({ smallestUnit: 'millisecond' });
+}
