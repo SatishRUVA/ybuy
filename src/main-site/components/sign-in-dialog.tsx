@@ -187,7 +187,7 @@ function LocalProfilePicker() {
         onChange={(event) => void selectLocalProfile(event.target.value)}
       >
         <option value="" disabled>{loading ? 'Loading profiles...' : 'Select a profile'}</option>
-        {(['Owner', 'Renter', ...(HOSTED_PROFILE_LOGIN ? [] : ['Admin', 'Super Admin'])] as const).map((role) => (
+        {(['Owner', 'Renter', 'Admin', 'Super Admin'] as const).map((role) => (
           <optgroup key={role} label={role === 'Owner' || role === 'Renter' ? `${role}s` : role}>
             {profiles.filter((item) => item.role === role).map((item) => (
               <option key={item.id} value={item.id}>{item.name} - {item.role}</option>

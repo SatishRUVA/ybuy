@@ -1,12 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 import { ACCESS_COOKIE_NAME, verifyAccessSession } from './_lib/access-session.js';
 import { isAllowedHostname } from './_lib/host-allowlist.js';
+import { hostedProfileRole } from './_lib/test-profile-roles.js';
 
 export const config = { runtime: 'edge' };
 const backend = 'https://jzyjmsixfuwzfnntewqn.supabase.co';
 const defaultAllowedHosts = ['ybuy-redesign-v1.vercel.app', 'ybuy-e2e-test.vercel.app'];
-const emails = new Set(['owner', 'renter'].flatMap(role =>
-  Array.from({ length: 5 }, (_, index) => `${role}${index + 1}@example.test`)));
+const emails = new Set([
+  ...['owner', 'renter'].flatMap(role =>
+    Array.from({ length: 5 }, (_, index) => `${role}${index + 1}@example.test`)),
+  'admin@example.test',
+  'super-admin@example.test',
+]);
 
 function json(status, body) {
   return new Response(JSON.stringify(body), {
@@ -46,15 +51,19 @@ export default async function handler(request) {
     }
     const { data: admins, error: adminError } = await db.from('admin_users').select('user_id, role, active').in('user_id', users.map(user => user.id));
     if (adminError) throw adminError;
-    const allowed = users.filter(user => !admins.some(admin => admin.user_id === user.id));
+    const adminByUser = new Map(admins.map(admin => [admin.user_id, admin]));
+    const allowed = users
+      .map(user => ({ user, role: hostedProfileRole(user.email, adminByUser.get(user.id)) }))
+      .filter(item => item.role);
     if (request.method === 'GET') return json(200, allowed.map(user => ({
-      id: user.id, name: user.user_metadata.full_name || user.email,
-      role: user.email.startsWith('owner') ? 'Owner' : 'Renter',
+      id: user.user.id, name: user.user.user_metadata.full_name || user.user.email,
+      role: user.role,
     })));
     let body;
     try { body = await request.json(); } catch { return json(400, { error: 'Choose a valid test profile.' }); }
-    const user = allowed.find(user => user.id === body?.id);
-    if (!user) return json(403, { error: 'Only approved test accounts with their configured roles can be selected.' });
+    const selected = allowed.find(item => item.user.id === body?.id);
+    if (!selected) return json(403, { error: 'Only approved test accounts with their configured roles can be selected.' });
+    const user = selected.user;
     const { data, error } = await db.auth.admin.generateLink({ type: 'magiclink', email: user.email });
     if (error) throw error;
     if (data.user.id !== user.id || !data.properties.hashed_token) throw new Error('Test account token did not match.');

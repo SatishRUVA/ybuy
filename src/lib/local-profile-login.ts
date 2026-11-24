@@ -1,4 +1,5 @@
 import { ADMIN_PORTAL, ADMIN_PORTAL_ROLE } from '@/lib/admin-portal';
+import { isValidLocalProfileList } from '@/lib/local-profile-validation';
 
 export interface LocalLoginProfile {
   id: string;
@@ -35,11 +36,8 @@ export async function loadLocalProfiles(): Promise<LocalLoginProfile[]> {
     : 'Local profiles are unavailable. Start local Supabase and retry.');
   const data: unknown = await response.json();
   const allowedAdminProfileRole = ADMIN_PORTAL_ROLE === 'super_admin' ? 'Super Admin' : 'Admin';
-  if (!Array.isArray(data) || (ADMIN_PORTAL ? data.length === 0 || data.length > 2
-    : HOSTED_PROFILE_LOGIN ? data.length === 0 || data.length > 10 : data.length !== 22) || data.some((item) =>
-    !item || typeof item.id !== 'string' || typeof item.name !== 'string'
-    || !(ADMIN_PORTAL ? [allowedAdminProfileRole] : HOSTED_PROFILE_LOGIN ? ['Owner', 'Renter']
-      : ['Owner', 'Renter', 'Admin', 'Super Admin']).includes(item.role))) {
+  const mode = ADMIN_PORTAL ? 'admin' : HOSTED_PROFILE_LOGIN ? 'hosted' : 'local';
+  if (!isValidLocalProfileList(data, mode, allowedAdminProfileRole)) {
     throw new Error(ADMIN_PORTAL || HOSTED_PROFILE_LOGIN ? 'Test profile list is invalid. Contact the site administrator.'
       : 'Local profile list is invalid. Restart the local development server.');
   }
