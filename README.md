@@ -709,7 +709,7 @@ exact host to both `VITE_TEST_PROFILE_HOSTS` and
 `VITE_TEST_PROFILE_LOGIN=true` and `YBUY_TEST_PROFILE_LOGIN=true`, and configure
 server-only `YBUY_TOTP_SECRET`, `YBUY_ACCESS_SESSION_SECRET` and
 `SUPABASE_SERVICE_ROLE_KEY`. The existing authenticator verifier grants a signed,
-HttpOnly, two-hour tester cookie; both listing and selecting profiles require it.
+HttpOnly, four-hour tester cookie; both listing and selecting profiles require it.
 On the combined site's administrator routes, the same tester cookie also gates
 Google sign-in. A matching active administrator role and its database
 permissions are required; Google accounts are not added to the test picker.
@@ -750,6 +750,12 @@ hostname `ybuys.netlify.app` and configure these build variables:
   `VITE_TEST_PROFILE_LOGIN=true`, and `VITE_TEST_PROFILE_HOSTS=ybuys.netlify.app`.
 - Public Supabase client settings: `VITE_SUPABASE_URL` and
   `VITE_SUPABASE_ANON_KEY` for the isolated test backend.
+- Public map settings: `VITE_GOOGLE_MAPS_API_KEY` for pickup-address
+  suggestions and `VITE_MAP_API_KEY` for city/ZIP lookup and map tiles.
+  Configure these for the Netlify build and redeploy after changing them.
+  Restrict the Google browser key to the site origins, enable Maps JavaScript
+  API and Places API (New), and enable billing for the Google Cloud project.
+  Restrict the MapTiler key to the same site origins in MapTiler.
 
 Configure these Functions and Edge variables:
 
@@ -759,7 +765,7 @@ Configure these Functions and Edge variables:
   `SUPABASE_SERVICE_ROLE_KEY`. Make the Supabase public URL available to
   Functions as well.
 
-The site gate runs first across the hostname. The same two-hour tester session
+The site gate runs first across the hostname. The same four-hour tester session
 unlocks the customer app at `/`, Admin at `/admin`, and Super Admin at
 `/super-admin`, without another authenticator prompt. Each admin portal accepts
 only already-provisioned synthetic profiles whose fixture marker and active
@@ -802,7 +808,7 @@ each must carry the
 `ybuy-local-lifecycle-v1` fixture marker and matching active database role.
 Switching profiles does not ask for another code. Tokens are signed with a
 host-and-role-specific key and kept in a host-only HttpOnly, Secure,
-SameSite=Strict cookie for up to two hours. Supabase sessions on the dedicated
+SameSite=Strict cookie for up to four hours. Supabase sessions on the dedicated
 portal use tab-scoped session storage so the Google redirect can complete; they
 survive reloads but are cleared when the tab closes. The
 site-level gate is not enabled on this separate Vercel host; use the combined

@@ -2,6 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+.security-code {
+  --code-gap: .25rem;
+  --code-cell: clamp(1.5rem, calc((100vw - 6rem - 5 * var(--code-gap)) / 6), 2.25rem);
+  position: relative;
+  width: calc(6 * var(--code-cell) + 5 * var(--code-gap));
+  max-width: 100%;
+  margin-top: .5rem;
+  overflow: clip;
+}
+
+.security-code-slots { display: flex; gap: var(--code-gap); pointer-events: none; }
+.security-code-slots span {
+  width: var(--code-cell);
+  height: 3rem;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: white;
+}
+.security-code:focus-within .security-code-slots span { border-color: var(--accent); }
+.security-code:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+:root body input.security-code-input {
+  position: absolute;
+  inset: 0;
+  width: calc(100% + var(--code-cell) - 1ch + var(--code-gap));
+  height: 3rem;
+  padding: 0 calc((var(--code-cell) - 1ch) / 2);
+  border: 0;
+  background: transparent;
+  color: var(--ybuy-gray-950);
+  font: 600 1.25rem/3rem ui-monospace, monospace;
+  letter-spacing: calc(var(--code-cell) + var(--code-gap) - 1ch);
+  outline: none;
+}
+:root body input.security-code-input:disabled { background: transparent; opacity: .5; }
+
 .calendar-modal {
   position: fixed;
   inset: 0;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { LockKeyhole, X } from 'lucide-react';
 import { BrandLogo } from '@/main-site/components/brand-logo';
+import { SecurityCodeInput } from '@/main-site/components/security-code-input';
 import { useAuth } from '@/auth-context';
 import { Alert, Button } from '@/main-site/components/ui';
 import { fieldClass } from '@/main-site/components/form-classes';
@@ -164,13 +165,14 @@ function LocalProfilePicker() {
   return (
     <>
       {HOSTED_PROFILE_LOGIN && <form onSubmit={event => void verifyTester(event)} className="mb-6 space-y-4">
-        <label className="block text-sm font-semibold">Tester security code
-          <span className="mt-1 block text-sm font-normal text-sec">Use your authorized tester authenticator. Access expires after two hours.</span>
-          <input className={fieldClass('mt-2')} value={code}
+        <div>
+          <label htmlFor="tester-security-code" className="block text-sm font-semibold">Tester security code</label>
+          <p id="tester-security-code-hint" className="mt-1 text-sm text-sec">Use your authorized tester authenticator. Access expires after four hours.</p>
+          <SecurityCodeInput id="tester-security-code" value={code}
             onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-            inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6}
+            aria-describedby="tester-security-code-hint"
             required disabled={verifying} />
-        </label>
+        </div>
         <Button type="submit" fullWidth disabled={code.length !== 6 || verifying} loading={verifying}>Verify tester access</Button>
       </form>}
       <p className="mb-4 text-sm leading-relaxed text-sec">Bookings and saved items stay with their original profile.</p>

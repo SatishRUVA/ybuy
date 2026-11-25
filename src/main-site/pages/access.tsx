@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { Button } from '@/main-site/components/ui';
 import { BrandLogo } from '@/main-site/components/brand-logo';
+import { SecurityCodeInput } from '@/main-site/components/security-code-input';
 
 function getRedirectTarget(): string {
   const params = new URLSearchParams(window.location.search);
@@ -66,18 +67,13 @@ export function AccessPage() {
         <p className="mt-1.5 text-sm text-sec leading-relaxed">Enter your security code to continue.</p>
 
         <form onSubmit={(e) => void handleSubmit(e)} className="mt-6 space-y-3">
-          <input
+          <SecurityCodeInput
             ref={inputRef}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={6}
-            placeholder="6-digit code"
             value={code}
             onChange={(e) => {
               setCode(e.target.value.replace(/\D/g, '').slice(0, 6));
               if (status === 'error') setStatus('idle');
             }}
-            className="w-full min-w-0 h-12 px-4 rounded-card border border-strong bg-card text-center text-lg tracking-[0.25em] placeholder:tracking-normal text-main focus:border-accent"
             aria-label="Security code"
             aria-invalid={status === 'error'}
           />
@@ -94,7 +90,7 @@ export function AccessPage() {
           </Button>
         </form>
 
-        <p className="mt-5 text-xs text-muted text-center">Your security session lasts 2 hours.</p>
+        <p className="mt-5 text-xs text-muted text-center">Your security session lasts up to 4 hours.</p>
       </div>
     </div>
   );

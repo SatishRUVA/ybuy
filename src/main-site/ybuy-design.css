@@ -236,8 +236,31 @@ h1, h2, h3, h4 {
   color: var(--ybuy-gray-950);
   background-color: var(--ybuy-white);
   border-color: var(--ybuy-gray-600);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+
+:root select:not([multiple], [size], [aria-hidden='true']),
+:root select[size='1']:not([multiple], [aria-hidden='true']) {
+  appearance: none;
+  padding-inline-end: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%234B5568' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right .875rem center;
+  background-size: 1rem;
+}
+
+:root select:dir(rtl):not([multiple], [size], [aria-hidden='true']),
+:root select:dir(rtl)[size='1']:not([multiple], [aria-hidden='true']) {
+  background-position: left .875rem center;
+}
+
+@media (forced-colors: active) {
+  :root select:not([multiple], [size], [aria-hidden='true']),
+  :root select[size='1']:not([multiple], [aria-hidden='true']) {
+    appearance: auto;
+    background-image: none;
+  }
 }
 
 :root :is(

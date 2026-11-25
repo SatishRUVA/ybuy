@@ -77,7 +77,7 @@ export default async function handler(request) {
   auditLog('totp_verification_succeeded', ip);
   const { token, expiresAt } = await signAccessSession(sessionSecret, now);
   // No Max-Age: session cookie so closing the browser/tab drops it and re-triggers auth.
-  // The signed token's own expiresAt still caps the session server-side to 2 hours.
+  // The signed token's own expiresAt caps the session server-side to 4 hours.
   const cookie = `${ACCESS_COOKIE_NAME}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax`;
   return json(200, { ok: true, expiresAt }, { 'set-cookie': cookie });
 }

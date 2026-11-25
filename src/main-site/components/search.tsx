@@ -23,7 +23,7 @@ export function SearchRadiusSelect({ value, onChange, label = 'Search radius', d
 }) {
   return (
     <div className="search-radius-wrap relative min-w-0">
-      <MapPin size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-accent" />
+      <MapPin size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ybuy-gray-700)]" />
       <Select value={value === null ? 'any' : String(value)} disabled={disabled} onValueChange={(next) => onChange(parseSearchRadius(next))}>
         <SelectTrigger aria-label={`${label}: ${value === null ? 'any distance' : `within ${value} miles`}`}
           title={disabled ? 'Choose a location before setting a distance' : label}

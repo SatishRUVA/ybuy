@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/theme-context';
 import { RouterProvider, useRouter } from '@/router';
 import { Alert, Button } from '@/main-site/components/ui';
 import { BrandLogo } from '@/main-site/components/brand-logo';
+import { SecurityCodeInput } from '@/main-site/components/security-code-input';
 import { fieldClass } from '@/main-site/components/form-classes';
 import { COMBINED_TEST_PROFILE_LOGIN, loadLocalProfiles, type LocalLoginProfile } from '@/lib/local-profile-login';
 import { ADMIN_PORTAL_ROLE } from '@/lib/admin-portal';
@@ -135,13 +136,12 @@ function AdminPortal() {
       : !grant ? <main className="mx-auto max-w-lg px-5 py-12 sm:py-20">
         <ShieldCheck className="mb-5 text-main" size={32} aria-hidden="true" />
         <h1 className="font-display text-3xl font-bold">{signInTitle} sign-in</h1>
-        <p className="mt-3 text-sm leading-relaxed text-sec">Isolated test environment. Administrator access uses an authenticator code for up to two hours.</p>
+        <p className="mt-3 text-sm leading-relaxed text-sec">Isolated test environment. Administrator access uses an authenticator code for up to four hours.</p>
         <form method="post" action={accessEndpoint} onSubmit={event => void verify(event)} className="mt-7 space-y-5">
           <label htmlFor="admin-auth-code" className="block text-sm font-semibold">{COMBINED_TEST_PROFILE_LOGIN ? 'Tester security code' : `${roleLabel} authenticator code`}</label>
           <p id="admin-auth-code-hint" className="text-sm text-sec">Enter the six-digit code from your authenticator app.</p>
-          <input id="admin-auth-code" name="code" type="text" className={fieldClass('mt-2')} value={code}
+          <SecurityCodeInput id="admin-auth-code" name="code" value={code}
             onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-            autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
             aria-describedby="admin-auth-code-hint" required />
           <input type="hidden" name="role" value={ADMIN_PORTAL_ROLE} />
           <Button type="submit" fullWidth disabled={code.length !== 6}>Verify & choose profile</Button>

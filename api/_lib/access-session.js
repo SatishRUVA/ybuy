@@ -7,7 +7,7 @@ const cryptoImpl = globalThis.crypto;
 const TOTP_STEP_SECONDS = 30;
 const TOTP_DIGITS = 6;
 const TOTP_WINDOW = 1; // tolerate ±1 step (±30s) of clock drift
-const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // exactly 2 hours
+const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
 
 export const ACCESS_COOKIE_NAME = 'ybuy_access';
 

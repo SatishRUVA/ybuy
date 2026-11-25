@@ -1,7 +1,15 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import handler from './verify.js';
-import { signAccessSession } from '../_lib/access-session.js';
+import { signAccessSession, verifyAccessSession } from '../_lib/access-session.js';
+
+test('security sessions expire exactly four hours after they are issued', async () => {
+  const now = 1_700_000_000_000;
+  const session = await signAccessSession('test-session-secret', now);
+  assert.equal(session.expiresAt, now + 4 * 60 * 60 * 1000);
+  assert.equal(await verifyAccessSession('test-session-secret', session.token, session.expiresAt - 1), true);
+  assert.equal(await verifyAccessSession('test-session-secret', session.token, session.expiresAt), false);
+});
 
 test('checking tester access requires an unexpired signed cookie', async () => {
   const previousEnabled = process.env.YBUY_TEST_PROFILE_LOGIN;
@@ -15,7 +23,7 @@ test('checking tester access requires an unexpired signed cookie', async () => {
     }));
     assert.equal((await request()).status, 401);
     assert.equal((await request('invalid')).status, 401);
-    const expired = await signAccessSession(process.env.YBUY_ACCESS_SESSION_SECRET, Date.now() - 3 * 60 * 60 * 1000);
+    const expired = await signAccessSession(process.env.YBUY_ACCESS_SESSION_SECRET, Date.now() - 5 * 60 * 60 * 1000);
     assert.equal((await request(expired.token)).status, 401);
     const valid = await signAccessSession(process.env.YBUY_ACCESS_SESSION_SECRET);
     const response = await request(valid.token);
