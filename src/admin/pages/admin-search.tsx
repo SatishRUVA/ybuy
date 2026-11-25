@@ -22,7 +22,7 @@ async function searchRecords(query: string, access: AdminAccess): Promise<Search
 
   if (permissions.includes('users.manage')) {
     searches.push(listUsers({ search: query, limit: SEARCH_LIMIT, offset: 0 }).then(({ rows }) => rows.map((user) => ({
-      id: user.id, type: 'Customer', title: user.full_name, detail: `${user.email} · ${user.customer_id ?? user.id}`, section: 'users',
+      id: user.id, type: 'Customer', title: user.full_name, detail: `${user.email} · ${user.customer_id ?? 'Customer ID unavailable'}`, section: 'users',
     }))));
   }
   if (permissions.includes('listings.moderate')) {
@@ -32,17 +32,17 @@ async function searchRecords(query: string, access: AdminAccess): Promise<Search
   }
   if (permissions.includes('bookings.view')) {
     searches.push(listBookings({ search: query, limit: SEARCH_LIMIT, offset: 0 }).then(({ rows }) => rows.map((booking) => ({
-      id: booking.id, type: 'Booking', title: booking.listing_title, detail: `${booking.renter_name} · ${booking.status} · ${booking.id}`, section: 'bookings',
+      id: booking.id, type: 'Booking', title: booking.listing_title, detail: `${booking.renter_name} · ${booking.status} · ${booking.start_date} – ${booking.end_date}`, section: 'bookings',
     }))));
   }
   if (permissions.includes('disputes.manage')) {
     searches.push(listCases('dispute', query, 'all', 'all', true, SEARCH_LIMIT, 0).then(({ rows }) => rows.map((item) => ({
-      id: item.id, type: 'Dispute', title: item.subject, detail: `${item.status} · ${item.id}`, section: 'disputes',
+      id: item.id, type: 'Dispute', title: item.subject, detail: `${item.status} · ${item.category.replace(/_/g, ' ')}`, section: 'disputes',
     }))));
   }
   if (permissions.includes('support.manage')) {
     searches.push(listCases('support', query, 'all', 'all', true, SEARCH_LIMIT, 0).then(({ rows }) => rows.map((item) => ({
-      id: item.id, type: 'Support', title: item.subject, detail: `${item.status} · ${item.id}`, section: 'support',
+      id: item.id, type: 'Support', title: item.subject, detail: `${item.status} · ${item.category.replace(/_/g, ' ')}`, section: 'support',
     }))));
   }
 

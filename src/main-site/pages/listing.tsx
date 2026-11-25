@@ -483,18 +483,10 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
           <div className="listing-gallery min-w-0">
             <ImageGallery images={listing.images} title={listing.title} />
           </div>
-          <section className="listing-highlights min-w-0" aria-label="Item highlights">
-            {listing.condition && <Badge tone="neutral">{listing.condition}</Badge>}
-            <h2 className="mt-3 text-xl font-bold text-main font-display">Item highlights</h2>
-            {listing.description && <p className="listing-highlights-description mt-3 text-sm text-sec leading-relaxed">{listing.description}</p>}
-            <ul className="mt-4 divide-y divide-app text-sm">
-              {(listing.brand || listing.model) && <li className="py-3"><strong className="block text-main">Brand and model</strong><span className="text-sec">{[listing.brand, listing.model].filter(Boolean).join(' · ')}</span></li>}
-              {listing.whatsIncluded.length > 0 && <li className="py-3"><strong className="block text-main">What's included</strong><span className="text-sec">{listing.whatsIncluded.join(', ')}</span></li>}
-              <li className="py-3"><strong className="block text-main">Pickup{listing.deliveryAvailable ? ' or delivery' : ''}</strong><span className="text-sec">{listing.pickup || 'Arrange pickup with the owner'}</span></li>
-              <li className="py-3"><strong className="block text-main">{listing.instantBooking ? 'Instant booking' : 'Owner approval required'}</strong></li>
-            </ul>
-            <a href="#listing-overview" className="inline-block mt-2 text-sm font-semibold text-accent">See all item details →</a>
-          </section>
+          {listing.description && <section id="listing-overview" className="listing-highlights min-w-0 scroll-mt-24">
+            <h2 className="text-xl font-bold text-main font-display">About this item</h2>
+            <p className="mt-3 text-sm text-sec leading-relaxed whitespace-pre-line">{listing.description}</p>
+          </section>}
           <aside className="listing-booking min-w-0" aria-label="Book this item">
             <div className="listing-booking-sticky">{bookingPanel}</div>
           </aside>
@@ -502,31 +494,18 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
             {listing.auctionEnabled && biddingFlagError && <Alert tone="error" title="Could not check competitive bidding">{biddingFlagError} Retrying automatically.</Alert>}
             <div className="listing-trust-strip flex flex-wrap gap-x-5 gap-y-2 text-xs text-sec">
               <span className="inline-flex items-center gap-2"><CheckCircle2 size={16} className="text-accent" aria-hidden="true" />{listing.instantBooking ? 'Instant booking' : 'Owner approval required'}</span>
-              <span className="inline-flex items-center gap-2"><Lock size={16} className="text-accent" aria-hidden="true" />{listing.deposit > 0 ? `$${formatMoney(listing.deposit)} refundable deposit` : 'No security deposit'}</span>
               {SHOW_OUT_OF_SCOPE_PAGES && listing.protectionEligible && (
                 <span className="inline-flex items-center px-3 py-2 rounded-card bg-accent-soft"><ProtectionBadge size="md" /></span>
-              )}
-              {listing.deliveryAvailable && (
-                <span className="inline-flex items-center gap-2 px-3 py-2 rounded-card bg-subtle text-sm text-sec">
-                  <Truck size={16} /> Delivery available
-                </span>
               )}
             </div>
 
             <nav aria-label="Listing sections" className="listing-section-nav">
-              <a href="#listing-overview">Overview</a>
+              {listing.description && <a href="#listing-overview">Overview</a>}
               <a href="#listing-specifications">Specifications</a>
               <a href="#listing-availability">Availability</a>
               <a href="#listing-reviews">Reviews{listing.reviewCount > 0 ? ` (${listing.reviewCount})` : ''}</a>
               {similar.length > 0 && <a href="#listing-similar">Similar items</a>}
             </nav>
-            <div id="listing-overview" className="scroll-mt-24">
-            {listing.description && (
-              <Block title="About this item">
-                <p className="text-sec leading-relaxed whitespace-pre-line">{listing.description}</p>
-              </Block>
-            )}
-            </div>
             <div id="listing-specifications" className="scroll-mt-24 space-y-6">
             {(listing.brand || listing.model || listing.additionalDetails) && <Block title="Specifications">
               <dl className="grid grid-cols-2 gap-4 text-sm">
@@ -612,17 +591,11 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
               </div>
             </Block>
 
-            {(listing.pickup || listing.delivery) && (
-              <Block title="Pickup and delivery">
+            {listing.delivery && (
+              <Block title="Delivery details">
                 <ul className="space-y-2.5 text-sm text-sec">
-                  {listing.pickup && (
-                    <li className="flex items-start gap-2.5"><MapPin size={16} className="shrink-0 mt-0.5" />{listing.pickup}</li>
-                  )}
-                  {listing.delivery && (
-                    <li className="flex items-start gap-2.5"><Truck size={16} className="shrink-0 mt-0.5" />{listing.delivery}</li>
-                  )}
+                  <li className="flex items-start gap-2.5"><Truck size={16} className="shrink-0 mt-0.5" />{listing.delivery}</li>
                 </ul>
-                <p className="text-xs text-muted mt-3">Exact address is shared once the booking is confirmed.</p>
               </Block>
             )}
 

@@ -39,10 +39,11 @@ export interface CaseEvent {
 }
 export interface CaseDetail {
   case: CaseRow;
+  assigned_name: string | null;
   messages: CaseMessage[];
   evidence: CaseEvidence[];
   events: CaseEvent[];
-  booking: { status: string; start_date: string; end_date: string; created_at: string; updated_at: string } | null;
+  booking: { reference?: string | null; status: string; start_date: string; end_date: string; created_at: string; updated_at: string } | null;
   deadline_policy_unresolved: boolean;
 }
 export const CASE_STATUSES = {
@@ -62,6 +63,7 @@ export function listCases(kind: CaseKind, search: string, status: string, priori
 }
 interface StoredCaseDetail {
   case: Omit<CaseRow, 'description'>;
+  assigned_name?: string | null;
   replies: { id: string; author_id: string; body: string; is_private: boolean; created_at: string }[];
   evidence: { id: string; object_path: string; created_at: string }[];
   events: { id: string; event_type: string; detail: { reason?: string }; created_at: string }[];
@@ -72,8 +74,12 @@ export async function getCase(id: string): Promise<CaseDetail> {
   const data = await operationRpc<StoredCaseDetail>('get_case_detail', { p_case_id: id });
   return {
     case: { ...data.case, description: data.replies.find((reply) => !reply.is_private)?.body ?? '' },
+    assigned_name: data.assigned_name ?? null,
     messages: data.replies.map((reply) => ({ ...reply, internal: reply.is_private })),
-    evidence: data.evidence.map((item) => ({ ...item, path: item.object_path, file_name: item.object_path.split('/').pop() ?? 'Evidence' })),
+    evidence: data.evidence.map((item) => ({
+      ...item, path: item.object_path,
+      file_name: item.object_path.split('/').pop()?.replace(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}-/i, '') || 'Evidence',
+    })),
     events: data.events.map((event) => ({ ...event, action: event.event_type, reason: event.detail.reason ?? null })),
     booking: data.booking,
     deadline_policy_unresolved: data.deadline_policy_unresolved,
@@ -107,7 +113,7 @@ export async function uploadCaseEvidence(caseId: string, file: File) {
   try {
     await operationRpc('register_case_evidence', { p_case_id: caseId, p_object_path: path });
   } catch (e) {
-    throw new Error(`Evidence registration failed: ${e instanceof Error ? e.message : 'Unknown error'}. The upload remains private; contact support with reference ${path}.`);
+    throw new Error(`Evidence registration failed: ${e instanceof Error ? e.message : 'Unknown error'}. The upload remains private; contact support about this case.`);
   }
 }
 export async function viewCaseEvidence(evidence: CaseEvidence) {

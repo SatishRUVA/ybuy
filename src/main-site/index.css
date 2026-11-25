@@ -858,7 +858,6 @@ html:has(.listing-detail) { scroll-padding-bottom: calc(11rem + env(safe-area-in
 .listing-heading { grid-area: heading; }
 .listing-gallery { grid-area: gallery; }
 .listing-highlights { grid-area: highlights; overflow-wrap: anywhere; }
-.listing-highlights-description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; white-space: pre-line; }
 .listing-details { grid-area: details; }
 .listing-booking { grid-area: booking; }
 .listing-booking-panel { scroll-margin-top: 6rem; border-radius: 16px; }

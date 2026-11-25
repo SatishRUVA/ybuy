@@ -26,8 +26,8 @@ export function CasesSection({ kind, initialId, onBackToQueue }: { kind: CaseKin
     else navigate(kind === 'dispute' ? { name: 'claim-detail', id } : { name: 'support', id });
   };
   const [creating, setCreating] = useState(false);
-  const disputeBookings = useLoad(
-    () => creating && !staff && kind === 'dispute' && user
+  const caseBookings = useLoad(
+    () => creating && !staff && user
       ? fetchCaseBookings(user.id)
       : Promise.resolve([]),
     [creating, kind, staff, user?.id],
@@ -73,7 +73,7 @@ export function CasesSection({ kind, initialId, onBackToQueue }: { kind: CaseKin
       )}
       {kind === 'dispute' && <Alert className="mb-4" tone="warning">Filing deadline policy is unresolved. No automatic filing deadline is enforced. Payment questions belong in Support tickets.</Alert>}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <SearchBox onChange={setSearch} placeholder="Search subject or case reference" />
+        <SearchBox onChange={setSearch} placeholder="Search subject" />
         <StatusFilter label="Case status" value={status} onChange={setStatus} options={[...CASE_STATUSES[kind]]} />
         <StatusFilter label="Case priority" value={priority} onChange={setPriority} options={['low', 'normal', 'high', 'urgent']} allLabel="All priorities" />
       </div>
@@ -90,20 +90,20 @@ export function CasesSection({ kind, initialId, onBackToQueue }: { kind: CaseKin
         onSave={async (data) => { const created = await createCase(kind, data, staff); query.reload(); selectCase(created.id); }}>
         <TextField name="subject" label="Subject" maxLength={160} />
         <ChoiceField name="category" label="Category" options={CASE_CATEGORIES[kind]} />
-        {kind === 'dispute' && !staff ? <>
-          <label className="block text-sm font-semibold text-main">Booking
-            <select name="booking_id" required defaultValue="" className="mt-1 font-normal h-11 w-full rounded-card border border-app bg-card px-3 text-sm text-main">
-              <option value="" disabled>Select a booking</option>
-              {(disputeBookings.data ?? []).map((booking) => (
+        {!staff ? <>
+          <label className="block text-sm font-semibold text-main">Booking{kind === 'support' ? ' (optional)' : ''}
+            <select name="booking_id" required={kind === 'dispute'} defaultValue="" className="mt-1 font-normal h-11 w-full rounded-card border border-app bg-card px-3 text-sm text-main">
+              <option value="" disabled={kind === 'dispute'}>{kind === 'dispute' ? 'Select a booking' : 'No booking linked'}</option>
+              {(caseBookings.data ?? []).map((booking) => (
                 <option key={booking.id} value={booking.id}>
                   {booking.reference} · {fmtDay(booking.startDate)} – {fmtDay(booking.endDate)} · {booking.status.replace(/_/g, ' ')}
                 </option>
               ))}
             </select>
           </label>
-          {disputeBookings.loading && <p className="text-sm text-sec" role="status">Loading your bookings…</p>}
-          {disputeBookings.error && <Alert tone="error">Your bookings could not be loaded: {disputeBookings.error}</Alert>}
-          {!disputeBookings.loading && !disputeBookings.error && disputeBookings.data?.length === 0 && (
+          {caseBookings.loading && <p className="text-sm text-sec" role="status">Loading your bookings…</p>}
+          {caseBookings.error && <Alert tone="error">Your bookings could not be loaded: {caseBookings.error}<Button size="sm" variant="secondary" onClick={caseBookings.reload}>Try again</Button></Alert>}
+          {!caseBookings.loading && !caseBookings.error && caseBookings.data?.length === 0 && kind === 'dispute' && (
             <Alert tone="warning">No existing bookings are available to dispute.</Alert>
           )}
         </> : <TextField name="booking_id" label={`Booking ID${kind === 'support' ? ' (optional)' : ''}`} required={kind === 'dispute'} maxLength={36} />}
@@ -118,6 +118,7 @@ export function CasesSection({ kind, initialId, onBackToQueue }: { kind: CaseKin
 }
 
 function CasePanel({ id, kind, onBack }: { id: string; kind: CaseKind; onBack: () => void }) {
+  const { navigate } = useRouter();
   const { data, loading, error, reload } = useLoad(() => getCase(id), [id]);
   const [dialog, setDialog] = useState<'reply' | 'update' | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -134,14 +135,14 @@ function CasePanel({ id, kind, onBack }: { id: string; kind: CaseKind; onBack: (
       {actionError && <Alert tone="error">{actionError}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
       {data && <>
-        <PageHeader title={data.case.subject} subtitle={`Case ${data.case.id}`} action={<StatusBadge status={data.case.status} />} />
+        <PageHeader title={data.case.subject} subtitle={kind === 'dispute' ? 'Claim' : 'Support ticket'} action={<StatusBadge status={data.case.status} />} />
         {data.deadline_policy_unresolved && <Alert tone="warning">Filing deadline policy remains unresolved. Booking dates below are not proof of pickup or return.</Alert>}
         <Card><CardContent className="p-4 space-y-3">
           <div className="flex flex-wrap gap-2"><Badge>{data.case.category.replace(/_/g, ' ')}</Badge><Badge>{data.case.priority}</Badge></div>
           <p className="text-sm whitespace-pre-wrap text-main">{data.case.description}</p>
           <dl className="grid sm:grid-cols-2 gap-3 text-sm text-sec">
-            <div><dt>Booking</dt><dd className="break-all">{data.case.booking_id ?? 'Not linked'}</dd></div>
-            <div><dt>Assignee</dt><dd className="break-all">{data.case.assigned_to ?? 'Unassigned'}</dd></div>
+            <div><dt>Booking</dt><dd>{data.case.booking_id ? data.booking?.reference ?? 'Linked' : 'Not linked'}</dd></div>
+            <div><dt>Assignee</dt><dd>{data.case.assigned_to ? data.assigned_name ?? 'Assigned' : 'Unassigned'}</dd></div>
             <div><dt>Created</dt><dd>{fmtDate(data.case.created_at)}</dd></div>
             <div><dt>Updated</dt><dd>{fmtDate(data.case.updated_at)}</dd></div>
             {data.booking && <>
@@ -153,6 +154,7 @@ function CasePanel({ id, kind, onBack }: { id: string; kind: CaseKind; onBack: (
             {data.case.proposed_amount != null && <div><dt>Proposed outcome (USD, not executed)</dt><dd>{data.case.proposed_amount.toFixed(2)}</dd></div>}
           </dl>
           <div className="flex flex-wrap gap-2">
+            {!staff && data.case.booking_id && <Button variant="secondary" size="sm" onClick={() => navigate({ name: 'confirmation', id: data.case.booking_id! })}>View booking</Button>}
             <Button size="sm" onClick={() => setDialog('reply')}>Add reply{staff ? ' or note' : ''}</Button>
             {staff && <Button variant="secondary" size="sm" onClick={() => setDialog('update')}>Manage case</Button>}
           </div>

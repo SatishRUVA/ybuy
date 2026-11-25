@@ -32,7 +32,7 @@ async function loadCases(kind: CaseKind, statuses: string[], section: string): P
     section,
     type: kind === 'dispute' ? 'Dispute' : 'Support',
     title: item.subject,
-    detail: `Case ${item.id}`,
+    detail: item.category.replace(/_/g, ' '),
     status: item.status,
     priority: item.priority,
     createdAt: item.created_at,
@@ -72,7 +72,7 @@ async function loadFeeds(access: AdminAccess): Promise<ActionFeed[]> {
       const { rows } = await listCheckoutExceptions(20, 0);
       return rows.map((item) => ({
         id: item.id, section: 'payments', type: 'Payment exception',
-        title: item.reason.replace(/_/g, ' '), detail: `Booking ${item.booking_id}`,
+        title: item.reason.replace(/_/g, ' '), detail: `Payment provider reference: ${item.payment_intent_id}`,
         status: item.status, priority: 'normal', createdAt: item.created_at,
         assignee: null, nextAction: 'Investigate the payment and booking state',
       }));
@@ -83,7 +83,7 @@ async function loadFeeds(access: AdminAccess): Promise<ActionFeed[]> {
       const { rows } = await listRefundRequests(20, 0);
       return rows.filter((item) => item.status === 'requested').map((item) => ({
         id: item.id, section: 'refunds', type: 'Refund request',
-        title: item.reason, detail: `Payment ${item.payment_id}`,
+        title: item.reason, detail: `Requested amount: ${item.amount.toFixed(2)} ${item.currency.toUpperCase()}`,
         status: item.status, priority: 'normal', createdAt: item.created_at,
         assignee: null, nextAction: 'Review authorization; execution remains disabled',
       }));
@@ -99,7 +99,7 @@ function ageDays(createdAt: string) {
   return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000));
 }
 
-export function ActionCenter({ access, onSelect }: { access: AdminAccess; onSelect: (section: string) => void }) {
+export function ActionCenter({ access, onSelect }: { access: AdminAccess; onSelect: (section: string, recordId?: string) => void }) {
   const { data, loading, error, reload } = useLoad(() => loadFeeds(access), [access]);
   const items = (data ?? []).flatMap((feed) => feed.items)
     .sort((a, b) => (PRIORITY_RANK[a.priority] ?? 2) - (PRIORITY_RANK[b.priority] ?? 2)
@@ -127,7 +127,9 @@ export function ActionCenter({ access, onSelect }: { access: AdminAccess; onSele
               <p className="truncate text-xs text-sec">{item.detail} · {item.assignee ? 'Assigned' : 'Unassigned'}</p>
               <p className="mt-1 text-xs text-muted">{item.nextAction} · Created {fmtDate(item.createdAt)} · Age {ageDays(item.createdAt)}d</p>
             </div>
-            <Button size="sm" variant="secondary" className="shrink-0" onClick={() => onSelect(item.section)}>Open queue</Button>
+            <Button size="sm" variant="secondary" className="shrink-0" onClick={() => onSelect(item.section, item.section === 'support' || item.section === 'disputes' ? item.id : undefined)}>
+              {item.section === 'support' || item.section === 'disputes' ? 'Open case' : 'Open queue'}
+            </Button>
           </li>
         ))}
       </ul>

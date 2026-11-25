@@ -1294,15 +1294,18 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                 </fieldset>
                 </section>
                 </div>
-                {priceForPreview > 0 && earningsQuotes && <div className="listing-earnings space-y-2 text-sm">
+                {priceForPreview > 0 && earningsQuotes && <div className="listing-earnings space-y-3 text-sm">
                   <h3 className="font-semibold text-main">What you could earn</h3>
-                  {[1, 7, 30].map(days => {
-                    const quote = earningsQuotes[days];
-                    return quote && <div key={days} className="flex justify-between gap-3">
-                      <span className="text-sec">{days === 1 ? 'Per day' : days === 7 ? 'Per week' : 'Per month'} · owner fee ${quote.owner_service_fee_amount?.toFixed(2)}</span>
-                      <strong className="text-main tnum">${quote.estimated_owner_net?.toFixed(2)}</strong>
-                    </div>;
-                  })}
+                  <div className="listing-earnings-grid">
+                    {[1, 7, 30].map(days => {
+                      const quote = earningsQuotes[days];
+                      return quote && <div key={days} className="listing-earnings-item">
+                        <span className="listing-earnings-period">{days === 1 ? 'Per day' : days === 7 ? 'Per week' : 'Per month'}</span>
+                        <strong className="listing-earnings-net tnum">${quote.estimated_owner_net?.toFixed(2)}</strong>
+                        <span className="listing-earnings-fee">Owner fee: ${quote.owner_service_fee_amount?.toFixed(2)}</span>
+                      </div>;
+                    })}
+                  </div>
                   <p className="text-xs text-sec">Estimate only. Final rates and fees are set when a booking is created.</p>
                 </div>}
                 {earningsQuoteError && <Alert tone="error" title="Earnings estimate unavailable">{earningsQuoteError}</Alert>}

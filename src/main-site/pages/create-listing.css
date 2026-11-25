@@ -342,7 +342,37 @@
 .owner-listing .owner-listing-panel-heading p { max-width: 64ch; }
 .owner-listing .owner-listing-fields { padding-inline: 1.75rem !important; }
 .owner-listing .listing-choice-section { border-color: var(--listing-rule); }
-.listing-earnings { border: 1px solid var(--listing-rule); background: var(--bg-subtle); }
+.listing-earnings {
+  container: listing-earnings / inline-size;
+  border: 1px solid var(--listing-rule);
+  background: var(--bg-subtle);
+}
+.listing-earnings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+.listing-earnings-item { display: flex; min-inline-size: 0; flex-direction: column; gap: .25rem; }
+.listing-earnings-period { color: var(--listing-muted); }
+.listing-earnings-net {
+  color: var(--listing-ink);
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+.listing-earnings-fee { color: var(--listing-muted); font-size: .75rem; line-height: 1.4; }
+
+@container listing-earnings (max-width: 520px) {
+  .listing-earnings-grid { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+  .listing-earnings-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: 1rem;
+    row-gap: .125rem;
+  }
+  .listing-earnings-net { grid-column: 2; grid-row: 1; }
+  .listing-earnings-fee { grid-column: 1 / -1; }
+}
 .owner-listing .listing-control { border-color: var(--listing-control); background: var(--listing-sheet); }
 .owner-listing .owner-listing-actions { padding-inline: 1.75rem !important; }
 .owner-listing .owner-listing-fields .owner-condition { border-color: var(--listing-control); background: var(--listing-sheet); }

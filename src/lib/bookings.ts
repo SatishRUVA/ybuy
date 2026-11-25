@@ -219,7 +219,7 @@ export async function fetchCaseBookings(currentUserId: string) {
   if (error) throw new Error(error.message);
   return (data ?? []).map((booking) => ({
     id: booking.id,
-    reference: booking.booking_reference ?? booking.id.slice(0, 8),
+    reference: booking.booking_reference ?? 'Reference not assigned',
     startDate: booking.start_date,
     endDate: booking.end_date,
     status: booking.status,

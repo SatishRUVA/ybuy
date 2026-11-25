@@ -228,7 +228,7 @@ export async function uploadBookingInspectionPhoto(
   try {
     await rpc('register_booking_inspection_photo', { p_inspection_id: inspectionId, p_object_path: path });
   } catch (reason) {
-    throw new Error(`Photo registration failed. The private upload is retained for support reference ${path}. ${reason instanceof Error ? reason.message : ''}`);
+    throw new Error(`Photo registration failed. The private upload is retained; contact support about this booking. ${reason instanceof Error ? reason.message : ''}`);
   }
 }
 

@@ -251,8 +251,10 @@ export interface ServiceFeeConfiguration {
   effective_from: string;
   effective_to: string | null;
   created_by: string | null;
+  created_by_name: string | null;
   reason: string;
   updated_by: string | null;
+  updated_by_name: string | null;
   updated_reason: string | null;
   created_at: string;
 }

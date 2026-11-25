@@ -205,8 +205,8 @@ function ServiceFeeConfigurationSection({ isSuperAdmin }: { isSuperAdmin: boolea
               {(Number(row.total_fee_pct) * 100).toFixed(2)}% total · {row.renter_share_percent}% renter / {100 - row.renter_share_percent}% owner
             </p>
             <p className="text-xs text-sec">Effective {row.effective_from === '-infinity' ? 'from the beginning' : new Date(row.effective_from).toLocaleString()} – {row.effective_to ? new Date(row.effective_to).toLocaleString() : 'open-ended'}</p>
-            <p className="text-xs text-sec">Reason: {row.reason} · actor {row.created_by ?? 'system'}</p>
-            {row.updated_by && <p className="text-xs text-sec">Last period update: {row.updated_reason} · actor {row.updated_by}</p>}
+            <p className="text-xs text-sec">Reason: {row.reason} · actor {row.created_by ? row.created_by_name || 'Unknown administrator' : 'System'}</p>
+            {row.updated_by && <p className="text-xs text-sec">Last period update: {row.updated_reason} · actor {row.updated_by_name || 'Unknown administrator'}</p>}
           </li>)}
         </ul>}
         {!isSuperAdmin && <p className="mt-3 text-xs text-sec">Only a Super Admin can change fees. The server independently enforces this permission.</p>}
