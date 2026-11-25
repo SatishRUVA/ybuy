@@ -226,3 +226,68 @@ h1, h2, h3, h4 {
     transition-duration: 0.01ms !important;
   }
 }
+
+:root :is(
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='hidden'], [type='button'], [type='submit'], [type='reset'], [type='image'], [role='switch']),
+  select,
+  textarea
+) {
+  color-scheme: light;
+  color: var(--ybuy-gray-950);
+  background-color: var(--ybuy-white);
+  border-color: var(--ybuy-gray-600);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+
+:root :is(
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='hidden'], [type='button'], [type='submit'], [type='reset'], [type='image'], [role='switch']),
+  select,
+  textarea
+)::placeholder {
+  color: var(--ybuy-gray-700);
+  opacity: 1;
+}
+
+:root :is(
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='hidden'], [type='button'], [type='submit'], [type='reset'], [type='image'], [role='switch'], .search-input),
+  select,
+  textarea
+):focus-visible {
+  border-color: var(--ybuy-accent);
+  outline: 2px solid var(--ybuy-accent);
+  outline-offset: 2px;
+}
+
+:root :is(
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='hidden'], [type='button'], [type='submit'], [type='reset'], [type='image'], [role='switch']),
+  select,
+  textarea
+)[aria-invalid='true'] {
+  border-color: #B42318;
+}
+
+:root :is(
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='hidden'], [type='button'], [type='submit'], [type='reset'], [type='image'], [role='switch']),
+  select,
+  textarea
+):disabled {
+  color: var(--ybuy-gray-600);
+  cursor: not-allowed;
+}
+
+:root input[type='file']::file-selector-button {
+  margin-inline-end: .75rem;
+  padding: .45rem .75rem;
+  border: 1px solid var(--ybuy-gray-600);
+  border-radius: var(--radius-sm);
+  color: var(--ybuy-gray-950);
+  background: var(--ybuy-gray-100);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--motion-fast), background-color var(--motion-fast);
+}
+
+:root input[type='file']::file-selector-button:hover:not(:disabled) {
+  background: var(--ybuy-gray-200);
+}
