@@ -22,6 +22,7 @@ export interface GooglePlacesLibrary {
     fetchAutocompleteSuggestions: (request: {
       input: string;
       includedRegionCodes?: string[];
+      includedPrimaryTypes?: string[];
     }) => Promise<{ suggestions: { placePrediction?: GooglePlacePrediction }[] }>;
   };
 }

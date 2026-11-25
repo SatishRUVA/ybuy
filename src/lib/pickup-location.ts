@@ -1,5 +1,5 @@
-import { loadGooglePlaces } from '@/lib/google-maps';
-import { countryIsAllowed, fetchMarketplaceCountries } from '@/lib/marketplace-countries';
+import { loadGooglePlaces, type GooglePlace } from '@/lib/google-maps';
+import { countryIsAllowed, fetchMarketplaceCountries, type MarketplaceCountry } from '@/lib/marketplace-countries';
 
 export interface PickupLocationValue {
   formattedAddress: string;
@@ -13,6 +13,36 @@ export interface PickupLocationValue {
   placeId: string;
   timeZone?: string;
   manualConfirmed?: boolean;
+}
+
+export function applyPickupLocality(
+  current: PickupLocationValue,
+  field: 'city' | 'state' | 'postalCode',
+  place: Pick<GooglePlace, 'addressComponents'>,
+  countries: MarketplaceCountry[],
+): PickupLocationValue {
+  const component = (type: string, short = false) => {
+    const item = place.addressComponents?.find(part => part.types.includes(type));
+    return (short ? item?.shortText : item?.longText)?.trim() ?? '';
+  };
+  const country = countries.find(item => countryIsAllowed(component('country', true), [item]));
+  const city = component('locality') || component('postal_town') || component('sublocality_level_1');
+  const state = component('administrative_area_level_1', true);
+  const postalCode = component('postal_code');
+  if (!country || !({ city, state, postalCode })[field]) {
+    throw new Error('This suggestion does not contain the requested location details.');
+  }
+  return {
+    ...current,
+    city: city || current.city,
+    state: state || current.state,
+    postalCode: postalCode || current.postalCode,
+    country: country.code,
+    latitude: null,
+    longitude: null,
+    placeId: '',
+    manualConfirmed: false,
+  };
 }
 
 export function formatPickupAddress(value: PickupLocationValue): string {

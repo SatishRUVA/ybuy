@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { Check } from 'lucide-react';
 import { useMarketplaceLocation } from '@/location-context';
 import { findCities } from '@/lib/geo';
@@ -6,7 +6,7 @@ import { listingInputClass as fieldClass } from '@/main-site/components/listing-
 import { loadGooglePlaces, type GooglePlacePrediction, type GooglePlacesLibrary } from '@/lib/google-maps';
 import { countryIsAllowed, fetchMarketplaceCountries, type MarketplaceCountry } from '@/lib/marketplace-countries';
 import { pickupTimeZone } from '@/lib/pickup-timezone';
-import type { PickupLocationValue } from '@/lib/pickup-location';
+import { applyPickupLocality, type PickupLocationValue } from '@/lib/pickup-location';
 export type { PickupLocationValue } from '@/lib/pickup-location';
 
 type GeocoderLibrary = {
@@ -34,6 +34,13 @@ function browserTimeZone(): string {
 const intlWithTimeZones = Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] };
 const TIME_ZONES = intlWithTimeZones.supportedValuesOf?.('timeZone') ?? [browserTimeZone(), 'UTC'];
 
+type LocalityField = 'city' | 'state' | 'postalCode';
+const LOCALITY_FIELDS: { field: LocalityField; label: string; autocomplete: string; types: string[] }[] = [
+  { field: 'city', label: 'City', autocomplete: 'address-level2', types: ['locality', 'postal_town'] },
+  { field: 'state', label: 'State', autocomplete: 'address-level1', types: ['administrative_area_level_1'] },
+  { field: 'postalCode', label: 'ZIP code', autocomplete: 'postal-code', types: ['postal_code'] },
+];
+
 export function PickupLocation({
   value, onChange, showAreaMap = false, error,
 }: {
@@ -47,6 +54,8 @@ export function PickupLocation({
   const onChangeRef = useRef(onChange);
   const valueRef = useRef(value);
   const geocodeRequest = useRef(0);
+  const localityRequest = useRef(0);
+  const localityId = useId();
   const [input, setInput] = useState(value.formattedAddress);
   const [places, setPlaces] = useState<GooglePlacesLibrary | null>(null);
   const [suggestions, setSuggestions] = useState<GooglePlacePrediction[]>([]);
@@ -58,9 +67,14 @@ export function PickupLocation({
   const [countryError, setCountryError] = useState<string | null>(null);
   const [addressError, setAddressError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [localityField, setLocalityField] = useState<LocalityField | null>(null);
+  const [localitySuggestions, setLocalitySuggestions] = useState<GooglePlacePrediction[]>([]);
+  const [activeLocality, setActiveLocality] = useState(-1);
+  const [localityError, setLocalityError] = useState<string | null>(null);
   const googleKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   const manualEntry = !value.placeId;
   const countryCode = countries.find(country => countryIsAllowed(pickupCountry, [country]))?.code;
+  const localityQuery = localityField ? value[localityField].trim() : '';
   const manualReady = Boolean(input.trim() && value.city.trim() && value.state.trim()
     && value.postalCode.trim() && (countryCode || countryIsAllowed(value.country, countries))
     && value.timeZone && value.manualConfirmed);
@@ -82,7 +96,10 @@ export function PickupLocation({
       void loadGooglePlaces().then(library => {
         if (!disposed) setPlaces(library);
       }).catch(() => {
-        if (!disposed) setPlaces(null);
+        if (!disposed) {
+          setPlaces(null);
+          setLocalityError('Location suggestions are unavailable. Enter the details manually.');
+        }
       });
     }
     return () => { disposed = true; };
@@ -124,6 +141,33 @@ export function PickupLocation({
   }, [input, places, countryCode, manualEntry, manualOpen, addressFocused, resolving]);
 
   useEffect(() => {
+    if (!places || !manualOpen || !localityField || !countryCode || localityQuery.length < 2) {
+      setLocalitySuggestions([]);
+      return;
+    }
+    let active = true;
+    const field = LOCALITY_FIELDS.find(item => item.field === localityField);
+    if (!field) return;
+    const timeout = window.setTimeout(() => {
+      void places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input: localityQuery,
+        includedRegionCodes: [countryCode.toLowerCase()],
+        includedPrimaryTypes: field.types,
+      }).then(result => {
+        if (!active) return;
+        setLocalitySuggestions(result.suggestions.flatMap(item => item.placePrediction ? [item.placePrediction] : []));
+        setActiveLocality(-1);
+        setLocalityError(null);
+      }).catch(() => {
+        if (!active) return;
+        setLocalitySuggestions([]);
+        setLocalityError('Location suggestions are unavailable. Enter the details manually.');
+      });
+    }, 250);
+    return () => { active = false; window.clearTimeout(timeout); };
+  }, [places, manualOpen, localityField, countryCode, localityQuery]);
+
+  useEffect(() => {
     if (!manualEntry || !value.city.trim() || value.latitude !== null || value.longitude !== null) return;
     const query = [value.postalCode, value.city, value.state].filter(Boolean).join(', ');
     const timeout = window.setTimeout(() => {
@@ -147,9 +191,14 @@ export function PickupLocation({
     return () => window.clearTimeout(timeout);
   }, [manualEntry, value.city, value.state, value.postalCode, value.country, value.latitude, value.longitude]);
 
-  function updateManualField(field: 'city' | 'state' | 'postalCode', fieldValue: string) {
+  function updateManualField(field: LocalityField, fieldValue: string) {
     geocodeRequest.current += 1;
+    localityRequest.current += 1;
     setResolving(false);
+    setLocalityField(field);
+    setLocalitySuggestions([]);
+    setActiveLocality(-1);
+    setLocalityError(null);
     const next: PickupLocationValue = {
       ...value,
       [field]: fieldValue,
@@ -164,6 +213,44 @@ export function PickupLocation({
     };
     onChangeRef.current(next);
     setAddressError(null);
+  }
+
+  async function chooseLocality(prediction: GooglePlacePrediction, field: LocalityField) {
+    const requestId = ++localityRequest.current;
+    setLocalityField(null);
+    setLocalitySuggestions([]);
+    setLocalityError(null);
+    try {
+      const place = prediction.toPlace();
+      await place.fetchFields({ fields: ['addressComponents'] });
+      if (requestId !== localityRequest.current) return;
+      const next = applyPickupLocality(valueRef.current, field, place, countries);
+      geocodeRequest.current += 1;
+      setResolving(false);
+      setPickupCountry(next.country);
+      onChangeRef.current(next);
+    } catch {
+      if (requestId === localityRequest.current) {
+        setLocalityError('Could not use that suggestion. Enter the details manually.');
+      }
+    }
+  }
+
+  function handleLocalityKeyDown(event: KeyboardEvent<HTMLInputElement>, field: LocalityField) {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === 'ArrowDown' && localitySuggestions.length) {
+      event.preventDefault();
+      setActiveLocality(current => (current + 1) % localitySuggestions.length);
+    } else if (event.key === 'ArrowUp' && localitySuggestions.length) {
+      event.preventDefault();
+      setActiveLocality(current => (current <= 0 ? localitySuggestions.length - 1 : current - 1));
+    } else if (event.key === 'Enter' && activeLocality >= 0) {
+      event.preventDefault();
+      void chooseLocality(localitySuggestions[activeLocality], field);
+    } else if (event.key === 'Escape') {
+      setLocalitySuggestions([]);
+      setActiveLocality(-1);
+    }
   }
 
   function updateAddressText(text: string) {
@@ -390,19 +477,39 @@ export function PickupLocation({
           Search for an address instead
         </button>}
         <div className="grid gap-3 sm:grid-cols-3">
-          <label className="text-sm font-medium text-main">City
-            <input autoComplete="address-level2" required value={value.city} onChange={event => updateManualField('city', event.target.value)}
-              className={fieldClass('mt-1')} placeholder="City" />
-          </label>
-          <label className="text-sm font-medium text-main">State
-            <input autoComplete="address-level1" required value={value.state} onChange={event => updateManualField('state', event.target.value)}
-              className={fieldClass('mt-1')} placeholder="State" />
-          </label>
-          <label className="text-sm font-medium text-main">ZIP code
-            <input autoComplete="postal-code" required value={value.postalCode} onChange={event => updateManualField('postalCode', event.target.value)}
-              className={fieldClass('mt-1')} placeholder="ZIP code" />
-          </label>
+          {LOCALITY_FIELDS.map(({ field, label, autocomplete }) => {
+            const listId = `${localityId}-${field}-suggestions`;
+            const expanded = localityField === field && localitySuggestions.length > 0;
+            return <div key={field} className="relative min-w-0">
+              <label htmlFor={`${localityId}-${field}`} className="text-sm font-medium text-main">{label}</label>
+              <input id={`${localityId}-${field}`} autoComplete={autocomplete} required value={value[field]}
+                onChange={event => updateManualField(field, event.target.value)}
+                onFocus={() => { localityRequest.current += 1; setLocalityField(field); setActiveLocality(-1); }}
+                onBlur={() => { localityRequest.current += 1; setLocalityField(null); setLocalitySuggestions([]); }}
+                onKeyDown={event => handleLocalityKeyDown(event, field)}
+                className={fieldClass('mt-1')} placeholder={label}
+                role="combobox" aria-autocomplete="list" aria-expanded={expanded}
+                aria-controls={expanded ? listId : undefined}
+                aria-activedescendant={expanded && activeLocality >= 0 ? `${listId}-${activeLocality}` : undefined} />
+              {expanded && <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-card border border-app bg-card shadow-pop">
+                <ul id={listId} role="listbox" aria-label={`${label} suggestions`} className="max-h-60 overflow-y-auto p-1">
+                  {localitySuggestions.map((suggestion, index) => {
+                    const text = String(suggestion.text ?? '');
+                    return <li key={`${text}-${index}`} role="presentation">
+                      <button id={`${listId}-${index}`} type="button" role="option" tabIndex={-1}
+                        aria-selected={activeLocality === index}
+                        className={`min-h-11 w-full rounded-card px-3 py-2 text-left text-sm text-main hover:bg-subtle ${activeLocality === index ? 'bg-subtle' : ''}`}
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => void chooseLocality(suggestion, field)}>{text}</button>
+                    </li>;
+                  })}
+                </ul>
+                <div translate="no" className="bg-white px-3 py-1 text-right text-xs font-normal text-[#1f1f1f]">Google Maps</div>
+              </div>}
+            </div>;
+          })}
         </div>
+        {localityError && <p role="status" className="text-xs text-error">{localityError}</p>}
         {countries.length > 1 && <p className="text-xs text-sec">Pickup country: {countries.find(country => country.code === countryCode)?.name ?? pickupCountry}</p>}
         {value.latitude === null && value.longitude === null && <label className="block text-sm font-medium text-main">
           Pickup time zone
