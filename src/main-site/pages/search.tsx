@@ -535,7 +535,7 @@ export function SearchPage({
 
             {loading ? null : view === 'list' ? (
               <>
-                <div className="workspace-results-grid grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 animate-cross-fade">
+                <div className={`workspace-results-grid grid grid-cols-2 gap-3 sm:gap-4 animate-cross-fade ${filtered.length === 1 ? 'lg:max-w-[640px] lg:grid-cols-1' : filtered.length === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3 xl:grid-cols-4'}`}>
                   {filtered.map((listing) => (
                     <ListingCard
                       key={listing.id}

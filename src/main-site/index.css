@@ -881,65 +881,43 @@ html:has(.listing-detail) { scroll-padding-bottom: calc(11rem + env(safe-area-in
   .home-hero > div.relative > div.max-w-2xl > p { font-size: 16px; }
 }
 
-.bid-banner {
-  color: var(--text);
-  background: #f5f1ee;
-  color-scheme: light;
-}
-.bid-banner-inner { display: flex; align-items: center; gap: 24px; max-width: 1440px; min-height: 112px; margin: auto; padding: 16px 32px; }
-.bid-banner-heading { display: flex; align-items: center; gap: 12px; flex: 0 0 245px; min-width: 0; }
-.bid-banner-mark { display: grid; flex: 0 0 42px; place-items: center; height: 42px; border-radius: 50%; background: #193e38; color: #fff; }
-.bid-banner-heading h2 { font-size: 18px; line-height: 1.2; font-weight: 700; letter-spacing: -.02em; }
-.bid-banner-heading p { margin-top: 4px; color: #625b57; font-size: 12px; line-height: 1.35; }
-.bid-banner-empty { flex: 1; min-width: 0; color: #625b57; font-size: 14px; }
-.bid-banner-error { flex: 1; min-width: 0; color: #7a3025; font-size: 13px; overflow-wrap: anywhere; }
-.bid-banner-error button { margin-left: 8px; font-weight: 700; text-decoration: underline; }
-.bid-banner-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
-.bid-banner-motion { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: #4a4541; }
-.bid-banner-motion:hover { background: #e9e1dc; }
-.bid-banner-explore { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; padding: 0 16px; border-radius: 999px; background: #193e38; color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; }
-.bid-banner-explore:hover { background: #28564d; color: #fff; }
-.bid-card:focus-visible, .bid-banner-viewport:focus-visible, .bid-banner-motion:focus-visible, .bid-banner-explore:focus-visible, .bid-banner-error button:focus-visible { outline: 2px solid #a93c2b; outline-offset: 2px; }
-.bid-banner-viewport { flex: 1; min-width: 0; overflow: hidden; }
-.bid-banner-track { display: flex; width: max-content; }
-.bid-banner-group { display: flex; align-items: center; gap: 10px; padding-right: 10px; }
-.bid-banner-item { flex: 0 0 280px; min-width: 0; }
-.bid-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 12px; min-height: 80px; padding: 8px; border-radius: 12px; background: #fff; color: var(--text); transition: background-color var(--motion-standard); }
-a.bid-card:hover { background: #ebe4df; }
-.bid-card-image { display: grid; place-items: center; width: 64px; aspect-ratio: 1; background: #e9e3dd; color: #514a46; border-radius: 8px; overflow: hidden; }
+.bid-banner { color: var(--text); background: transparent; }
+.bid-banner-inner { display: grid; grid-template-columns: minmax(180px, 205px) minmax(0, 1fr) auto; align-items: center; gap: 16px; max-width: 1252px; min-height: 96px; margin: auto; padding: 16px 24px; border-block: 1px solid var(--border); }
+.bid-banner-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.bid-banner-mark { display: grid; flex: 0 0 40px; place-items: center; height: 40px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
+.bid-banner-heading h2 { font-size: 16px; line-height: 1.2; font-weight: 700; letter-spacing: -.02em; }
+.bid-banner-heading p { margin-top: 4px; color: var(--text-muted); font-size: 12px; line-height: 1.35; }
+.bid-banner-empty { min-width: 0; color: var(--text-muted); font-size: 14px; }
+.bid-banner-error { min-width: 0; color: var(--error); font-size: 13px; overflow-wrap: anywhere; }
+.bid-banner-error button { margin-left: 8px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.bid-banner-actions { display: flex; align-items: center; gap: 8px; }
+.bid-banner-explore { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 15px; border-radius: 999px; background: var(--accent); color: var(--accent-text); font-size: 13px; font-weight: 700; white-space: nowrap; }
+.bid-banner-explore:hover { background: var(--accent-hover); }
+.bid-card:focus-visible, .bid-banner-viewport:focus-visible, .bid-banner-explore:focus-visible, .bid-banner-error button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.bid-banner-viewport { min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; }
+.bid-banner-list { display: flex; width: max-content; align-items: center; gap: 10px; margin: 0; padding: 4px 0; list-style: none; }
+.bid-banner-item { flex: 0 0 258px; min-width: 0; }
+.bid-card { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 72px; padding: 7px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); color: var(--text); transition: background-color var(--motion-fast), border-color var(--motion-fast); }
+a.bid-card:hover { border-color: var(--border-strong); background: var(--bg-subtle); }
+.bid-card-image { display: grid; place-items: center; width: 56px; aspect-ratio: 1; background: var(--bg-subtle); color: var(--text-muted); border-radius: 8px; overflow: hidden; }
 .bid-card-image img { width: 100%; height: 100%; object-fit: cover; }
 .bid-card-content { display: grid; gap: 3px; min-width: 0; }
 .bid-card-title { overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
-.bid-card-dates { overflow: hidden; color: #625b57; font-size: 11px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
-.bid-card-price { font-size: 17px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.bid-card-price > span { font-size: 11px; font-weight: 500; color: #625b57; }
-@keyframes bid-news-scroll { to { transform: translateX(-50%); } }
-@media (prefers-reduced-motion: no-preference) {
-  .bid-banner:not(.bid-banner-stopped) .bid-banner-track { animation: bid-news-scroll 60s linear infinite; }
-  .bid-banner-viewport:hover .bid-banner-track { animation-play-state: paused; }
-  .bid-banner:not(.bid-banner-stopped) .bid-banner-viewport:not(:focus-within) .bid-banner-cycle-end { margin-right: 64px; }
-}
-.bid-banner-stopped .bid-banner-track, .bid-banner-viewport:focus-within .bid-banner-track { animation: none; transform: none; }
-.bid-banner-stopped .bid-banner-copy, .bid-banner-stopped .bid-banner-repeat, .bid-banner-viewport:focus-within .bid-banner-copy, .bid-banner-viewport:focus-within .bid-banner-repeat { display: none; }
-.bid-banner-stopped .bid-banner-viewport, .bid-banner-viewport:focus-within { overflow-x: auto; }
+.bid-card-dates { overflow: hidden; color: var(--text-muted); font-size: 11px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.bid-card-price { font-size: 16px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bid-card-price > span { font-size: 11px; font-weight: 500; color: var(--text-muted); }
 @media (max-width: 800px) {
-  .bid-banner-inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 16px; }
+  .bid-banner-inner { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 16px; }
   .bid-banner-heading { grid-column: 1; }
   .bid-banner-heading h2 { font-size: 16px; }
   .bid-banner-actions { grid-column: 2; grid-row: 1; }
   .bid-banner-viewport, .bid-banner-error { grid-column: 1 / -1; width: 100%; }
-  .bid-banner-moving .bid-banner-viewport { grid-column: 1 / -1; grid-row: 2; width: calc(100% - 52px); }
-  .bid-banner-motion { grid-column: 2; grid-row: 2; justify-self: end; }
-  .bid-banner-empty { display: none; }
   .bid-banner-explore { padding: 0 12px; }
 }
 @media (max-width: 480px) {
   .bid-banner-mark { display: none; }
-  .bid-banner-item { flex-basis: min(280px, calc(100vw - 84px)); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .bid-banner .bid-banner-copy, .bid-banner .bid-banner-repeat { display: none; }
-  .bid-banner .bid-banner-viewport { overflow-x: auto; }
+  .bid-banner-inner { padding-inline: 16px; }
+  .bid-banner-item { flex-basis: min(258px, calc(100vw - 64px)); }
 }
 
 .messages-page {

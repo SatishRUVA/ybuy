@@ -6,6 +6,7 @@ import { SearchBar } from '@/main-site/components/search';
 import { ListingCard } from '@/main-site/components/listing-card';
 import { Badge, Button, SectionHeader, EmptyState, Alert } from '@/main-site/components/ui';
 import { ListingGridSkeleton } from '@/main-site/components/skeleton';
+import { BiddingTicker } from '@/main-site/components/bidding-ticker';
 import { CategoryIcon } from '@/main-site/components/category-icon';
 import { RouteLink, useRouter } from '@/router';
 import { useAuth } from '@/auth-context';
@@ -214,6 +215,10 @@ export function HomePage() {
         )}
       </Shell>}
 
+      <Shell className="home-bidding-section">
+        <BiddingTicker />
+      </Shell>
+
       {itemRequests.enabled && (
         <Shell className="home-community-section pt-8 sm:pt-10">
           <section className="home-community-panel">
@@ -286,9 +291,8 @@ function Shell({ children, className = '' }: { children: React.ReactNode; classN
 
 /** Horizontal, snap-scrolling on mobile; sparse rails keep capped cards on desktop. */
 function Rail({ children, count }: { children: React.ReactNode; count: number }) {
-  const columns = count <= 2
-    ? 'lg:grid-cols-[repeat(auto-fit,minmax(280px,360px))]'
-    : 'lg:grid-cols-4';
+  const columns = count === 1 ? 'lg:grid-cols-[minmax(0,640px)]'
+    : count === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-4';
   return (
     <div className={`flex lg:grid ${columns} gap-3 sm:gap-4 overflow-x-auto lg:overflow-visible no-scrollbar snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0 animate-cross-fade`}>
       {children}
@@ -314,26 +318,6 @@ function Hero({
     // category rail (a later DOM sibling) paint over the date/location dropdowns.
     <section className="marketplace-hero">
       <div className="marketplace-hero-inner">
-        <div className="marketplace-hero-copy">
-          <h1>More moments. Less stuff.</h1>
-          <p>For the projects, plans and little adventures ahead, rent what you need from people nearby.</p>
-          <div className="marketplace-hero-actions">
-            <RouteLink route={{ name: 'create-listing' }}>List an item <ArrowRight size={16} aria-hidden="true" /></RouteLink>
-            {requestsEnabled && <RouteLink route={{ name: 'need-something' }}>Request an item <ArrowRight size={16} aria-hidden="true" /></RouteLink>}
-          </div>
-        </div>
-
-        <div className="marketplace-hero-photo">
-          <img
-            src="https://images.pexels.com/photos/4505166/pexels-photo-4505166.jpeg?auto=compress&cs=tinysrgb&w=1100&h=850&fit=crop"
-            alt=""
-            width={1100}
-            height={850}
-            fetchPriority="high"
-          />
-          <p>Make room<br />for what matters.</p>
-        </div>
-
         <div className="marketplace-hero-search">
           <SearchBar
             variant="hero"
@@ -356,6 +340,26 @@ function Hero({
             })}
           />
         </div>
+        <div className="marketplace-hero-copy">
+          <h1>More moments. Less stuff.</h1>
+          <p>For the projects, plans and little adventures ahead, rent what you need from people nearby.</p>
+          <div className="marketplace-hero-actions">
+            <RouteLink route={{ name: 'create-listing' }}>List an item <ArrowRight size={16} aria-hidden="true" /></RouteLink>
+            {requestsEnabled && <RouteLink route={{ name: 'need-something' }}>Request an item <ArrowRight size={16} aria-hidden="true" /></RouteLink>}
+          </div>
+        </div>
+
+        <div className="marketplace-hero-photo">
+          <img
+            src="https://images.pexels.com/photos/4505166/pexels-photo-4505166.jpeg?auto=compress&cs=tinysrgb&w=1100&h=850&fit=crop"
+            alt=""
+            width={1100}
+            height={850}
+            fetchPriority="high"
+          />
+          <p>Make room<br />for what matters.</p>
+        </div>
+
       </div>
     </section>
   );

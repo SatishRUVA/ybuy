@@ -326,7 +326,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
 
       {!isOwner && <div className="mt-4" aria-label="Choose rental length">
         <p className="mb-2 text-xs font-semibold text-sec">Rental options</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {rentalOptions.map(option => <button key={option.days} type="button" disabled={option.disabled}
             aria-pressed={days === option.days}
             onClick={() => setEndDate(addDaysIso(startDate, option.days))}

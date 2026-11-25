@@ -483,10 +483,10 @@ function LiveBiddingDirectory({ hasOwnerBiddingListings }: { hasOwnerBiddingList
       {loading && !feed ? <ListingGridSkeleton /> : items.length ? (
         <>
           {live.length > 0 && <section><h2 className="bidding-directory-section-title">Live now <small>{counts?.live} open for bids</small></h2>
-            <ul className="bidding-directory-grid">{live.map(item => <BiddingDirectoryCard key={item.listing_id} item={item} now={now} />)}</ul>
+            <ul className={`bidding-directory-grid${live.length <= 2 ? ' bidding-directory-grid-sparse' : ''}`}>{live.map(item => <BiddingDirectoryCard key={item.listing_id} item={item} now={now} />)}</ul>
           </section>}
           {upcoming.length > 0 && <section><h2 className="bidding-directory-section-title">Upcoming <small>{counts?.scheduled} scheduled</small></h2>
-            <ul className="bidding-directory-grid">{upcoming.map(item => <BiddingDirectoryCard key={item.listing_id} item={item} now={now} />)}</ul>
+            <ul className={`bidding-directory-grid${upcoming.length <= 2 ? ' bidding-directory-grid-sparse' : ''}`}>{upcoming.map(item => <BiddingDirectoryCard key={item.listing_id} item={item} now={now} />)}</ul>
           </section>}
           {past.length > 0 && <section><h2 className="bidding-directory-section-title">Past bidding <small>{counts ? counts.completed + counts.closed : 0} listing{counts && counts.completed + counts.closed === 1 ? '' : 's'}</small></h2>
             <ul className="bidding-directory-past">{past.map(item => <li key={item.listing_id}><a href={item.is_mine ? '/bidding?view=owner' : `/bidding/${item.listing_id}`} className="bidding-directory-row">

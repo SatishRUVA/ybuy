@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { User, Menu, Search, PackagePlus, LogOut, ShieldCheck, Gavel, Home, Calendar, Users, ArrowRight, Bell, MessageCircle } from 'lucide-react';
+import { User, Menu, Search, PackagePlus, LogOut, ShieldCheck, Gavel, Home, Calendar, Users, Bell, MessageCircle } from 'lucide-react';
 import { RouteLink, useRouter, type Route } from '@/router';
 import { useAuth } from '@/auth-context';
 import { useAdminAccess } from '@/lib/admin-access';
@@ -115,11 +115,6 @@ export function Header({ focused = false }: { focused?: boolean }) {
           </nav>
 
           <div className="site-header-actions">
-            <RouteLink route={{ name: 'search' }} className="site-header-search" aria-label="Search nearby">
-              <Search size={16} aria-hidden="true" />
-              <span>Search nearby</span>
-              <span className="site-header-search-go"><ArrowRight size={15} aria-hidden="true" /></span>
-            </RouteLink>
             <RouteLink route={{ name: 'create-listing' }} className="site-header-list">List an item</RouteLink>
 
             {SHOW_DEMO_THEMES && <ThemeSwitcher />}

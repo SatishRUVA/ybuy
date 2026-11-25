@@ -9,7 +9,6 @@ import { Header } from './components/nav';
 import { HomePage } from './pages/home';
 import { OutOfScopePage } from '@/main-site/pages/out-of-scope';
 import { AccessPage } from '@/main-site/pages/access';
-import { BiddingTicker } from '@/main-site/components/bidding-ticker';
 import { VpnNotice } from '@/main-site/components/vpn-notice';
 import { PageLoading } from '@/main-site/components/skeleton';
 import { SHOW_OUT_OF_SCOPE_PAGES, OUT_OF_SCOPE_ROUTES } from '@/lib/feature-flags';
@@ -141,7 +140,6 @@ function AppContent() {
       <Header focused={focused} />
       <div className={focused ? 'workspace-focused' : 'min-w-0 flex-1'}>
         <div className="workspace-content">
-          {!focused && ['home', 'search'].includes(route.name) && <BiddingTicker />}
           <main id="main-content" tabIndex={-1} className="min-w-0 pb-8">
             <Suspense fallback={<PageLoading />}>
               <div key={`${route.name === 'need-something' ? 'request-draft' : user?.id ?? 'anonymous'}:${route.name}`} className="animate-page-fade">{page}</div>
