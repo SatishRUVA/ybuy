@@ -505,7 +505,7 @@ export function toUiListing(row: DbListingRow): Listing {
     damageHistory: '',
     pickup: cleanText(row.location_label),
     delivery: row.delivery_available && row.delivery_fee != null
-      ? `Delivery available${row.delivery_radius_miles ? ` within ${row.delivery_radius_miles} miles (owner-declared)` : ''} for $${Number(row.delivery_fee).toFixed(2)} per trip, arranged separately and not included in the online rental total.`
+      ? `Delivery available${row.delivery_radius_miles ? ` within ${row.delivery_radius_miles} miles (owner-declared)` : ''} for $${Number(row.delivery_fee).toFixed(2)} per trip, arranged with the owner after booking.`
       : '',
     cancellation: '',
     reviews: [],

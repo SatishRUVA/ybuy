@@ -74,6 +74,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
   const durationDiscounts = useFeatureFlag('duration_discounts');
   const [requestError, setRequestError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [deliveryMode, setDeliveryMode] = useState<'pickup' | 'delivery'>('pickup');
   const today = listing?.pickupTimeZone ? pickupToday(listing.pickupTimeZone) : todayIso();
 
   useEffect(() => {
@@ -95,6 +96,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
     setOwnerAvatarFailed(false);
     setMessageError(null);
     setShareError(false);
+    setDeliveryMode('pickup');
     Promise.all([fetchListingById(id), requestId ? fetchMainItemRequest(requestId) : Promise.resolve(null)])
       .then(([row, request]) => {
         if (cancelled) return;
@@ -234,7 +236,8 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
   const insuranceAmount = insuranceAmountCents(listing.declaredValue, days, quantity) / 100;
   const tax = bookingTaxCents(rental, serviceFee) / 100;
   const paymentEstimate = rental + serviceFee;
-  const total = paymentEstimate + tax;
+  const deliveryFee = deliveryMode === 'delivery' && listing.deliveryAvailable ? listing.deliveryFee : 0;
+  const total = paymentEstimate + tax + (deliveryFee ?? 0);
   const firstAllowedDate = addDaysIso(today, sameDayBookings.enabled ? 0 : 1);
   const minimumBookingDate = listing.availabilityStart && listing.availabilityStart > firstAllowedDate
     ? listing.availabilityStart : firstAllowedDate;
@@ -289,7 +292,9 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
     }
   };
 
-  const goToCheckout = () => { if (canBook) navigate({ name: 'checkout', id: listing.id, startDate, endDate, quantity }); };
+  const goToCheckout = () => {
+    if (canBook) navigate({ name: 'checkout', id: listing.id, startDate, endDate, quantity, deliveryMode });
+  };
 
   const bookingPanel = (
     <Surface id="listing-booking" className="listing-booking-panel p-5 sm:p-6">
@@ -360,11 +365,22 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
         </Alert>
       )}
 
-      {listing.pickup && <div className="mt-5 flex gap-2.5 text-sm">
-        <MapPin size={18} className="text-accent shrink-0 mt-0.5" aria-hidden="true" />
-        <div><p className="font-semibold text-main">{listing.pickup}</p>
-          <p className="text-xs text-sec mt-1">Approximate pickup area. Exact address after booking confirmation.</p></div>
-      </div>}
+      <fieldset className="mt-5">
+        <legend className="text-sm font-bold text-main">How you'll get this item</legend>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <label className={`listing-handoff-option ${deliveryMode === 'pickup' ? 'is-selected' : ''}`}>
+            <input type="radio" name="listing-delivery-mode" checked={deliveryMode === 'pickup'} onChange={() => setDeliveryMode('pickup')} />
+            <span><strong>Pickup</strong><small>{listing.pickup || 'Local pickup'} · Included</small></span>
+          </label>
+          <label className={`listing-handoff-option ${deliveryMode === 'delivery' ? 'is-selected' : ''} ${!listing.deliveryAvailable ? 'is-unavailable' : ''}`}>
+            <input type="radio" name="listing-delivery-mode" checked={deliveryMode === 'delivery'} disabled={!listing.deliveryAvailable} onChange={() => setDeliveryMode('delivery')} />
+            <span><strong>Delivery</strong><small>{!listing.deliveryAvailable ? 'Not available' : listing.deliveryFee == null ? 'Fee confirmed at checkout' : `$${formatMoney(listing.deliveryFee)}`}</small></span>
+          </label>
+        </div>
+        <p className="mt-2 text-xs text-sec">{deliveryMode === 'delivery'
+          ? 'Arrange delivery with the owner after booking confirmation.'
+          : 'Approximate pickup area. Exact address after booking confirmation.'}</p>
+      </fieldset>
 
       <div className="mt-4 flex items-center justify-between text-xs text-sec">
         <span>Rental quantity</span><strong className="text-main">{quantity} {quantity === 1 ? 'unit' : 'units'}</strong>
@@ -380,6 +396,9 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
           {rentalPricing.extraDays > 0 && <PriceRow label={`${rentalPricing.extraDays} extra days × $${formatMoney(listing.pricePerDay)} × ${quantity} units`} value={listing.pricePerDay * quantity * rentalPricing.extraDays} />}
         </> : <PriceRow label={`$${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'} × ${quantity} ${quantity === 1 ? 'unit' : 'units'}`} value={grossRental} />}
         <PriceRow label="Service fee" value={serviceFee} />
+        {deliveryMode === 'delivery' && <div className="flex justify-between gap-3 text-sec">
+          <span>Delivery</span><span className="font-medium text-main">{deliveryFee == null ? 'Confirmed at checkout' : `$${formatMoney(deliveryFee)}`}</span>
+        </div>}
         {isOwner
           ? <PriceRow label="Optional insurance" value={insuranceAmount} />
           : <InsuranceAmount days={days} replacementValue={listing.declaredValue} quantity={quantity} />}
@@ -400,7 +419,9 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       {datesValid && <div className="mt-4 flex justify-between gap-3 text-sm font-bold text-main">
         <span>Estimated total</span><span className="tnum">${formatMoney(total)}</span>
       </div>}
-      <p className="text-xs text-sec mt-2">Includes rental, service fee and estimated tax. Review your total at checkout.</p>
+      <p className="text-xs text-sec mt-2">{deliveryMode === 'delivery' && deliveryFee == null
+        ? 'Excludes delivery fee, which is confirmed at checkout.'
+        : 'Includes rental, service fee, estimated tax and any selected delivery fee. Review your total at checkout.'}</p>
       {!isOwner && <><Button fullWidth size="lg" className="mt-5" disabled={!canBook} onClick={goToCheckout}>
         {listing.instantBooking ? 'Book instantly' : 'Request to book'}
       </Button>
@@ -462,6 +483,18 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
           <div className="listing-gallery min-w-0">
             <ImageGallery images={listing.images} title={listing.title} />
           </div>
+          <section className="listing-highlights min-w-0" aria-label="Item highlights">
+            {listing.condition && <Badge tone="neutral">{listing.condition}</Badge>}
+            <h2 className="mt-3 text-xl font-bold text-main font-display">Item highlights</h2>
+            {listing.description && <p className="listing-highlights-description mt-3 text-sm text-sec leading-relaxed">{listing.description}</p>}
+            <ul className="mt-4 divide-y divide-app text-sm">
+              {(listing.brand || listing.model) && <li className="py-3"><strong className="block text-main">Brand and model</strong><span className="text-sec">{[listing.brand, listing.model].filter(Boolean).join(' · ')}</span></li>}
+              {listing.whatsIncluded.length > 0 && <li className="py-3"><strong className="block text-main">What's included</strong><span className="text-sec">{listing.whatsIncluded.join(', ')}</span></li>}
+              <li className="py-3"><strong className="block text-main">Pickup{listing.deliveryAvailable ? ' or delivery' : ''}</strong><span className="text-sec">{listing.pickup || 'Arrange pickup with the owner'}</span></li>
+              <li className="py-3"><strong className="block text-main">{listing.instantBooking ? 'Instant booking' : 'Owner approval required'}</strong></li>
+            </ul>
+            <a href="#listing-overview" className="inline-block mt-2 text-sm font-semibold text-accent">See all item details →</a>
+          </section>
           <aside className="listing-booking min-w-0" aria-label="Book this item">
             <div className="listing-booking-sticky">{bookingPanel}</div>
           </aside>
@@ -661,7 +694,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
           <div className="min-w-0">
             <p className="flex items-baseline gap-1">
               <span className="text-lg font-bold text-main tnum">{datesValid ? `$${formatMoney(total)}` : `$${formatMoney(listing.pricePerDay)}`}</span>
-              <span className="text-xs text-sec">{datesValid ? 'est. total' : '/day'}</span>
+              <span className="text-xs text-sec">{datesValid ? (deliveryMode === 'delivery' && deliveryFee == null ? 'est. excl. delivery' : 'est. total') : '/day'}</span>
             </p>
             <p className="text-xs text-sec tnum truncate">{datesValid ? `${formatDateShort(startDate)} - ${formatDateShort(endDate)}` : 'Choose rental dates'}</p>
           </div>

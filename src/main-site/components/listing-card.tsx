@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { ChevronLeft, ChevronRight, MapPin, Heart, Star, Zap, ImageOff } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MapPin, Heart, Star, Zap, ImageOff, Maximize2 } from 'lucide-react';
 import type { Listing } from '@/data';
 import { Badge } from '@/main-site/components/ui';
 import { ProtectionBadge } from '@/main-site/components/trust';
@@ -171,6 +171,7 @@ export function ImageGallery({ images, title }: { images: string[]; title: strin
   const [active, setActive] = useState(0);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const touchStartX = useRef<number | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const count = images.length;
 
   const step = (delta: number) => setActive((a) => (a + delta + count) % count);
@@ -198,8 +199,13 @@ export function ImageGallery({ images, title }: { images: string[]; title: strin
         aria-label={count ? `${title} - image ${active + 1} of ${count}` : `${title} - no images`}
       >
         {images[active] && !failedImages.has(images[active])
-          ? <img key={active} src={images[active]} alt={`${title} - photo ${active + 1}`} onError={() => setFailedImages(previous => new Set(previous).add(images[active]))} className="w-full h-full object-cover animate-cross-fade" />
+          ? <img key={active} src={images[active]} alt={`${title} - photo ${active + 1}`} onError={() => setFailedImages(previous => new Set(previous).add(images[active]))} className="w-full h-full object-contain animate-cross-fade" />
           : <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sec"><ImageOff size={32} aria-hidden="true" /><p className="text-sm">Photo unavailable</p></div>}
+        {images[active] && !failedImages.has(images[active]) && <button type="button"
+          onClick={() => dialogRef.current?.showModal()}
+          className="absolute right-3 top-3 inline-flex min-h-11 items-center gap-2 rounded-card bg-white px-3 text-sm font-semibold text-gray-900 shadow-card">
+          <Maximize2 size={16} aria-hidden="true" /> View larger
+        </button>}
         {count > 1 && (
           <>
             <button
@@ -226,6 +232,26 @@ export function ImageGallery({ images, title }: { images: string[]; title: strin
             </div>
           </>
         )}
+        <dialog ref={dialogRef} aria-labelledby="listing-gallery-title" className="listing-gallery-dialog"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              event.currentTarget.close();
+            }
+          }}>
+          <div className="flex items-center justify-between gap-4 p-4">
+            <h2 id="listing-gallery-title" className="font-semibold text-main">{title} · Photo {active + 1} of {count}</h2>
+            <form method="dialog"><button className="min-h-11 rounded-card px-3 font-semibold text-main hover:bg-subtle">Close</button></form>
+          </div>
+          {images[active] && !failedImages.has(images[active]) ? <img src={images[active]}
+            alt={`${title} - photo ${active + 1}`} className="listing-gallery-dialog-image"
+            onError={() => setFailedImages(previous => new Set(previous).add(images[active]))} />
+            : <p className="p-8 text-center text-sec">Photo unavailable</p>}
+          {count > 1 && <div className="flex justify-center gap-3 p-4">
+            <button type="button" className="min-h-11 rounded-card border border-app px-4 font-semibold text-main" onClick={() => step(-1)}>Previous photo</button>
+            <button type="button" className="min-h-11 rounded-card border border-app px-4 font-semibold text-main" onClick={() => step(1)}>Next photo</button>
+          </div>}
+        </dialog>
       </div>
       {count > 1 && (
         <div className="listing-image-thumbnails" aria-label="Listing photos">

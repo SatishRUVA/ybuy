@@ -99,7 +99,7 @@ function AppContent() {
       />
     ); break;
     case 'listing': page = <ListingPage key={`${route.id}:${route.requestId ?? ''}`} id={route.id} requestId={route.requestId} />; break;
-    case 'checkout': page = <RequireAuth><CheckoutPage key={`${route.id}:${route.startDate}:${route.endDate}:${route.quantity}`} id={route.id} startDate={route.startDate} endDate={route.endDate} quantity={route.quantity} /></RequireAuth>; break;
+    case 'checkout': page = <RequireAuth><CheckoutPage key={`${route.id}:${route.startDate}:${route.endDate}:${route.quantity}:${route.deliveryMode}`} id={route.id} startDate={route.startDate} endDate={route.endDate} quantity={route.quantity} initialDeliveryMode={route.deliveryMode} /></RequireAuth>; break;
     case 'confirmation': page = <RequireAuth><ConfirmationPage id={route.id} /></RequireAuth>; break;
     case 'dashboard': page = <RequireAuth><BookingsPage initialTab={route.tab ?? 'renting'} /></RequireAuth>; break;
     case 'renter-dashboard': page = <RequireAuth><BookingsPage initialTab="renting" /></RequireAuth>; break;

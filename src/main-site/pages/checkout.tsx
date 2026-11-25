@@ -37,7 +37,9 @@ function formatMoney(value: number): string {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: string; startDate?: string; endDate?: string; quantity?: number }) {
+export function CheckoutPage({ id, startDate, endDate, quantity = 1, initialDeliveryMode = 'pickup' }: {
+  id: string; startDate?: string; endDate?: string; quantity?: number; initialDeliveryMode?: 'pickup' | 'delivery';
+}) {
   const utcDay = useUtcDay();
   const { navigate, back } = useRouter();
   const [listing, setListing] = useState<Listing | null | undefined>(undefined);
@@ -50,7 +52,8 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quoteRetry, setQuoteRetry] = useState(0);
-  const [deliveryMode, setDeliveryMode] = useState<'pickup' | 'delivery'>('pickup');
+  const [deliveryMode, setDeliveryMode] = useState<'pickup' | 'delivery'>(initialDeliveryMode);
+  const [deliveryUnavailable, setDeliveryUnavailable] = useState(false);
   const [insuranceSelected, setInsuranceSelected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [depositConsent, setDepositConsent] = useState(false);
@@ -65,6 +68,13 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
       .catch(() => { if (!cancelled) setListing(null); });
     return () => { cancelled = true; };
   }, [id, utcDay]);
+
+  useEffect(() => {
+    if (listing && !listing.deliveryAvailable && deliveryMode === 'delivery' && !createdBooking) {
+      setDeliveryMode('pickup');
+      setDeliveryUnavailable(true);
+    }
+  }, [listing, deliveryMode, createdBooking]);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,7 +94,13 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
 
   useEffect(() => {
     let active = true;
-    if (createdBooking || !startDate || !endDate || endDate <= startDate || !Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+    if (createdBooking) {
+      setQuoteLoading(false);
+      return () => { active = false; };
+    }
+    if (!listing || (deliveryMode === 'delivery' && !listing.deliveryAvailable)
+      || !startDate || !endDate || endDate <= startDate || !Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+      setPriceQuote(null);
       setQuoteLoading(false);
       setQuoteError(null);
       return () => { active = false; };
@@ -102,7 +118,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
       }
     }).finally(() => { if (active) setQuoteLoading(false); });
     return () => { active = false; };
-  }, [id, startDate, endDate, quantity, deliveryMode, insuranceSelected, createdBooking, quoteRetry]);
+  }, [id, startDate, endDate, quantity, deliveryMode, insuranceSelected, createdBooking, quoteRetry, listing]);
 
   if (listing === undefined) {
     return (
@@ -238,6 +254,7 @@ export function CheckoutPage({ id, startDate, endDate, quantity = 1 }: { id: str
               </div>
             </Surface>
 
+            {deliveryUnavailable && <Alert tone="warning">Delivery is no longer available for this item. Pickup is selected; please review your booking.</Alert>}
             {listing.deliveryAvailable && !createdBooking && <Surface className="p-4">
               <h2 className="font-semibold text-main">Handoff</h2>
               <fieldset className="mt-2 grid gap-2 sm:grid-cols-2">

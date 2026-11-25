@@ -9,7 +9,7 @@ export type Route =
   | { name: 'owner-payouts' }
   | ({ name: 'search'; lat?: number; lng?: number; locationLabel?: string } & Partial<SearchState>)
   | { name: 'listing'; id: string; requestId?: string }
-  | { name: 'checkout'; id: string; startDate?: string; endDate?: string; quantity?: number }
+  | { name: 'checkout'; id: string; startDate?: string; endDate?: string; quantity?: number; deliveryMode?: 'pickup' | 'delivery' }
   | { name: 'confirmation'; id: string }
   | { name: 'renter-dashboard' }
   | { name: 'owner-dashboard' }
@@ -77,6 +77,7 @@ function routeToPath(route: Route): string {
       if (route.startDate) params.set('start', route.startDate);
       if (route.endDate) params.set('end', route.endDate);
       if (route.quantity && route.quantity !== 1) params.set('qty', String(route.quantity));
+      if (route.deliveryMode === 'delivery') params.set('delivery', 'delivery');
       const qs = params.toString();
       return `/checkout/${route.id}${qs ? `?${qs}` : ''}`;
     }
@@ -145,6 +146,7 @@ function pathToRoute(pathname: string, search: string): Route {
         startDate: qp.get('start') ?? undefined,
         endDate: qp.get('end') ?? undefined,
         quantity: qty > 0 ? qty : undefined,
+        deliveryMode: qp.get('delivery') === 'delivery' ? 'delivery' : undefined,
       };
     }
     case 'confirmation': return second ? { name: 'confirmation', id: second } : { name: 'home' };

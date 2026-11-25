@@ -854,12 +854,20 @@
 }
 .listing-detail { --font-sans: 'DM Sans', system-ui, sans-serif; --font-display: 'Manrope', system-ui, sans-serif; font-family: var(--font-sans); padding-bottom: calc(11rem + env(safe-area-inset-bottom)); }
 html:has(.listing-detail) { scroll-padding-bottom: calc(11rem + env(safe-area-inset-bottom)); }
-.listing-detail-grid { display: grid; gap: 20px; grid-template-areas: "heading" "gallery" "booking" "details"; }
+.listing-detail-grid { display: grid; gap: 20px; grid-template-areas: "heading" "gallery" "booking" "highlights" "details"; }
 .listing-heading { grid-area: heading; }
 .listing-gallery { grid-area: gallery; }
+.listing-highlights { grid-area: highlights; overflow-wrap: anywhere; }
+.listing-highlights-description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; white-space: pre-line; }
 .listing-details { grid-area: details; }
 .listing-booking { grid-area: booking; }
 .listing-booking-panel { scroll-margin-top: 6rem; border-radius: 16px; }
+.listing-handoff-option { display: flex; align-items: flex-start; gap: 8px; min-width: 0; min-height: 76px; padding: 10px; border: 1px solid var(--border-strong); border-radius: 10px; cursor: pointer; background: var(--bg-card); }
+.listing-handoff-option.is-selected { border-color: var(--accent); background: var(--accent-soft); }
+.listing-handoff-option.is-unavailable { opacity: .6; cursor: not-allowed; }
+.listing-handoff-option input { margin-top: 4px; accent-color: var(--accent); }
+.listing-handoff-option strong, .listing-handoff-option small { display: block; }
+.listing-handoff-option small { margin-top: 3px; color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .listing-text-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--text); border-radius: var(--radius-sm); }
 .listing-text-action:hover { background: var(--bg-subtle); }
 .listing-rental-estimate { padding: 16px; border: 1px solid var(--border); border-radius: 11px; background: var(--bg-subtle); }
@@ -875,20 +883,19 @@ html:has(.listing-detail) { scroll-padding-bottom: calc(11rem + env(safe-area-in
 .listing-image-main { aspect-ratio: 4 / 3; }
 .listing-image-thumbnails { display: flex; flex-wrap: wrap; gap: 8px; }
 .listing-image-thumbnail { width: 64px; height: 52px; }
+.listing-gallery-dialog { width: min(900px, calc(100% - 2rem)); max-width: none; max-height: calc(100dvh - 2rem); margin: auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--bg-card); color: var(--text); overscroll-behavior: contain; }
+.listing-gallery-dialog::backdrop { background: rgb(0 0 0 / 70%); overflow: hidden; overscroll-behavior: contain; }
+.listing-gallery-dialog-image { display: block; width: 100%; height: min(65dvh, 640px); object-fit: contain; background: var(--bg-subtle); }
 @media (min-width: 768px) {
   .listing-detail { padding-bottom: 7rem; }
-  .listing-image-gallery:has(.listing-image-thumbnails) { grid-template-columns: 76px minmax(0, 1fr); align-items: start; }
-  .listing-image-main { aspect-ratio: 1.65; }
-  .listing-image-gallery:has(.listing-image-thumbnails) .listing-image-main { grid-column: 2; grid-row: 1; }
-  .listing-image-thumbnails { display: grid; grid-column: 1; grid-row: 1; max-height: 360px; overflow-y: auto; }
+  .listing-image-main { aspect-ratio: 1 / 1; }
   .listing-image-thumbnail { width: 76px; height: 64px; }
 }
 @media (min-width: 1024px) {
   .listing-detail { padding-bottom: 3rem; }
-  .listing-detail-grid { grid-template-columns: minmax(0, 1fr) minmax(340px, 390px); grid-template-rows: auto auto 1fr; grid-template-areas: "heading booking" "gallery booking" "details booking"; gap: 20px 32px; align-items: start; }
+  .listing-detail-grid { grid-template-columns: minmax(0, 1.08fr) minmax(220px, .78fr) minmax(320px, .84fr); grid-template-areas: "heading heading heading" "gallery highlights booking" "details details booking"; gap: 24px; align-items: start; }
   .listing-booking { height: 100%; }
   .listing-booking-sticky { position: sticky; top: 88px; }
-  .listing-image-main { aspect-ratio: 1.65; }
 }
 @media (min-width: 1024px) and (max-height: 740px) {
   .listing-booking-sticky { position: static; }

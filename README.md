@@ -723,16 +723,15 @@ The top-right avatar opens a compact anchored dropdown with Sign out and, in
 enabled test environments, Switch profile. It does not open a modal; workspace
 links remain in the existing navigation.
 
-### Netlify CI/CD
+### Netlify and backend deployment
 
 Connect `SatishRUVA/ybuy` to Netlify through the Netlify Git integration. The
 repository's `netlify.toml` configures the Vite build, SPA fallback, seven
-same-origin API routes, and access-gate Edge Function. The `dev` branch
-production workflow uses GitHub Actions to deploy only changed layers: Supabase
-first when both backend and frontend change, then Netlify. Disable Netlify's
-automatic Git deployments to avoid duplicate or out-of-order production
-deploys. GitHub Actions run typecheck, lint, Node tests, all three app builds,
-and database checks.
+same-origin API routes, and access-gate Edge Function. Disable Netlify's
+automatic Git deployments; pushes to `dev` do not deploy the UI. The
+`dev`-branch GitHub Actions workflow validates and deploys Supabase migrations
+and Edge Functions only when `supabase/**` changes. Frontend releases are
+manual. GitHub Actions run backend database checks for these pushes.
 
 Set environment variables in the Netlify site's UI, not in `netlify.toml` or
 Git. The build intentionally fails if `VITE_SUPABASE_URL` or
