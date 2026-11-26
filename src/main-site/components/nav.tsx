@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { Dialog, DialogTrigger, DialogTitle, DialogDescription, SheetContent } from '@/main-site/components/shadcn/dialog';
 import { WorkspaceNavigation } from '@/main-site/components/workspace-navigation';
+import { LOCAL_PROFILE_LOGIN } from '@/lib/local-profile-login';
 
 function Wordmark() {
   return (
@@ -207,13 +208,13 @@ export function Header({ focused = false }: { focused?: boolean }) {
                   Admin console
                 </Button>
               )}
-              <Button fullWidth size="sm" variant="ghost" onClick={signIn}>Switch account</Button>
+              <Button fullWidth size="sm" variant="ghost" onClick={signIn}>{LOCAL_PROFILE_LOGIN ? 'Switch profile' : 'Switch account'}</Button>
               <Button fullWidth size="sm" variant="ghost" loading={authBusy === 'sign-out'} icon={<LogOut size={16} />} onClick={() => void signOut()}>
                 Sign out
               </Button>
             </>
           ) : (
-            <Button fullWidth variant="secondary" disabled={loading} onClick={signIn}>Sign in / Join</Button>
+            <Button fullWidth variant="secondary" disabled={loading} onClick={signIn}>{LOCAL_PROFILE_LOGIN ? 'Select a profile' : 'Sign in / Join'}</Button>
           )}
         </div>
       </SheetContent>

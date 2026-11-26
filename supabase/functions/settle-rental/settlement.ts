@@ -9,6 +9,8 @@ export interface Settlement {
   refund_id: string | null;
   transfer_status: string;
   transfer_id: string | null;
+  delivery_refund_id?: string | null;
+  delivery_refund_amount?: number;
 }
 
 interface Intent {
@@ -17,7 +19,7 @@ interface Intent {
 }
 interface Refund {
   id: string; payment_intent: string | null; amount: number; currency: string;
-  status: string | null;
+  status: string | null; livemode: boolean;
 }
 interface Transfer {
   id: string; livemode: boolean; amount: number; currency: string;
@@ -68,15 +70,28 @@ export async function settleRental(bookingId: string, services: SettlementServic
     || intent.latest_charge.disputed) {
     throw new Error('Stripe payment does not match the verified booking payment');
   }
+  const deliveryAmount = cents(row.delivery_refund_amount ?? 0);
+  if ((deliveryAmount > 0) !== Boolean(row.delivery_refund_id)) {
+    throw new Error('Delivery refund requires reconciliation');
+  }
+  if (row.delivery_refund_id) {
+    const delivery = await services.refund(row.delivery_refund_id);
+    if (delivery.id !== row.delivery_refund_id || delivery.payment_intent !== intent.id
+      || delivery.amount !== deliveryAmount || delivery.currency !== intent.currency
+      || delivery.livemode !== intent.livemode || delivery.status !== 'succeeded') {
+      throw new Error('Stripe delivery refund receipt does not match');
+    }
+  }
   if (row.refund_status !== 'not_required') {
     const recovered = !row.refund_id ? await services.findDepositRefund(intent.id) : null;
-    if (intent.latest_charge.amount_refunded > 0 && !row.refund_id && !recovered) {
+    if (intent.latest_charge.amount_refunded !== deliveryAmount && !row.refund_id && !recovered) {
       throw new Error('Existing refund requires reconciliation');
     }
     const refund = row.refund_id
       ? await services.refund(row.refund_id)
       : recovered ?? await services.createRefund(intent.id, cents(row.deposit_amount), `deposit:${bookingId}:v1`);
-    if (refund.payment_intent !== intent.id || refund.amount !== cents(row.deposit_amount) || refund.currency !== 'usd') {
+    if (refund.payment_intent !== intent.id || refund.amount !== cents(row.deposit_amount)
+      || refund.currency !== 'usd' || refund.livemode !== intent.livemode) {
       throw new Error('Stripe deposit refund receipt does not match');
     }
     const status = refund.status === 'succeeded' ? 'succeeded'
@@ -85,10 +100,10 @@ export async function settleRental(bookingId: string, services: SettlementServic
     if (status !== 'succeeded') throw new Error(status === 'failed'
       ? 'Deposit refund failed; manual reconciliation required' : 'Deposit refund is processing; owner transfer is waiting');
     const latest = await services.intent(intent.id);
-    if (latest.latest_charge?.amount_refunded !== refund.amount) {
+    if (latest.latest_charge?.amount_refunded !== refund.amount + deliveryAmount) {
       throw new Error('Additional refunds require reconciliation before owner transfer');
     }
-  } else if (intent.latest_charge.amount_refunded !== 0) {
+  } else if (intent.latest_charge.amount_refunded !== deliveryAmount) {
     throw new Error('Existing refund requires reconciliation before owner transfer');
   }
   row = await services.claim('transfer');

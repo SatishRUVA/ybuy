@@ -25,6 +25,7 @@ import {
 import { createCase, uploadCaseEvidence } from '@/lib/operations';
 import { submitBookingDepositClaim } from '@/lib/security-deposit';
 import { BookingPickup } from '@/main-site/components/booking-pickup';
+import { BookingDeliveryAddress } from '@/main-site/components/booking-delivery-address';
 import { DepositAuthorizationStatus } from '@/main-site/components/deposit-authorization-status';
 import { BookingPrecheckin } from '@/main-site/components/booking-precheckin';
 import { RentalSettlement } from '@/main-site/components/rental-settlement';
@@ -559,7 +560,10 @@ export function BookingHandoff({ bookingId, kind }: Props) {
           <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-main">Agreed schedule</summary>
           <BookingPrecheckin booking={booking} kind={kind} exchangeStarted onReady={setPrecheckinReady} />
         </details>}
-        {kind === 'pickup' && <div className="mb-4"><BookingPickup key={String(precheckinReady)} bookingId={bookingId} status={booking.status} paymentFirst={booking.paymentFirst} /></div>}
+        {((kind === 'pickup' && (booking.deliveryTrip === 'dropoff' || booking.deliveryTrip === 'both'))
+          || (kind === 'return' && (booking.deliveryTrip === 'return' || booking.deliveryTrip === 'both')))
+          ? <div className="mb-4"><BookingDeliveryAddress bookingId={bookingId} /></div>
+          : kind === 'pickup' && <div className="mb-4"><BookingPickup key={String(precheckinReady)} bookingId={bookingId} status={booking.status} paymentFirst={booking.paymentFirst} /></div>}
         {booking.deposit > 0 && !done && <div className="mb-4"><DepositAuthorizationStatus bookingId={bookingId} deposit={booking.deposit}
           collectionModel={booking.depositCollectionModel} isOwner={booking.isOwner} paymentFirst={booking.paymentFirst} /></div>}
         {kind === 'return' && !done && !handoff.pickup && (

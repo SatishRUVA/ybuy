@@ -1292,11 +1292,11 @@ pnpm supabase:local migration up --local
 pnpm dev
 ```
 
-Click **Login**, then select a named profile from the **Profile** dropdown:
+Open the menu and choose **Select a profile**, then select a named profile from the **Profile** dropdown:
 ten Owners, ten Renters, Grace Mitchell (Admin), or Daniel Lawson (Super Admin).
 There is no password prompt and no automatic login. The selected profile persists
-across reloads. Click the current name in the header to switch profiles; the
-existing mobile menu also offers Switch account and Sign out.
+across reloads. The menu and profile settings offer **Switch profile** and
+**Sign out**.
 Loopback development skips the hosted `/access` security-code screen and returns
 to its requested destination. Production and hosted site-access verification
 remain unchanged.
@@ -1307,6 +1307,8 @@ local profile setup and fails explicitly if local Supabase is not running.
 and explicit `--mode e2e` runs do not invoke local profile configuration. Unchanged
 local configuration is not rewritten, so starting another dev process does not
 trigger an environment-file restart of the running app.
+To use a different local app port, run `pnpm dev:local -- --host 127.0.0.1 --port 5189`;
+the picker also works on `localhost` at that port.
 
 This mode configures the ignored `.env.local-profiles.local` file from the running
 local Supabase CLI. Existing hosted environment files and lifecycle test accounts

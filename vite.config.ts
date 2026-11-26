@@ -69,6 +69,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
       },
     },
     optimizeDeps: {
+      include: ['@radix-ui/react-switch'],
       exclude: ['lucide-react'],
     },
   };

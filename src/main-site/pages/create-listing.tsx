@@ -51,19 +51,21 @@ const skipLocalPhotoReview = import.meta.env.DEV
 const EMPTY_PICKUP: PickupLocationValue = { formattedAddress: '', streetAddress: '', city: '', state: '', postalCode: '', country: '', latitude: null, longitude: null, placeId: '' };
 const CONDITION_LABELS: Record<string, string> = { new: 'New', like_new: 'Like new', good: 'Good', fair: 'Fair' };
 const formatListingDate = (date: string) => date ? new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Choose date';
+const parseSetupFee = (text: string) => /^\d{1,8}(\.\d{1,2})?$/.test(text.trim()) ? Number(text.trim()) : null;
 type Form = {
   title: string; categoryId: string; description: string; value: string; condition: string; price: string;
   weeklyRate: string; monthlyRate: string;
   weeklyPricing: 'daily' | 'discount' | 'fixed'; monthlyPricing: 'daily' | 'discount' | 'fixed';
   weeklyDiscountEnabled: boolean; weeklyDiscount: string; monthlyDiscountEnabled: boolean; monthlyDiscount: string;
   instant: boolean; delivery: boolean; deliveryFee: string; quantity: number; start: string; end: string;
+  deliveryRoundTripDiscount: string; deliverySetupAvailable: boolean; deliverySetupFee: string; deliveryGuaranteedWindows: HandoffWindow[];
   itemDetails: ListingItemDetails;
 };
-const EMPTY_FORM: Form = { title: '', categoryId: '', description: '', value: '', condition: '', price: '', weeklyRate: '', monthlyRate: '', weeklyPricing: 'discount', monthlyPricing: 'discount', weeklyDiscountEnabled: true, weeklyDiscount: '20', monthlyDiscountEnabled: true, monthlyDiscount: '30', instant: false, delivery: false, deliveryFee: '', quantity: 1, start: '', end: '', itemDetails: EMPTY_ITEM_DETAILS };
-type FlowErrors = Partial<Record<ListingField | 'availability' | 'delivery' | 'quantity' | 'item-details' | 'handoff-details' | 'weekly-discount' | 'monthly-discount' | 'weekly-rate' | 'monthly-rate', string>>;
+const EMPTY_FORM: Form = { title: '', categoryId: '', description: '', value: '', condition: '', price: '', weeklyRate: '', monthlyRate: '', weeklyPricing: 'discount', monthlyPricing: 'discount', weeklyDiscountEnabled: true, weeklyDiscount: '20', monthlyDiscountEnabled: true, monthlyDiscount: '30', instant: false, delivery: false, deliveryFee: '', deliveryRoundTripDiscount: '', deliverySetupAvailable: false, deliverySetupFee: '', deliveryGuaranteedWindows: [], quantity: 1, start: '', end: '', itemDetails: EMPTY_ITEM_DETAILS };
+type FlowErrors = Partial<Record<ListingField | 'availability' | 'delivery' | 'delivery-discount' | 'delivery-setup-fee' | 'quantity' | 'item-details' | 'handoff-details' | 'weekly-discount' | 'monthly-discount' | 'weekly-rate' | 'monthly-rate', string>>;
 const fieldStep = (field: keyof FlowErrors) => field === 'photos' ? 1
   : field === 'item-details' || (ITEM_STEP_FIELDS.includes(field as ListingField) && field !== 'value') ? 2
-    : field === 'availability' ? 4 : ['pickup', 'delivery', 'handoff-details'].includes(field) ? 5 : 3;
+    : field === 'availability' ? 4 : ['pickup', 'delivery', 'delivery-discount', 'delivery-setup-fee', 'handoff-details'].includes(field) ? 5 : 3;
 const fieldId = (field: keyof FlowErrors) => field in LISTING_FIELD_IDS ? LISTING_FIELD_IDS[field as ListingField] : `listing-${field}`;
 function focusListingControl(target: HTMLElement | null) {
   if (!target) return;
@@ -98,6 +100,8 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   const [sourceRequest, setSourceRequest] = useState<MainItemRequest | null>(null);
   const [sourceRequestError, setSourceRequestError] = useState<string | null>(null);
   const [listingId, setListingId] = useState<string | null>(null);
+  const [deliveryOptionsSupported, setDeliveryOptionsSupported] = useState<boolean | null>(null);
+  const deliveryOptionsSupportedRef = useRef<boolean | null>(null);
   const idRef = useRef<string | null>(null);
   const revision = useRef<number>(1);
   const draftCreation = useRef<Promise<string> | null>(null);
@@ -228,6 +232,8 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
         setCategories(rows.map((category) => toUiCategory(category, new Map())));
         setSourceRequest(request);
         if (ownRow) {
+          deliveryOptionsSupportedRef.current = 'delivery_round_trip_discount' in ownRow;
+          setDeliveryOptionsSupported(deliveryOptionsSupportedRef.current);
           if (!Number.isSafeInteger(ownRow.revision)) throw new Error('Listing editing is unavailable right now. Please try again later.');
           revision.current = ownRow.revision!;
           idRef.current = ownRow.id;
@@ -248,6 +254,10 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
             monthlyPricing: ownRow.price_per_month != null ? 'fixed' : ownRow.monthly_discount_enabled ? 'discount' : 'daily',
             weeklyDiscountEnabled: ownRow.weekly_discount_enabled === true, weeklyDiscount: String(ownRow.weekly_discount_percent ?? 20), monthlyDiscountEnabled: ownRow.monthly_discount_enabled === true, monthlyDiscount: String(ownRow.monthly_discount_percent ?? 30), instant: ownRow.instant_booking, delivery: ownRow.delivery_available,
             deliveryFee: String(ownRow.delivery_fee ?? 0), quantity: ownRow.available_quantity,
+            deliveryRoundTripDiscount: String(ownRow.delivery_round_trip_discount ?? 0),
+            deliverySetupAvailable: ownRow.delivery_setup_available === true,
+            deliverySetupFee: String(ownRow.delivery_setup_fee ?? 0),
+            deliveryGuaranteedWindows: ownRow.delivery_guaranteed_windows ?? [],
             start: ownRow.availability_start ?? todayIso(), end: ownRow.availability_end ?? addDaysIso(ownRow.availability_start ?? todayIso(), Math.min(LISTING_DEFAULT_AVAILABLE_DAYS, nextPolicy.listing_duration_days)),
             itemDetails: { brand: ownRow.brand ?? '', model: ownRow.model ?? '', included_items: ownRow.included_items ?? [],
               additional_details: ownRow.additional_details ?? '', delivery_radius_miles: ownRow.delivery_radius_miles ?? null,
@@ -385,6 +395,8 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
       }
       const row = await fetchListingById(id);
       if (!row) throw new Error('Could not verify the new draft. Reload before continuing.');
+      deliveryOptionsSupportedRef.current = 'delivery_round_trip_discount' in row;
+      setDeliveryOptionsSupported(deliveryOptionsSupportedRef.current);
       return id;
     }).finally(() => { draftCreation.current = null; });
     return draftCreation.current;
@@ -421,6 +433,10 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   if (!Number.isInteger(form.quantity) || form.quantity < 1 || (policy && form.quantity > policy.max_quantity)) errors.quantity = 'Choose an allowed number of identical units.';
   const deliveryFee = parseMoney(form.deliveryFee || '0');
   if (form.delivery && (deliveryFee === null || deliveryFee < 1 || (policy && deliveryFee > policy.max_delivery_fee))) errors.delivery = `Enter a delivery fee between $1 and $${policy?.max_delivery_fee ?? 99}.`;
+  const deliveryDiscount = parseMoney(form.deliveryRoundTripDiscount || '0');
+  if (form.delivery && (deliveryDiscount === null || (deliveryFee !== null && deliveryDiscount > deliveryFee * 2))) errors['delivery-discount'] = 'Enter a discount no greater than two delivery trip fees.';
+  const deliverySetupFee = parseSetupFee(form.deliverySetupFee || '0');
+  if (form.delivery && form.deliverySetupAvailable && deliverySetupFee === null) errors['delivery-setup-fee'] = 'Enter a valid nonnegative setup fee with at most two decimal places.';
   const itemError = listingItemDetailsError({ ...EMPTY_ITEM_DETAILS, brand: form.itemDetails.brand, model: form.itemDetails.model,
     included_items: form.itemDetails.included_items, additional_details: form.itemDetails.additional_details });
   if (itemError) errors['item-details'] = itemError;
@@ -438,7 +454,7 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
   }
   const fieldsForStep: (keyof FlowErrors)[] = step === 1 ? ['photos'] : step === 2
     ? [...ITEM_STEP_FIELDS.filter((field) => field !== 'photos' && field !== 'value'), 'item-details'] : step === 3
-      ? ['price', 'weekly-rate', 'monthly-rate', 'value', 'quantity', 'weekly-discount', 'monthly-discount'] : step === 4 ? ['availability'] : step === 5 ? ['pickup', 'delivery', 'handoff-details'] : Object.keys(errors) as (keyof FlowErrors)[];
+      ? ['price', 'weekly-rate', 'monthly-rate', 'value', 'quantity', 'weekly-discount', 'monthly-discount'] : step === 4 ? ['availability'] : step === 5 ? ['pickup', 'delivery', 'delivery-discount', 'delivery-setup-fee', 'handoff-details'] : Object.keys(errors) as (keyof FlowErrors)[];
   const visibleErrors = attempted ? fieldsForStep.filter((field) => errors[field]) : [];
   const blockingFlags = flags.filter((flag) => flag.confidence === 'high' && BLOCKING_FLAG_TYPES.has(flag.type));
   const photoLimit = Math.min(policy?.max_photos ?? 4, 4);
@@ -477,6 +493,12 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
           if (discount && (!/^\d{1,2}(\.\d{1,2})?$/.test(discount) || Number(discount) > 50)) throw new Error('Discounts must be between 0% and 50%.');
         }
         const id = await ensureDraft();
+        if (deliveryOptionsSupportedRef.current === null && step >= 5) {
+          const row = await fetchListingById(id);
+          if (!row) throw new Error('Could not verify delivery options. Reload before continuing.');
+          deliveryOptionsSupportedRef.current = 'delivery_round_trip_discount' in row;
+          setDeliveryOptionsSupported(deliveryOptionsSupportedRef.current);
+        }
         const allDetails: ListingFlowDetails = {
           title: current.title.trim(), description: current.description.trim(), category_id: current.categoryId || categories[0].id,
           price_per_day: price ?? undefined, price_per_week: weeklyRate, price_per_month: monthlyRate,
@@ -486,6 +508,10 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
           location_label: [pickup.city, pickup.state].filter(Boolean).join(', '),
           instant_booking: current.instant, delivery_available: current.delivery, available_quantity: current.quantity,
           delivery_fee: current.delivery ? parseMoney(current.deliveryFee || '0')! : 0,
+          delivery_round_trip_discount: current.delivery ? parseMoney(current.deliveryRoundTripDiscount || '0')! : 0,
+          delivery_setup_available: current.deliverySetupAvailable,
+          delivery_setup_fee: parseSetupFee(current.deliverySetupFee || '0') ?? 0,
+          delivery_guaranteed_windows: current.deliveryGuaranteedWindows,
           availability_start: current.start,           availability_end: current.end,
           item_details: current.itemDetails,
         };
@@ -494,11 +520,17 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
           ['title', 'description', 'category_id', 'item_condition', 'item_details'],
           ['price_per_day', 'price_per_week', 'price_per_month', 'weekly_discount_enabled', 'weekly_discount_percent', 'monthly_discount_enabled', 'monthly_discount_percent', 'estimated_value', 'instant_booking', 'available_quantity'],
           ['availability_start', 'availability_end'],
-          ['location_label', 'delivery_available', 'delivery_fee', 'item_details'],
+          ['location_label', 'delivery_available', 'delivery_fee', 'delivery_round_trip_discount', 'delivery_setup_available', 'delivery_setup_fee', 'delivery_guaranteed_windows', 'item_details'],
         ];
         const details: ListingFlowDetails = step === STEPS.length ? allDetails : Object.fromEntries(
           Object.entries(allDetails).filter(([key]) => stepKeys[step - 1].includes(key as keyof ListingFlowDetails)),
         );
+        if (deliveryOptionsSupportedRef.current !== true) {
+          delete details.delivery_round_trip_discount;
+          delete details.delivery_setup_available;
+          delete details.delivery_setup_fee;
+          delete details.delivery_guaranteed_windows;
+        }
         const confirmedPickup = step >= 5 && pickupConfirmed
           ? {
             formattedAddress: pickup.formattedAddress, streetAddress: pickup.streetAddress, city: pickup.city,
@@ -1223,6 +1255,28 @@ export function CreateListingPage({ editId, requestId }: { editId?: string; requ
                     placeholder="Usage notes, features, or anything renters should know" onChange={event => updateItemDetails('additional_details', event.target.value)} className={textareaClass()} />
                   <p className="text-xs text-sec text-right mt-1">{form.itemDetails.additional_details.length}/500</p>
                 </Field>}
+                {form.delivery && deliveryOptionsSupported === true && <>
+                  <Field label="Round-trip discount (USD, optional)" htmlFor="listing-delivery-discount" error={invalid('delivery-discount')}>
+                    <input id="listing-delivery-discount" type="number" min={0} step="0.01" inputMode="decimal" value={form.deliveryRoundTripDiscount} onChange={event => update('deliveryRoundTripDiscount', event.target.value)} aria-invalid={Boolean(invalid('delivery-discount'))} aria-describedby={invalid('delivery-discount') ? 'listing-delivery-discount-error' : undefined} className={fieldClass('mt-2')} />
+                    <p className="text-xs text-sec mt-2">A fixed discount, up to the cost of two trips.</p>
+                  </Field>
+                  <label className="flex items-center gap-2 min-h-11 text-sm font-semibold">
+                    <input type="checkbox" checked={form.deliverySetupAvailable} onChange={event => update('deliverySetupAvailable', event.target.checked)} className="h-5 w-5 accent-[var(--accent)]" />
+                    Offer installation assistance
+                  </label>
+                  {form.deliverySetupAvailable && <Field label="Installation assistance fee (USD)" htmlFor="listing-delivery-setup-fee" error={invalid('delivery-setup-fee')}>
+                    <input id="listing-delivery-setup-fee" type="number" min={0} step="0.01" inputMode="decimal" value={form.deliverySetupFee} onChange={event => update('deliverySetupFee', event.target.value)} aria-invalid={Boolean(invalid('delivery-setup-fee'))} aria-describedby={invalid('delivery-setup-fee') ? 'listing-delivery-setup-fee-error' : undefined} className={fieldClass('mt-2')} />
+                  </Field>}
+                  <fieldset className="space-y-2">
+                    <legend className="text-sm font-semibold text-main">Guaranteed delivery windows (optional)</legend>
+                    <p className="text-xs text-sec">Three-hour windows in the pickup time zone.</p>
+                    {([['morning', 'Morning, 9 AM–12 PM'], ['afternoon', 'Afternoon, 12–3 PM'], ['evening', 'Evening, 3–6 PM']] as const).map(([window, label]) => <label key={window} className="flex items-center gap-2 min-h-11 text-sm">
+                      <input type="checkbox" checked={form.deliveryGuaranteedWindows.includes(window)} onChange={event => update('deliveryGuaranteedWindows', event.target.checked ? [...form.deliveryGuaranteedWindows, window] : form.deliveryGuaranteedWindows.filter(value => value !== window))} className="h-5 w-5 accent-[var(--accent)]" />{label}
+                    </label>)}
+                  </fieldset>
+                  <p className="text-xs text-sec">These options are saved for future use and are not yet offered during booking.</p>
+                </>}
+                {form.delivery && deliveryOptionsSupported === false && <p className="text-xs text-sec">Additional delivery options are not available yet.</p>}
                 </div>
               </>}
               </>}

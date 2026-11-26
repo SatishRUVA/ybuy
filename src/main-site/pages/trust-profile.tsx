@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/auth-context';
 import { authProviderLabel } from '@/lib/auth-providers';
+import { LOCAL_PROFILE_LOGIN } from '@/lib/local-profile-login';
 import { supabase } from '@/lib/supabase';
 import { fetchBookingsAsRenter } from '@/lib/bookings';
 import { fetchReviewsForUser } from '@/lib/reviews';
@@ -100,7 +101,7 @@ export function TrustProfilePage() {
             <p className="mt-2 max-w-prose text-sm text-sec">Review your account details and verification.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" onClick={openSignIn}>Switch account</Button>
+            <Button variant="secondary" size="sm" onClick={openSignIn}>{LOCAL_PROFILE_LOGIN ? 'Switch profile' : 'Switch account'}</Button>
             <Button variant="ghost" size="sm" loading={authBusy === 'sign-out'} icon={<LogOut size={15} />} onClick={() => void signOut()}>
               Sign out
             </Button>

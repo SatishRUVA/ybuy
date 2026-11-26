@@ -11,22 +11,18 @@ import { fetchReviewsForUser } from '@/lib/reviews';
 import { fetchUnavailableDates } from '@/lib/availability';
 import { DateRangePicker } from '@/main-site/components/date-range-picker';
 import { useAuth } from '@/auth-context';
-import { usePlatformFee } from '@/lib/settings';
 import { SHOW_OUT_OF_SCOPE_PAGES } from '@/lib/feature-flags';
 import { MAX_BOOKING_RANGE_DAYS, addDaysIso, todayIso } from '@/lib/geo';
 import { pickupToday } from '@/lib/pickup-timezone';
 import { ListingDetailSkeleton } from '@/main-site/components/skeleton';
-import { InsuranceAmount } from '@/main-site/components/insurance-amount';
-import { insuranceAmountCents } from '@/lib/insurance-pricing';
-import { bookingTaxCents } from '@/lib/booking-tax';
 import { useUtcDay } from '@/lib/use-utc-day';
 import { useFeatureFlag } from '@/lib/use-feature-flags';
-import { calculateRentalPricing } from '@/lib/rental-pricing';
+import { fetchListingPricingQuotes, type ListingPriceQuote } from '@/lib/listing-pricing';
 import { ALLOW_SAME_DAY_BOOKINGS } from '@/lib/feature-flags';
 import { fetchMainItemRequest } from '../request-flow';
 import {
   MapPin, CheckCircle2, Truck,
-  Lock, Star, MessageSquare, Heart, Share2, ChevronRight, ShieldCheck,
+  Lock, Star, MessageSquare, Heart, Share2, ChevronRight,
 } from 'lucide-react';
 
 const tomorrowIso = () => addDaysIso(todayIso(), 1);
@@ -44,8 +40,6 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
   const utcDay = useUtcDay();
   const { navigate } = useRouter();
   const { user, openSignIn } = useAuth();
-  const fee = usePlatformFee();
-  const feePct = fee.pct ?? 0;
   const [listing, setListing] = useState<Listing | null | undefined>(undefined);
   const [listingError, setListingError] = useState(false);
   const [listingRetry, setListingRetry] = useState(0);
@@ -71,11 +65,34 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
   const [favoriteRetry, setFavoriteRetry] = useState(0);
   const sameDayBookings = useFeatureFlag(ALLOW_SAME_DAY_BOOKINGS);
   const { enabled: biddingEnabled, error: biddingFlagError } = useFeatureFlag('bidding');
-  const durationDiscounts = useFeatureFlag('duration_discounts');
   const [requestError, setRequestError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [deliveryMode, setDeliveryMode] = useState<'pickup' | 'delivery'>('pickup');
+  const [pricing, setPricing] = useState<{ key: string; quotes: ListingPriceQuote[] | null; error: string | null } | null>(null);
+  const [pricingRetry, setPricingRetry] = useState(0);
   const today = listing?.pickupTimeZone ? pickupToday(listing.pickupTimeZone) : todayIso();
+  const days = Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000));
+  const pricingKey = `${id}:${days}:${quantity}`;
+  const listingId = listing?.id;
+
+  useEffect(() => {
+    if (!listingId || !Number.isInteger(days) || days > MAX_BOOKING_RANGE_DAYS
+      || !Number.isInteger(quantity) || quantity < 1 || quantity > 100) return;
+    let active = true;
+    fetchListingPricingQuotes(id, [days], quantity)
+      .then(({ quotes }) => {
+        if (!quotes.some(quote => quote.days === days && typeof quote.renter_service_fee_amount === 'number'
+          && Number.isFinite(quote.renter_service_fee_amount) && quote.renter_service_fee_amount >= 0
+          && typeof quote.tax_amount === 'number' && Number.isFinite(quote.tax_amount) && quote.tax_amount >= 0)) {
+          throw new Error('The server returned an incomplete price estimate.');
+        }
+        if (active) setPricing({ key: pricingKey, quotes, error: null });
+      })
+      .catch(error => {
+        if (active) setPricing({ key: pricingKey, quotes: null, error: error instanceof Error ? error.message : 'Could not load the price estimate.' });
+      });
+    return () => { active = false; };
+  }, [id, listingId, days, quantity, pricingKey, pricingRetry]);
 
   useEffect(() => {
     if (!listing || sameDayBookings.loading || sameDayBookings.error || sameDayBookings.enabled) return;
@@ -197,13 +214,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
     }
   }
 
-  if (listing === undefined || fee.loading) return <ListingDetailSkeleton />;
-
-  if (fee.error) return <div className="max-w-xl mx-auto px-4 py-16">
-    <Alert tone="error" title="Could not verify the service fee">
-      {fee.error}<Button variant="secondary" className="mt-3" onClick={() => window.location.reload()}>Retry pricing</Button>
-    </Alert>
-  </div>;
+  if (listing === undefined) return <ListingDetailSkeleton />;
 
   if (listingError) return <div className="max-w-xl mx-auto px-4 py-16">
     <Alert tone="error" title="Couldn't load this listing">
@@ -222,22 +233,17 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
     );
   }
 
-  const days = Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000));
-  const rentalPricing = calculateRentalPricing(listing.pricePerDay * quantity, days, {
-    weeklyEnabled: durationDiscounts.enabled && listing.weeklyDiscountEnabled,
-    weeklyPercent: listing.weeklyDiscountPercent,
-    monthlyEnabled: durationDiscounts.enabled && listing.monthlyDiscountEnabled,
-    monthlyPercent: listing.monthlyDiscountPercent,
-  });
-  const grossRental = rentalPricing.gross;
-  const durationDiscount = rentalPricing.discountAmount;
-  const rental = rentalPricing.subtotal;
-  const serviceFee = Math.round(rental * feePct * 100) / 100;
-  const insuranceAmount = insuranceAmountCents(listing.declaredValue, days, quantity) / 100;
-  const tax = bookingTaxCents(rental, serviceFee) / 100;
-  const paymentEstimate = rental + serviceFee;
-  const deliveryFee = deliveryMode === 'delivery' && listing.deliveryAvailable ? listing.deliveryFee : 0;
-  const total = paymentEstimate + tax + (deliveryFee ?? 0);
+  const currentPricing = pricing?.key === pricingKey ? pricing : null;
+  const rentalPricing = currentPricing?.quotes?.find(quote => quote.days === days);
+  const isOwner = listing.owner.id === user?.id;
+  const deliveryMinimum = listing.deliveryFee == null ? null : listing.deliveryGuaranteedWindows?.length
+    ? Math.min(listing.deliveryFee, 2 * listing.deliveryFee - (listing.deliveryRoundTripDiscount ?? 0))
+    : listing.deliveryFee;
+  const deliveryFee = deliveryMode === 'delivery' && listing.deliveryAvailable ? deliveryMinimum : 0;
+  const total = rentalPricing
+    ? rentalPricing.rental_subtotal + (rentalPricing.renter_service_fee_amount ?? 0)
+      + (rentalPricing.tax_amount ?? 0) + (deliveryFee ?? 0)
+    : null;
   const firstAllowedDate = addDaysIso(today, sameDayBookings.enabled ? 0 : 1);
   const minimumBookingDate = listing.availabilityStart && listing.availabilityStart > firstAllowedDate
     ? listing.availabilityStart : firstAllowedDate;
@@ -261,22 +267,8 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
     }
     return null;
   })();
-  const isOwner = listing.owner.id === user?.id;
-  const canBook = !isOwner && listing.available && quantity <= (listing.availableQuantity ?? 1) && datesValid && !rangeUnavailable && !availabilityLoading && !availabilityError
-    && !sameDayBookings.loading && !sameDayBookings.error;
-  const rentalOptions = [1, 3, 7, 30].map((optionDays) => {
-    const optionPrice = calculateRentalPricing(listing.pricePerDay * quantity, optionDays, {
-      weeklyEnabled: durationDiscounts.enabled && listing.weeklyDiscountEnabled,
-      weeklyPercent: listing.weeklyDiscountPercent,
-      monthlyEnabled: durationDiscounts.enabled && listing.monthlyDiscountEnabled,
-      monthlyPercent: listing.monthlyDiscountPercent,
-    });
-    return { days: optionDays, price: optionPrice.subtotal, discount: optionPrice.discountAmount,
-      disabled: Boolean(listing.availabilityEnd && addDaysIso(startDate, optionDays) > listing.availabilityEnd)
-        || optionDays > MAX_BOOKING_RANGE_DAYS
-        || Array.from({ length: optionDays }, (_, index) => addDaysIso(startDate, index)).some(date => bookedDates.has(date) || blockedDates.has(date)) };
-  });
-
+  const canBook = !isOwner && listing.available && quantity <= Math.min(listing.availableQuantity ?? 1, 100) && datesValid && !rangeUnavailable && !availabilityLoading && !availabilityError
+    && !sameDayBookings.loading && !sameDayBookings.error && Boolean(rentalPricing);
   const handleMessageOwner = async () => {
     if (!user) { openSignIn(); return; }
     setMessageError(null);
@@ -314,6 +306,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
             : 'No fixed availability window'}
         </p> : <DateRangePicker
           presentation="listing"
+          compactTrigger
           startDate={startDate}
           endDate={endDate}
           bookedDates={bookedDates}
@@ -329,20 +322,6 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
         </Alert>}
       </div>
 
-      {!isOwner && <div className="mt-4" aria-label="Choose rental length">
-        <p className="mb-2 text-xs font-semibold text-sec">Rental options</p>
-        <div className="grid grid-cols-2 gap-2">
-          {rentalOptions.map(option => <button key={option.days} type="button" disabled={option.disabled}
-            aria-pressed={days === option.days}
-            onClick={() => setEndDate(addDaysIso(startDate, option.days))}
-            className={`min-h-[76px] rounded-card border p-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${days === option.days ? 'border-accent bg-accent-soft' : 'border-app bg-card hover:border-accent/60'} disabled:cursor-not-allowed disabled:opacity-45`}>
-            <span className="block text-xs text-sec">{option.days} {option.days === 1 ? 'day' : 'days'}</span>
-            <strong className="mt-1 block text-base text-main tnum">${formatMoney(option.price)}</strong>
-            {option.discount > 0 && <span className="block text-[11px] font-semibold text-success">Save ${formatMoney(option.discount)}</span>}
-          </button>)}
-        </div>
-      </div>}
-
       {availabilityLoading && <p className="mt-3 text-sm text-sec" role="status">Checking date availability…</p>}
       {availabilityError && (
         <Alert tone="error" className="mt-3">
@@ -353,11 +332,11 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
       {!isOwner && !datesValid && (
         <Alert tone="warning" className="mt-3">Choose future rental dates with a return after pickup, up to {MAX_BOOKING_RANGE_DAYS} days.</Alert>
       )}
-      {listing.availabilityStart && listing.availabilityEnd && <p className="text-xs text-sec mt-3">Available {formatDateShort(listing.availabilityStart)} through {formatDateShort(addDaysIso(listing.availabilityEnd, -1))}. Return by {formatDateShort(listing.availabilityEnd)}. Your rental must fit within this window.</p>}
+      {!datesValid && listing.availabilityStart && listing.availabilityEnd && <p className="text-xs text-sec mt-3">Available {formatDateShort(listing.availabilityStart)} through {formatDateShort(addDaysIso(listing.availabilityEnd, -1))}. Return by {formatDateShort(listing.availabilityEnd)}.</p>}
       {!listing.available && <Alert tone="warning" className="mt-3">{listing.availabilityExpired ? 'This listing has expired. The owner must update availability before it can be booked again.' : 'This listing is not currently available for booking.'}</Alert>}
       {!isOwner && datesValid && rangeUnavailable && (
         <Alert tone="warning" className="mt-3">
-          <p>Those dates are taken. Choose another range.</p>
+          <p>Those dates aren't available for the selected quantity. Choose another range or fewer units.</p>
           {nextAvailableRange && <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs">Next available for {days} {days === 1 ? 'day' : 'days'}: {formatDateShort(nextAvailableRange.start)} – {formatDateShort(nextAvailableRange.end)}.</p>
             <Button size="sm" variant="secondary" onClick={() => { setStartDate(nextAvailableRange.start); setEndDate(nextAvailableRange.end); }}>Use suggested dates</Button>
@@ -365,68 +344,82 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
         </Alert>
       )}
 
-      <fieldset className="mt-5">
-        <legend className="text-sm font-bold text-main">How you'll get this item</legend>
+      {!isOwner && ((listing.availableQuantity ?? 1) > 1 || quantity > 1) ? (
+        <div className="mt-4">
+          <label htmlFor="listing-quantity" className="block text-xs font-semibold text-sec">Quantity</label>
+          <select id="listing-quantity" name="quantity" value={quantity}
+            onChange={(event) => {
+              setAvailabilityLoading(true);
+              setQuantity(Number(event.target.value));
+            }}
+            className="listing-quantity-select mt-1 min-h-12 w-full rounded-card border border-app bg-card px-3 text-main focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            {Array.from({ length: Math.min(listing.availableQuantity ?? 1, 100) }, (_, index) => index + 1).map(value =>
+              <option key={value} value={value}>{value} {value === 1 ? 'unit' : 'units'}</option>)}
+            {quantity > Math.min(listing.availableQuantity ?? 1, 100) && <option value={quantity} disabled>{quantity} units requested</option>}
+          </select>
+          <p className="mt-1 text-xs text-sec">{listing.availableQuantity ?? 1} {(listing.availableQuantity ?? 1) === 1 ? 'unit' : 'units'} listed. Availability depends on your dates.</p>
+          {quantity > Math.min(listing.availableQuantity ?? 1, 100) && <p className="mt-1 text-xs text-sec">Choose no more than 100 units or the number of units listed, whichever is less.</p>}
+        </div>
+      ) : <div className="mt-4 flex items-center justify-between text-xs text-sec">
+        <span>Quantity</span><strong className="text-main">{quantity} {quantity === 1 ? 'unit' : 'units'}</strong>
+      </div>}
+      <fieldset className="mt-4">
+        <legend className="text-xs font-semibold text-sec">How you'll get it</legend>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <label className={`listing-handoff-option ${deliveryMode === 'pickup' ? 'is-selected' : ''}`}>
             <input type="radio" name="listing-delivery-mode" checked={deliveryMode === 'pickup'} onChange={() => setDeliveryMode('pickup')} />
-            <span><strong>Pickup</strong><small>{listing.pickup || 'Local pickup'} · Included</small></span>
+            <span><strong>Pickup</strong><small>{listing.pickup || 'Local pickup'}</small><strong>Free</strong></span>
           </label>
           <label className={`listing-handoff-option ${deliveryMode === 'delivery' ? 'is-selected' : ''} ${!listing.deliveryAvailable ? 'is-unavailable' : ''}`}>
             <input type="radio" name="listing-delivery-mode" checked={deliveryMode === 'delivery'} disabled={!listing.deliveryAvailable} onChange={() => setDeliveryMode('delivery')} />
-            <span><strong>Delivery</strong><small>{!listing.deliveryAvailable ? 'Not available' : listing.deliveryFee == null ? 'Fee confirmed at checkout' : `$${formatMoney(listing.deliveryFee)}`}</small></span>
+            <span><strong>Delivery</strong><small>{!listing.deliveryAvailable ? 'Not available'
+              : listing.deliverySetupAvailable && listing.deliveryGuaranteedWindows?.length ? 'Setup help available' : 'Arrange with owner'}</small>
+              {listing.deliveryAvailable && <strong>{deliveryMinimum == null ? 'Fee confirmed at checkout'
+                : `${listing.deliveryGuaranteedWindows?.length ? 'From ' : ''}$${formatMoney(deliveryMinimum)}`}</strong>}
+            </span>
           </label>
         </div>
-        <p className="mt-2 text-xs text-sec">{deliveryMode === 'delivery'
-          ? 'Arrange delivery with the owner after booking confirmation.'
-          : 'Approximate pickup area. Exact address after booking confirmation.'}</p>
       </fieldset>
-
-      <div className="mt-4 flex items-center justify-between text-xs text-sec">
-        <span>Rental quantity</span><strong className="text-main">{quantity} {quantity === 1 ? 'unit' : 'units'}</strong>
-      </div>
-      {datesValid && <div key={`${days}-${listing.pricePerDay}`} className="listing-rental-estimate mt-4 space-y-3 text-sm animate-cross-fade" aria-label="Price breakdown">
-        <div>
-          <h2 className="text-sm font-bold text-main">{isOwner ? '1-day price preview' : 'Estimated rental cost'}</h2>
-          <p className="text-xs text-sec mt-1">Rental payment only; security hold is separate</p>
-        </div>
-        {rentalPricing.packageKind ? <>
-          <PriceRow label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} package · ${rentalPricing.packageDays} days · ${quantity} units`} value={listing.pricePerDay * quantity * rentalPricing.packageDays} />
-          {durationDiscount > 0 && <PriceRow label={`${rentalPricing.packageKind === 'monthly' ? 'Monthly' : 'Weekly'} savings (${rentalPricing.discountPercent}%)`} value={-durationDiscount} />}
-          {rentalPricing.extraDays > 0 && <PriceRow label={`${rentalPricing.extraDays} extra days × $${formatMoney(listing.pricePerDay)} × ${quantity} units`} value={listing.pricePerDay * quantity * rentalPricing.extraDays} />}
-        </> : <PriceRow label={`$${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'} × ${quantity} ${quantity === 1 ? 'unit' : 'units'}`} value={grossRental} />}
-        <PriceRow label="Service fee" value={serviceFee} />
+      {datesValid && <div className="listing-rental-estimate mt-4 space-y-2 text-sm" aria-label="Price breakdown">
+        <h2 className="sr-only">{isOwner ? 'Rental price preview' : 'Your rental summary'}</h2>
+        {!currentPricing && quantity <= 100 && <p role="status" className="text-sec">Checking the current price…</p>}
+        {currentPricing?.error && <Alert tone="error" title="Could not verify the price estimate">
+          {currentPricing.error}<Button size="sm" variant="secondary" className="mt-2" onClick={() => { setPricing(null); setPricingRetry(value => value + 1); }}>Retry price</Button>
+        </Alert>}
+        {rentalPricing && total != null && <>
+        {rentalPricing.package_kind ? <>
+          <PriceRow label={`${rentalPricing.package_kind === 'monthly' ? 'Monthly' : 'Weekly'} package · ${rentalPricing.package_days} days · ${quantity} units`} value={rentalPricing.package_amount} />
+          {rentalPricing.discount_amount > 0 && <PriceRow label="Package savings" value={-rentalPricing.discount_amount} />}
+          {rentalPricing.extra_days > 0 && <PriceRow label={`${rentalPricing.extra_days} extra days at the daily rate`} value={rentalPricing.extra_days_amount} />}
+        </> : <PriceRow label={`Rental · $${formatMoney(listing.pricePerDay)} × ${days} ${days === 1 ? 'day' : 'days'} × ${quantity} ${quantity === 1 ? 'unit' : 'units'}`} value={rentalPricing.rental_subtotal} />}
+        <PriceRow label="Service fee" value={rentalPricing.renter_service_fee_amount ?? 0} />
         {deliveryMode === 'delivery' && <div className="flex justify-between gap-3 text-sec">
-          <span>Delivery</span><span className="font-medium text-main">{deliveryFee == null ? 'Confirmed at checkout' : `$${formatMoney(deliveryFee)}`}</span>
+          <span>Delivery{listing.deliveryGuaranteedWindows?.length ? ' · from' : ''}</span><span className="font-medium text-main">{deliveryFee == null ? 'Confirmed at checkout' : `$${formatMoney(deliveryFee)}`}</span>
         </div>}
-        {isOwner
-          ? <PriceRow label="Optional insurance" value={insuranceAmount} />
-          : <InsuranceAmount days={days} replacementValue={listing.declaredValue} quantity={quantity} />}
-        <PriceRow label="Tax (7%)" value={tax} />
-        <div className="pt-3 border-t border-app flex justify-between gap-3 font-bold text-main">
-          <span>Rental and fees</span><span className="tnum">${formatMoney(rental + serviceFee)}</span>
+        <PriceRow label={rentalPricing.tax_rate == null ? 'Estimated tax' : `Estimated tax · ${new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 4 }).format(Number(rentalPricing.tax_rate))}`} value={rentalPricing.tax_amount ?? 0} />
+        <div className="border-t border-app pt-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="font-bold text-main">Estimated total</p>
+            <strong className="text-2xl text-accent tnum">${formatMoney(total)}</strong>
+          </div>
+          <p className="mt-2 text-xs text-sec">{deliveryMode === 'delivery' && listing.deliveryGuaranteedWindows?.length
+            ? 'Delivery type, address and extras are chosen on the next page.'
+            : deliveryMode === 'delivery' && deliveryFee == null
+              ? 'Delivery fee confirmed at checkout.' : 'Final price is confirmed at checkout.'}</p>
         </div>
-        <p className="text-xs text-sec leading-relaxed">Tax is 7% of the discounted rental and service fees.</p>
+        </>}
       </div>}
-      <div className="listing-deposit-box mt-4 flex gap-3">
-        <ShieldCheck size={26} className="shrink-0 text-accent mt-0.5" aria-hidden="true" />
+      <div className="mt-4 flex gap-2 text-xs text-sec">
+        <Lock size={15} className="shrink-0 text-accent mt-0.5" aria-hidden="true" />
         <div>
-          <h2 className="text-sm font-bold text-main">Separate security hold at check-in</h2>
-          <p className="mt-1 font-bold text-accent tnum">${formatMoney(listing.deposit)}</p>
-          <p className="text-xs text-sec mt-2 leading-relaxed">{listing.deposit > 0 ? 'No hold is placed yet. Authorize it within 24 hours before your approved pickup or delivery slot.' : 'No security deposit is required for this item.'}</p>
+          <p>{listing.deposit > 0 ? `$${formatMoney(listing.deposit)} separate security hold. Not placed yet.` : 'No security deposit is required for this item.'}</p>
         </div>
       </div>
-      {datesValid && <div className="mt-4 flex justify-between gap-3 text-sm font-bold text-main">
-        <span>Estimated total</span><span className="tnum">${formatMoney(total)}</span>
-      </div>}
-      <p className="text-xs text-sec mt-2">{deliveryMode === 'delivery' && deliveryFee == null
-        ? 'Excludes delivery fee, which is confirmed at checkout.'
-        : 'Includes rental, service fee, estimated tax and any selected delivery fee. Review your total at checkout.'}</p>
-      {!isOwner && <><Button fullWidth size="lg" className="mt-5" disabled={!canBook} onClick={goToCheckout}>
+      {!isOwner && <><Button fullWidth size="lg" className="mt-4" disabled={!canBook} onClick={goToCheckout}>
         {listing.instantBooking ? 'Book instantly' : 'Request to book'}
       </Button>
-      <p className="text-xs text-sec text-center mt-3 flex items-center justify-center gap-1.5">
-        <Lock size={13} aria-hidden="true" /> {listing.instantBooking ? 'Dates reserve now; payment confirms the rental.' : 'No charge until the owner approves.'}
+      <p className="text-xs text-sec text-center mt-3">
+        {listing.instantBooking ? 'No reservation or charge yet. Review on the next page.' : 'Review your request on the next page. No charge until the owner approves.'}
       </p></>}
       {listing.auctionEnabled && biddingEnabled && (isOwner
         ? <button type="button" onClick={() => navigate({ name: 'bidding' })} className="flex justify-center items-center min-h-11 text-sm font-semibold text-accent mt-2">Manage competitive bidding <ChevronRight size={15} aria-hidden="true" /></button>
@@ -666,7 +659,7 @@ export function ListingPage({ id, requestId }: { id: string; requestId?: string 
         <div className="flex items-center gap-3">
           <div className="min-w-0">
             <p className="flex items-baseline gap-1">
-              <span className="text-lg font-bold text-main tnum">{datesValid ? `$${formatMoney(total)}` : `$${formatMoney(listing.pricePerDay)}`}</span>
+              <span className="text-lg font-bold text-main tnum">{datesValid ? (total == null ? '—' : `$${formatMoney(total)}`) : `$${formatMoney(listing.pricePerDay)}`}</span>
               <span className="text-xs text-sec">{datesValid ? (deliveryMode === 'delivery' && deliveryFee == null ? 'est. excl. delivery' : 'est. total') : '/day'}</span>
             </p>
             <p className="text-xs text-sec tnum truncate">{datesValid ? `${formatDateShort(startDate)} - ${formatDateShort(endDate)}` : 'Choose rental dates'}</p>
@@ -702,9 +695,9 @@ function PassportField({ label, value }: { label: string; value: string }) {
 function PriceRow({ label, value, muted = false }: { label: string; value: number; muted?: boolean }) {
   const isCredit = value < 0;
   return (
-    <div className={`flex justify-between ${isCredit ? 'text-success' : 'text-sec'}`}>
+    <div className={`flex justify-between gap-3 ${isCredit ? 'text-success' : 'text-sec'}`}>
       <span>{label}</span>
-      <span className={`font-medium tnum ${isCredit ? 'text-success' : muted ? 'text-sec' : 'text-main'}`}>{isCredit ? '-' : ''}${formatMoney(Math.abs(value))}</span>
+      <span className={`shrink-0 font-semibold tnum ${isCredit ? 'text-success' : muted ? 'text-sec' : 'text-main'}`}>{isCredit ? '-' : ''}${formatMoney(Math.abs(value))}</span>
     </div>
   );
 }

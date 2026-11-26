@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { Alert, Button, Surface } from '@/main-site/components/ui';
 import { Skeleton } from '@/main-site/components/skeleton';
+import { Switch } from '@/main-site/components/shadcn/switch';
 import { fmtDate, money, useLoad } from '@/main-site/components/operations/query-utils';
 import { getMyRewards, redeemTestRewardPoints } from '@/lib/rewards';
 import { useAuth } from '@/auth-context';
@@ -99,12 +100,17 @@ export function CheckoutPointsPicker({
 }) {
   const { user } = useAuth();
   const rewards = useLoad(getMyRewards, [user?.id]);
-  const sliderId = useId();
+  const switchId = useId();
   const eligible = rewards.data?.enabled && rewards.data.balance >= 500 && rentalSubtotal >= 5;
   return <section aria-label="Apply YBuy Points" className="mt-4 pt-4 border-t border-app space-y-2">
-    <div className="flex flex-wrap justify-between gap-2 text-sm">
-      <label htmlFor={sliderId} className="font-semibold text-main">Apply YBuy Points</label>
-      <span className="text-sec">Test only · 500 PTS = $5</span>
+    <div className="flex min-h-11 items-center gap-3 text-sm">
+      <div className="min-w-0 flex-1">
+        <label htmlFor={switchId} className="block font-semibold text-main">Apply YBuy Points</label>
+        <span className="text-xs text-sec">Test only · 500 PTS = $5</span>
+      </div>
+      <Switch id={switchId} checked={selected} disabled={disabled || applied || rewards.loading || Boolean(rewards.error) || !eligible}
+        onCheckedChange={onSelectionChange} aria-describedby={`${switchId}-rules`}
+        className="relative before:absolute before:-inset-x-1 before:-inset-y-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2" />
     </div>
     {rewards.loading && <p className="text-xs text-sec">Checking your points balance...</p>}
     {rewards.error && <Alert tone="error">{rewards.error}
@@ -113,13 +119,6 @@ export function CheckoutPointsPicker({
     {!rewards.loading && rewards.data && <p className="text-sm text-sec">
       {applied ? '500 points applied to this test booking.' : `${rewards.data.balance.toLocaleString()} points available`}
     </p>}
-    <input id={sliderId} type="range" min={0} max={500} step={500} value={selected ? 500 : 0}
-      disabled={disabled || applied || rewards.loading || Boolean(rewards.error) || !eligible}
-      onChange={event => onSelectionChange(event.currentTarget.value === '500')}
-      aria-valuetext={selected ? '500 points, $5 test discount' : '0 points, no discount'}
-      aria-describedby={`${sliderId}-rules`}
-      className="w-full min-h-11 accent-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2" />
-    <div className="flex justify-between text-xs text-sec"><span>0 points</span><span>500 points ($5)</span></div>
     {!rewards.loading && rewards.data && !applied && <>
       {!rewards.data.enabled ? <p className="text-xs text-sec">Local financial testing is disabled.</p>
         : rewards.data.balance < 500 && <p className="text-xs text-sec">At least 500 points are required.</p>}
@@ -129,7 +128,7 @@ export function CheckoutPointsPicker({
       <div className="flex justify-between gap-3"><span>Points discount (simulation)</span><span className="tnum">-$5.00</span></div>
       <div className="flex justify-between gap-3 font-semibold"><span>Simulated total after points</span><span className="tnum">{money(total - 5)}</span></div>
     </div>}
-    <p id={`${sliderId}-rules`} className="text-xs text-sec">
+    <p id={`${switchId}-rules`} className="text-xs text-sec">
       Minimum and maximum: 500 points per booking. Rental charges only, not fees or deposits.
       {' '}{applied ? 'Points have been spent in the test ledger.' : 'Points are spent only after your booking is saved.'}
       {' '}Simulation only: your actual payment remains {money(total)}. No discount is applied to Stripe.

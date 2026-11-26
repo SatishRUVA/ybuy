@@ -70,6 +70,10 @@ export interface Listing {
   pickupTimeZone?: string | null;
   availabilityExpired?: boolean;
   deliveryFee?: number | null;
+  deliveryRoundTripDiscount?: number;
+  deliverySetupAvailable?: boolean;
+  deliverySetupFee?: number;
+  deliveryGuaranteedWindows?: ('morning' | 'afternoon' | 'evening')[];
   auctionEnabled?: boolean;
   durationDiscount?: { minimumDays: number; percent: number } | null;
   weeklyDiscountEnabled?: boolean;

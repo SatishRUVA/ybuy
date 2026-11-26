@@ -50,6 +50,10 @@ export interface DbListingRow {
   availability_end?: string | null;
   pickup_time_zone?: string | null;
   delivery_fee?: number;
+  delivery_round_trip_discount?: number;
+  delivery_setup_available?: boolean;
+  delivery_setup_fee?: number;
+  delivery_guaranteed_windows?: ('morning' | 'afternoon' | 'evening')[];
   duration_discount_min_days?: number | null;
   duration_discount_percent?: number;
   weekly_discount_enabled?: boolean;
@@ -277,7 +281,7 @@ export const SEARCH_PAGE_SIZE = 24;
 const SEARCH_CACHE_TTL_MS = 30_000;
 
 function searchCacheKey(params: SearchListingsParams): string {
-  return `ybuy:search:${JSON.stringify(params)}`;
+  return `ybuy:search:v2:${JSON.stringify(params)}`;
 }
 
 /** Strips PostgREST filter-syntax characters so a keyword can't inject extra `.or()` clauses. */
@@ -353,8 +357,8 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
   if (params.protectionOnly) query = query.eq('protection_eligible', true);
   if (params.deliveryOnly) query = query.eq('delivery_available', true);
 
-  const keyword = params.keyword ? sanitizeKeyword(params.keyword) : '';
-  if (keyword) query = query.or(`title.ilike.%${keyword}%,description.ilike.%${keyword}%`);
+  const keyword = params.keyword?.trim() ?? '';
+  if (keyword) query = query.textSearch('listing_search_document', keyword, { config: 'english', type: 'plain' });
   const locationCity = params.locationCity ? sanitizeKeyword(params.locationCity) : '';
   if (locationCity) query = query.ilike('location_label', `%${locationCity}%`);
 
@@ -397,7 +401,7 @@ export async function searchListings(params: SearchListingsParams): Promise<Sear
     if (params.instantOnly) fallback = fallback.eq('instant_booking', true);
     if (params.protectionOnly) fallback = fallback.eq('protection_eligible', true);
     if (params.deliveryOnly) fallback = fallback.eq('delivery_available', true);
-    if (keyword) fallback = fallback.or(`title.ilike.%${keyword}%,description.ilike.%${keyword}%`);
+    if (keyword) fallback = fallback.textSearch('listing_search_document', keyword, { config: 'english', type: 'plain' });
     if (locationCity) fallback = fallback.ilike('location_label', `%${locationCity}%`);
 
     if (params.sortBy === 'price-low') fallback = fallback.order('price_per_day', { ascending: true });
@@ -516,6 +520,10 @@ export function toUiListing(row: DbListingRow): Listing {
     pickupTimeZone: row.pickup_time_zone ?? null,
     availabilityExpired: expired,
     deliveryFee: row.delivery_fee == null ? null : Number(row.delivery_fee),
+    deliveryRoundTripDiscount: Number(row.delivery_round_trip_discount ?? 0),
+    deliverySetupAvailable: row.delivery_setup_available === true,
+    deliverySetupFee: Number(row.delivery_setup_fee ?? 0),
+    deliveryGuaranteedWindows: row.delivery_guaranteed_windows ?? [],
     auctionEnabled: row.auction_enabled === true,
     durationDiscount: row.duration_discount_percent && row.duration_discount_min_days
       ? { minimumDays: row.duration_discount_min_days, percent: Number(row.duration_discount_percent) } : null,

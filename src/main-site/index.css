@@ -780,11 +780,14 @@
   .group:hover .zoom-media { transform: none; }
 }
 .listing-date-range-trigger { display: flex; width: 100%; min-height: 66px; align-items: center; gap: 10px; padding: 11px 12px; text-align: left; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-card); color: var(--text); }
+.listing-date-range-trigger.is-compact { min-height: 48px; }
 .listing-date-range-trigger:hover, .listing-date-range-trigger.is-open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .listing-date-range-trigger > svg:first-child { color: var(--accent); flex-shrink: 0; }
 .listing-date-range-value { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
 .listing-date-range-value strong { font-size: 11px; font-weight: 700; white-space: nowrap; }
 .listing-date-range-value > span { font-size: 10px; color: var(--text-secondary); }
+.listing-date-range-compact { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; }
+.listing-date-range-duration { flex-shrink: 0; font-size: 12px; color: var(--text-secondary); }
 .listing-calendar-popover.calendar-dialog { width: min(920px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); border-radius: 18px; font-family: 'DM Sans', system-ui, sans-serif; }
 .listing-calendar-popover .calendar-dialog-header { padding: 12px 18px; background: var(--bg-card); }
 .listing-calendar-popover .calendar-dialog-body { padding: 10px 18px 16px; }
@@ -861,16 +864,21 @@ html:has(.listing-detail) { scroll-padding-bottom: calc(11rem + env(safe-area-in
 .listing-details { grid-area: details; }
 .listing-booking { grid-area: booking; }
 .listing-booking-panel { scroll-margin-top: 6rem; border-radius: 16px; }
-.listing-handoff-option { display: flex; align-items: flex-start; gap: 8px; min-width: 0; min-height: 76px; padding: 10px; border: 1px solid var(--border-strong); border-radius: 10px; cursor: pointer; background: var(--bg-card); }
-.listing-handoff-option.is-selected { border-color: var(--accent); background: var(--accent-soft); }
+.listing-quantity-select { font-size: 13px; font-weight: 600; }
+@media (pointer: coarse) { .listing-quantity-select { font-size: 16px; } }
+.listing-handoff-option { position: relative; display: flex; align-items: flex-start; min-width: 0; min-height: 76px; padding: 10px; border: 1px solid var(--border-strong); border-radius: 10px; cursor: pointer; background: var(--bg-card); }
+.listing-handoff-option.is-selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
 .listing-handoff-option.is-unavailable { opacity: .6; cursor: not-allowed; }
-.listing-handoff-option input { margin-top: 4px; accent-color: var(--accent); }
-.listing-handoff-option strong, .listing-handoff-option small { display: block; }
-.listing-handoff-option small { margin-top: 3px; color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.listing-handoff-option input { position: absolute; clip-path: inset(50%); overflow: hidden; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; white-space: nowrap; }
+.listing-handoff-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.listing-handoff-option span { min-width: 0; }
+.listing-handoff-option strong, .listing-handoff-option small { display: block; line-height: 1.25; }
+.listing-handoff-option strong:first-child { padding-right: 16px; font-size: 14px; }
+.listing-handoff-option small { margin-top: 2px; color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.listing-handoff-option small + strong { margin-top: 2px; font-size: 12px; }
 .listing-text-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--text); border-radius: var(--radius-sm); }
 .listing-text-action:hover { background: var(--bg-subtle); }
-.listing-rental-estimate { padding: 16px; border: 1px solid var(--border); border-radius: 11px; background: var(--bg-subtle); }
-.listing-deposit-box { padding: 16px; border: 1px solid var(--border); border-radius: 11px; background: var(--accent-soft); }
+.listing-rental-estimate { padding: 14px; border-radius: 11px; background: var(--bg-subtle); }
 .listing-owner-card { padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); }
 .listing-section-nav { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--border); }
 .listing-section-nav a { display: flex; align-items: center; min-height: 48px; padding: 10px 14px; white-space: nowrap; font-size: 12px; font-weight: 600; color: var(--text-secondary); border-bottom: 2px solid transparent; }

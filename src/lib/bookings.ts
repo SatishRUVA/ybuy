@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { signListingImages } from '@/lib/listings';
+import type { DeliveryAddress, DeliverySelection, DeliveryTrip } from '@/lib/delivery-checkout';
 
 export type BookingStatus =
   | 'requested'
@@ -39,6 +40,8 @@ export interface DbBookingRow {
   owner_discount_amount?: number;
   delivery_mode?: 'pickup' | 'delivery';
   delivery_fee_amount?: number;
+  delivery_trip?: DeliveryTrip | null;
+  delivery_setup_amount?: number;
   renter_note?: string | null;
   service_fee_amount: number;
   service_fee_pct?: number | null;
@@ -92,6 +95,18 @@ export async function fetchBookingPickup(bookingId: string): Promise<BookingPick
   return { address: data.address, city: data.city, state: data.state, postalCode: data.postalCode };
 }
 
+export async function fetchBookingDeliveryAddress(bookingId: string): Promise<DeliveryAddress> {
+  const { data, error } = await supabase.from('booking_delivery_addresses').select(
+    'address_line1,address_line2,city,state,postal_code',
+  ).eq('booking_id', bookingId).single();
+  if (error) throw new Error(error.message);
+  if (!data || typeof data.address_line1 !== 'string' || typeof data.address_line2 !== 'string'
+    || typeof data.city !== 'string' || typeof data.state !== 'string' || typeof data.postal_code !== 'string') {
+    throw new Error('The delivery address could not be loaded.');
+  }
+  return data;
+}
+
 export interface UiBooking {
   id: string;
   bookingReference: string | null;
@@ -110,6 +125,8 @@ export interface UiBooking {
   ownerDiscountAmount: number;
   deliveryMode: 'pickup' | 'delivery';
   deliveryFeeAmount: number;
+  deliveryTrip: DeliveryTrip | null;
+  deliverySetupAmount: number;
   renterNote: string | null;
   serviceFeeAmount: number;
   serviceFeePct: number | null;
@@ -153,6 +170,8 @@ export function toUiBooking(row: DbBookingRow, currentUserId: string): UiBooking
     ownerDiscountAmount: Number(row.owner_discount_amount ?? 0),
     deliveryMode: row.delivery_mode === 'delivery' ? 'delivery' : 'pickup',
     deliveryFeeAmount: Number(row.delivery_fee_amount ?? 0),
+    deliveryTrip: row.delivery_trip ?? null,
+    deliverySetupAmount: Number(row.delivery_setup_amount ?? 0),
     renterNote: row.renter_note ?? null,
     serviceFeeAmount: row.service_fee_amount,
     serviceFeePct: row.service_fee_pct == null ? null : Number(row.service_fee_pct),
@@ -240,7 +259,15 @@ export async function createBookingRequest(params: {
   deliveryMode?: 'pickup' | 'delivery';
   renterNote?: string;
   insuranceSelected: boolean;
+  delivery?: DeliverySelection;
 }): Promise<DbBookingRow> {
+  if (params.delivery) {
+    return callBookingRpc('create_booking_request_with_delivery', {
+      p_listing_id: params.listingId, p_start_date: params.startDate, p_end_date: params.endDate,
+      p_quantity: params.quantity ?? 1, p_insurance_selected: params.insuranceSelected,
+      p_delivery: params.delivery,
+    });
+  }
   const note = params.renterNote?.trim();
   const args = {
     p_listing_id: params.listingId,

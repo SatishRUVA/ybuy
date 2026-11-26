@@ -16,6 +16,7 @@ import { pickupToday } from '@/lib/pickup-timezone';
 import { fetchBankPayoutStatus, fetchPayoutsByOwner, startConnectOnboarding, type BankPayoutStatus, type DbPayoutRow } from '@/lib/payouts';
 import { RentalSettlement } from '@/main-site/components/rental-settlement';
 import { BookingPickup } from '@/main-site/components/booking-pickup';
+import { BookingDeliveryAddress } from '@/main-site/components/booking-delivery-address';
 import { fetchUnavailableDates, setDateAvailability } from '@/lib/availability';
 import { AvailabilityCalendar } from '@/main-site/components/availability-calendar';
 import { DurationDiscountControl } from '@/main-site/components/duration-discount-control';
@@ -236,7 +237,8 @@ function BookingRow({
           <p className="text-xs text-sec mt-1">Booking reference: {booking.bookingReference ?? 'Not assigned'}</p>
         </div>
       </div>
-      {['confirmed', 'active', 'return_pending'].includes(booking.status) && <div className="mt-3.5"><BookingPickup bookingId={booking.id} status={booking.status} paymentFirst={booking.paymentFirst} /></div>}
+      {booking.deliveryTrip !== 'both' && ['confirmed', 'active', 'return_pending'].includes(booking.status) && <div className="mt-3.5"><BookingPickup bookingId={booking.id} status={booking.status} paymentFirst={booking.paymentFirst} /></div>}
+      {booking.deliveryTrip && ['confirmed', 'active', 'return_pending'].includes(booking.status) && <div className="mt-3.5"><BookingDeliveryAddress bookingId={booking.id} /></div>}
       {booking.deposit > 0 && <div className="mt-3.5"><DepositAuthorizationStatus bookingId={booking.id} deposit={booking.deposit}
         collectionModel={booking.depositCollectionModel} isOwner={booking.isOwner} paymentFirst={booking.paymentFirst} /></div>}
       {booking.status === 'cancelled' && <RefundStatusSummary details={refundDetails ?? null} loading={refundLoading} onSupport={onSupport} />}

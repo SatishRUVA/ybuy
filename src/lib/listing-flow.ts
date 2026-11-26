@@ -40,6 +40,10 @@ export interface ListingFlowDetails {
   availability_start?: string | null;
   availability_end?: string | null;
   delivery_fee?: number;
+  delivery_round_trip_discount?: number;
+  delivery_setup_available?: boolean;
+  delivery_setup_fee?: number;
+  delivery_guaranteed_windows?: ('morning' | 'afternoon' | 'evening')[];
   item_details?: ListingItemDetails;
   auction_preferences?: ListingAuctionPreferences;
 }

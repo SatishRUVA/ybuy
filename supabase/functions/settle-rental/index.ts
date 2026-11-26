@@ -154,7 +154,10 @@ async function processBooking(admin: ReturnType<typeof createClient>, stripe: St
         const refunds = await stripe.refunds.list({ payment_intent: intent, limit: 100 });
         const matches = refunds.data.filter((refund) =>
           refund.metadata?.booking_id === bookingId && refund.metadata?.purpose === 'deposit');
-        if (refunds.has_more || refunds.data.length > 1 || (refunds.data.length > 0 && matches.length !== 1)) {
+        const other = refunds.data.filter((refund) => !(refund.metadata?.booking_id === bookingId
+          && (refund.metadata?.purpose === 'deposit'
+            || (refund.metadata?.purpose === 'delivery_handoff' && refund.id === guard.delivery_refund_id))));
+        if (refunds.has_more || matches.length > 1 || other.length > 0) {
           throw new Error('Existing refunds require manual reconciliation');
         }
         if (matches.length === 0) return null;

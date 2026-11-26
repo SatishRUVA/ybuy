@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useAuth } from '@/auth-context';
 import { EmptyState } from '@/main-site/components/ui';
 import { Skeleton } from '@/main-site/components/skeleton';
+import { LOCAL_PROFILE_LOGIN } from '@/lib/local-profile-login';
 import { LogIn } from 'lucide-react';
 
 // Client-side gate for UX only - RLS is the real authorization boundary for all data access.
@@ -23,9 +24,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       <div className="max-w-lg mx-auto px-4 py-16 animate-fade-in">
         <EmptyState
           icon={<LogIn size={20} />}
-          title="Sign in to continue"
-          description="Sign in or create an account to continue."
-          actionLabel="Sign in or create an account"
+          title={LOCAL_PROFILE_LOGIN ? 'Choose a profile to continue' : 'Sign in to continue'}
+          description={LOCAL_PROFILE_LOGIN ? 'Select a local test profile to continue.' : 'Sign in or create an account to continue.'}
+          actionLabel={LOCAL_PROFILE_LOGIN ? 'Select a profile' : 'Sign in or create an account'}
           onAction={openSignIn}
         />
       </div>

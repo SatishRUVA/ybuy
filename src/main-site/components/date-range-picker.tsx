@@ -164,6 +164,7 @@ export function DateRangePicker({
   presentation = 'dialog',
   disabled = false,
   maximumDurationDays,
+  compactTrigger = false,
 }: {
   startDate: string;
   endDate: string;
@@ -177,6 +178,7 @@ export function DateRangePicker({
   presentation?: 'dialog' | 'listing' | 'search';
   disabled?: boolean;
   maximumDurationDays?: number;
+  compactTrigger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
@@ -462,12 +464,19 @@ export function DateRangePicker({
           disabled={disabled}
           aria-label={`Choose a date range${startDate ? `, ${triggerDateLabel}` : ''}`}
           onClick={() => open ? setOpen(false) : openPicker()}
-          className={`listing-date-range-trigger${open ? ' is-open' : ''}`}>
-          <CalendarDays size={19} aria-hidden="true" />
-          <span className="listing-date-range-value"><strong>{startDate ? formatIsoLocal(startDate, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Add date'}</strong><span>Pickup</span></span>
-          <ChevronRight size={17} aria-hidden="true" className="text-muted shrink-0" />
-          <span className="listing-date-range-value"><strong>{endDate ? formatIsoLocal(endDate, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Add date'}</strong><span>Return</span></span>
-          <ChevronDown size={16} aria-hidden="true" className="text-sec shrink-0" />
+          className={`listing-date-range-trigger${compactTrigger ? ' is-compact' : ''}${open ? ' is-open' : ''}`}>
+          {compactTrigger ? <>
+            <span className="listing-date-range-compact">{startDate && endDate
+              ? `${formatIsoLocal(startDate, { weekday: 'short', month: 'short', day: 'numeric', ...(startDate.slice(0, 4) !== endDate.slice(0, 4) ? { year: 'numeric' } : {}) })} → ${formatIsoLocal(endDate, { weekday: 'short', month: 'short', day: 'numeric', ...(startDate.slice(0, 4) !== endDate.slice(0, 4) ? { year: 'numeric' } : {}) })}`
+              : 'Choose pickup and return dates'}</span>
+            {startDate && endDate && <span className="listing-date-range-duration">{daysBetweenIso(startDate, endDate)} {daysBetweenIso(startDate, endDate) === 1 ? 'day' : 'days'}</span>}
+          </> : <>
+            <CalendarDays size={19} aria-hidden="true" />
+            <span className="listing-date-range-value"><strong>{startDate ? formatIsoLocal(startDate, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Add date'}</strong><span>Pickup</span></span>
+            <ChevronRight size={17} aria-hidden="true" className="text-muted shrink-0" />
+            <span className="listing-date-range-value"><strong>{endDate ? formatIsoLocal(endDate, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Add date'}</strong><span>Return</span></span>
+            <ChevronDown size={16} aria-hidden="true" className="text-sec shrink-0" />
+          </>}
         </button>
       ) : mode === 'range' ? (
         <button

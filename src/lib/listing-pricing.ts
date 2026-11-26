@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { DeliveryTrip } from '@/lib/delivery-checkout';
 
 export interface ListingPriceQuote {
   days: number;
@@ -91,6 +92,7 @@ export interface CheckoutPriceQuote extends ListingPriceQuote {
   renter_service_fee_amount: number;
   owner_service_fee_amount: number;
   delivery_fee_amount: number;
+  delivery_setup_amount?: number;
   insurance_amount: number;
   tax_rate: number;
   tax_amount: number;
@@ -110,20 +112,28 @@ export async function fetchCheckoutPriceQuote(input: {
   quantity: number;
   deliveryMode: 'pickup' | 'delivery';
   insuranceSelected: boolean;
+  deliveryTrip?: DeliveryTrip;
+  setupSelected?: boolean;
 }): Promise<CheckoutPriceQuote> {
-  const { data, error } = await supabase.rpc('get_checkout_price_quote', {
+  const args = {
     p_listing_id: input.listingId,
     p_start_date: input.startDate,
     p_end_date: input.endDate,
     p_quantity: input.quantity,
     p_delivery_mode: input.deliveryMode,
     p_insurance_selected: input.insuranceSelected,
-  });
+  };
+  const { data, error } = input.deliveryTrip
+    ? await supabase.rpc('get_checkout_delivery_quote', {
+      ...args, p_delivery_trip: input.deliveryTrip, p_setup_selected: input.setupSelected === true,
+    })
+    : await supabase.rpc('get_checkout_price_quote', args);
   if (error) throw new Error(error.message);
   const quote = data as CheckoutPriceQuote | null;
   if (!quote || !isMoney(quote.rental_subtotal) || !isMoney(quote.renter_service_fee_amount)
     || !isMoney(quote.owner_service_fee_amount) || !isMoney(quote.delivery_fee_amount)
     || !isMoney(quote.insurance_amount) || !isMoney(quote.tax_amount)
+    || (input.deliveryTrip && !isMoney(quote.delivery_setup_amount))
     || !isMoney(quote.renter_checkout_total) || !isMoney(quote.expected_owner_net)) {
     throw new Error('The server returned an invalid checkout price quote.');
   }
