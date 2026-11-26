@@ -4,6 +4,16 @@
 
 GitHub Actions deployment workflows are in `.github/workflows`.
 
+On November 25, 2026, commit `f3067068` was deployed to
+https://ybuy-e2e-test.vercel.app as `dpl_BjewcwnSXtfhpnRDCKsjheWPn3r1`.
+Delivery migrations `20261125000005` through `20261125000007` and the
+`process-delivery-handoff-refund` and `settle-rental` Edge Functions were deployed
+to the authorized test backend `jzyjmsixfuwzfnntewqn`. The 14 focused checkout and
+delivery tests, hosted rollback-only owner-options and delivery-checkout SQL
+assertions, frontend bundle checks, and unauthenticated function rejection checks
+passed. Migration history is up to date. Real payment/refund flows were not
+exercised, and the separate production backend was not changed.
+
 The test suites, verification scripts, Playwright configurations, reports, and
 design references have been removed. Historical notes below may refer to them.
 
@@ -1292,11 +1302,13 @@ pnpm supabase:local migration up --local
 pnpm dev
 ```
 
-Open the menu and choose **Select a profile**, then select a named profile from the **Profile** dropdown:
-ten Owners, ten Renters, Grace Mitchell (Admin), or Daniel Lawson (Super Admin).
-There is no password prompt and no automatic login. The selected profile persists
-across reloads. The menu and profile settings offer **Switch profile** and
-**Sign out**.
+Use the **Tester** dropdown in the header, including checkout and other focused
+pages, to select or switch between five Owners and five Renters. There are no
+local sign-in/sign-up, password-recovery, or MFA prompts and no automatic login.
+The selected account persists across reloads. Existing fixture accounts and their
+data are preserved, but only the first five owners and first five renters are
+selectable. Local admin/super-admin screens and staff profiles are excluded from
+this tester-only mode; administrator MFA has not been disabled.
 Loopback development skips the hosted `/access` security-code screen and returns
 to its requested destination. Production and hosted site-access verification
 remain unchanged.
@@ -1315,13 +1327,13 @@ local Supabase CLI. Existing hosted environment files and lifecycle test account
 are unchanged. The dev-only endpoint provisions its own marked synthetic accounts
 and issues a one-use local Auth token; no password or service-role key is sent to
 the browser. Profile/session validation, RLS, actual database admin permissions,
-and additional sensitive-action MFA requirements remain enforced. Owners and
+and hosted sensitive-action MFA requirements remain enforced. Owners and
 Renters are personas, not exclusive permission roles.
 
 The picker is unavailable in production builds, hosted-backend modes, and the
 existing `e2e` mode. Its endpoint only accepts loopback clients and same-origin
 selection requests. Anyone with access to this development machine can select
-these local staff accounts; never expose the local server or database publicly.
+these local tester accounts; never expose the local server or database publicly.
 Local mode clears inherited payment/email provider credentials rather than
 sending real payments or emails.
 Local startup also disables the listing-photo moderation trigger in the local

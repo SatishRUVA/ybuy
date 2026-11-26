@@ -19,7 +19,7 @@ export const HOSTED_PROFILE_LOGIN = import.meta.env.VITE_TEST_PROFILE_LOGIN === 
   && hostedProfileHosts.has(window.location.hostname.toLowerCase());
 export const COMBINED_TEST_PROFILE_LOGIN = import.meta.env.VITE_SITE_VARIANT === 'combined' && HOSTED_PROFILE_LOGIN;
 export const PROFILE_LOGIN = ADMIN_PORTAL || LOCAL_PROFILE_LOGIN || HOSTED_PROFILE_LOGIN;
-export const PROFILE_ENDPOINT = ADMIN_PORTAL && !COMBINED_TEST_PROFILE_LOGIN
+export const PROFILE_ENDPOINT = LOCAL_PROFILE_LOGIN ? '/api/local-profiles' : ADMIN_PORTAL && !COMBINED_TEST_PROFILE_LOGIN
   ? ADMIN_PORTAL_ROLE === 'super_admin' ? '/api/super-admin/profiles' : '/api/admin/profiles'
   : HOSTED_PROFILE_LOGIN ? '/api/test-profiles' : '/api/local-profiles';
 
@@ -37,7 +37,7 @@ export async function loadLocalProfiles(): Promise<LocalLoginProfile[]> {
     : 'Local profiles are unavailable. Start local Supabase and retry.');
   const data: unknown = await response.json();
   const allowedAdminProfileRole = ADMIN_PORTAL_ROLE === 'super_admin' ? 'Super Admin' : 'Admin';
-  const mode = ADMIN_PORTAL && !COMBINED_TEST_PROFILE_LOGIN ? 'admin' : HOSTED_PROFILE_LOGIN ? 'hosted' : 'local';
+  const mode = LOCAL_PROFILE_LOGIN ? 'local' : ADMIN_PORTAL && !COMBINED_TEST_PROFILE_LOGIN ? 'admin' : HOSTED_PROFILE_LOGIN ? 'hosted' : 'local';
   if (!isValidLocalProfileList(data, mode, allowedAdminProfileRole)) {
     throw new Error(ADMIN_PORTAL || HOSTED_PROFILE_LOGIN ? 'Test profile list is invalid. Contact the site administrator.'
       : 'Local profile list is invalid. Restart the local development server.');

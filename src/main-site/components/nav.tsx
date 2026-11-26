@@ -12,6 +12,7 @@ import { useFeatureFlag } from '@/lib/use-feature-flags';
 import { Dialog, DialogTrigger, DialogTitle, DialogDescription, SheetContent } from '@/main-site/components/shadcn/dialog';
 import { WorkspaceNavigation } from '@/main-site/components/workspace-navigation';
 import { LOCAL_PROFILE_LOGIN } from '@/lib/local-profile-login';
+import { LocalTesterSelect } from '@/main-site/components/local-tester-select';
 
 function Wordmark() {
   return (
@@ -91,6 +92,7 @@ export function Header({ focused = false }: { focused?: boolean }) {
         <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-4 px-4 sm:px-6">
           <Wordmark />
         </div>
+        {LOCAL_PROFILE_LOGIN && <div className="mx-auto max-w-[1400px] px-4 pb-3 sm:px-6"><LocalTesterSelect /></div>}
         {error && !signInOpen && <div role="alert" className="px-4 pb-3"><Alert tone="error">{error}</Alert></div>}
       </header>
     );
@@ -164,6 +166,7 @@ export function Header({ focused = false }: { focused?: boolean }) {
           </div>
         </div>
 
+        {LOCAL_PROFILE_LOGIN && <div className="mx-auto max-w-[1400px] px-4 pb-3 sm:px-6"><LocalTesterSelect /></div>}
         {error && !signInOpen && <div role="alert" className="max-w-[1400px] mx-auto px-4 sm:px-6 pb-3"><Alert tone="error">{error}</Alert></div>}
 
       </header>
@@ -201,7 +204,7 @@ export function Header({ focused = false }: { focused?: boolean }) {
             );
           })}</nav>}
         <div className="site-menu-actions">
-          {user ? (
+          {!LOCAL_PROFILE_LOGIN && (user ? (
             <>
               {(adminAccess.access?.role === 'admin' || adminAccess.access?.role === 'super_admin') && (
                 <Button fullWidth size="sm" variant="ghost" icon={<ShieldCheck size={16} />} onClick={() => go(adminRoute)} className="mt-1">
@@ -214,8 +217,8 @@ export function Header({ focused = false }: { focused?: boolean }) {
               </Button>
             </>
           ) : (
-            <Button fullWidth variant="secondary" disabled={loading} onClick={signIn}>{LOCAL_PROFILE_LOGIN ? 'Select a profile' : 'Sign in / Join'}</Button>
-          )}
+            <Button fullWidth variant="secondary" disabled={loading} onClick={signIn}>Sign in / Join</Button>
+          ))}
         </div>
       </SheetContent>
     </Dialog>

@@ -3,6 +3,7 @@ import { ShieldCheck } from 'lucide-react';
 import { Button } from '@/main-site/components/ui';
 import { BrandLogo } from '@/main-site/components/brand-logo';
 import { SecurityCodeInput } from '@/main-site/components/security-code-input';
+import { LOCAL_PROFILE_LOGIN } from '@/lib/local-profile-login';
 
 function getRedirectTarget(): string {
   const params = new URLSearchParams(window.location.search);
@@ -23,6 +24,12 @@ export function AccessPage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (LOCAL_PROFILE_LOGIN) {
+      const target = new URL(getRedirectTarget(), window.location.origin);
+      window.location.replace(target.origin === window.location.origin && target.pathname !== '/access'
+        ? target.href : '/');
+      return;
+    }
     inputRef.current?.focus();
     const params = new URLSearchParams(window.location.search);
     if (params.get('expired') === '1') {
@@ -55,6 +62,8 @@ export function AccessPage() {
       setError('Invalid verification code. Please try again.');
     }
   }
+
+  if (LOCAL_PROFILE_LOGIN) return null;
 
   return (
     <div className="min-h-dvh grid place-items-center bg-app px-4 py-8">

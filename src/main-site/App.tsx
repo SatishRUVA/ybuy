@@ -14,6 +14,7 @@ import { PageLoading } from '@/main-site/components/skeleton';
 import { SHOW_OUT_OF_SCOPE_PAGES, OUT_OF_SCOPE_ROUTES } from '@/lib/feature-flags';
 import { UUID_RE } from '@/lib/text-safety';
 import { AdminDestination } from '@/components/admin-destination';
+import { LOCAL_PROFILE_LOGIN } from '@/lib/local-profile-login';
 import './index.css';
 import './theme.css';
 import './workspace.css';
@@ -69,7 +70,14 @@ function AppContent() {
   if (route.name === 'access') return <AccessPage />;
 
   if (route.name === 'admin' || route.name === 'super-admin') {
-    return <AdminDestination role={route.name === 'super-admin' ? 'super_admin' : 'admin'} />;
+    if (!LOCAL_PROFILE_LOGIN) return <AdminDestination role={route.name === 'super-admin' ? 'super_admin' : 'admin'} />;
+    return <div className="min-h-dvh bg-app">
+      {skipLink}<Header />
+      <main id="main-content" tabIndex={-1} className="mx-auto max-w-lg px-4 py-12">
+        <h1 className="text-xl font-bold text-main">Administration is excluded from local tester mode</h1>
+        <p className="mt-3 text-sm text-sec">Use the Tester dropdown to test owner and renter flows. Administrator MFA has not been disabled.</p>
+      </main>
+    </div>;
   }
 
   if (OUT_OF_SCOPE_ROUTES.has(route.name) && !SHOW_OUT_OF_SCOPE_PAGES) {
@@ -78,7 +86,7 @@ function AppContent() {
         {skipLink}
         <Header />
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-8"><OutOfScopePage /></main>
-        <SignInDialog />
+        {!LOCAL_PROFILE_LOGIN && <SignInDialog />}
       </div>
     );
   }
@@ -147,7 +155,7 @@ function AppContent() {
           </main>
         </div>
       </div>
-      <SignInDialog />
+      {!LOCAL_PROFILE_LOGIN && <SignInDialog />}
     </div>
   );
 }

@@ -25,8 +25,8 @@ export function RequireAuth({ children }: { children: ReactNode }) {
         <EmptyState
           icon={<LogIn size={20} />}
           title={LOCAL_PROFILE_LOGIN ? 'Choose a profile to continue' : 'Sign in to continue'}
-          description={LOCAL_PROFILE_LOGIN ? 'Select a local test profile to continue.' : 'Sign in or create an account to continue.'}
-          actionLabel={LOCAL_PROFILE_LOGIN ? 'Select a profile' : 'Sign in or create an account'}
+          description={LOCAL_PROFILE_LOGIN ? 'Select an account from the Tester dropdown above to continue.' : 'Sign in or create an account to continue.'}
+          actionLabel={LOCAL_PROFILE_LOGIN ? undefined : 'Sign in or create an account'}
           onAction={openSignIn}
         />
       </div>

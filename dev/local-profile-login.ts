@@ -6,18 +6,12 @@ import { seedLocalRenterPoints } from './local-renter-points.mjs';
 const marker = 'ybuy-local-profile-picker-v1';
 const names = [
   'Maya Patel', 'Oliver Brooks', 'Sofia Martinez', 'Ethan Williams', 'Chloe Nguyen',
-  'Noah Anderson', 'Amelia Carter', 'Liam Thompson', 'Isabella Reed', 'Lucas Bennett',
   'Ava Morgan', 'James Rivera', 'Mia Chen', 'Benjamin Hayes', 'Harper Wilson',
-  'Elijah Scott', 'Charlotte Davis', 'Henry Clarke', 'Evelyn Foster', 'Leo Ramirez',
 ];
-const personas = [
-  ...names.map((name, index) => ({
-    key: `${index < 10 ? 'owner' : 'renter'}${index % 10 + 1}`,
-    name, role: index < 10 ? 'Owner' : 'Renter',
-  })),
-  { key: 'admin', name: 'Grace Mitchell', role: 'Admin' },
-  { key: 'super-admin', name: 'Daniel Lawson', role: 'Super Admin' },
-];
+const personas = names.map((name, index) => ({
+  key: `${index < 5 ? 'owner' : 'renter'}${index % 5 + 1}`,
+  name, role: index < 5 ? 'Owner' : 'Renter',
+}));
 
 export function isLocalSupabase(url: string | undefined): boolean {
   if (!url) return false;
@@ -44,11 +38,6 @@ export function localProfileLogin(url: string, serviceKey: string): Plugin {
       for (const user of data.users) if (user.email) existing.set(user.email, user);
       if (data.users.length < 100) break;
     }
-    const { data: permissions, error: permissionsError } = await db.rpc('admin_grantable_permissions');
-    if (permissionsError) throw permissionsError;
-    if (!Array.isArray(permissions) || permissions.some((permission) => typeof permission !== 'string')) {
-      throw new Error('Local admin permission catalog is invalid. Apply local migrations.');
-    }
     const profiles = [];
     for (const persona of personas) {
       const email = `${persona.key}@profiles.ybuy.test`;
@@ -65,13 +54,6 @@ export function localProfileLogin(url: string, serviceKey: string): Plugin {
         if (error) throw error;
         if (!data.user) throw new Error('Local account creation returned no user.');
         user = data.user;
-      }
-      if (persona.role === 'Admin' || persona.role === 'Super Admin') {
-        const { error } = await db.from('admin_users').upsert({
-          user_id: user.id, role: persona.role === 'Admin' ? 'admin' : 'super_admin',
-          permissions: persona.role === 'Admin' ? permissions : [], active: true,
-        });
-        if (error) throw error;
       }
       profiles.push({ id: user.id, name: persona.name, role: persona.role, email });
     }

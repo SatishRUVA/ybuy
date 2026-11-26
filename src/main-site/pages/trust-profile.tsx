@@ -100,12 +100,12 @@ export function TrustProfilePage() {
             <h1 className="text-3xl font-bold tracking-tight text-main font-display">Profile & settings</h1>
             <p className="mt-2 max-w-prose text-sm text-sec">Review your account details and verification.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          {!LOCAL_PROFILE_LOGIN && <div className="flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={openSignIn}>{LOCAL_PROFILE_LOGIN ? 'Switch profile' : 'Switch account'}</Button>
             <Button variant="ghost" size="sm" loading={authBusy === 'sign-out'} icon={<LogOut size={15} />} onClick={() => void signOut()}>
               Sign out
             </Button>
-          </div>
+          </div>}
         </header>
 
         {error && <Alert tone="error">{error}</Alert>}

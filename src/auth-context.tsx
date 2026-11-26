@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { PROFILE_LOGIN, PROFILE_ENDPOINT } from '@/lib/local-profile-login';
+import { LOCAL_PROFILE_LOGIN, PROFILE_LOGIN, PROFILE_ENDPOINT } from '@/lib/local-profile-login';
 
 export interface Profile {
   id: string;
@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!active) return;
       if (event === 'INITIAL_SESSION' && authChanged) return;
       if (event !== 'INITIAL_SESSION') authChanged = true;
-      if (event === 'PASSWORD_RECOVERY') {
+      if (event === 'PASSWORD_RECOVERY' && !LOCAL_PROFILE_LOGIN) {
         setPasswordRecovery(true);
         setSignInOpen(true);
       }
@@ -357,7 +357,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile: profile?.id === session?.user.id && profile?.id === verifiedUserId ? profile : null,
         loading: loading || Boolean(session && !error && !sessionError && verifiedUserId !== session.user.id),
         error: error ?? sessionError ?? profileError, signInOpen, passwordRecovery, authBusy,
-        openSignIn: () => setSignInOpen(true),
+        openSignIn: () => {
+          if (LOCAL_PROFILE_LOGIN) document.getElementById('local-tester')?.focus();
+          else setSignInOpen(true);
+        },
         closeSignIn: () => setSignInOpen(false),
         authenticate, requestPasswordReset, finishPasswordReset, signInWithGoogle, selectLocalProfile, signOut,
       }}
